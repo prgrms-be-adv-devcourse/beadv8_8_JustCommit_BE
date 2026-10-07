@@ -7,5 +7,8 @@
  * entities directly. Cross-module foreign IDs are allowed, but JPA entity relationships across
  * modules are not.</p>
  */
-@org.springframework.modulith.ApplicationModule(displayName = "Market")
+@org.springframework.modulith.ApplicationModule(
+        displayName = "Market",
+        allowedDependencies = "common::entity"
+)
 package com.justcommit.backend.market;
