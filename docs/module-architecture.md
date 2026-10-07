@@ -20,8 +20,8 @@ responsibilities, not independent application modules.
 | Package | Responsibility |
 | --- | --- |
 | `market.cart` | `Cart` and `CartItem`; records what a member intends to buy. It never reserves a product. |
-| `market.checkout` | Direct/cart checkout; validates selected posts, snapshots delivery details, creates `Order`, `SellerOrder`, and `OrderItem`, and requests product reservation before payment. |
-| `market.order` | The post-checkout lifecycle of `Order`, `SellerOrder`, and `OrderItem`: lookup, cancellation eligibility, and purchase confirmation. |
+| `market.checkout` | Direct/cart checkout; validates selected posts, snapshots delivery details, creates `Orders`, `SellerOrder`, and `OrderItem`, and requests product reservation before payment. |
+| `market.order` | The post-checkout lifecycle of `Orders`, `SellerOrder`, and `OrderItem`: lookup, cancellation eligibility, and purchase confirmation. |
 | `market.shipment` | `Shipment` creation, tracking number, and delivery-state changes per seller order. |
 | `market.refund` | `OrderRefund` request/decision workflow; coordinates ordered-item state and the payment module's refund API. |
 
