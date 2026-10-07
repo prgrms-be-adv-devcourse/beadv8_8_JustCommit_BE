@@ -46,7 +46,7 @@ Run only the Modulith architecture check with:
 ## Environment variables
 
 - `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`
-- `REDIS_HOST`, `REDIS_PORT`
+- `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` (prod only)
 - `KAFKA_BOOTSTRAP_SERVERS`
 - `SPRING_APPLICATION_NAME` (optional)
 
