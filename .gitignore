@@ -4,5 +4,6 @@ out/
 .idea/
 *.iml
 .env
+*.pem
 .DS_Store
 
