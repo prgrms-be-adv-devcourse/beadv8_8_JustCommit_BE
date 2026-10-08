@@ -1,23 +1,22 @@
 package com.justcommit.backend.product.domain;
 
 
+import com.justcommit.backend.common.entity.BaseTimeEntity;
 import com.justcommit.backend.product.domain.enums.*;
 import jakarta.persistence.*;
+import lombok.AccessLevel;
 import lombok.Getter;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
+import lombok.NoArgsConstructor;
+import org.hibernate.annotations.BatchSize;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
 @Entity
 @Table(name = "species")
 @Getter
-public class Species {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class Species extends BaseTimeEntity {
 
     @Column(nullable = false, unique = true)
     private String name;
@@ -47,13 +46,10 @@ public class Species {
 
     @OneToMany(mappedBy = "species")
     @OrderBy("sortOrder ASC")
+    @BatchSize(size = 100)
     private List<SpeciesPicture> pictures = new ArrayList<>();
 
-    @CreationTimestamp
-    @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @UpdateTimestamp
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
+    public String getThumbnailUrl() {
+        return pictures.isEmpty() ? null : pictures.get(0).getS3Url();
+    }
 }
