@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Pattern;
 // 인증번호 확인 요청
 public record EmailVerifyRequest(
         @NotBlank(message = "이메일을 입력해주세요.")
-        @Email(message = "이메일 형식이 올바르지 않습니다.")
+        @Email(regexp = MemberValidation.EMAIL_REGEX, message = "이메일 형식이 올바르지 않습니다.")
         String email,
 
         @NotBlank(message = "인증번호를 입력해주세요.")
