@@ -13,7 +13,7 @@ public interface ProductQuery {
 
     /**
      * 여러 상품 한 번에 조회 (장바구니, 주문서 작성용)
-     *
+     * 존재하지 않는 ID는 결과에서 제외된다
      */
     List<ProductResult> getProducts(List<Long> productIds);
 }
