@@ -8,6 +8,9 @@ public record CartItemResponse(
         Long productId,
         String title,
         BigDecimal price,
+        BigDecimal nowPrice,
+        boolean isChangedPrice,
+        boolean isPurchasable,
         LocalDateTime createdAt
 ) {
 }
