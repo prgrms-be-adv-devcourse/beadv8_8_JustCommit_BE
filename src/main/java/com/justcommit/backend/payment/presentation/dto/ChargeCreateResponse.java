@@ -1,4 +1,4 @@
-package com.justcommit.backend.payment.out.dto;
+package com.justcommit.backend.payment.presentation.dto;
 
 import com.justcommit.backend.payment.domain.ChargeStatus;
 import lombok.AllArgsConstructor;
