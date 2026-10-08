@@ -5,6 +5,7 @@ import com.justcommit.backend.member.domain.exception.EmailCooldownException;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.mail.VerificationMailSender;
 import com.justcommit.backend.member.infrastructure.redis.EmailVerificationRedisStore;
+import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.mail.MailException;
@@ -20,7 +21,7 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class EmailVerificationService {
 
-  // 정책 값: Redix TTL과 응답의 남은 시간을 같은 상수에서 가져옴
+  // 정책 값: Redis TTL과 응답의 남은 시간을 같은 상수에서 가져옴
   static final Duration COOLDOWN_TTL = Duration.ofSeconds(60);
   static final Duration CODE_TTL = Duration.ofMinutes(5);
   static final Duration VERIFIED_TTL = Duration.ofMinutes(30);
@@ -30,10 +31,16 @@ public class EmailVerificationService {
 
   private final EmailVerificationRedisStore store;
   private final VerificationMailSender mailSender;
+  private final MemberRepository memberRepository;
 
-  // 인증번호 발송: 재발송 제한 확인 -> 번호 생성, 저장 -> 메일 발송
+  // 인증번호 발송: 가입 여부 확인 -> 재발송 제한 확인 -> 번호 생성, 저장 -> 메일 발송
   public EmailSendResult sendCode(String rawEmail) {
     String email = normalize(rawEmail);
+
+    // 이미 가입된 이메일이면 인증번호를 보내지 않음
+    if (memberRepository.existsByEmail(email)) {
+      throw new BusinessException(MemberErrorCode.DUPLICATE_EMAIL);
+    }
 
     if (!store.tryStartCooldown(email, COOLDOWN_TTL)) {
       throw new EmailCooldownException(store.getCooldownRemainingSeconds(email));

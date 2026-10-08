@@ -5,6 +5,7 @@ import com.justcommit.backend.member.domain.exception.EmailCooldownException;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.mail.VerificationMailSender;
 import com.justcommit.backend.member.infrastructure.redis.EmailVerificationRedisStore;
+import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,6 +33,9 @@ class EmailVerificationServiceTest {
 
   @Mock
   private VerificationMailSender mailSender;
+
+  @Mock
+  private MemberRepository memberRepository;
 
   @InjectMocks
   private EmailVerificationService service;
@@ -88,6 +92,19 @@ class EmailVerificationServiceTest {
 
     then(store).should().deleteCode(EMAIL);
     then(store).should().deleteCooldown(EMAIL);
+  }
+
+  @Test
+  @DisplayName("이미 가입된 이메일이면 DUPLICATE_EMAIL, 쿨다운·메일 발송 안 함")
+  void sendCode_alreadyRegistered() {
+    given(memberRepository.existsByEmail(EMAIL)).willReturn(true);
+
+    assertThatThrownBy(() -> service.sendCode(EMAIL))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode").isEqualTo(MemberErrorCode.DUPLICATE_EMAIL);
+
+    then(store).shouldHaveNoInteractions();
+    then(mailSender).shouldHaveNoInteractions();
   }
 
   // ===== 확인 =====
