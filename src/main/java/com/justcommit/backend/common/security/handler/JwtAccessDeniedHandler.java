@@ -13,7 +13,6 @@ public class JwtAccessDeniedHandler implements AccessDeniedHandler {
   @Override
   public void handle(HttpServletRequest request, HttpServletResponse response,
                      AccessDeniedException accessDeniedException) throws IOException {
-    ErrorResponseWriter.write(response, HttpServletResponse.SC_FORBIDDEN,
-            "FORBIDDEN", "접근 권한이 없습니다.");
+    ErrorResponseWriter.write(response, SecurityErrorCode.FORBIDDEN);
   }
 }

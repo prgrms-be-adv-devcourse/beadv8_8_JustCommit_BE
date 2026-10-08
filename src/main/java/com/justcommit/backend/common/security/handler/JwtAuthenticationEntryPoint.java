@@ -20,14 +20,11 @@ public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
     Object reason = request.getAttribute(JwtAuthenticationFilter.TOKEN_ERROR_ATTRIBUTE);
 
     if (reason == TokenException.Reason.EXPIRED) {
-      ErrorResponseWriter.write(response, HttpServletResponse.SC_UNAUTHORIZED,
-              "TOKEN_EXPIRED", "토큰이 만료되었습니다.");
+      ErrorResponseWriter.write(response, SecurityErrorCode.TOKEN_EXPIRED);
     } else if (reason == TokenException.Reason.INVALID) {
-      ErrorResponseWriter.write(response, HttpServletResponse.SC_UNAUTHORIZED,
-              "INVALID_TOKEN", "유효하지 않은 토큰입니다.");
+      ErrorResponseWriter.write(response, SecurityErrorCode.INVALID_TOKEN);
     } else {
-      ErrorResponseWriter.write(response, HttpServletResponse.SC_UNAUTHORIZED,
-              "UNAUTHORIZED", "인증이 필요합니다.");
+      ErrorResponseWriter.write(response, SecurityErrorCode.UNAUTHORIZED);
     }
   }
 }
