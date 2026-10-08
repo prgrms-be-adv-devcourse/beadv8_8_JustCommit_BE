@@ -26,12 +26,12 @@ Rules:
 | `auth:email:{email}` | verification code | 5 min |
 | `auth:email:verified:{email}` | `true` | 30 min (deleted on sign-up) |
 | `auth:email:cooldown:{email}` | `1` | 60 s |
-| `auth:refresh:{tokenHash}` | memberId | 14 days (same as refresh cookie Max-Age) |
+| `auth:refresh:{tokenHash}` | memberId | 1 day (same as refresh cookie Max-Age) |
 | `auth:signup:{token}` | provider, social ID, email | 30 min (deleted when sign-up completes) |
 | `idem:{api}:{memberId}:{key}` | `PROCESSING` / result | 30 s while processing, 24 h when done |
-| `order:payment:ttl:{orderId}` | orderId | payment wait time (planned, pending market owner) |
+| `order:payment:ttl:{orderId}` | orderId | 30 min (payment wait time) |
 
-Undecided: where to store the Naver OAuth2 `state` (cookie vs `auth:oauth2:state:{state}`, 5 min).
+Undecided: where to store the OAuth2 `state` for Naver and Kakao login (cookie vs `auth:oauth2:state:{state}`, 5 min). The member owner is investigating.
 
 - TODO: implement RedisTemplate use cases only with their owning domain module.
 - TODO: implement TTL expiration listeners only when the order-expiration workflow is specified.
