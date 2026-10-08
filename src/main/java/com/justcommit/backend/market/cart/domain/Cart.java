@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -26,6 +27,10 @@ public class Cart extends BaseTimeEntity {
 
     public void addItem(CartItem item) {
         this.items.add(item);
+    }
+
+    public BigDecimal getTotalPrice() {
+        return items.stream().map(CartItem::getPrice).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
 }
