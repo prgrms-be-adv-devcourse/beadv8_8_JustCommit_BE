@@ -1,12 +1,15 @@
 package com.justcommit.backend.payment.domain;
 
 import com.justcommit.backend.common.entity.BaseTimeEntity;
+import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Getter
@@ -21,6 +24,8 @@ import java.time.LocalDateTime;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Charge extends BaseTimeEntity {
 
+    private static final long MIN_CHARGE_AMOUNT = 1L;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "wallet_id", nullable = false)
     private Wallet wallet;
@@ -29,7 +34,7 @@ public class Charge extends BaseTimeEntity {
     @Column(name = "charge_type", nullable = false)
     private ChargeType chargeType;
 
-    @Column(name = "pg_order_no")
+    @Column(name = "pg_order_no", length = 64)
     private String pgOrderNo;
 
     @Column(name = "amount", nullable = false)
@@ -48,11 +53,26 @@ public class Charge extends BaseTimeEntity {
     @Column(name = "canceled_at")
     private LocalDateTime canceledAt;
 
-    public Charge(Wallet wallet, ChargeType chargeType, String pgOrderNo, Long amount) {
+    private Charge(Wallet wallet, ChargeType chargeType, String pgOrderNo, Long amount) {
         this.wallet = wallet;
         this.chargeType = chargeType;
         this.pgOrderNo = pgOrderNo;
         this.amount = amount;
         this.status = ChargeStatus.READY;
+    }
+
+    public static Charge ready(Wallet wallet, ChargeType chargeType, Long amount) {
+        validateAmount(amount);
+        return new Charge(wallet, chargeType, generatePgOrderNo(), amount);
+    }
+
+    private static void validateAmount(Long amount) {
+        if (amount == null || amount < MIN_CHARGE_AMOUNT) {
+            throw new BusinessException(PaymentErrorCode.INVALID_CHARGE_AMOUNT);
+        }
+    }
+
+    private static String generatePgOrderNo() {
+        return "CHG-" + UUID.randomUUID();
     }
 }
