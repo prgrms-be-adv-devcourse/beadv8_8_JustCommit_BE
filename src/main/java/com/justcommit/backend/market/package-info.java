@@ -9,6 +9,6 @@
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Market",
-        allowedDependencies = "common::entity"
+        allowedDependencies = {"common::entity", "common::exception", "product", "common::security"}
 )
 package com.justcommit.backend.market;
