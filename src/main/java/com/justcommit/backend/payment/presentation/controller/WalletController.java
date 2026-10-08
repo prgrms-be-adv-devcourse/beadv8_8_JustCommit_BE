@@ -7,7 +7,6 @@ import com.justcommit.backend.payment.presentation.dto.WalletTransactionResponse
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -18,7 +17,7 @@ public class WalletController {
     private final WalletService walletService;
 
     @GetMapping
-    public ApiResponse<WalletBalanceResponse> getBalance(@RequestParam Long memberId){
+    public ApiResponse<WalletBalanceResponse> getBalance(@RequestParam Long memberId){ //@AuthenticationPrincipal
 
         long balance = walletService.getBalance(memberId);
         return ApiResponse.ok("예치금 조회 성공", new WalletBalanceResponse(balance));

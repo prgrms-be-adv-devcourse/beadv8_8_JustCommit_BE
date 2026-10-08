@@ -66,9 +66,28 @@ public class Charge extends BaseTimeEntity {
         return new Charge(wallet, chargeType, generatePgOrderNo(), amount);
     }
 
+    public void approve(String pgPaymentKey, LocalDateTime approvedAt) {
+        validateReady();
+        this.status = ChargeStatus.APPROVED;
+        this.pgPaymentKeyEnc = pgPaymentKey;   // TODO: 암호화
+        this.approvedAt = approvedAt;
+    }
+
+    public void validateConfirmInfo(String pgOrderNo, Long amount) {
+        if (!this.pgOrderNo.equals(pgOrderNo) || !this.amount.equals(amount)) {
+            throw new BusinessException(PaymentErrorCode.CHARGE_INFO_MISMATCH);
+        }
+    }
+
     private static void validateAmount(Long amount) {
         if (amount == null || amount < MIN_CHARGE_AMOUNT) {
             throw new BusinessException(PaymentErrorCode.INVALID_CHARGE_AMOUNT);
+        }
+    }
+
+    public void validateReady() {
+        if (this.status != ChargeStatus.READY) {
+            throw new BusinessException(PaymentErrorCode.CHARGE_ALREADY_PROCESSED);
         }
     }
 

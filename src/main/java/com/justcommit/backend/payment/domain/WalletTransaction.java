@@ -20,7 +20,7 @@ import java.time.LocalDateTime;
                 )
         }
 )
-@AllArgsConstructor
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class WalletTransaction extends BaseTimeEntity {
 
@@ -47,4 +47,16 @@ public class WalletTransaction extends BaseTimeEntity {
 
     @Column(name = "balance_after", nullable = false)
     private Long balanceAfter;
+
+    public static WalletTransaction chargeIn(Wallet wallet, Charge charge) {
+        return new WalletTransaction(
+                wallet,
+                RefType.CHARGE,
+                charge.getId(),
+                charge.getApprovedAt(),
+                TransactionStatus.IN,
+                charge.getAmount(),
+                wallet.getBalance()
+        );
+    }
 }
