@@ -1,4 +1,4 @@
-package com.justcommit.backend.product.infrastructure;
+package com.justcommit.backend.product.infrastructure.repository;
 
 import com.justcommit.backend.product.domain.Species;
 import org.springframework.data.jpa.repository.EntityGraph;
