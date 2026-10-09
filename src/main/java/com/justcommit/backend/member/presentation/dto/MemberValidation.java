@@ -15,6 +15,15 @@ public final class MemberValidation {
   // 하이픈 없이 01로 시작하는 숫자 11자리
   public static final String PHONE_REGEX = "^01\\d{9}$";
 
+  // 은행 코드: 금융결제원 3자리 숫자(예: 004 국민, 088 신한)
+  public static final String BANK_CODE_REGEX = "^\\d{3}$";
+
+  // 계좌번호: 하이픈 없이 숫자 10~14자리
+  public static final String ACCOUNT_NO_REGEX = "^\\d{10,14}$";
+
+  // 예금주 최대 길이 (account_holder VARCHAR(50))
+  public static final int ACCOUNT_HOLDER_MAX_LENGTH = 50;
+
   private MemberValidation() {
   }
 }
