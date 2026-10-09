@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -35,6 +36,45 @@ public class CartService {
             cart = create(memberId);
         }
         return cart;
+    }
+
+    @Transactional(readOnly = true)
+    public List<CartItem> getSelectCartItems(long memberId, List<Long> cartItemIds) {
+        validateCartItemIds(cartItemIds);
+        Cart cart = cartRepository.findByMemberId(memberId)
+                .orElseThrow(() -> new BusinessException(CommonErrorCode.RESOURCE_NOT_FOUND, "장바구니를 찾을 수 없습니다."));
+        Map<Long, CartItem> itemsById = cart.getItems().stream()
+                .collect(Collectors.toMap(CartItem::getId, Function.identity()));
+        return cartItemIds.stream().map(id -> {
+            CartItem item = itemsById.get(id);
+            if (item == null) {
+                throw new BusinessException(CommonErrorCode.RESOURCE_NOT_FOUND, "장바구니 항목을 찾을 수 없습니다.");
+            }
+            return item;
+        }).toList();
+    }
+
+    @Transactional
+    public void removeSelectedItems(long memberId, List<Long> cartItemIds) {
+        validateCartItemIds(cartItemIds);
+        Cart cart = cartRepository.findByMemberId(memberId)
+                .orElseThrow(() -> new BusinessException(CommonErrorCode.RESOURCE_NOT_FOUND, "장바구니를 찾을 수 없습니다."));
+        Set<Long> selectedIds = Set.copyOf(cartItemIds);
+        List<CartItem> selected = cart.getItems().stream()
+                .filter(item -> selectedIds.contains(item.getId()))
+                .toList();
+        if (selected.size() != selectedIds.size()) {
+            throw new BusinessException(CommonErrorCode.RESOURCE_NOT_FOUND, "장바구니 항목을 찾을 수 없습니다.");
+        }
+        cart.getItems().removeAll(selected);
+        cartItemRepository.deleteAll(selected);
+    }
+
+    private void validateCartItemIds(List<Long> cartItemIds) {
+        if (cartItemIds == null || cartItemIds.isEmpty() || cartItemIds.stream().anyMatch(id -> id == null || id <= 0)
+                || cartItemIds.size() != cartItemIds.stream().distinct().count()) {
+            throw new BusinessException(CommonErrorCode.BAD_REQUEST_DATA, "주문할 장바구니 항목 ID를 확인해 주세요.");
+        }
     }
 
     @Transactional
