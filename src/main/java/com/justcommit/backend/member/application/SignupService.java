@@ -1,10 +1,12 @@
 package com.justcommit.backend.member.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.member.domain.Address;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.infrastructure.redis.EmailVerificationRedisStore;
+import com.justcommit.backend.member.infrastructure.repository.AddressRepository;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -19,11 +21,12 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class SignupService {
   private final MemberRepository memberRepository;
+  private final AddressRepository addressRepository;
   private final EmailVerificationRedisStore verificationStore;
   private final PasswordEncoder passwordEncoder;
   private final AccountCipher accountCipher;
 
-  // 회원가입: 이메일 인증 확인 → 중복 검사 → 저장 → 인증 완료 상태 삭제
+  // 회원가입: 이메일 인증 확인 → 중복 검사 → 회원 저장 → 기본 배송지 저장 → 인증 완료 상태 삭제
   @Transactional
   public SignupResult signup(SignupCommand command) {
     String email = normalizeEmail(command.email());
@@ -60,6 +63,17 @@ public class SignupService {
     } catch (DataIntegrityViolationException e) {
       throw new BusinessException(toDuplicateErrorCode(e));
     }
+
+    // 3. 가입 시 입력한 배송지를 기본 배송지로 저장(기본 배송지 1개)
+    addressRepository.save(Address.createDefault(
+            member,
+            command.recipientName(),
+            command.recipientPhone(),
+            command.zipcode(),
+            command.address1(),
+            command.address2(),
+            command.addressName()
+    ));
 
     verificationStore.deleteVerified(email);  // 같은 인증으로 다시 가입x
     return new SignupResult(member.getId(), member.getNickname());
