@@ -117,7 +117,7 @@ class SignupServiceTest {
     ArgumentCaptor<Address> addressCaptor = ArgumentCaptor.forClass(Address.class);
     then(addressRepository).should().save(addressCaptor.capture());
     Address savedAddress = addressCaptor.getValue();
-    assertThat(savedAddress.getMemberId()).isEqualTo(1L);
+    assertThat(savedAddress.getMember()).isSameAs(savedMember);
     assertThat(savedAddress.isDefault()).isTrue();
     assertThat(savedAddress.getRecipientName()).isEqualTo(RECIPIENT_NAME);
     assertThat(savedAddress.getRecipientPhone()).isEqualTo(RECIPIENT_PHONE);

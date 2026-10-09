@@ -66,7 +66,7 @@ public class SignupService {
 
     // 3. 가입 시 입력한 배송지를 기본 배송지로 저장(기본 배송지 1개)
     addressRepository.save(Address.createDefault(
-            member.getId(),
+            member,
             command.recipientName(),
             command.recipientPhone(),
             command.zipcode(),

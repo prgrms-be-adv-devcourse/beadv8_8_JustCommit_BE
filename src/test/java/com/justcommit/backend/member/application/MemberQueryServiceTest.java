@@ -44,7 +44,11 @@ class MemberQueryServiceTest {
 
   // 회원 1의 기본 배송지 (id는 DB가 채워 주는 값이라 직접 주입)
   private Address address() {
-    Address address = Address.createDefault(MEMBER_ID, "홍길동", "01087654321",
+    Member member = Member.createLocal("test@gmail.com", "encoded", "떡볶이", "01012345678",
+            "004", "v1:encrypted-account", "홍길동");
+    ReflectionTestUtils.setField(member, "id", MEMBER_ID);
+
+    Address address = Address.createDefault(member, "홍길동", "01087654321",
             "06236", "서울 강남구 테헤란로 123", "101동 1001호", "집");
     ReflectionTestUtils.setField(address, "id", ADDRESS_ID);
     return address;
