@@ -6,6 +6,7 @@ import com.justcommit.backend.payment.domain.WalletTransaction;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Getter
@@ -16,8 +17,8 @@ public class WalletTransactionResponse {
     private Long refId;
     private LocalDateTime refOccurredTime;
     private TransactionStatus status;
-    private Long amount;
-    private Long balanceAfter;
+    private BigDecimal amount;
+    private BigDecimal balanceAfter;
     private LocalDateTime createdAt;
 
     public static WalletTransactionResponse from(WalletTransaction transaction) {

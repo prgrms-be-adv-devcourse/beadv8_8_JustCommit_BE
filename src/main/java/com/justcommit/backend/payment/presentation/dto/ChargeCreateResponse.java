@@ -5,6 +5,7 @@ import com.justcommit.backend.payment.domain.ChargeStatus;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Getter
@@ -13,7 +14,7 @@ public class ChargeCreateResponse {
 
     private Long chargeId;
     private String pgOrderNo;
-    private Long amount;
+    private BigDecimal amount;
     private ChargeStatus status;
     private LocalDateTime createdAt;
 

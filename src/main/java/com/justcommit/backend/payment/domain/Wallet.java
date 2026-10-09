@@ -7,6 +7,7 @@ import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import java.math.BigDecimal;
 
 @Entity
 @Getter
@@ -16,8 +17,8 @@ public class Wallet extends BaseTimeEntity {
     @Column(name = "member_id", nullable = false, unique = true)
     private Long memberId;
 
-    @Column(name = "balance", nullable = false)
-    private Long balance = 0L;
+    @Column(name = "balance", nullable = false, precision = 19)
+    private BigDecimal balance = BigDecimal.ZERO;
 
     @Version
     @Column(name = "version")
@@ -27,22 +28,24 @@ public class Wallet extends BaseTimeEntity {
         this.memberId = memberId;
     }
 
-    public void credit(long amount) {
-        if(amount <= 0) {
-            throw new BusinessException(PaymentErrorCode.INVALID_AMOUNT);
-        }
-        balance += amount;
+    public void credit(BigDecimal amount) {
+        validateAmount(amount);
+        balance = balance.add(amount);
     }
 
-    public void debit(long amount) {
-        if (amount <= 0) {
-            throw new BusinessException(PaymentErrorCode.INVALID_AMOUNT);
-        }
+    public void debit(BigDecimal amount) {
+        validateAmount(amount);
 
-        if (this.balance < amount) {
+        if (this.balance.compareTo(amount) < 0) {
             throw new BusinessException(PaymentErrorCode.INSUFFICIENT_BALANCE);
         }
 
-        this.balance -= amount;
+        this.balance = this.balance.subtract(amount);
+    }
+
+    private void validateAmount(BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(PaymentErrorCode.INVALID_AMOUNT);
+        }
     }
 }

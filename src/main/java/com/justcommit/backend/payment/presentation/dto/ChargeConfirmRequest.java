@@ -6,6 +6,8 @@ import jakarta.validation.constraints.Positive;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
+
 @Getter
 @NoArgsConstructor
 public class ChargeConfirmRequest {
@@ -18,5 +20,5 @@ public class ChargeConfirmRequest {
 
     @NotNull
     @Positive
-    private Long amount;
+    private BigDecimal amount;
 }

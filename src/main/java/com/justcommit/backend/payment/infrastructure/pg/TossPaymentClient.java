@@ -10,6 +10,8 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.math.BigDecimal;
+
 @Slf4j
 @Component
 public class TossPaymentClient {
@@ -28,7 +30,7 @@ public class TossPaymentClient {
         // log.info("toss key length={}", secretKey.length()); // 확인용
     }
 
-    public TossConfirmResponse confirm(String paymentKey, String orderId, Long amount) {
+    public TossConfirmResponse confirm(String paymentKey, String orderId, BigDecimal amount) {
         TossConfirmRequest request = new TossConfirmRequest(paymentKey, orderId, amount);
 
         try {
@@ -66,7 +68,7 @@ public class TossPaymentClient {
         return new TossErrorResponse("HTTP_" + e.getStatusCode().value(), "토스 결제 승인에 실패했습니다.");
     }
 
-    private record TossConfirmRequest(String paymentKey, String orderId, Long amount) {
+    private record TossConfirmRequest(String paymentKey, String orderId, BigDecimal amount) {
     }
 
     private record TossErrorResponse(String code, String message) {

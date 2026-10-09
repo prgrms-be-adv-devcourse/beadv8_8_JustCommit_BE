@@ -9,6 +9,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
+
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/wallet")
@@ -19,7 +21,7 @@ public class WalletController {
     @GetMapping
     public ApiResponse<WalletBalanceResponse> getBalance(@RequestParam Long memberId){ //@AuthenticationPrincipal
 
-        long balance = walletService.getBalance(memberId);
+        BigDecimal balance = walletService.getBalance(memberId);
         return ApiResponse.ok("예치금 조회 성공", new WalletBalanceResponse(balance));
     }
 

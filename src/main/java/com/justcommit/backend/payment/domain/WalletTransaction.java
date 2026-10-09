@@ -7,6 +7,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -42,11 +43,11 @@ public class WalletTransaction extends BaseTimeEntity {
     @Column(nullable = false)
     private TransactionStatus status;
 
-    @Column(nullable = false)
-    private Long amount;
+    @Column(nullable = false, precision = 19)
+    private BigDecimal amount;
 
-    @Column(name = "balance_after", nullable = false)
-    private Long balanceAfter;
+    @Column(name = "balance_after", nullable = false, precision = 19)
+    private BigDecimal balanceAfter;
 
     public static WalletTransaction chargeIn(Wallet wallet, Charge charge) {
         return new WalletTransaction(

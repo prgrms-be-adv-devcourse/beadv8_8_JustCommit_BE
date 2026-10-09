@@ -8,6 +8,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -24,7 +25,7 @@ import java.util.UUID;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Charge extends BaseTimeEntity {
 
-    private static final long MIN_CHARGE_AMOUNT = 1L;
+    private static final BigDecimal MIN_CHARGE_AMOUNT = BigDecimal.ONE;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "wallet_id", nullable = false)
@@ -37,8 +38,8 @@ public class Charge extends BaseTimeEntity {
     @Column(name = "pg_order_no", length = 64)
     private String pgOrderNo;
 
-    @Column(name = "amount", nullable = false)
-    private Long amount;
+    @Column(name = "amount", nullable = false, precision = 19)
+    private BigDecimal amount;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
@@ -53,7 +54,7 @@ public class Charge extends BaseTimeEntity {
     @Column(name = "canceled_at")
     private LocalDateTime canceledAt;
 
-    private Charge(Wallet wallet, ChargeType chargeType, String pgOrderNo, Long amount) {
+    private Charge(Wallet wallet, ChargeType chargeType, String pgOrderNo, BigDecimal amount) {
         this.wallet = wallet;
         this.chargeType = chargeType;
         this.pgOrderNo = pgOrderNo;
@@ -61,7 +62,7 @@ public class Charge extends BaseTimeEntity {
         this.status = ChargeStatus.READY;
     }
 
-    public static Charge ready(Wallet wallet, ChargeType chargeType, Long amount) {
+    public static Charge ready(Wallet wallet, ChargeType chargeType, BigDecimal amount) {
         validateAmount(amount);
         return new Charge(wallet, chargeType, generatePgOrderNo(), amount);
     }
@@ -73,14 +74,14 @@ public class Charge extends BaseTimeEntity {
         this.approvedAt = approvedAt;
     }
 
-    public void validateConfirmInfo(String pgOrderNo, Long amount) {
-        if (!this.pgOrderNo.equals(pgOrderNo) || !this.amount.equals(amount)) {
+    public void validateConfirmInfo(String pgOrderNo, BigDecimal amount) {
+        if (!this.pgOrderNo.equals(pgOrderNo) || this.amount.compareTo(amount) != 0) {
             throw new BusinessException(PaymentErrorCode.CHARGE_INFO_MISMATCH);
         }
     }
 
-    private static void validateAmount(Long amount) {
-        if (amount == null || amount < MIN_CHARGE_AMOUNT) {
+    private static void validateAmount(BigDecimal amount) {
+        if (amount == null || amount.compareTo(MIN_CHARGE_AMOUNT) < 0) {
             throw new BusinessException(PaymentErrorCode.INVALID_CHARGE_AMOUNT);
         }
     }
