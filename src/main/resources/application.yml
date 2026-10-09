@@ -52,6 +52,12 @@ jwt:
   access-token-expiration: 30m
   signup-token-expiration: 10m
 
+custom:
+  payment:
+    toss:
+      secret-key: ${TOSS_SECRET_KEY:}
+      base-url: https://api.tosspayments.com
+      
 # 환급 계좌번호 AES-256-GCM 암호화 키 (32바이트, Base64). 운영은 환경변수로 주입
 account:
   encryption-key: ${ACCOUNT_ENCRYPTION_KEY}

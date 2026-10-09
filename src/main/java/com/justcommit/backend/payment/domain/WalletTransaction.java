@@ -1,11 +1,13 @@
 package com.justcommit.backend.payment.domain;
 
+import com.justcommit.backend.common.entity.BaseTimeEntity;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -19,11 +21,9 @@ import java.time.LocalDateTime;
                 )
         }
 )
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class WalletTransaction {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+public class WalletTransaction extends BaseTimeEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "wallet_id", nullable = false)
@@ -43,17 +43,21 @@ public class WalletTransaction {
     @Column(nullable = false)
     private TransactionStatus status;
 
-    @Column(nullable = false)
-    private Long amount;
+    @Column(nullable = false, precision = 19)
+    private BigDecimal amount;
 
-    @Column(name = "balance_after", nullable = false)
-    private Long balanceAfter;
+    @Column(name = "balance_after", nullable = false, precision = 19)
+    private BigDecimal balanceAfter;
 
-    @CreatedDate
-    @Column(name = "created_at", nullable = false)
-    private LocalDateTime createdAt;
-
-
-
-
+    public static WalletTransaction chargeIn(Wallet wallet, Charge charge) {
+        return new WalletTransaction(
+                wallet,
+                RefType.CHARGE,
+                charge.getId(),
+                charge.getApprovedAt(),
+                TransactionStatus.IN,
+                charge.getAmount(),
+                wallet.getBalance()
+        );
+    }
 }

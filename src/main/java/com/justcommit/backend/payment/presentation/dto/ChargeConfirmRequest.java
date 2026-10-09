@@ -1,17 +1,23 @@
 package com.justcommit.backend.payment.presentation.dto;
 
-import com.justcommit.backend.payment.domain.ChargeType;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+
 import java.math.BigDecimal;
 
 @Getter
 @NoArgsConstructor
-public class ChargeCreateRequest {
+public class ChargeConfirmRequest {
 
-    private ChargeType chargeType;
+    @NotBlank
+    private String paymentKey;
+
+    @NotBlank
+    private String orderId;
+
     @NotNull
     @Positive
     private BigDecimal amount;

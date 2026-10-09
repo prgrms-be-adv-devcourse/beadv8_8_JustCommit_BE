@@ -1,35 +1,45 @@
 package com.justcommit.backend.payment.domain;
 
+import com.justcommit.backend.common.entity.BaseTimeEntity;
+import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreationTimestamp;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Getter
+@Table(
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_charge_type_pg_order_no",
+                        columnNames = {"charge_type", "pg_order_no"}
+                )
+        }
+)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Charge {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+public class Charge extends BaseTimeEntity {
+
+    private static final BigDecimal MIN_CHARGE_AMOUNT = BigDecimal.ONE;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "wallet_id", nullable = false)
     private Wallet wallet;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "charge_type", nullable = false)
-    private String chargeType;
+    private ChargeType chargeType;
 
-    @Column(name = "pg_order_no", unique = true)
+    @Column(name = "pg_order_no", length = 64)
     private String pgOrderNo;
 
-    @Column(name = "amount", nullable = false)
-    private Long amount;
+    @Column(name = "amount", nullable = false, precision = 19)
+    private BigDecimal amount;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
@@ -44,19 +54,45 @@ public class Charge {
     @Column(name = "canceled_at")
     private LocalDateTime canceledAt;
 
-    @CreatedDate
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @LastModifiedDate
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
-
-    public Charge(Wallet wallet, String chargeType, String pgOrderNo, Long amount) {
+    private Charge(Wallet wallet, ChargeType chargeType, String pgOrderNo, BigDecimal amount) {
         this.wallet = wallet;
         this.chargeType = chargeType;
         this.pgOrderNo = pgOrderNo;
         this.amount = amount;
         this.status = ChargeStatus.READY;
+    }
+
+    public static Charge ready(Wallet wallet, ChargeType chargeType, BigDecimal amount) {
+        validateAmount(amount);
+        return new Charge(wallet, chargeType, generatePgOrderNo(), amount);
+    }
+
+    public void approve(String pgPaymentKey, LocalDateTime approvedAt) {
+        validateReady();
+        this.status = ChargeStatus.APPROVED;
+        this.pgPaymentKeyEnc = pgPaymentKey;   // TODO: 암호화
+        this.approvedAt = approvedAt;
+    }
+
+    public void validateConfirmInfo(String pgOrderNo, BigDecimal amount) {
+        if (!this.pgOrderNo.equals(pgOrderNo) || this.amount.compareTo(amount) != 0) {
+            throw new BusinessException(PaymentErrorCode.CHARGE_INFO_MISMATCH);
+        }
+    }
+
+    private static void validateAmount(BigDecimal amount) {
+        if (amount == null || amount.compareTo(MIN_CHARGE_AMOUNT) < 0) {
+            throw new BusinessException(PaymentErrorCode.INVALID_CHARGE_AMOUNT);
+        }
+    }
+
+    public void validateReady() {
+        if (this.status != ChargeStatus.READY) {
+            throw new BusinessException(PaymentErrorCode.CHARGE_ALREADY_PROCESSED);
+        }
+    }
+
+    private static String generatePgOrderNo() {
+        return "CHG-" + UUID.randomUUID();
     }
 }
