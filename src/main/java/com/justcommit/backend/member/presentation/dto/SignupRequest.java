@@ -4,6 +4,7 @@ import com.justcommit.backend.member.application.SignupCommand;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 
 import static com.justcommit.backend.member.presentation.dto.MemberValidation.*;
 
@@ -22,9 +23,23 @@ public record SignupRequest(
 
         @NotBlank(message = "휴대폰 번호를 입력해주세요.")
         @Pattern(regexp = PHONE_REGEX, message = "휴대폰 번호는 하이픈 없이 숫자 11자리여야 합니다.")
-        String phone
+        String phone,
+
+        @NotBlank(message = "은행을 선택해주세요.")
+        @Pattern(regexp = BANK_CODE_REGEX, message = "은행 코드는 숫자 3자리여야 합니다.")
+        String bankCode,
+
+        @NotBlank(message = "계좌번호를 입력해주세요.")
+        @Pattern(regexp = ACCOUNT_NO_REGEX, message = "계좌번호는 하이픈 없이 숫자 10~14자리여야 합니다.")
+        String accountNo,
+
+        @NotBlank(message = "예금주를 입력해주세요.")
+        @Size(max = ACCOUNT_HOLDER_MAX_LENGTH, message = "예금주는 50자 이하여야 합니다.")
+        String accountHolder
 ) {
   public SignupCommand toCommand() {
-    return new SignupCommand(email, password, nickname, phone);
+    return new SignupCommand(email, password, nickname, phone,
+            bankCode, accountNo, accountHolder
+    );
   }
 }
