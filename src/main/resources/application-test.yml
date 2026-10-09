@@ -16,3 +16,7 @@ spring:
 
 jwt:
   secret: test-only-jwt-secret-key-for-automated-tests-01234
+
+# 테스트 전용 키 (운영 사용 금지)
+account:
+  encryption-key: fpbj/8EvmkgpWJBkWKQz4wXmSqMNixbOXY7pZb92ZR4=

@@ -25,3 +25,7 @@ logging:
 
 jwt:
   secret: ${JWT_SECRET:local-dev-only-jwt-secret-key-change-me-0123456789}
+
+# 로컬 개발 전용 키 (운영 사용 금지)
+account:
+  encryption-key: ${ACCOUNT_ENCRYPTION_KEY:D9RKon3RSo0PthLJcaInlxu9yunudk2/5kvlBmOppgc=}
