@@ -24,6 +24,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -161,6 +162,65 @@ class CartServiceTest {
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(CommonErrorCode.RESOURCE_NOT_FOUND));
         assertThat(anotherMembersCart.getItems()).hasSize(1);
         verify(cartItemRepository, never()).delete(any());
+    }
+
+    @Test
+    void selectsOnlyRequestedCartItemIdsInRequestOrder() {
+        Cart cart = new Cart(10L);
+        CartItem first = addItem(cart, 1L, 101L, "10000");
+        addItem(cart, 2L, 102L, "20000");
+        CartItem third = addItem(cart, 3L, 103L, "30000");
+        when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
+
+        List<CartItem> selected = cartService.getSelectCartItems(10L, List.of(3L, 1L));
+
+        assertThat(selected).containsExactly(third, first);
+    }
+
+    @Test
+    void rejectsEmptyAndDuplicateCartItemIds() {
+        assertThatThrownBy(() -> cartService.getSelectCartItems(10L, List.of()))
+                .isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> cartService.getSelectCartItems(10L, List.of(1L, 1L)))
+                .isInstanceOf(BusinessException.class);
+        verify(cartRepository, never()).findByMemberId(anyLong());
+    }
+
+    @Test
+    void rejectsMissingOrAnotherMembersCartItemId() {
+        Cart cart = new Cart(10L);
+        addItem(cart, 1L, 101L, "10000");
+        when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
+
+        assertThatThrownBy(() -> cartService.getSelectCartItems(10L, List.of(2L)))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(CommonErrorCode.RESOURCE_NOT_FOUND));
+    }
+
+    @Test
+    void removesOnlySelectedCartItemsAfterOrder() {
+        Cart cart = new Cart(10L);
+        CartItem first = addItem(cart, 1L, 101L, "10000");
+        CartItem second = addItem(cart, 2L, 102L, "20000");
+        when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
+
+        cartService.removeSelectedItems(10L, List.of(1L));
+
+        assertThat(cart.getItems()).containsExactly(second);
+        verify(cartItemRepository).deleteAll(List.of(first));
+    }
+
+    @Test
+    void doesNotRemoveAnyCartItemIfSelectionIsInvalid() {
+        Cart cart = new Cart(10L);
+        CartItem item = addItem(cart, 1L, 101L, "10000");
+        when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
+
+        assertThatThrownBy(() -> cartService.removeSelectedItems(10L, List.of(1L, 2L)))
+                .isInstanceOf(BusinessException.class);
+
+        assertThat(cart.getItems()).containsExactly(item);
+        verify(cartItemRepository, never()).deleteAll(any());
     }
 
     private static CartItem addItem(Cart cart, long cartItemId, long productId, String price) {

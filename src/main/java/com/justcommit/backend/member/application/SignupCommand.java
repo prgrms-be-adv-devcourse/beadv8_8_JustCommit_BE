@@ -4,6 +4,8 @@ package com.justcommit.backend.member.application;
 // 평문 계좌번호(서비스에서 암호화)
 public record SignupCommand(
         String email, String password, String nickname, String phone,
-        String bankCode, String accountNo, String accountHolder
+        String bankCode, String accountNo, String accountHolder,
+        String recipientName, String recipientPhone, String zipcode,
+        String address1, String address2, String addressName
 ) {
 }
