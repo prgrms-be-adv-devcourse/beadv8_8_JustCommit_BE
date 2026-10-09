@@ -24,6 +24,15 @@ public final class MemberValidation {
   // 예금주 최대 길이 (account_holder VARCHAR(50))
   public static final int ACCOUNT_HOLDER_MAX_LENGTH = 50;
 
+  // 우편번호(숫자 5자리)
+  public static final String ZIPCODE_REGEX = "^\\d{5}$";
+
+  // 배송지 길이(address 테이블 VARCHAR 길이와 동일)
+  public static final int RECIPIENT_NAME_MAX_LENGTH = 20;
+  public static final int ADDRESS1_MAX_LENGTH = 200;
+  public static final int ADDRESS2_MAX_LENGTH = 100;
+  public static final int ADDRESS_NAME_MAX_LENGTH = 20;
+
   private MemberValidation() {
   }
 }
