@@ -3,13 +3,14 @@ package com.justcommit.backend.member.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
+import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Locale;
 
@@ -20,6 +21,7 @@ public class SignupService {
   private final MemberRepository memberRepository;
   private final EmailVerificationRedisStore verificationStore;
   private final PasswordEncoder passwordEncoder;
+  private final AccountCipher accountCipher;
 
   // 회원가입: 이메일 인증 확인 → 중복 검사 → 저장 → 인증 완료 상태 삭제
   @Transactional
@@ -46,7 +48,11 @@ public class SignupService {
             email,
             passwordEncoder.encode(command.password()),
             command.nickname(),
-            command.phone());
+            command.phone(),
+            command.bankCode(),
+            accountCipher.encrypt(command.accountNo()),
+            command.accountHolder()
+    );
 
     // 2. 동시 가입으로 위 검사를 둘 다 통과한 경우 DB UNIQUE 제약이 막음 -> 409로 변환
     try {

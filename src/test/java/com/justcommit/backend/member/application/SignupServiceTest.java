@@ -6,6 +6,7 @@ import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.Role;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
+import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -38,6 +39,9 @@ class SignupServiceTest {
   @Mock
   private PasswordEncoder passwordEncoder;
 
+  @Mock
+  private AccountCipher accountCipher;
+
   @InjectMocks
   private SignupService signupService;
 
@@ -45,17 +49,21 @@ class SignupServiceTest {
   private static final String PASSWORD = "plant1234";
   private static final String NICKNAME = "떡볶이";
   private static final String PHONE = "01012345678";
+  private static final String BANK_CODE = "004";
+  private static final String ACCOUNT_NO = "12345678901234";
+  private static final String ACCOUNT_HOLDER = "홍길동";
 
   private SignupCommand command() {
-    return new SignupCommand(EMAIL, PASSWORD, NICKNAME, PHONE);
+    return new SignupCommand(EMAIL, PASSWORD, NICKNAME, PHONE, BANK_CODE, ACCOUNT_NO, ACCOUNT_HOLDER);
   }
 
   @Test
-  @DisplayName("가입 성공: 정규화한 이메일, 암호화한 비밀번호로 저장하고 인증 완료 기록 삭제")
+  @DisplayName("가입 성공: 정규화한 이메일, 암호화한 비밀번호·계좌번호로 저장하고 인증 완료 기록 삭제")
   void signup_success() {
     // given
     given(verificationStore.isVerified(EMAIL)).willReturn(true);
     given(passwordEncoder.encode(PASSWORD)).willReturn("encoded-password");
+    given(accountCipher.encrypt(ACCOUNT_NO)).willReturn("v1:encrypted-account");
     given(memberRepository.saveAndFlush(any(Member.class))).willAnswer(invocation -> {
       Member member = invocation.getArgument(0);
       ReflectionTestUtils.setField(member, "id", 1L); // DB가 id를 채워 주는 동작
@@ -64,7 +72,7 @@ class SignupServiceTest {
 
     // when: 앞뒤 공백·대문자가 섞인 이메일로 요청
     SignupResult result = signupService.signup(
-            new SignupCommand("  Test@Gmail.com ", PASSWORD, NICKNAME, PHONE));
+            new SignupCommand("  Test@Gmail.com ", PASSWORD, NICKNAME, PHONE, BANK_CODE, ACCOUNT_NO, ACCOUNT_HOLDER));
 
     // then: 응답
     assertThat(result.memberId()).isEqualTo(1L);
@@ -79,6 +87,12 @@ class SignupServiceTest {
     assertThat(saved.getRole()).isEqualTo(Role.MEMBER);
     assertThat(saved.getProvider()).isEqualTo(Provider.LOCAL);
     assertThat(saved.getStatus()).isEqualTo(MemberStatus.ACTIVE);
+
+    // then: 계좌는 암호문으로 저장 (원문 계좌번호는 저장되지 않음)
+    assertThat(saved.getBankCode()).isEqualTo(BANK_CODE);
+    assertThat(saved.getAccountNoEnc()).isEqualTo("v1:encrypted-account");
+    assertThat(saved.getAccountHolder()).isEqualTo(ACCOUNT_HOLDER);
+    assertThat(saved.getAccountUpdatedAt()).isNotNull();
 
     // then: 인증 완료 기록 삭제
     then(verificationStore).should().deleteVerified(EMAIL);
@@ -95,6 +109,7 @@ class SignupServiceTest {
             .isEqualTo(MemberErrorCode.EMAIL_NOT_VERIFIED);
 
     then(memberRepository).shouldHaveNoInteractions();
+    then(accountCipher).shouldHaveNoInteractions(); // 거부되는 요청은 암호화하지 않음
   }
 
   @Test

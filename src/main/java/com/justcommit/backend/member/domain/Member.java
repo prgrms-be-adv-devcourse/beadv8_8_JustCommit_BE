@@ -46,16 +46,17 @@ public class Member extends BaseTimeEntity  {
         @Column(name = "provider_id", length = 100)
         private String providerId; // 소셜 회원 식별값, 로컬 회원은 NULL
 
-        // 계좌 (가입 시 필수 — 후속 이슈에서 가입 API에 추가하면서 NOT NULL로 변경 예정)
-        @Column(length = 10)
+        // 계좌 (구매자 예치금 충전·환급, 판매자 정산에 공통 사용) — 가입 시 필수
+        @Column(name = "bank_code", nullable = false, length = 10)
         private String bankCode;
 
-        @Column(length = 255)
-        private String accountNoEnc; // AES 암호화한 계좌번호
+        @Column(name = "account_no_enc", nullable = false, length = 255)
+        private String accountNoEnc; // AES-256-GCM 암호문 ("v1:" + Base64)
 
-        @Column(length = 50)
+        @Column(name = "account_holder", nullable = false, length = 50) // 예금주
         private String accountHolder;
 
+        @Column(name = "account_updated_at", nullable = false)
         private LocalDateTime accountUpdatedAt;
 
         @Enumerated(EnumType.STRING)
@@ -63,7 +64,8 @@ public class Member extends BaseTimeEntity  {
         private MemberStatus status;
 
         // 이메일·비밀번호 회원가입 (권한 MEMBER, 상태 ACTIVE로 고정)
-        public static Member createLocal(String email, String encodedPassword, String nickname, String phone) {
+        public static Member createLocal(String email, String encodedPassword, String nickname, String phone,
+                                         String bankCode, String encryptedAccountNo, String accountHolder) {
                 Member member = new Member();
                 member.email = email;
                 member.password = encodedPassword;
@@ -72,6 +74,10 @@ public class Member extends BaseTimeEntity  {
                 member.role = Role.MEMBER;
                 member.provider = Provider.LOCAL;
                 member.status = MemberStatus.ACTIVE;
+                member.bankCode = bankCode;
+                member.accountNoEnc = encryptedAccountNo;
+                member.accountHolder = accountHolder;
+                member.accountUpdatedAt = LocalDateTime.now();
                 return member;
         }
 }
