@@ -1,6 +1,7 @@
 package com.justcommit.backend.market.order.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.cart.application.CartService;
 import com.justcommit.backend.market.cart.domain.CartItem;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
@@ -8,16 +9,20 @@ import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
+import com.justcommit.backend.market.order.infrastructure.OrderPaymentTtlStore;
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
 import com.justcommit.backend.product.ProductQuery;
 import com.justcommit.backend.product.ProductResult;
+import com.justcommit.backend.product.ProductUseCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -31,10 +36,13 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class OrderService {
 
+    private static final Duration PAYMENT_WINDOW = Duration.ofMinutes(10);
+
     private final OrdersRepository ordersRepository;
     private final CartService cartService;
     private final ProductQuery productQuery;
-    // TODO: 판매자별 배송비 정책을 연결한다.
+    private final ProductUseCase productUseCase;
+    private final OrderPaymentTtlStore paymentTtlStore;
 
     @Transactional
     public OrderCreateResponse create(Long memberId, CartOrderCreateRequest request) {
@@ -91,9 +99,31 @@ public class OrderService {
         order.addSellerOrders(sellerOrders);
 
         Orders saved = ordersRepository.saveAndFlush(order);
+
+        boolean isReserved = productUseCase.reserve(saved.getId(), productIds);
+
+        if (!isReserved) {
+            throw new BusinessException(OrderErrorCode.PRODUCT_UNAVAILABLE);
+        }
+
         cartService.removeSelectedItems(memberId, request.cartItemIds());
+        LocalDateTime expiresAt = saved.getCreatedAt().plus(PAYMENT_WINDOW);
+        paymentTtlStore.startAfterCommit(saved.getId(), expiresAt);
+        // TODO: Payment 모듈 공개 API가 준비되면 잔액 확인 및 결제를 연결한다.
+        // 현재는 충전 여부와 관계없이 결제대기 주문으로 예약한다.
         return new OrderCreateResponse(saved.getId(), saved.getOrderNo(), saved.getTotalAmount(),
-                saved.getItemCount(), saved.getCreatedAt());
+                saved.getItemCount(), saved.getCreatedAt(), saved.getStatus(), expiresAt);
+    }
+
+    @Transactional
+    public void expirePendingOrders() {
+        LocalDateTime cutoff = LocalDateTime.now().minus(PAYMENT_WINDOW);
+        for (Orders order : ordersRepository.findByStatusAndCreatedAtBefore(OrderStatus.PAYMENT_PENDING, cutoff)) {
+            order.expire();
+            ordersRepository.saveAndFlush(order);
+            productUseCase.release(order.getId()); // 이미 해제된 경우 false여도 만료 처리한다.
+        }
+        // TODO: 결제 API도 동일한 주문 잠금을 사용해 만료와 결제의 경합을 막는다.
     }
 
     private static String generateOrderNo() {

@@ -13,6 +13,6 @@ public record CartOrderCreateRequest(
         @NotBlank String recipientPhone,
         @NotBlank String zipcode,
         @NotBlank String address1,
-        @NotNull String address2
+        String address2
 ) {
 }

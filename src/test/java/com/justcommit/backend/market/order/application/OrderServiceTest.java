@@ -8,12 +8,14 @@ import com.justcommit.backend.market.cart.domain.Cart;
 import com.justcommit.backend.market.cart.domain.CartItem;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.domain.Orders;
+import com.justcommit.backend.market.order.infrastructure.OrderPaymentTtlStore;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
 import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.ProductQuery;
+import com.justcommit.backend.product.ProductUseCase;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -24,6 +26,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
+import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
@@ -31,6 +34,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -41,6 +46,8 @@ class OrderServiceTest {
     @Mock OrdersRepository ordersRepository;
     @Mock CartService cartService;
     @Mock ProductQuery productQuery;
+    @Mock ProductUseCase productUseCase;
+    @Mock OrderPaymentTtlStore paymentTtlStore;
     @InjectMocks OrderService orderService;
 
     @Test
@@ -63,7 +70,8 @@ class OrderServiceTest {
     void createsSingleItemOrderWithSnapshotsAndRemovesSelectedItem() {
         stubLookup(List.of(selected(1L, 101L, "10000")),
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
-        when(ordersRepository.saveAndFlush(any(Orders.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        stubSavedOrder();
+        stubReservationSuccess();
 
         OrderCreateResponse response = orderService.create(10L, request(1L));
 
@@ -94,7 +102,11 @@ class OrderServiceTest {
             });
         });
         assertThat(response.totalAmount()).isEqualByComparingTo("10000");
+        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        assertThat(response.expiresAt()).isEqualTo(response.createdAt().plusMinutes(10));
         verify(productQuery).getProducts(List.of(101L));
+        verify(productUseCase).reserve(99L, List.of(101L));
+        verify(paymentTtlStore).startAfterCommit(99L, response.expiresAt());
         verify(cartService).removeSelectedItems(10L, List.of(1L));
     }
 
@@ -105,7 +117,8 @@ class OrderServiceTest {
                 List.of(product(101L, 20L, "상품1", "10000", true),
                         product(102L, 30L, "상품2", "20000", true),
                         product(103L, 20L, "상품3", "5000", true)));
-        when(ordersRepository.saveAndFlush(any(Orders.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        stubSavedOrder();
+        stubReservationSuccess();
 
         OrderCreateResponse response = orderService.create(10L, request(1L, 2L, 3L));
 
@@ -127,7 +140,8 @@ class OrderServiceTest {
     void generatesDifferentOrderNumbersForSeparateOrders() {
         stubLookup(List.of(selected(1L, 101L, "10000")),
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
-        when(ordersRepository.saveAndFlush(any(Orders.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        stubSavedOrder();
+        stubReservationSuccess();
 
         OrderCreateResponse first = orderService.create(10L, request(1L));
         OrderCreateResponse second = orderService.create(10L, request(1L));
@@ -174,6 +188,49 @@ class OrderServiceTest {
                 .isInstanceOf(IllegalStateException.class);
 
         verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+    }
+
+    @Test
+    void stopsCheckoutWhenProductReservationFails() {
+        stubLookup(List.of(selected(1L, 101L, "10000")),
+                List.of(product(101L, 20L, "몬스테라", "10000", true)));
+        stubSavedOrder();
+
+        assertThatThrownBy(() -> orderService.create(10L, request(1L)))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.PRODUCT_UNAVAILABLE));
+
+        verify(productUseCase).reserve(99L, List.of(101L));
+        verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+        verify(paymentTtlStore, never()).startAfterCommit(any(), any());
+    }
+
+    @Test
+    void expiresPendingOrderAndReleasesItsProducts() {
+        Orders order = new Orders("ORD-test", 10L, "구매자", "010", "12345", "서울시", null, 1);
+        ReflectionTestUtils.setField(order, "id", 99L);
+        when(ordersRepository.findByStatusAndCreatedAtBefore(eq(OrderStatus.PAYMENT_PENDING), any()))
+                .thenReturn(List.of(order));
+        when(productUseCase.release(99L)).thenReturn(true);
+
+        orderService.expirePendingOrders();
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.EXPIRED);
+        verify(ordersRepository).saveAndFlush(order);
+        verify(productUseCase).release(99L);
+    }
+
+    private void stubSavedOrder() {
+        when(ordersRepository.saveAndFlush(any(Orders.class))).thenAnswer(invocation -> {
+            Orders order = invocation.getArgument(0);
+            ReflectionTestUtils.setField(order, "id", 99L);
+            ReflectionTestUtils.setField(order, "createdAt", LocalDateTime.of(2026, 10, 10, 12, 0));
+            return order;
+        });
+    }
+
+    private void stubReservationSuccess() {
+        when(productUseCase.reserve(eq(99L), anyList())).thenReturn(true);
     }
 
     private void assertRejected(OrderErrorCode expected, ProductResult product) {

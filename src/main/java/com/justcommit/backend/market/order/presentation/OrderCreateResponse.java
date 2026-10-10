@@ -1,5 +1,6 @@
 package com.justcommit.backend.market.order.presentation;
 
+import com.justcommit.backend.market.OrderStatus;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -8,6 +9,8 @@ public record OrderCreateResponse (
         String orderNo,
         BigDecimal totalAmount,
         Integer itemCount,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        OrderStatus status,
+        LocalDateTime expiresAt
 ) {
 }
