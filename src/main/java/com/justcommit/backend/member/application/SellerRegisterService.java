@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
+// 판매자 등록
 @Service
 @RequiredArgsConstructor
 public class SellerRegisterService {
@@ -18,10 +19,12 @@ public class SellerRegisterService {
   private final MemberRepository memberRepository;
   private final SellerRepository sellerRepository;
 
+  // 판매자 등록: 판매자 여부 확인 → 회원 조회 → 권한 변경 → 판매자 저장
   @Transactional
-  public void register(SellerRegisterCommand command) {
+  public SellerResult register(SellerRegisterCommand command) {
     Long memberId = command.memberId();
 
+    // 이미 판매자면 409
     if (sellerRepository.existsById(memberId)) {
       throw new BusinessException(MemberErrorCode.ALREADY_SELLER);
     }
@@ -29,13 +32,17 @@ public class SellerRegisterService {
     Member member = memberRepository.findById(memberId)
             .orElseThrow(() -> new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-    member.promoteToSeller(); // 변경 감지로 커밋 시 UPDATE
+    member.promoteToSeller(); // MEMBER → SELLER, ADMIN은 유지. 변경 감지로 커밋 시 UPDATE
 
+    // 동시 요청으로 위 검사를 둘 다 통과한 경우 PK 중복을 DB가 막음 -> 409로 변환
+    Seller seller;
     try {
-      sellerRepository.saveAndFlush(Seller.register(member, command.intro()));
+      seller = sellerRepository.saveAndFlush(Seller.register(member, command.intro()));
     } catch (DataIntegrityViolationException e) {
-      // 동시에 두 번 요청하면 둘 다 existsById를 통과할 수 있음 → PK 중복으로 막히면 같은 409
       throw new BusinessException(MemberErrorCode.ALREADY_SELLER);
     }
+
+    // sellerId = memberId (SELLER는 회원 id를 PK로 사용)
+    return new SellerResult(member.getId(), member.getNickname(), seller.getIntro(), seller.getCreatedAt());
   }
 }
