@@ -25,7 +25,10 @@ public enum MemberErrorCode implements ErrorCode {
   MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "회원을 찾을 수 없습니다."),
 
   // 배송지
-  ADDRESS_NOT_FOUND(HttpStatus.NOT_FOUND, "배송지를 찾을 수 없습니다.");
+  ADDRESS_NOT_FOUND(HttpStatus.NOT_FOUND, "배송지를 찾을 수 없습니다."),
+
+  // 판매자
+  ALREADY_SELLER(HttpStatus.CONFLICT, "이미 판매자로 등록된 회원입니다.");
 
   private final HttpStatus status;
   private final String message;

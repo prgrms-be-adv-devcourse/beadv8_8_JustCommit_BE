@@ -33,6 +33,8 @@ public final class MemberValidation {
   public static final int ADDRESS2_MAX_LENGTH = 100;
   public static final int ADDRESS_NAME_MAX_LENGTH = 20;
 
+  public static final int SELLER_INTRO_MAX_LENGTH = 500;
+
   private MemberValidation() {
   }
 }
