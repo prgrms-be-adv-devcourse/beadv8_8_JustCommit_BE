@@ -80,4 +80,11 @@ public class Member extends BaseTimeEntity  {
                 member.accountUpdatedAt = LocalDateTime.now();
                 return member;
         }
+
+        // 판매자 등록 시 권한 변경
+        public void promoteToSeller() {
+                if (this.role == Role.MEMBER) {
+                        this.role = Role.SELLER;
+                }
+        }
 }
