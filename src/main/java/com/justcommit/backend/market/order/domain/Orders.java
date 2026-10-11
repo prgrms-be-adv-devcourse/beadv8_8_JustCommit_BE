@@ -40,7 +40,7 @@ public class Orders extends BaseTimeEntity {
     @Column(nullable = false)
     private String shipAddress1;
 
-    @Column(nullable = false)
+    @Column
     private String shipAddress2;
 
     @Column(nullable = false)
@@ -70,5 +70,12 @@ public class Orders extends BaseTimeEntity {
 
     public void calculateTotalAmount() {
         this.totalAmount = this.sellerOrders.stream().map(o -> o.getTotalAmount().add(o.getShippingFee())).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    public void expire() {
+        if (status != OrderStatus.PAYMENT_PENDING) {
+            throw new IllegalStateException("결제대기 주문만 만료할 수 있습니다.");
+        }
+        status = OrderStatus.EXPIRED;
     }
 }

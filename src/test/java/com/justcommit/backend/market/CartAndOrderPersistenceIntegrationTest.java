@@ -6,6 +6,7 @@ import com.justcommit.backend.market.cart.domain.CartItem;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
+import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceException;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,22 @@ class CartAndOrderPersistenceIntegrationTest {
 
     @Autowired
     private EntityManager entityManager;
+
+    @Autowired
+    private OrdersRepository ordersRepository;
+
+    @Test
+    void findsPaymentPendingOrderByExpirationCutoffWithOptionalAddress2() {
+        Orders order = new Orders("ORD-optional-address", 101L, "홍길동", "010", "06236", "주소1", null, 1);
+        entityManager.persist(order);
+        entityManager.flush();
+
+        List<Orders> pending = ordersRepository.findByStatusAndCreatedAtBefore(
+                OrderStatus.PAYMENT_PENDING, LocalDateTime.now().plusMinutes(1));
+
+        assertThat(pending).extracting(Orders::getId).contains(order.getId());
+        assertThat(order.getShipAddress2()).isNull();
+    }
 
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
@@ -270,7 +287,6 @@ class CartAndOrderPersistenceIntegrationTest {
                 Arguments.of("recipientPhone", (Function<String, Orders>) orderNo -> new Orders(orderNo, 101L, "홍길동", null, "06236", "주소1", "주소2", 1)),
                 Arguments.of("zipcode", (Function<String, Orders>) orderNo -> new Orders(orderNo, 101L, "홍길동", "010", null, "주소1", "주소2", 1)),
                 Arguments.of("shipAddress1", (Function<String, Orders>) orderNo -> new Orders(orderNo, 101L, "홍길동", "010", "06236", null, "주소2", 1)),
-                Arguments.of("shipAddress2", (Function<String, Orders>) orderNo -> new Orders(orderNo, 101L, "홍길동", "010", "06236", "주소1", null, 1)),
                 Arguments.of("itemCount", (Function<String, Orders>) orderNo -> new Orders(orderNo, 101L, "홍길동", "010", "06236", "주소1", "주소2", null))
         );
     }
