@@ -36,7 +36,7 @@ public class Wallet extends BaseTimeEntity {
     public void debit(BigDecimal amount) {
         validateAmount(amount);
 
-        if (this.balance.compareTo(amount) < 0) {
+        if (!hasEnoughBalance(amount)) {
             throw new BusinessException(PaymentErrorCode.INSUFFICIENT_BALANCE);
         }
 
@@ -47,5 +47,9 @@ public class Wallet extends BaseTimeEntity {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(PaymentErrorCode.INVALID_AMOUNT);
         }
+    }
+
+    public boolean hasEnoughBalance(BigDecimal amount) {
+        return amount != null && this.balance.compareTo(amount) >= 0;
     }
 }
