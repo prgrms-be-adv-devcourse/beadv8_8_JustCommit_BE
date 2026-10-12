@@ -26,6 +26,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -40,6 +41,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ProductControllerTest {
 
     private static final Long SELLER_ID = 1L;
+    private static final String SELLER = "SELLER";
+    private static final String MEMBER = "MEMBER";
 
     // 등록 요청
     private static final String VALID_CREATE_BODY = """
@@ -55,15 +58,25 @@ class ProductControllerTest {
             }
             """;
 
+    // 등록 요청 (사진 없음, 필수 항목만)
+    private static final String NO_PICTURE_CREATE_BODY = """
+            {
+              "speciesId": 1,
+              "title": "몬스테라 분양합니다",
+              "description": "잘 자란 몬스테라입니다",
+              "price": 30000
+            }
+            """;
+
     @Mock
     private ProductService productService;
 
-    private MockMvc mockMvc;  // HTTP 요청을 흉내내서 Controller 호출
+    private MockMvc mockMvc;  // HTTP 요청을 흉내 내서 Controller 호출
 
-    //테스트 마다 새로운 MockMvc 생성
-    @BeforeEach // 테스트 직전 마다 실행
+    // 테스트마다 새로운 MockMvc 생성
+    @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new ProductController(productService)) //controller 하나만 등록
+        mockMvc = MockMvcBuilders.standaloneSetup(new ProductController(productService))   // Controller 하나만 등록
                 .setControllerAdvice(new GlobalExceptionHandler())
                 // @AuthenticationPrincipal AuthMember를 SecurityContext에서 꺼내 주는 처리기
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
@@ -76,11 +89,12 @@ class ProductControllerTest {
     }
 
     // 테스트에서 로그인 상태 만들기
-    private void loginAs(Long memberId) {
-        AuthMember authMember = new AuthMember(memberId, "SELLER");
+    private void loginAs(Long memberId, String role) {
+        AuthMember authMember = new AuthMember(memberId, role);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(authMember, null, List.of()));
     }
+
     // DetailResponse 가짜 응답 데이터
     private ProductDetailResponse detailResponse() {
         return new ProductDetailResponse(
@@ -96,7 +110,7 @@ class ProductControllerTest {
     @Test
     @DisplayName("상품을 등록하면 201과 등록된 상품 상세를 반환")
     void createProduct() throws Exception {
-        loginAs(SELLER_ID);
+        loginAs(SELLER_ID, SELLER);
         given(productService.createProduct(eq(SELLER_ID), any())).willReturn(detailResponse());
 
         mockMvc.perform(post("/api/v1/products")
@@ -110,11 +124,37 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.data.imageUrls[0]").value("https://example.com/a.jpg"));
     }
 
+    // 사진 없이 등록 -> 201
+    @Test
+    @DisplayName("사진 없이도 상품을 등록할 수 있음")
+    void createProductWithoutPictures() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+        given(productService.createProduct(eq(SELLER_ID), any())).willReturn(detailResponse());
+
+        mockMvc.perform(post("/api/v1/products")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(NO_PICTURE_CREATE_BODY))
+                .andExpect(status().isCreated());
+    }
+
+    // 판매자가 아닌 회원 -> 403
+    @Test
+    @DisplayName("판매자가 아닌 회원이 등록하면 403 NOT_SELLER")
+    void createProductByMember() throws Exception {
+        loginAs(SELLER_ID, MEMBER);
+
+        mockMvc.perform(post("/api/v1/products")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_CREATE_BODY))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("NOT_SELLER"));
+    }
+
     // 제목 공백 -> 400
     @Test
     @DisplayName("제목이 비어 있으면 400 INVALID_FIELD_ERROR")
     void createProductWithBlankTitle() throws Exception {
-        loginAs(SELLER_ID);
+        loginAs(SELLER_ID, SELLER);
         String body = VALID_CREATE_BODY.replace("\"몬스테라 분양합니다\"", "\"  \"");
 
         mockMvc.perform(post("/api/v1/products")
@@ -124,13 +164,14 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.code").value("INVALID_FIELD_ERROR"));
     }
 
-    // 사진이 없을 경우 -> 400
+    // 사진 11장 -> 400
     @Test
-    @DisplayName("사진이 없으면 400 INVALID_FIELD_ERROR")
-    void createProductWithoutPictures() throws Exception {
-        loginAs(SELLER_ID);
+    @DisplayName("사진이 10장을 넘으면 400 INVALID_FIELD_ERROR")
+    void createProductWithTooManyPictures() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+        String urls = String.join(",", Collections.nCopies(11, "\"https://example.com/a.jpg\""));
         String body = VALID_CREATE_BODY.replace(
-                "[\"https://example.com/a.jpg\", \"https://example.com/b.jpg\"]", "[]");
+                "[\"https://example.com/a.jpg\", \"https://example.com/b.jpg\"]", "[" + urls + "]");
 
         mockMvc.perform(post("/api/v1/products")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -143,7 +184,7 @@ class ProductControllerTest {
     @Test
     @DisplayName("금지 품종으로 등록하면 400 BANNED_SPECIES")
     void createProductWithBannedSpecies() throws Exception {
-        loginAs(SELLER_ID);
+        loginAs(SELLER_ID, SELLER);
         given(productService.createProduct(eq(SELLER_ID), any()))
                 .willThrow(new BusinessException(ProductErrorCode.BANNED_SPECIES));
 
@@ -158,7 +199,7 @@ class ProductControllerTest {
     @Test
     @DisplayName("없는 품종으로 등록하면 404 SPECIES_NOT_FOUND")
     void createProductWithUnknownSpecies() throws Exception {
-        loginAs(SELLER_ID);
+        loginAs(SELLER_ID, SELLER);
         given(productService.createProduct(eq(SELLER_ID), any()))
                 .willThrow(new BusinessException(ProductErrorCode.SPECIES_NOT_FOUND));
 
@@ -171,7 +212,6 @@ class ProductControllerTest {
 
     // ── 목록 ───────────────────────────────────────
 
-    // 목록 조회
     @Test
     @DisplayName("상품 목록을 조회하면 공통 응답 형식과 페이지 정보를 반환")
     void searchProducts() throws Exception {
@@ -212,7 +252,7 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.data.imageUrls.length()").value(2));
     }
 
-    // 없는 상품
+    // 없는 상품 -> 404
     @Test
     @DisplayName("없는 상품을 조회하면 404 PRODUCT_NOT_FOUND")
     void getProductDetailNotFound() throws Exception {

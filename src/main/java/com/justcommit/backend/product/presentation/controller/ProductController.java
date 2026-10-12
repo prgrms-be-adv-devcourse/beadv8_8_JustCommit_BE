@@ -1,10 +1,12 @@
 package com.justcommit.backend.product.presentation.controller;
 
 
+import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.response.ApiResponse;
 import com.justcommit.backend.common.response.PagingResponse;
 import com.justcommit.backend.common.security.AuthMember;
 import com.justcommit.backend.product.application.ProductService;
+import com.justcommit.backend.product.domain.exception.ProductErrorCode;
 import com.justcommit.backend.product.presentation.dto.ProductCreateRequest;
 import com.justcommit.backend.product.presentation.dto.ProductDetailResponse;
 import com.justcommit.backend.product.presentation.dto.ProductSearchRequest;
@@ -31,6 +33,12 @@ public class ProductController {
     public ApiResponse<ProductDetailResponse> createProduct(
             @AuthenticationPrincipal AuthMember authMember,
             @RequestBody @Valid  ProductCreateRequest request) {
+
+        // Seller, Admin 만 판매 가능
+        if(!"SELLER".equals(authMember.role()) && !"ADMIN".equals(authMember.role()))
+        {
+            throw new BusinessException(ProductErrorCode.NOT_SELLER);
+        }
 
         return ApiResponse.created("상품이 성공적으로 등록되었습니다.",
                 productService.createProduct(authMember.memberId(), request));

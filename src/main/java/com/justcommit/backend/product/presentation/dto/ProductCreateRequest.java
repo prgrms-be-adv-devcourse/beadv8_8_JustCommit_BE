@@ -13,6 +13,6 @@ public record ProductCreateRequest(
         @Positive Integer heightCm,
         @Size(max = 20) String potSize,
         @Size(max = 500) String growNote,
-        @NotEmpty @Size(max = 10) List<@NotBlank String> pictureUrls
+        @Size(max = 10) List<@NotBlank String> pictureUrls
         ) {
 }

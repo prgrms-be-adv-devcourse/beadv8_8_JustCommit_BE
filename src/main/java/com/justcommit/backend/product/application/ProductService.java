@@ -95,9 +95,11 @@ private final SpeciesRepository speciesRepository;
         Species species = speciesRepository.findById(request.speciesId())
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.SPECIES_NOT_FOUND));
 
+        List<String> pictureUrls = request.pictureUrls() == null ? List.of() : request.pictureUrls();
+
         Product product = Product.create(
                 species, sellerId, request.title(), request.description(), request.price(),
-                request.heightCm(), request.potSize(), request.growNote(), request.pictureUrls());
+                request.heightCm(), request.potSize(), request.growNote(), pictureUrls);
 
         return ProductDetailResponse.from(productRepository.save(product));
     }
