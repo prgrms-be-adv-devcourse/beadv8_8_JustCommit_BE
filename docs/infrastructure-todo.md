@@ -31,7 +31,7 @@ Rules:
 | `idem:{api}:{memberId}:{key}` | `PROCESSING` / result | 30 s while processing, 24 h when done |
 | `order:payment:ttl:{orderId}` | orderId | 30 min (payment wait time) |
 
-Undecided: where to store the OAuth2 `state` for Naver and Kakao login (cookie vs `auth:oauth2:state:{state}`, 5 min). The member owner is investigating.
+OAuth2 `state` for Naver and Kakao login is stored in a cookie, not Redis (HttpOnly, SameSite=Lax, short Max-Age), so social login does not depend on Redis. Make the cookie's `Secure` flag configurable per environment: a `Secure` cookie is not sent over plain HTTP, so keep it off while production runs on HTTP and turn it on once HTTPS is applied.
 
 - TODO: implement RedisTemplate use cases only with their owning domain module.
 - TODO: implement TTL expiration listeners only when the order-expiration workflow is specified.
