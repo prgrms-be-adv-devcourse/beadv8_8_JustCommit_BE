@@ -14,9 +14,15 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: true
+    defer-datasource-initialization: true #SQL 실행을 테이블 생성 뒤로 미룸
     properties:
       hibernate:
         format_sql: true
+  sql:
+    init:
+      mode: ${SQL_INIT_MODE:always}            # 로컬 실행 시 초기 데이터 적재 (SQL_INIT_MODE=never로 끌 수 있음)
+      data-locations: classpath:db/data/*.sql  # db/data 폴더의 SQL 파일 실행
+
 
 logging:
   level:
