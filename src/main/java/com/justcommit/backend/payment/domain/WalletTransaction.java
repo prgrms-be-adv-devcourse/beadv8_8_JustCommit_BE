@@ -60,4 +60,16 @@ public class WalletTransaction extends BaseTimeEntity {
                 wallet.getBalance()
         );
     }
+
+    public static WalletTransaction paymentOut(Wallet wallet, Long orderId, BigDecimal amount, LocalDateTime occurredAt) {
+        return new WalletTransaction(
+                wallet,
+                RefType.PAYMENT,
+                orderId,
+                occurredAt,
+                TransactionStatus.OUT,
+                amount,
+                wallet.getBalance()
+        );
+    }
 }
