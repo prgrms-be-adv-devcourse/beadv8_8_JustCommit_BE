@@ -33,6 +33,11 @@ public class RefreshTokenRedisStore {
     return Optional.ofNullable(memberId).map(Long::valueOf);
   }
 
+  // 로그아웃 시 삭제
+  public void delete(String refreshToken) {
+    redisTemplate.delete(key(refreshToken));
+  }
+
   private String key(String refreshToken) {
     return String.format(REFRESH_KEY, sha256(refreshToken));
   }

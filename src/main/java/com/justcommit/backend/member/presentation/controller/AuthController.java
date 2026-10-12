@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.Duration;
 
-// 인증 API (이메일 인증, 로그인, 재발급 → 이후 로그아웃도 여기에 추가)
+// 인증 API (이메일 인증, 로그인, 재발급, 로그아웃)
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
@@ -27,6 +27,7 @@ public class AuthController {
   private final EmailVerificationService emailVerificationService;
   private final LoginService loginService;
   private final TokenReissueService tokenReissueService;
+  private final LogoutService logoutService;
 
   @PostMapping("/email/send")
   public ApiResponse<EmailSendResponse> sendEmailCode(@Valid @RequestBody EmailSendRequest request) {
@@ -65,6 +66,19 @@ public class AuthController {
             .body(ApiResponse.ok("토큰이 재발급되었습니다.", TokenReissueResponse.from(result)));
   }
 
+  // 로그아웃: Refresh 토큰 폐기 + 쿠키 삭제 (Access 토큰 불필요)
+  // 쿠키가 없거나 이미 만료·삭제된 경우에도 200 (쿠키만 지움)
+  @PostMapping("/logout")
+  public ResponseEntity<ApiResponse<Void>> logout(
+          @CookieValue(name = REFRESH_TOKEN_COOKIE, required = false) String refreshToken) {
+    logoutService.logout(refreshToken);
+    ResponseCookie expiredCookie = refreshTokenCookie("", Duration.ZERO);
+
+    return ResponseEntity.ok()
+            .header(HttpHeaders.SET_COOKIE, expiredCookie.toString())
+            .body(ApiResponse.ok("로그아웃되었습니다."));
+  }
+
   // 재발송 제한: 공통 응답 형식 + Retry-After 헤더(남은 초)
   // 컨트롤러 안의 @ExceptionHandler는 GlobalExceptionHandler보다 먼저 적용됨
   @ExceptionHandler(EmailCooldownException.class)
@@ -74,12 +88,12 @@ public class AuthController {
             .body(ApiResponse.error(e.getErrorCode()));
   }
 
-  // Refresh 토큰 쿠키 (로그인·재발급 공통, 로그아웃은 maxAge 0으로 재사용 예정)
+  // Refresh 토큰 쿠키 (로그인·재발급·로그아웃 공통, 로그아웃은 빈 값 + maxAge 0으로 삭제)
   private ResponseCookie refreshTokenCookie(String value, Duration maxAge) {
     return ResponseCookie.from(REFRESH_TOKEN_COOKIE, value)
-            .httpOnly(true) // JS에서 읽을 수 없음 (XSS 탈취 방지)
-            .path(REFRESH_TOKEN_COOKIE_PATH)
-            .maxAge(maxAge) // Redis TTL과 같은 값
+            .httpOnly(true)
+            .path(REFRESH_TOKEN_COOKIE_PATH)  // 삭제할 때도 발급 때와 같은 Path여야 브라우저가 지움
+            .maxAge(maxAge) // 로그인 재발급은 Redis TTL과 같은 값/ 로그아웃은 0
             .sameSite("Lax")
             .build(); // HTTP 배포라 Secure는 넣지 않음
   }
