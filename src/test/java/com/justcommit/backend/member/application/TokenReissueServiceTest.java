@@ -78,7 +78,7 @@ class TokenReissueServiceTest {
     assertThat(result.accessToken()).isEqualTo("new-access-token");
     assertThat(result.expiresIn()).isEqualTo(1800);
     assertThat(result.refreshToken()).isEqualTo("new-refresh-token");
-    assertThat(result.refreshTokenTtl()).isEqualTo(Duration.ofHours(3));
+    assertThat(result.refreshTokenTtl()).isEqualTo(Duration.ofDays(1));
   }
 
   @ParameterizedTest
@@ -128,7 +128,7 @@ class TokenReissueServiceTest {
   @Test
   @DisplayName("TokenReissueResult를 문자열로 출력해도 토큰 원문은 보이지 않음")
   void tokenReissueResult_toStringHidesTokens() {
-    TokenReissueResult result = new TokenReissueResult("access-token", 1800, "refresh-token", Duration.ofHours(3));
+    TokenReissueResult result = new TokenReissueResult("access-token", 1800, "refresh-token", Duration.ofDays(1));
 
     assertThat(result.toString())
             .doesNotContain("access-token")

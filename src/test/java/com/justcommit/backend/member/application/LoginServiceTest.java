@@ -81,7 +81,7 @@ class LoginServiceTest {
 
     // then: 로그인한 회원 id로 발급한 Refresh 토큰과 TTL(3시간)을 응답에 담음
     assertThat(result.refreshToken()).isEqualTo("refresh-token");
-    assertThat(result.refreshTokenTtl()).isEqualTo(Duration.ofHours(3));
+    assertThat(result.refreshTokenTtl()).isEqualTo(Duration.ofDays(1));
   }
 
   @Test
@@ -117,7 +117,7 @@ class LoginServiceTest {
   @DisplayName("LoginResult를 문자열로 출력해도 토큰 원문은 보이지 않음")
   void loginResult_toStringHidesTokens() {
     LoginResult result = new LoginResult("access-token", 1800, "떡볶이", "MEMBER",
-            "refresh-token", Duration.ofHours(3));
+            "refresh-token", Duration.ofDays(1));
 
     assertThat(result.toString())
             .doesNotContain("access-token")

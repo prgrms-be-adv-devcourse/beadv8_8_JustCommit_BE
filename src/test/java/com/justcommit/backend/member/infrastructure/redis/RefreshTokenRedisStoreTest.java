@@ -38,7 +38,7 @@ class RefreshTokenRedisStoreTest {
   @DisplayName("저장: 토큰 원문이 아니라 SHA-256 해시를 키로, 회원 id를 값으로, TTL과 함께 저장")
   void save_hashedKey() {
     given(redisTemplate.opsForValue()).willReturn(valueOperations);
-    Duration ttl = Duration.ofHours(3);
+    Duration ttl = Duration.ofDays(1);
 
     store.save(RAW_TOKEN, 4L, ttl);
 

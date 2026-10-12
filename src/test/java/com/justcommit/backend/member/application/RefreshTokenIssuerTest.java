@@ -33,7 +33,7 @@ public class RefreshTokenIssuerTest {
 
     // then: 반환한 토큰을 그대로 저장
     ArgumentCaptor<String> tokenCaptor = ArgumentCaptor.forClass(String.class);
-    then(refreshTokenStore).should().save(tokenCaptor.capture(), eq(MEMBER_ID), eq(Duration.ofHours(3)));
+    then(refreshTokenStore).should().save(tokenCaptor.capture(), eq(MEMBER_ID), eq(Duration.ofDays(1)));
     assertThat(tokenCaptor.getValue()).isEqualTo(refreshToken);
 
     // then: 32바이트 랜덤 → URL 안전 Base64(패딩 없음) 43자
