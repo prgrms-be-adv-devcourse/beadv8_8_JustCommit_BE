@@ -1,4 +1,11 @@
 spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          kakao:
+            client-id: test-kakao-client-id
+            client-secret: test-kakao-client-secret
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:justcommit_test}
     username: ${DB_USERNAME:justcommit}
