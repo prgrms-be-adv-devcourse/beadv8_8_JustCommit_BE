@@ -75,6 +75,9 @@ custom:
     toss:
       secret-key: ${TOSS_SECRET_KEY:}
       base-url: https://api.tosspayments.com
+  cookie:
+    # 쿠키 Secure 속성. 로컬·운영 HTTP는 false, 운영 HTTPS 적용 시 COOKIE_SECURE=true
+    secure: ${COOKIE_SECURE:false}
       
 # 환급 계좌번호 AES-256-GCM 암호화 키 (32바이트, Base64). 운영은 환경변수로 주입
 account:
