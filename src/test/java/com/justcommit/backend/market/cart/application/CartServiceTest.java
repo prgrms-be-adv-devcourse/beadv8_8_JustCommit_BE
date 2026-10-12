@@ -223,6 +223,34 @@ class CartServiceTest {
         verify(cartItemRepository, never()).deleteAll(any());
     }
 
+    @Test
+    void restoresExpiredOrderItemAtItsOriginalPrice() {
+        Cart cart = new Cart(10L);
+        when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
+
+        cartService.restoreItem(10L, 101L, new BigDecimal("10000"));
+
+        assertThat(cart.getItems()).singleElement().satisfies(item -> {
+            assertThat(item.getProductId()).isEqualTo(101L);
+            assertThat(item.getPrice()).isEqualByComparingTo("10000");
+            verify(cartItemRepository).save(item);
+        });
+        verify(productQuery, never()).getProduct(any());
+    }
+
+    @Test
+    void skipsAlreadyRestoredProduct() {
+        Cart cart = new Cart(10L);
+        addItem(cart, 1L, 101L, "12000");
+        when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
+
+        cartService.restoreItem(10L, 101L, new BigDecimal("10000"));
+
+        assertThat(cart.getItems()).hasSize(1);
+        assertThat(cart.getItems().getFirst().getPrice()).isEqualByComparingTo("12000");
+        verify(cartItemRepository, never()).save(any());
+    }
+
     private static CartItem addItem(Cart cart, long cartItemId, long productId, String price) {
         CartItem item = new CartItem(cart, productId, new BigDecimal(price));
         ReflectionTestUtils.setField(item, "id", cartItemId);

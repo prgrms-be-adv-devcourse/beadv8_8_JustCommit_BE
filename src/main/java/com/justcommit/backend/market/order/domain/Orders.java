@@ -78,4 +78,11 @@ public class Orders extends BaseTimeEntity {
         }
         status = OrderStatus.EXPIRED;
     }
+
+    public void paid() {
+        if (status != OrderStatus.PAYMENT_PENDING) {
+            throw new IllegalStateException("결제대기 주문만 결제할 수 있습니다.");
+        }
+        status = OrderStatus.PAID;
+    }
 }
