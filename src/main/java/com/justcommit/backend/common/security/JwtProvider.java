@@ -18,6 +18,7 @@ public class JwtProvider {
   private static final String CLAIM_TYPE = "type";
   private static final String CLAIM_ROLE = "role";
   private static final String CLAIM_PROVIDER = "provider";
+  private static final String CLAIM_EMAIL = "email";
 
   private final JwtProperties properties;
   private final SecretKey key;
@@ -44,11 +45,12 @@ public class JwtProvider {
 
   // 소셜 로그인 신규 회원에게 SignupToken 발급
   // 추가정보 입력 API에서만 사용 가능
-  public String createSignupToken(String provider, String providerId) {
+  public String createSignupToken(String provider, String providerId, String email) {
     return Jwts.builder()
             .subject(provider + ":" + providerId)
             .claim(CLAIM_TYPE, TokenType.SIGNUP.name())
             .claim(CLAIM_PROVIDER, provider)
+            .claim(CLAIM_EMAIL, email)
             .issuedAt(Date.from(Instant.now()))
             .expiration(expiresAfter(properties.signupTokenExpiration()))
             .signWith(key, Jwts.SIG.HS256)
@@ -70,7 +72,8 @@ public class JwtProvider {
     Claims claims = parse(token, TokenType.SIGNUP);
     String provider = claims.get(CLAIM_PROVIDER, String.class);
     String providerId = claims.getSubject().substring(provider.length() + 1);
-    return new SignupClaims(provider, providerId);
+    String email = claims.get(CLAIM_EMAIL, String.class);
+    return new SignupClaims(provider, providerId, email);
   }
 
   // 토큰 공통 검증, 서명-> 만료-> 타입
