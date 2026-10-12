@@ -72,4 +72,21 @@ public class WalletTransaction extends BaseTimeEntity {
                 wallet.getBalance()
         );
     }
+
+    public static WalletTransaction settlementIn(
+            Wallet wallet,
+            Long settlementId,
+            BigDecimal amount,
+            LocalDateTime occurredAt
+    ) {
+        return new WalletTransaction(
+                wallet,
+                RefType.SETTLEMENT,
+                settlementId,
+                occurredAt,
+                TransactionStatus.IN,
+                amount,
+                wallet.getBalance()
+        );
+    }
 }

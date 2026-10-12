@@ -1,6 +1,7 @@
 package com.justcommit.backend.settlement.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.payment.PaymentUseCase;
 import com.justcommit.backend.settlement.SettlementResult;
 import com.justcommit.backend.settlement.domain.Settlement;
 import com.justcommit.backend.settlement.infrastructure.repository.SettlementRepository;
@@ -16,7 +17,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -29,7 +30,9 @@ class SettlementServiceTest {
     private static final Long SELLER_ID = 10L;
 
     @Mock SettlementRepository settlementRepository;
+    @Mock PaymentUseCase paymentUseCase;
     @InjectMocks SettlementService settlementService;
+
 
     @Test
     void createsSettlementWhenNotSettledYet() {
@@ -45,6 +48,8 @@ class SettlementServiceTest {
         assertThat(result.getPayoutAmount()).isEqualByComparingTo("28500");
         assertThat(result.getSettledAt()).isNotNull();
         verify(settlementRepository).save(any(Settlement.class));
+        verify(paymentUseCase).depositSettlement(
+                any(), eq(SELLER_ID), argThat(amount -> amount.compareTo(new BigDecimal("28500")) == 0));
     }
 
     @Test
@@ -60,19 +65,20 @@ class SettlementServiceTest {
         assertThat(result.getPayoutAmount()).isEqualByComparingTo("28500");
         assertThat(result.getSettledAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 15, 0));
         verify(settlementRepository, never()).save(any());
+        verify(paymentUseCase, never()).depositSettlement(any(), any(), any());
     }
 
     @Test
     void rejectsNullSellerOrderId() {
         assertThatThrownBy(() -> settlementService.settle(null, SELLER_ID, new BigDecimal("30000")))
                 .isInstanceOf(BusinessException.class);
-        verifyNoInteractions(settlementRepository);
+        verifyNoInteractions(settlementRepository, paymentUseCase);
     }
 
     @Test
     void rejectsNullSellerId() {
         assertThatThrownBy(() -> settlementService.settle(SELLER_ORDER_ID, null, new BigDecimal("30000")))
                 .isInstanceOf(BusinessException.class);
-        verifyNoInteractions(settlementRepository);
+        verifyNoInteractions(settlementRepository, paymentUseCase);
     }
 }
