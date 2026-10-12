@@ -36,18 +36,19 @@ class JwtProviderTest {
   @Test
   @DisplayName("Signup 토큰을 발급하고 검증하면 provider와 providerId를 꺼낼 수 있음")
   void createAndParseSignupToken() {
-    String token = jwtProvider.createSignupToken("kakao", "12345");
+    String token = jwtProvider.createSignupToken("kakao", "12345", "user@kakao.com");
 
     SignupClaims claims = jwtProvider.parseSignupToken(token);
 
     assertThat(claims.provider()).isEqualTo("kakao");
     assertThat(claims.providerId()).isEqualTo("12345");
+    assertThat(claims.email()).isEqualTo("user@kakao.com");
   }
 
   @Test
   @DisplayName("Signup토큰을 Access토큰으로 검증하면 INVALID")
   void signupTokenCannotBeUsedAsAccessToken() {
-    String signupToken = jwtProvider.createSignupToken("kakao", "12345");
+    String signupToken = jwtProvider.createSignupToken("kakao", "12345", "user@kakao.com");
 
     assertThatThrownBy(() -> jwtProvider.parseAccessToken(signupToken))
             .isInstanceOf(TokenException.class)
