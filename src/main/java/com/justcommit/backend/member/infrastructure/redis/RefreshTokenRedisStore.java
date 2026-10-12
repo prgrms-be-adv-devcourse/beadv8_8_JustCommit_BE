@@ -9,6 +9,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.HexFormat;
+import java.util.Optional;
 
 // Refresh 토큰 Redis 관리 (원문은 저장X, SHA-256 해시를 키로 사용)
 @Component
@@ -23,6 +24,13 @@ public class RefreshTokenRedisStore {
   // 로그인 시 저장
   public void save(String refreshToken, Long memberId, Duration ttl) {
     redisTemplate.opsForValue().set(key(refreshToken), String.valueOf(memberId), ttl);
+  }
+
+  // 재발급 시 조회와 삭제를 한 번에 처리 (GETDEL)
+  // 따로 조회 → 삭제하면 동시에 들어온 두 요청이 둘 다 통과할 수 있음 → 원자 처리로 한 번만 성공
+  public Optional<Long> findAndDelete(String refreshToken) {
+    String memberId = redisTemplate.opsForValue().getAndDelete(key(refreshToken));
+    return Optional.ofNullable(memberId).map(Long::valueOf);
   }
 
   private String key(String refreshToken) {

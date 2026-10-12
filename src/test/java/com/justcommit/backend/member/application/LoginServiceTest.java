@@ -4,13 +4,11 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.security.JwtProvider;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
-import com.justcommit.backend.member.infrastructure.redis.RefreshTokenRedisStore;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -24,7 +22,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
@@ -42,7 +39,7 @@ class LoginServiceTest {
   private JwtProvider jwtProvider;
 
   @Mock
-  private RefreshTokenRedisStore refreshTokenStore;
+  private RefreshTokenIssuer refreshTokenIssuer;
 
   @InjectMocks
   private LoginService loginService;
@@ -65,16 +62,13 @@ class LoginServiceTest {
     return member;
   }
 
-  private void givenValidLogin() {
+  @Test
+  @DisplayName("로그인 성공: 정규화한 이메일로 조회하고 Access토큰과 Refresh토큰을 발급")
+  void login_success() {
     given(memberRepository.findByEmail(EMAIL)).willReturn(Optional.of(member()));
     given(passwordEncoder.matches(PASSWORD, ENCODED_PASSWORD)).willReturn(true);
     given(jwtProvider.createAccessToken(MEMBER_ID, "MEMBER")).willReturn("access-token");
-  }
-
-  @Test
-  @DisplayName("로그인 성공: 정규화한 이메일로 조회하고 Access토큰과 Refresh토큰(Redis 저장)을 발급")
-  void login_success() {
-    givenValidLogin();
+    given(refreshTokenIssuer.issue(MEMBER_ID)).willReturn("refresh-token");
 
     // when: 앞뒤 공백·대문자가 섞인 이메일로 요청
     LoginResult result = loginService.login(new LoginCommand("  Test@Gmail.com ", PASSWORD));
@@ -84,26 +78,10 @@ class LoginServiceTest {
     assertThat(result.expiresIn()).isEqualTo(1800);
     assertThat(result.nickname()).isEqualTo("떡볶이");
     assertThat(result.role()).isEqualTo("MEMBER");
+
+    // then: 로그인한 회원 id로 발급한 Refresh 토큰과 TTL(3시간)을 응답에 담음
+    assertThat(result.refreshToken()).isEqualTo("refresh-token");
     assertThat(result.refreshTokenTtl()).isEqualTo(Duration.ofHours(3));
-
-    // then: 응답으로 내려준 Refresh 토큰을 그대로 회원 id·3시간으로 Redis에 저장
-    ArgumentCaptor<String> tokenCaptor = ArgumentCaptor.forClass(String.class);
-    then(refreshTokenStore).should().save(tokenCaptor.capture(), eq(MEMBER_ID), eq(Duration.ofHours(3)));
-    assertThat(tokenCaptor.getValue()).isEqualTo(result.refreshToken());
-
-    // then: 32바이트 랜덤 → URL 안전 Base64(패딩 없음) 43자
-    assertThat(result.refreshToken()).matches("^[A-Za-z0-9_-]{43}$");
-  }
-
-  @Test
-  @DisplayName("로그인할 때마다 서로 다른 Refresh토큰을 발급")
-  void login_issuesDifferentRefreshTokens() {
-    givenValidLogin();
-
-    LoginResult first = loginService.login(new LoginCommand(EMAIL, PASSWORD));
-    LoginResult second = loginService.login(new LoginCommand(EMAIL, PASSWORD));
-
-    assertThat(first.refreshToken()).isNotEqualTo(second.refreshToken());
   }
 
   @Test
@@ -117,7 +95,7 @@ class LoginServiceTest {
             .isEqualTo(MemberErrorCode.LOGIN_FAILED);
 
     then(jwtProvider).shouldHaveNoInteractions();
-    then(refreshTokenStore).shouldHaveNoInteractions();
+    then(refreshTokenIssuer).shouldHaveNoInteractions();
   }
 
   @Test
@@ -132,7 +110,7 @@ class LoginServiceTest {
             .isEqualTo(MemberErrorCode.LOGIN_FAILED);
 
     then(jwtProvider).should(never()).createAccessToken(anyLong(), anyString());
-    then(refreshTokenStore).shouldHaveNoInteractions();
+    then(refreshTokenIssuer).shouldHaveNoInteractions();
   }
 
   @Test
