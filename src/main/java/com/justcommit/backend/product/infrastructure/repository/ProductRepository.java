@@ -13,7 +13,7 @@ import java.util.Optional;
 public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpecificationExecutor<Product> {
 
     // 판매 중이고 숨김이 아닌 상품만 이 주문으로 예약
-    @Modifying(clearAutomatically = true)
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             UPDATE Product p
             SET p.status = com.justcommit.backend.product.ProductStatus.PAYMENT_PENDING,
@@ -26,7 +26,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     int reserve(@Param("orderId") Long orderId, @Param("productIds") List<Long> productIds);
 
     // 이 주문이 예약한 상품만 판매 중으로 되돌림
-    @Modifying(clearAutomatically = true)
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             UPDATE Product p
             SET p.status = com.justcommit.backend.product.ProductStatus.ACTIVE,
@@ -38,7 +38,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     int release(@Param("orderId") Long orderId);
 
     // 이 주문이 예약한 상품만 판매 완료로
-    @Modifying(clearAutomatically = true)
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             UPDATE Product p
             SET p.status = com.justcommit.backend.product.ProductStatus.SOLD_OUT,

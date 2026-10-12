@@ -55,6 +55,7 @@ class OrderServiceTest {
     @Mock OrderPaymentTtlStore paymentTtlStore;
     @Mock PaymentUseCase paymentUseCase;
     @InjectMocks OrderService orderService;
+    private Orders savedOrder;
 
     @Test
     void stopsBeforeProductLookupWhenCartSelectionIsInvalid() {
@@ -241,6 +242,7 @@ class OrderServiceTest {
         stubReservationSuccess();
         when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentResult.paid(money("0")));
         when(productUseCase.markSoldOut(99L)).thenReturn(true);
+        when(ordersRepository.findById(99L)).thenAnswer(ignored -> Optional.of(savedOrder));
 
         OrderCreateResponse response = orderService.create(10L, request(1L));
 
@@ -257,6 +259,7 @@ class OrderServiceTest {
         when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
         when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentResult.paid(money("0")));
         when(productUseCase.markSoldOut(99L)).thenReturn(true);
+        when(ordersRepository.findById(99L)).thenReturn(Optional.of(order));
 
         OrderCreateResponse response = orderService.repayment(10L, 99L);
 
@@ -334,6 +337,7 @@ class OrderServiceTest {
             Orders order = invocation.getArgument(0);
             ReflectionTestUtils.setField(order, "id", 99L);
             ReflectionTestUtils.setField(order, "createdAt", LocalDateTime.of(2026, 10, 10, 12, 0));
+            savedOrder = order;
             return order;
         });
     }

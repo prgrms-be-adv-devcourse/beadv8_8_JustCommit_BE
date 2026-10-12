@@ -8,6 +8,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionSynchronization;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -46,5 +47,32 @@ class OrderPaymentTtlStoreTest {
         TransactionSynchronizationManager.getSynchronizations().getFirst().afterCommit();
 
         verify(valueOperations).set(eq("order:payment:ttl:99"), eq("1"), any(Duration.class));
+    }
+
+    @Test
+    void doesNotDeleteTtlBeforeCommit() {
+        TransactionSynchronizationManager.initSynchronization();
+        OrderPaymentTtlStore store = new OrderPaymentTtlStore(redisTemplate);
+
+        store.deleteAfterCommit(99L);
+
+        verify(redisTemplate, never()).delete(any(String.class));
+        assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+
+        TransactionSynchronizationManager.getSynchronizations().getFirst().afterCommit();
+
+        verify(redisTemplate).delete("order:payment:ttl:99");
+    }
+
+    @Test
+    void doesNotDeleteTtlWhenTransactionRollsBack() {
+        TransactionSynchronizationManager.initSynchronization();
+        OrderPaymentTtlStore store = new OrderPaymentTtlStore(redisTemplate);
+
+        store.deleteAfterCommit(99L);
+        TransactionSynchronizationManager.getSynchronizations().getFirst()
+                .afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+
+        verify(redisTemplate, never()).delete(any(String.class));
     }
 }
