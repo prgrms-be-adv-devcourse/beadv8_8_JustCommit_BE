@@ -5,7 +5,7 @@ import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
 import java.util.List;
 
-public record ProductCreateRequest(
+public record ProductRequest(
         @NotNull Long speciesId,
         @NotBlank @Size(max = 100) String title,
         @NotNull String description,

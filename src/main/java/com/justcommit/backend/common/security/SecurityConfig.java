@@ -60,7 +60,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/checkNickname").permitAll()
                         .requestMatchers("/api/v1/users/me").authenticated()
                         .requestMatchers("/api/v1/cart", "/api/v1/cart/**").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/products").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/products", "/api/v1/products/**").permitAll()
+                        .requestMatchers("/api/v1/products", "/api/v1/products/**").authenticated()
                         // TODO: 로그인 API 머지 후 anyRequest().authenticated()로 전환
                         // (로그인 수단이 없는 동안 다른 모듈 API 개발을 막지 않기 위해 임시 허용)
                         .anyRequest().permitAll())
