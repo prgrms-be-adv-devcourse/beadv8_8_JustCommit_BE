@@ -8,10 +8,13 @@ import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
-import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.infrastructure.OrderPaymentTtlStore;
+import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
+import com.justcommit.backend.payment.PaymentResult;
+import com.justcommit.backend.payment.PaymentStatus;
+import com.justcommit.backend.payment.PaymentUseCase;
 import com.justcommit.backend.product.ProductQuery;
 import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.product.ProductUseCase;
@@ -32,6 +35,8 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static com.justcommit.backend.market.order.domain.OrderErrorCode.CHECKOUT_DATA_MISMATCH;
+
 @Service
 @RequiredArgsConstructor
 public class OrderService {
@@ -43,6 +48,7 @@ public class OrderService {
     private final ProductQuery productQuery;
     private final ProductUseCase productUseCase;
     private final OrderPaymentTtlStore paymentTtlStore;
+    private final PaymentUseCase paymentUseCase;
 
     @Transactional
     public OrderCreateResponse create(Long memberId, CartOrderCreateRequest request) {
@@ -50,14 +56,14 @@ public class OrderService {
         List<Long> productIds = selectedItems.stream().map(CartItem::getProductId).toList();
         List<ProductResult> products = productQuery.getProducts(productIds);
         if (products == null) {
-            throw new BusinessException(OrderErrorCode.CHECKOUT_DATA_MISMATCH);
+            throw new BusinessException(CHECKOUT_DATA_MISMATCH);
         }
 
         Map<Long, ProductResult> productById;
         try {
             productById = products.stream().collect(Collectors.toMap(ProductResult::productId, Function.identity()));
         } catch (IllegalStateException | NullPointerException exception) {
-            throw new BusinessException(OrderErrorCode.CHECKOUT_DATA_MISMATCH);
+            throw new BusinessException(CHECKOUT_DATA_MISMATCH);
         }
 
         Map<Long, List<ProductResult>> productsBySeller = new LinkedHashMap<>();
@@ -65,7 +71,7 @@ public class OrderService {
             ProductResult product = productById.get(selected.getProductId());
             if (product == null || product.sellerId() == null || product.title() == null || product.title().isBlank()
                     || product.price() == null || product.price().signum() < 0) {
-                throw new BusinessException(OrderErrorCode.CHECKOUT_DATA_MISMATCH);
+                throw new BusinessException(CHECKOUT_DATA_MISMATCH);
             }
             if (!product.isPurchasable()) {
                 throw new BusinessException(OrderErrorCode.PRODUCT_UNAVAILABLE);
@@ -79,7 +85,7 @@ public class OrderService {
             productsBySeller.computeIfAbsent(product.sellerId(), ignored -> new ArrayList<>()).add(product);
         }
         if (productById.size() != selectedItems.size()) {
-            throw new BusinessException(OrderErrorCode.CHECKOUT_DATA_MISMATCH);
+            throw new BusinessException(CHECKOUT_DATA_MISMATCH);
         }
 
         String orderNo = generateOrderNo();
@@ -92,27 +98,75 @@ public class OrderService {
             sellerOrder.addItems(sellerProducts.stream()
                     .map(product -> new OrdersItem(sellerOrder, product.productId(), product.title(), product.price()))
                     .toList());
-            // TODO: 배송비 정책이 정해지면 판매자별 배송비를 계산해 설정한다.
-            sellerOrder.setShippingFee(BigDecimal.ZERO);
+            // TODO: 배송비 정책이 정해지면 판매자별 배송비를 계산해 설정한다. 세미에서는 기본배송비 삼천원
+            sellerOrder.setShippingFee(BigDecimal.valueOf(3_000));
             sellerOrders.add(sellerOrder);
         });
         order.addSellerOrders(sellerOrders);
 
         Orders saved = ordersRepository.saveAndFlush(order);
 
-        boolean isReserved = productUseCase.reserve(saved.getId(), productIds);
-
-        if (!isReserved) {
+        if (!productUseCase.reserve(saved.getId(), productIds)) {
             throw new BusinessException(OrderErrorCode.PRODUCT_UNAVAILABLE);
         }
 
-        cartService.removeSelectedItems(memberId, request.cartItemIds());
-        LocalDateTime expiresAt = saved.getCreatedAt().plus(PAYMENT_WINDOW);
-        paymentTtlStore.startAfterCommit(saved.getId(), expiresAt);
-        // TODO: Payment 모듈 공개 API가 준비되면 잔액 확인 및 결제를 연결한다.
-        // 현재는 충전 여부와 관계없이 결제대기 주문으로 예약한다.
+        LocalDateTime expiresAt = null;
+        PaymentResult paymentResult = paymentUseCase.pay(saved.getId(), memberId, saved.getTotalAmount());
+        if (paymentResult.status() == PaymentStatus.WALLET_NOT_FOUND) {
+            throw new BusinessException(OrderErrorCode.WALLET_NOT_FOUND);
+        }
+        if (paymentResult.isPaid()) {
+            orderPayment(saved);
+        } else {
+            expiresAt = saved.getCreatedAt().plus(PAYMENT_WINDOW);
+            paymentTtlStore.startAfterCommit(saved.getId(), expiresAt);
+        }
+
+        cartService.removeSelectedItems(memberId, request.cartItemIds()); //이후 다시담기
+
         return new OrderCreateResponse(saved.getId(), saved.getOrderNo(), saved.getTotalAmount(),
                 saved.getItemCount(), saved.getCreatedAt(), saved.getStatus(), expiresAt);
+    }
+
+    @Transactional
+    public OrderCreateResponse repayment(Long memberId, Long orderId) {
+        Orders order = ordersRepository.findLockedById(orderId)
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+        if (!order.getBuyerId().equals(memberId)) {
+            throw new BusinessException(OrderErrorCode.ORDER_NOT_FOUND);
+        }
+        if (order.getStatus() == OrderStatus.PAID) {
+            return toResponse(order, null);
+        }
+        if (order.getStatus() != OrderStatus.PAYMENT_PENDING) {
+            throw new BusinessException(OrderErrorCode.ORDER_NOT_PAYABLE);
+        }
+        LocalDateTime expiresAt = order.getCreatedAt().plus(PAYMENT_WINDOW);
+        if (!LocalDateTime.now().isBefore(expiresAt)) {
+            throw new BusinessException(OrderErrorCode.PAYMENT_WINDOW_EXPIRED);
+        }
+
+        PaymentResult paymentResult = paymentUseCase.pay(orderId, memberId, order.getTotalAmount());
+        if (paymentResult.status() == PaymentStatus.WALLET_NOT_FOUND) {
+            throw new BusinessException(OrderErrorCode.WALLET_NOT_FOUND);
+        }
+        if (paymentResult.isPaid()) {
+            orderPayment(order);
+            return toResponse(order, null);
+        }
+        return toResponse(order, expiresAt);
+    }
+
+    private void orderPayment(Orders order) {
+        if (!productUseCase.markSoldOut(order.getId())) {
+            throw new BusinessException(OrderErrorCode.PRODUCT_UNAVAILABLE);
+        }
+        order.paid();
+    }
+
+    private OrderCreateResponse toResponse(Orders order, LocalDateTime expiresAt) {
+        return new OrderCreateResponse(order.getId(), order.getOrderNo(), order.getTotalAmount(),
+                order.getItemCount(), order.getCreatedAt(), order.getStatus(), expiresAt);
     }
 
     @Transactional
@@ -122,8 +176,10 @@ public class OrderService {
             order.expire();
             ordersRepository.saveAndFlush(order);
             productUseCase.release(order.getId()); // 이미 해제된 경우 false여도 만료 처리한다.
+            order.getSellerOrders().stream()
+                    .flatMap(sellerOrder -> sellerOrder.getItems().stream())
+                    .forEach(item -> cartService.restoreItem(order.getBuyerId(), item.getProductId(), item.getPrice()));
         }
-        // TODO: 결제 API도 동일한 주문 잠금을 사용해 만료와 결제의 경합을 막는다.
     }
 
     private static String generateOrderNo() {
@@ -134,4 +190,5 @@ public class OrderService {
                 .array();
         return "ORD-" + Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
+
 }
