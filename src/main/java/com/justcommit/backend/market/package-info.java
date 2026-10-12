@@ -9,7 +9,9 @@
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Market",
-        allowedDependencies = {"common::entity", "common::exception", "product", "common::security",
+        allowedDependencies = {
+                "common::entity", "common::exception", "common::response", "common::request", "common::security",
+                "product", "payment",
                 "member"
         }
 )

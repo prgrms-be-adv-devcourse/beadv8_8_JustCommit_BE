@@ -3,6 +3,8 @@ package com.justcommit.backend.common.security;
 import com.justcommit.backend.common.security.handler.JwtAccessDeniedHandler;
 import com.justcommit.backend.common.security.handler.JwtAuthenticationEntryPoint;
 import com.justcommit.backend.common.security.jwt.JwtAuthenticationFilter;
+import com.justcommit.backend.common.security.oauth2.CookieOAuth2AuthorizationRequestRepository;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -13,6 +15,8 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AuthenticationFailureHandler;
+import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 // JWT 기반 인증·인가 설정
@@ -20,7 +24,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableWebSecurity
 public class SecurityConfig {
 
-    // 인증 없이 접근 가능한 경로 (설계 문서 6. permitAll 목록)
+    // 인증 없이 접근 가능한 경로 (permitAll 목록)
     private static final String[] PUBLIC_PATHS = {
             "/actuator/health/**",
             "/swagger-ui/**",
@@ -32,9 +36,20 @@ public class SecurityConfig {
     };
 
     private final JwtProvider jwtProvider;
+    private final CookieOAuth2AuthorizationRequestRepository authorizationRequestRepository;
 
-    public SecurityConfig(JwtProvider jwtProvider) {
+    // 소셜 로그인 성공, 실패 핸들러. member 모듈에서 빈으로 등록하면 연결됨 (없으면 Spring 기본 동작)
+    private final ObjectProvider<AuthenticationSuccessHandler> oauth2SuccessHandler;
+    private final ObjectProvider<AuthenticationFailureHandler> oauth2FailureHandler;
+
+    public SecurityConfig(JwtProvider jwtProvider,
+                          CookieOAuth2AuthorizationRequestRepository authorizationRequestRepository,
+                          ObjectProvider<AuthenticationSuccessHandler> oauth2SuccessHandler,
+                          ObjectProvider<AuthenticationFailureHandler> oauth2FailureHandler) {
         this.jwtProvider = jwtProvider;
+        this.authorizationRequestRepository = authorizationRequestRepository;
+        this.oauth2SuccessHandler = oauth2SuccessHandler;
+        this.oauth2FailureHandler = oauth2FailureHandler;
     }
 
     @Bean
@@ -60,9 +75,21 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/checkNickname").permitAll()
                         .requestMatchers("/api/v1/users/me").authenticated()
                         .requestMatchers("/api/v1/cart", "/api/v1/cart/**").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/products").authenticated()
                         // TODO: 로그인 API 머지 후 anyRequest().authenticated()로 전환
                         // (로그인 수단이 없는 동안 다른 모듈 API 개발을 막지 않기 위해 임시 허용)
                         .anyRequest().permitAll())
+
+                // 소셜 로그인 (/oauth2/authorization/kakao → 카카오 → /login/oauth2/code/kakao)
+                .oauth2Login(oauth2 -> {
+                    // state를 서명 쿠키에 저장 (기본값 HttpSession 대신)
+                    oauth2.authorizationEndpoint(endpoint ->
+                            endpoint.authorizationRequestRepository(authorizationRequestRepository));
+                    // 핸들러 빈이 정확히 1개 있을 때만 연결
+                    oauth2SuccessHandler.ifUnique(oauth2::successHandler);
+                    oauth2FailureHandler.ifUnique(oauth2::failureHandler);
+                })
+
                 // 아이디·비밀번호 필터보다 먼저 JWT 필터 실행
                 .addFilterBefore(new JwtAuthenticationFilter(jwtProvider),
                         UsernamePasswordAuthenticationFilter.class)

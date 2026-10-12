@@ -6,6 +6,9 @@ import com.justcommit.backend.market.cart.domain.CartItem;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
+import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
+import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
+import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceException;
 import org.junit.jupiter.api.Test;
@@ -16,6 +19,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -49,6 +54,60 @@ class CartAndOrderPersistenceIntegrationTest {
 
     @Autowired
     private EntityManager entityManager;
+
+    @Autowired
+    private OrdersRepository ordersRepository;
+
+    @Autowired
+    private SellerOrderRepository sellerOrderRepository;
+
+    @Autowired
+    private OrdersItemRepository ordersItemRepository;
+
+    @Test
+    void findsPaymentPendingOrderByExpirationCutoffWithOptionalAddress2() {
+        Orders order = new Orders("ORD-optional-address", 101L, "홍길동", "010", "06236", "주소1", null, 1);
+        entityManager.persist(order);
+        entityManager.flush();
+
+        List<Orders> pending = ordersRepository.findByStatusAndCreatedAtBefore(
+                OrderStatus.PAYMENT_PENDING, LocalDateTime.now().plusMinutes(1));
+
+        assertThat(pending).extracting(Orders::getId).contains(order.getId());
+        assertThat(order.getShipAddress2()).isNull();
+    }
+
+    @Test
+    void pagesOrdersByOwnerAndBatchLoadsTheirItems() {
+        Orders first = order("ORD-read-first");
+        SellerOrder firstSeller = new SellerOrder(first, 201L);
+        firstSeller.addItems(List.of(new OrdersItem(firstSeller, 1001L, "몬스테라", new BigDecimal("10000"))));
+        first.addSellerOrders(List.of(firstSeller));
+
+        Orders other = new Orders("ORD-read-other", 102L, "다른 구매자", "010", "12345", "서울", null, 1);
+        SellerOrder otherSeller = new SellerOrder(other, 202L);
+        otherSeller.addItems(List.of(new OrdersItem(otherSeller, 1002L, "선인장", new BigDecimal("20000"))));
+        other.addSellerOrders(List.of(otherSeller));
+
+        entityManager.persist(first);
+        entityManager.persist(other);
+        entityManager.flush();
+        Long firstId = first.getId();
+        Long firstSellerId = firstSeller.getId();
+        entityManager.clear();
+
+        var pageable = PageRequest.of(0, 10, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
+        assertThat(ordersRepository.findByBuyerId(101L, pageable).getContent())
+                .extracting(Orders::getId).containsExactly(firstId);
+        assertThat(ordersRepository.findByIdAndBuyerId(firstId, 102L)).isEmpty();
+        assertThat(sellerOrderRepository.findBySellerId(201L, pageable).getContent())
+                .extracting(SellerOrder::getId).containsExactly(firstSellerId);
+        assertThat(sellerOrderRepository.findByIdAndSellerId(firstSellerId, 202L)).isEmpty();
+        assertThat(ordersItemRepository.findByOrderIds(List.of(firstId)))
+                .extracting(OrdersItem::getProductName).containsExactly("몬스테라");
+        assertThat(ordersItemRepository.findBySellerOrderIds(List.of(firstSellerId)))
+                .extracting(OrdersItem::getProductName).containsExactly("몬스테라");
+    }
 
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
@@ -270,7 +329,6 @@ class CartAndOrderPersistenceIntegrationTest {
                 Arguments.of("recipientPhone", (Function<String, Orders>) orderNo -> new Orders(orderNo, 101L, "홍길동", null, "06236", "주소1", "주소2", 1)),
                 Arguments.of("zipcode", (Function<String, Orders>) orderNo -> new Orders(orderNo, 101L, "홍길동", "010", null, "주소1", "주소2", 1)),
                 Arguments.of("shipAddress1", (Function<String, Orders>) orderNo -> new Orders(orderNo, 101L, "홍길동", "010", "06236", null, "주소2", 1)),
-                Arguments.of("shipAddress2", (Function<String, Orders>) orderNo -> new Orders(orderNo, 101L, "홍길동", "010", "06236", "주소1", null, 1)),
                 Arguments.of("itemCount", (Function<String, Orders>) orderNo -> new Orders(orderNo, 101L, "홍길동", "010", "06236", "주소1", "주소2", null))
         );
     }

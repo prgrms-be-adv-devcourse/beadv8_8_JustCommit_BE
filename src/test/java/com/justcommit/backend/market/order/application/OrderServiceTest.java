@@ -8,12 +8,18 @@ import com.justcommit.backend.market.cart.domain.Cart;
 import com.justcommit.backend.market.cart.domain.CartItem;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.domain.Orders;
+import com.justcommit.backend.market.order.domain.OrdersItem;
+import com.justcommit.backend.market.order.domain.SellerOrder;
+import com.justcommit.backend.market.order.infrastructure.OrderPaymentTtlStore;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
+import com.justcommit.backend.payment.PaymentResult;
+import com.justcommit.backend.payment.PaymentUseCase;
 import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.ProductQuery;
+import com.justcommit.backend.product.ProductUseCase;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -24,13 +30,17 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
+import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -41,6 +51,9 @@ class OrderServiceTest {
     @Mock OrdersRepository ordersRepository;
     @Mock CartService cartService;
     @Mock ProductQuery productQuery;
+    @Mock ProductUseCase productUseCase;
+    @Mock OrderPaymentTtlStore paymentTtlStore;
+    @Mock PaymentUseCase paymentUseCase;
     @InjectMocks OrderService orderService;
 
     @Test
@@ -63,7 +76,9 @@ class OrderServiceTest {
     void createsSingleItemOrderWithSnapshotsAndRemovesSelectedItem() {
         stubLookup(List.of(selected(1L, 101L, "10000")),
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
-        when(ordersRepository.saveAndFlush(any(Orders.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        stubSavedOrder();
+        stubReservationSuccess();
+        stubInsufficientBalance();
 
         OrderCreateResponse response = orderService.create(10L, request(1L));
 
@@ -83,18 +98,22 @@ class OrderServiceTest {
         assertThat(order.getRecipientPhone()).isEqualTo("01012345678");
         assertThat(order.getZipcode()).isEqualTo("12345");
         assertThat(order.getItemCount()).isEqualTo(1);
-        assertThat(order.getTotalAmount()).isEqualByComparingTo("10000");
+        assertThat(order.getTotalAmount()).isEqualByComparingTo("13000");
         assertThat(order.getSellerOrders()).singleElement().satisfies(sellerOrder -> {
             assertThat(sellerOrder.getSellerId()).isEqualTo(20L);
-            assertThat(sellerOrder.getShippingFee()).isEqualByComparingTo("0");
+            assertThat(sellerOrder.getShippingFee()).isEqualByComparingTo("3000");
             assertThat(sellerOrder.getItems()).singleElement().satisfies(item -> {
                 assertThat(item.getProductId()).isEqualTo(101L);
                 assertThat(item.getProductName()).isEqualTo("몬스테라");
                 assertThat(item.getPrice()).isEqualByComparingTo("10000");
             });
         });
-        assertThat(response.totalAmount()).isEqualByComparingTo("10000");
+        assertThat(response.totalAmount()).isEqualByComparingTo("13000");
+        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        assertThat(response.expiresAt()).isEqualTo(response.createdAt().plusMinutes(10));
         verify(productQuery).getProducts(List.of(101L));
+        verify(productUseCase).reserve(99L, List.of(101L));
+        verify(paymentTtlStore).startAfterCommit(99L, response.expiresAt());
         verify(cartService).removeSelectedItems(10L, List.of(1L));
     }
 
@@ -105,7 +124,9 @@ class OrderServiceTest {
                 List.of(product(101L, 20L, "상품1", "10000", true),
                         product(102L, 30L, "상품2", "20000", true),
                         product(103L, 20L, "상품3", "5000", true)));
-        when(ordersRepository.saveAndFlush(any(Orders.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        stubSavedOrder();
+        stubReservationSuccess();
+        stubInsufficientBalance();
 
         OrderCreateResponse response = orderService.create(10L, request(1L, 2L, 3L));
 
@@ -117,7 +138,7 @@ class OrderServiceTest {
         assertThat(order.getSellerOrders().getFirst().getTotalAmount()).isEqualByComparingTo("15000");
         assertThat(order.getSellerOrders().getLast().getItems()).hasSize(1);
         assertThat(order.getSellerOrders().getLast().getTotalAmount()).isEqualByComparingTo("20000");
-        assertThat(response.totalAmount()).isEqualByComparingTo("35000");
+        assertThat(response.totalAmount()).isEqualByComparingTo("41000");
         assertThat(response.itemCount()).isEqualTo(3);
         verify(productQuery).getProducts(List.of(101L, 102L, 103L));
         verify(cartService).removeSelectedItems(10L, List.of(1L, 2L, 3L));
@@ -127,7 +148,9 @@ class OrderServiceTest {
     void generatesDifferentOrderNumbersForSeparateOrders() {
         stubLookup(List.of(selected(1L, 101L, "10000")),
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
-        when(ordersRepository.saveAndFlush(any(Orders.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        stubSavedOrder();
+        stubReservationSuccess();
+        stubInsufficientBalance();
 
         OrderCreateResponse first = orderService.create(10L, request(1L));
         OrderCreateResponse second = orderService.create(10L, request(1L));
@@ -174,6 +197,162 @@ class OrderServiceTest {
                 .isInstanceOf(IllegalStateException.class);
 
         verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+    }
+
+    @Test
+    void stopsCheckoutWhenProductReservationFails() {
+        stubLookup(List.of(selected(1L, 101L, "10000")),
+                List.of(product(101L, 20L, "몬스테라", "10000", true)));
+        stubSavedOrder();
+
+        assertThatThrownBy(() -> orderService.create(10L, request(1L)))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.PRODUCT_UNAVAILABLE));
+
+        verify(productUseCase).reserve(99L, List.of(101L));
+        verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+        verify(paymentTtlStore, never()).startAfterCommit(any(), any());
+    }
+
+    @Test
+    void expiresPendingOrderAndReleasesItsProducts() {
+        Orders order = new Orders("ORD-test", 10L, "구매자", "010", "12345", "서울시", null, 1);
+        SellerOrder sellerOrder = new SellerOrder(order, 20L);
+        sellerOrder.addItems(List.of(new OrdersItem(sellerOrder, 101L, "몬스테라", money("10000"))));
+        order.addSellerOrders(List.of(sellerOrder));
+        ReflectionTestUtils.setField(order, "id", 99L);
+        when(ordersRepository.findByStatusAndCreatedAtBefore(eq(OrderStatus.PAYMENT_PENDING), any()))
+                .thenReturn(List.of(order));
+        when(productUseCase.release(99L)).thenReturn(true);
+
+        orderService.expirePendingOrders();
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.EXPIRED);
+        verify(ordersRepository).saveAndFlush(order);
+        verify(productUseCase).release(99L);
+        verify(cartService).restoreItem(10L, 101L, money("10000"));
+    }
+
+    @Test
+    void paysOrderAndMarksReservedProductsSoldOut() {
+        stubLookup(List.of(selected(1L, 101L, "10000")),
+                List.of(product(101L, 20L, "몬스테라", "10000", true)));
+        stubSavedOrder();
+        stubReservationSuccess();
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentResult.paid(money("0")));
+        when(productUseCase.markSoldOut(99L)).thenReturn(true);
+
+        OrderCreateResponse response = orderService.create(10L, request(1L));
+
+        assertThat(response.status()).isEqualTo(OrderStatus.PAID);
+        assertThat(response.expiresAt()).isNull();
+        verify(productUseCase).markSoldOut(99L);
+        verify(paymentTtlStore, never()).startAfterCommit(any(), any());
+        verify(cartService).removeSelectedItems(10L, List.of(1L));
+    }
+
+    @Test
+    void repaysPendingOrderBeforeExpiry() {
+        Orders order = pendingOrder(10L);
+        when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentResult.paid(money("0")));
+        when(productUseCase.markSoldOut(99L)).thenReturn(true);
+
+        OrderCreateResponse response = orderService.repayment(10L, 99L);
+
+        assertThat(response.status()).isEqualTo(OrderStatus.PAID);
+        assertThat(response.expiresAt()).isNull();
+        verify(productUseCase).markSoldOut(99L);
+    }
+
+    @Test
+    void rejectsRepaymentFromAnotherMember() {
+        when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(pendingOrder(10L)));
+
+        assertThatThrownBy(() -> orderService.repayment(20L, 99L))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_NOT_FOUND));
+        verify(paymentUseCase, never()).pay(any(), any(), any());
+    }
+
+    @Test
+    void rejectsRepaymentAfterPaymentWindow() {
+        Orders order = pendingOrder(10L);
+        ReflectionTestUtils.setField(order, "createdAt", LocalDateTime.now().minusMinutes(11));
+        when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> orderService.repayment(10L, 99L))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.PAYMENT_WINDOW_EXPIRED));
+        verify(paymentUseCase, never()).pay(any(), any(), any());
+    }
+
+    @Test
+    void keepsPendingOrderWhenRepaymentBalanceIsInsufficient() {
+        Orders order = pendingOrder(10L);
+        when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
+        when(paymentUseCase.pay(99L, 10L, money("13000")))
+                .thenReturn(PaymentResult.insufficientBalance(money("1000")));
+
+        OrderCreateResponse response = orderService.repayment(10L, 99L);
+
+        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        assertThat(response.expiresAt()).isEqualTo(order.getCreatedAt().plusMinutes(10));
+        verify(productUseCase, never()).markSoldOut(any());
+    }
+
+    @Test
+    void rejectsOrderCreationWhenWalletDoesNotExist() {
+        stubLookup(List.of(selected(1L, 101L, "10000")),
+                List.of(product(101L, 20L, "몬스테라", "10000", true)));
+        stubSavedOrder();
+        stubReservationSuccess();
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentResult.walletNotFound());
+
+        assertThatThrownBy(() -> orderService.create(10L, request(1L)))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.WALLET_NOT_FOUND));
+        verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+        verify(paymentTtlStore, never()).startAfterCommit(any(), any());
+    }
+
+    @Test
+    void returnsPaidOrderWithoutChargingAgainOnRepeatedRequest() {
+        Orders order = pendingOrder(10L);
+        order.paid();
+        when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
+
+        OrderCreateResponse response = orderService.repayment(10L, 99L);
+
+        assertThat(response.status()).isEqualTo(OrderStatus.PAID);
+        verify(paymentUseCase, never()).pay(any(), any(), any());
+        verify(productUseCase, never()).markSoldOut(any());
+    }
+
+    private void stubSavedOrder() {
+        when(ordersRepository.saveAndFlush(any(Orders.class))).thenAnswer(invocation -> {
+            Orders order = invocation.getArgument(0);
+            ReflectionTestUtils.setField(order, "id", 99L);
+            ReflectionTestUtils.setField(order, "createdAt", LocalDateTime.of(2026, 10, 10, 12, 0));
+            return order;
+        });
+    }
+
+    private void stubReservationSuccess() {
+        when(productUseCase.reserve(eq(99L), anyList())).thenReturn(true);
+    }
+
+    private void stubInsufficientBalance() {
+        when(paymentUseCase.pay(eq(99L), eq(10L), any(BigDecimal.class)))
+                .thenReturn(PaymentResult.insufficientBalance(money("0")));
+    }
+
+    private Orders pendingOrder(long buyerId) {
+        Orders order = new Orders("ORD-test", buyerId, "구매자", "010", "12345", "서울시", null, 1);
+        ReflectionTestUtils.setField(order, "id", 99L);
+        ReflectionTestUtils.setField(order, "totalAmount", money("13000"));
+        ReflectionTestUtils.setField(order, "createdAt", LocalDateTime.now().minusMinutes(1));
+        return order;
     }
 
     private void assertRejected(OrderErrorCode expected, ProductResult product) {

@@ -134,6 +134,18 @@ public class CartService {
     }
 
     @Transactional
+    public void restoreItem(long memberId, long productId, BigDecimal price) {
+        Cart cart = findByMemberId(memberId);
+        if (cart.getItems().stream().anyMatch(item -> item.getProductId().equals(productId))) {
+            return;
+        }
+        // 주문 당시 가격을 담아 두고, 다음 결제 시 현재 가격과 구매 가능 여부를 다시 확인한다.
+        CartItem item = new CartItem(cart, productId, price);
+        cart.addItem(item);
+        cartItemRepository.save(item);
+    }
+
+    @Transactional
     public void removeItemFromCart(long memberId, long productId) {
         Cart cart = findByMemberId(memberId);
 
