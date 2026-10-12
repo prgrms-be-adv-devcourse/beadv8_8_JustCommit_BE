@@ -2,6 +2,7 @@ package com.justcommit.backend.market.order.presentation;
 
 import com.justcommit.backend.common.exception.GlobalExceptionHandler;
 import com.justcommit.backend.common.security.AuthMember;
+import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.order.application.OrderService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -55,14 +56,17 @@ class OrderControllerTest {
     void createsOrderForAuthenticatedMemberAndSelectedCartItemIds() throws Exception {
         when(orderService.create(eq(10L), any(CartOrderCreateRequest.class)))
                 .thenReturn(new OrderCreateResponse(9L, "ORD-AAAAAAAAAAAAAAAAAAAAAA",
-                        new BigDecimal("13000"), 2, LocalDateTime.of(2026, 10, 9, 12, 0)));
+                        new BigDecimal("13000"), 2, LocalDateTime.of(2026, 10, 9, 12, 0),
+                        OrderStatus.PAYMENT_PENDING, LocalDateTime.of(2026, 10, 9, 12, 10)));
 
         mockMvc.perform(post("/api/v1/orders/cart").param("memberId", "999")
                         .contentType("application/json")
                         .content("{\"cartItemIds\":[1,2],\"recipientName\":\"구매자\",\"recipientPhone\":\"01012345678\",\"zipcode\":\"12345\",\"address1\":\"서울시\",\"address2\":\"101호\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.orderId").value(9))
-                .andExpect(jsonPath("$.itemCount").value(2));
+                .andExpect(jsonPath("$.itemCount").value(2))
+                .andExpect(jsonPath("$.status").value("PAYMENT_PENDING"))
+                .andExpect(jsonPath("$.expiresAt").value("2026-10-09T12:10:00"));
 
         ArgumentCaptor<CartOrderCreateRequest> requestCaptor = ArgumentCaptor.forClass(CartOrderCreateRequest.class);
         verify(orderService).create(eq(10L), requestCaptor.capture());
