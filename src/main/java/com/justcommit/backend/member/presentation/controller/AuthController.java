@@ -4,6 +4,7 @@ import com.justcommit.backend.common.response.ApiResponse;
 import com.justcommit.backend.member.application.*;
 import com.justcommit.backend.member.domain.exception.EmailCooldownException;
 import com.justcommit.backend.member.presentation.dto.*;
+import com.justcommit.backend.member.presentation.support.RefreshTokenCookieFactory;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -11,23 +12,17 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.Duration;
-
 // 인증 API (이메일 인증, 로그인, 재발급, 로그아웃)
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
-  private static final String REFRESH_TOKEN_COOKIE = "refreshToken";
-
-  // 재발급·로그아웃(/api/v1/auth/...) 요청에만 쿠키가 전송되도록 경로 제한
-  private static final String REFRESH_TOKEN_COOKIE_PATH = "/api/v1/auth";
-
   private final EmailVerificationService emailVerificationService;
   private final LoginService loginService;
   private final TokenReissueService tokenReissueService;
   private final LogoutService logoutService;
+  private final RefreshTokenCookieFactory refreshTokenCookieFactory;
 
   @PostMapping("/email/send")
   public ApiResponse<EmailSendResponse> sendEmailCode(@Valid @RequestBody EmailSendRequest request) {
@@ -46,7 +41,7 @@ public class AuthController {
   @PostMapping("/login")
   public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
     LoginResult result = loginService.login(request.toCommand());
-    ResponseCookie refreshCookie = refreshTokenCookie(result.refreshToken(), result.refreshTokenTtl());
+    ResponseCookie refreshCookie = refreshTokenCookieFactory.create(result.refreshToken(), result.refreshTokenTtl());
 
     return ResponseEntity.ok()
             .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())
@@ -57,9 +52,9 @@ public class AuthController {
   // required = false: 쿠키가 없을 때 Spring의 400 대신 서비스에서 401 INVALID_REFRESH_TOKEN으로 처리
   @PostMapping("/reissue")
   public ResponseEntity<ApiResponse<TokenReissueResponse>> reissue(
-          @CookieValue(name = REFRESH_TOKEN_COOKIE, required = false) String refreshToken) {
+          @CookieValue(name = RefreshTokenCookieFactory.COOKIE_NAME, required = false) String refreshToken) {
     TokenReissueResult result = tokenReissueService.reissue(refreshToken);
-    ResponseCookie refreshCookie = refreshTokenCookie(result.refreshToken(), result.refreshTokenTtl());
+    ResponseCookie refreshCookie = refreshTokenCookieFactory.create(result.refreshToken(), result.refreshTokenTtl());
 
     return ResponseEntity.ok()
             .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())
@@ -70,12 +65,11 @@ public class AuthController {
   // 쿠키가 없거나 이미 만료·삭제된 경우에도 200 (쿠키만 지움)
   @PostMapping("/logout")
   public ResponseEntity<ApiResponse<Void>> logout(
-          @CookieValue(name = REFRESH_TOKEN_COOKIE, required = false) String refreshToken) {
+          @CookieValue(name = RefreshTokenCookieFactory.COOKIE_NAME, required = false) String refreshToken) {
     logoutService.logout(refreshToken);
-    ResponseCookie expiredCookie = refreshTokenCookie("", Duration.ZERO);
 
     return ResponseEntity.ok()
-            .header(HttpHeaders.SET_COOKIE, expiredCookie.toString())
+            .header(HttpHeaders.SET_COOKIE, refreshTokenCookieFactory.expire().toString())
             .body(ApiResponse.ok("로그아웃되었습니다."));
   }
 
@@ -86,15 +80,5 @@ public class AuthController {
     return ResponseEntity.status(e.getErrorCode().getStatus())
             .header(HttpHeaders.RETRY_AFTER, String.valueOf(e.getRetryAfterSeconds()))
             .body(ApiResponse.error(e.getErrorCode()));
-  }
-
-  // Refresh 토큰 쿠키 (로그인·재발급·로그아웃 공통, 로그아웃은 빈 값 + maxAge 0으로 삭제)
-  private ResponseCookie refreshTokenCookie(String value, Duration maxAge) {
-    return ResponseCookie.from(REFRESH_TOKEN_COOKIE, value)
-            .httpOnly(true)
-            .path(REFRESH_TOKEN_COOKIE_PATH)  // 삭제할 때도 발급 때와 같은 Path여야 브라우저가 지움
-            .maxAge(maxAge) // 로그인 재발급은 Redis TTL과 같은 값/ 로그아웃은 0
-            .sameSite("Lax")
-            .build(); // HTTP 배포라 Secure는 넣지 않음
   }
 }

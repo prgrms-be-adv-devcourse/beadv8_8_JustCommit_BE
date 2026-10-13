@@ -34,7 +34,12 @@ public enum MemberErrorCode implements ErrorCode {
   ADDRESS_NOT_FOUND(HttpStatus.NOT_FOUND, "배송지를 찾을 수 없습니다."),
 
   // 판매자
-  ALREADY_SELLER(HttpStatus.CONFLICT, "이미 판매자로 등록된 회원입니다.");
+  ALREADY_SELLER(HttpStatus.CONFLICT, "이미 판매자로 등록된 회원입니다."),
+
+  // 소셜 로그인
+  SOCIAL_LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "소셜 로그인에 실패했습니다. 다시 시도해주세요."),
+  SOCIAL_EMAIL_CONFLICT(HttpStatus.CONFLICT, "이미 이메일로 가입된 계정입니다. 이메일로 로그인해주세요."),
+  SOCIAL_EMAIL_REQUIRED(HttpStatus.BAD_REQUEST, "인증된 카카오 계정 이메일이 필요합니다.");
 
   private final HttpStatus status;
   private final String message;
