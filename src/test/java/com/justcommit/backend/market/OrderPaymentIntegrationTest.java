@@ -434,5 +434,10 @@ class OrderPaymentIntegrationTest {
             beforePayment.run();
             return delegate.pay(orderId, buyerId, amount);
         }
+
+        @Override
+        public void depositSettlement(Long settlementId, Long sellerId, BigDecimal amount) {
+            delegate.depositSettlement(settlementId, sellerId, amount);
+        }
     }
 }
