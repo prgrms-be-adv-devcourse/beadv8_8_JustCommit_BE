@@ -24,7 +24,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Member extends BaseTimeEntity  {
         @Column(length = 100)
-        private String email; // 소셜 회원은 NULL 가능
+        private String email; // 카카오 회원은 카카오가 인증한 이메일 저장
 
         @Column(length = 100)
         private String password; // BCrypt 해시(60자), 소셜 회원은 NULL
@@ -73,6 +73,30 @@ public class Member extends BaseTimeEntity  {
                 member.phone = phone;
                 member.role = Role.MEMBER;
                 member.provider = Provider.LOCAL;
+                member.status = MemberStatus.ACTIVE;
+                member.bankCode = bankCode;
+                member.accountNoEnc = encryptedAccountNo;
+                member.accountHolder = accountHolder;
+                member.accountUpdatedAt = LocalDateTime.now();
+                return member;
+        }
+
+        // 소셜 회원가입 (비밀번호 없음, 권한 MEMBER, 상태 ACTIVE로 고정)
+        // email·provider·providerId는 가입 토큰에서 꺼낸 값 (카카오가 인증한 정보)
+        public static Member createSocial(Provider provider, String providerId, String email,
+                                          String nickname, String phone,
+                                          String bankCode, String encryptedAccountNo, String accountHolder) {
+                if (provider == Provider.LOCAL) {
+                        throw new IllegalArgumentException("소셜 회원은 소셜 가입 경로로만 생성할 수 있습니다.");
+                }
+                Member member = new Member();
+                member.email = email;
+                member.password = null;
+                member.nickname = nickname;
+                member.phone = phone;
+                member.role = Role.MEMBER;
+                member.provider = provider;
+                member.providerId = providerId;
                 member.status = MemberStatus.ACTIVE;
                 member.bankCode = bankCode;
                 member.accountNoEnc = encryptedAccountNo;
