@@ -1,8 +1,8 @@
 package com.justcommit.backend.payment.presentation.dto;
 
 import com.justcommit.backend.payment.domain.ChargeType;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
@@ -13,6 +13,6 @@ public class ChargeCreateRequest {
 
     private ChargeType chargeType;
     @NotNull
-    @Positive
+    @Min(value = 10000, message = "최소 충전 금액은 10,000원입니다.")
     private BigDecimal amount;
 }

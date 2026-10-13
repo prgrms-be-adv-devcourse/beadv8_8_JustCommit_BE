@@ -25,7 +25,8 @@ import java.util.UUID;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Charge extends BaseTimeEntity {
 
-    private static final BigDecimal MIN_CHARGE_AMOUNT = BigDecimal.ONE;
+    private static final BigDecimal MIN_CHARGE_AMOUNT = new BigDecimal("10000");
+    private static final BigDecimal CHARGE_UNIT = new BigDecimal("10000");
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "wallet_id", nullable = false)
@@ -81,7 +82,9 @@ public class Charge extends BaseTimeEntity {
     }
 
     private static void validateAmount(BigDecimal amount) {
-        if (amount == null || amount.compareTo(MIN_CHARGE_AMOUNT) < 0) {
+        if (amount == null
+                || amount.compareTo(MIN_CHARGE_AMOUNT) < 0
+                || amount.remainder(CHARGE_UNIT).signum() != 0) {
             throw new BusinessException(PaymentErrorCode.INVALID_CHARGE_AMOUNT);
         }
     }

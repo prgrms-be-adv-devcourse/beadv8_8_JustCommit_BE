@@ -14,6 +14,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -31,6 +32,7 @@ class PaymentServiceDepositSettlementTest {
 
     private static final Long SETTLEMENT_ID = 200L;
     private static final Long SELLER_ID = 20L;
+    private static final Long WALLET_ID = 2L;
 
     @Mock WalletRepository walletRepository;
     @Mock WalletTransactionRepository walletTransactionRepository;
@@ -40,7 +42,7 @@ class PaymentServiceDepositSettlementTest {
     void depositsPayoutAndRecordsSettlementTransaction() {
         Wallet wallet = walletWithBalance("5000");
         when(walletRepository.findByMemberIdForUpdate(SELLER_ID)).thenReturn(Optional.of(wallet));
-        when(walletTransactionRepository.existsByRefTypeAndRefId(RefType.SETTLEMENT, SETTLEMENT_ID)).thenReturn(false);
+        when(walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(WALLET_ID, RefType.SETTLEMENT, SETTLEMENT_ID)).thenReturn(false);
 
         paymentService.depositSettlement(SETTLEMENT_ID, SELLER_ID, new BigDecimal("28500"));
 
@@ -61,7 +63,7 @@ class PaymentServiceDepositSettlementTest {
     void skipsDepositWhenSettlementAlreadyDeposited() {
         Wallet wallet = walletWithBalance("33500");
         when(walletRepository.findByMemberIdForUpdate(SELLER_ID)).thenReturn(Optional.of(wallet));
-        when(walletTransactionRepository.existsByRefTypeAndRefId(RefType.SETTLEMENT, SETTLEMENT_ID)).thenReturn(true);
+        when(walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(WALLET_ID, RefType.SETTLEMENT, SETTLEMENT_ID)).thenReturn(true);
 
         paymentService.depositSettlement(SETTLEMENT_ID, SELLER_ID, new BigDecimal("28500"));
 
@@ -96,6 +98,7 @@ class PaymentServiceDepositSettlementTest {
 
     private Wallet walletWithBalance(String balance) {
         Wallet wallet = new Wallet(SELLER_ID);
+        ReflectionTestUtils.setField(wallet, "id", WALLET_ID);
         wallet.credit(new BigDecimal(balance));
         return wallet;
     }

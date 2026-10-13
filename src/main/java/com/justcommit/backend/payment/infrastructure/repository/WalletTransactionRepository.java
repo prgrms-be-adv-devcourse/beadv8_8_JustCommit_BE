@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface WalletTransactionRepository extends JpaRepository<WalletTransaction, Long> {
     Page<WalletTransaction> findByWallet_Id(Long walletId, Pageable pageable);
 
-    boolean existsByRefTypeAndRefId(RefType refType, Long refId);
+    boolean existsByWallet_IdAndRefTypeAndRefId(Long walletId, RefType refType, Long refId);
 
     Page<WalletTransaction> findByWallet_IdAndRefType(Long walletId, RefType refType, Pageable pageable);
 }
