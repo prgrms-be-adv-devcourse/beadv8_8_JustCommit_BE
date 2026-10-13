@@ -39,7 +39,11 @@ public enum MemberErrorCode implements ErrorCode {
   // 소셜 로그인
   SOCIAL_LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "소셜 로그인에 실패했습니다. 다시 시도해주세요."),
   SOCIAL_EMAIL_CONFLICT(HttpStatus.CONFLICT, "이미 이메일로 가입된 계정입니다. 이메일로 로그인해주세요."),
-  SOCIAL_EMAIL_REQUIRED(HttpStatus.BAD_REQUEST, "인증된 카카오 계정 이메일이 필요합니다.");
+  SOCIAL_EMAIL_REQUIRED(HttpStatus.BAD_REQUEST, "인증된 카카오 계정 이메일이 필요합니다."),
+
+  // 소셜 회원가입
+  INVALID_SIGNUP_TOKEN(HttpStatus.UNAUTHORIZED, "가입 정보가 만료되었거나 올바르지 않습니다. 다시 진행해주세요."),
+  DUPLICATE_SOCIAL_ACCOUNT(HttpStatus.CONFLICT, "이미 가입된 계정입니다. 소셜 로그인을 이용해주세요.");
 
   private final HttpStatus status;
   private final String message;
