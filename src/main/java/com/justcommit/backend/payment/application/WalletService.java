@@ -2,7 +2,9 @@ package com.justcommit.backend.payment.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.payment.PaymentQuery;
+import com.justcommit.backend.payment.domain.RefType;
 import com.justcommit.backend.payment.domain.Wallet;
+import com.justcommit.backend.payment.domain.WalletTransaction;
 import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
 import com.justcommit.backend.payment.infrastructure.repository.WalletRepository;
 import com.justcommit.backend.payment.infrastructure.repository.WalletTransactionRepository;
@@ -28,12 +30,14 @@ public class WalletService implements PaymentQuery {
         return getWallet(memberId).getBalance();
     }
 
-    public Page<WalletTransactionResponse> getTransactions(Long memberId, Pageable pageable) {
+    public Page<WalletTransactionResponse> getTransactions(Long memberId, RefType refType, Pageable pageable) {
         Wallet wallet = getWallet(memberId);
 
-        return walletTransactionRepository
-                .findByWallet_Id(wallet.getId(), pageable)
-                .map(WalletTransactionResponse::from);
+        Page<WalletTransaction> page = (refType == null)
+                ? walletTransactionRepository.findByWallet_Id(wallet.getId(), pageable)
+                : walletTransactionRepository.findByWallet_IdAndRefType(wallet.getId(), refType, pageable);
+
+        return page.map(WalletTransactionResponse::from);
     }
 
     private Wallet getWallet(Long memberId) {
