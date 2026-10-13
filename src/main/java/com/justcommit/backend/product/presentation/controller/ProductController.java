@@ -17,7 +17,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@Tag(name = "상품", description = "판매글 등록 및 조회 API")
+@Tag(name = "product-controller", description = "판매글 등록 및 조회 API")
 @RequestMapping("/api/v1/products")
 @RequiredArgsConstructor
 public class ProductController {
@@ -92,6 +92,15 @@ public class ProductController {
         if (!"SELLER".equals(authMember.role()) && !"ADMIN".equals(authMember.role())) {
             throw new BusinessException(ProductErrorCode.NOT_SELLER);
         }
+    }
+
+    @Operation(summary = "내 판매 물품 조회", description = "로그인한 판매자가 등록한 상품을 최신순으로 조회합니다. 숨긴 상품은 포함하고 삭제된 상품은 제외합니다.")
+    @GetMapping("/me")
+    public ApiResponse<PagingResponse<MyProductResponse>> getMyProducts(
+            @AuthenticationPrincipal AuthMember authMember,
+            @ModelAttribute MyProductSearchRequest request){
+
+        return ApiResponse.ok("내 판매 목록을 조회했습니다", PagingResponse.from(productService.getMyProducts(authMember.memberId(), request)));
     }
 
 
