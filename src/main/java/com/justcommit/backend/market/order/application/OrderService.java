@@ -116,7 +116,7 @@ public class OrderService {
             throw new BusinessException(OrderErrorCode.WALLET_NOT_FOUND);
         }
         if (paymentResult.isPaid()) {
-            orderPayment(saved);
+            saved = orderPayment(saved);
         } else {
             expiresAt = saved.getCreatedAt().plus(PAYMENT_WINDOW);
             paymentTtlStore.startAfterCommit(saved.getId(), expiresAt);
@@ -151,17 +151,22 @@ public class OrderService {
             throw new BusinessException(OrderErrorCode.WALLET_NOT_FOUND);
         }
         if (paymentResult.isPaid()) {
-            orderPayment(order);
+            order = orderPayment(order);
+            paymentTtlStore.deleteAfterCommit(order.getId());
             return toResponse(order, null);
         }
         return toResponse(order, expiresAt);
     }
 
-    private void orderPayment(Orders order) {
+    private Orders orderPayment(Orders order) {
         if (!productUseCase.markSoldOut(order.getId())) {
             throw new BusinessException(OrderErrorCode.PRODUCT_UNAVAILABLE);
         }
-        order.paid();
+        // 상품 벌크 업데이트가 영속성 컨텍스트를 비우므로 주문을 다시 관리 상태로 조회한다.
+        Orders managed = ordersRepository.findById(order.getId())
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+        managed.paid();
+        return managed;
     }
 
     private OrderCreateResponse toResponse(Orders order, LocalDateTime expiresAt) {
@@ -172,12 +177,17 @@ public class OrderService {
     @Transactional
     public void expirePendingOrders() {
         LocalDateTime cutoff = LocalDateTime.now().minus(PAYMENT_WINDOW);
-        for (Orders order : ordersRepository.findByStatusAndCreatedAtBefore(OrderStatus.PAYMENT_PENDING, cutoff)) {
+        List<Orders> pendingOrders = ordersRepository.findByStatusAndCreatedAtBefore(OrderStatus.PAYMENT_PENDING, cutoff);
+        Map<Long, List<OrdersItem>> itemsByOrder = new LinkedHashMap<>();
+        for (Orders order : pendingOrders) {
+            itemsByOrder.put(order.getId(), order.getSellerOrders().stream()
+                    .flatMap(sellerOrder -> sellerOrder.getItems().stream()).toList());
+        }
+        for (Orders order : pendingOrders) {
             order.expire();
             ordersRepository.saveAndFlush(order);
             productUseCase.release(order.getId()); // 이미 해제된 경우 false여도 만료 처리한다.
-            order.getSellerOrders().stream()
-                    .flatMap(sellerOrder -> sellerOrder.getItems().stream())
+            itemsByOrder.get(order.getId()).stream()
                     .forEach(item -> cartService.restoreItem(order.getBuyerId(), item.getProductId(), item.getPrice()));
         }
     }

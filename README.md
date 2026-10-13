@@ -26,6 +26,8 @@ docker compose up -d
 | Redis | `localhost` | `6379` | none |
 | Kafka | `localhost` | `9092` | plaintext local broker |
 
+운영 서버(EC2)에서는 `docker-compose.prod.yml`을 사용합니다. `.env.example`을 `.env`로 복사해 값을 채운 뒤 `docker compose -f docker-compose.prod.yml up -d`로 실행합니다. 운영 Redis는 비밀번호, 메모리 제한(`noeviction`), `127.0.0.1` 바인딩이 적용되어 로컬 설정과 다릅니다.
+
 PostgreSQL data is retained in the `postgres-data` Docker volume. Stop services with `docker compose down`; use `docker compose down -v` only when intentionally removing local data.
 
 ## Run and test
@@ -46,7 +48,7 @@ Run only the Modulith architecture check with:
 ## Environment variables
 
 - `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`
-- `REDIS_HOST`, `REDIS_PORT`
+- `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` (prod only)
 - `KAFKA_BOOTSTRAP_SERVERS`
 - `SPRING_APPLICATION_NAME` (optional)
 

@@ -8,6 +8,10 @@ spring:
     redis:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      # Redis가 멈춰도 요청 스레드가 오래 묶이지 않도록 짧게 (Lettuce 기본 60초)
+      timeout: 2s
+      connect-timeout: 2s
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
   jpa:

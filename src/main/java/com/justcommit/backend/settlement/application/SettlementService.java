@@ -1,6 +1,7 @@
 package com.justcommit.backend.settlement.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.payment.PaymentUseCase;
 import com.justcommit.backend.settlement.SettlementResult;
 import com.justcommit.backend.settlement.SettlementUseCase;
 import com.justcommit.backend.settlement.domain.Settlement;
@@ -19,8 +20,7 @@ import java.util.Optional;
 public class SettlementService implements SettlementUseCase {
 
     private final SettlementRepository settlementRepository;
-    // TODO: payment 모듈에 지갑 입금 API가 추가되면 주입
-    // private final PaymentUseCase paymentUseCase;
+    private final PaymentUseCase paymentUseCase;
 
     @Override
     @Transactional
@@ -37,8 +37,7 @@ public class SettlementService implements SettlementUseCase {
                 Settlement.createSettlement(sellerOrderId, saleAmount, LocalDateTime.now())
         );
 
-        // TODO: 판매자 지갑 입금 (ref_type = SETTLEMENT, ref_id = settlement.getId())
-        // paymentUseCase.depositSettlement(settlement.getId(), sellerId, settlement.getPayoutAmount());
+        paymentUseCase.depositSettlement(settlement.getId(), sellerId, settlement.getPayoutAmount());
 
         return toResult(settlement);
     }

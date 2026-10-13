@@ -34,4 +34,18 @@ public class OrderPaymentTtlStore {
             }
         });
     }
+
+    public void deleteAfterCommit(Long orderId) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                try {
+                    redisTemplate.delete("order:payment:ttl:" + orderId);
+                } catch (RuntimeException exception) {
+                    log.warn("주문 결제대기 TTL 삭제 실패: orderId={}", orderId, exception);
+                }
+            }
+        });
+
+    }
 }
