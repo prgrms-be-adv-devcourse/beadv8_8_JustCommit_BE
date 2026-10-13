@@ -9,7 +9,7 @@ import com.justcommit.backend.member.application.SocialLoginResult;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record SocialLoginResponse(
         boolean newMember,
-        String assessToken,
+        String accessToken,
         Long expiresIn, // 기존 회원은 Access 토큰,신규 회원은 가입 토큰 유효 시간
         String nickname,
         String role,
