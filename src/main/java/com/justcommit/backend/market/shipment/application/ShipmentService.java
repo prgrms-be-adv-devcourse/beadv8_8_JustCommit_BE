@@ -47,10 +47,10 @@ public class ShipmentService {
         CourierBookingRequest request = new CourierBookingRequest(
                 new CourierBookingRequest.Party(seller.recipientName(),
                         seller.recipientPhone(),
-                        seller.address1() + " " + seller.address2()),
+                        fullAddress(seller.address1(), seller.address2())),
                 new CourierBookingRequest.Party(order.recipientName(),
                         order.recipientPhone(),
-                        order.address1() + " " + order.address2()),
+                        fullAddress(order.address1(), order.address2())),
                 itemSummary(sellerOrder.items())
         );
 
@@ -73,6 +73,13 @@ public class ShipmentService {
             return String.format("%s", first);
         }
         return String.format("%s 외 %d건", first, items.size() - 1);
+    }
+
+    private String fullAddress(String address1, String address2) {
+        if (address2 == null || address2.isBlank()) {
+            return address1;
+        }
+        return address1 + " " + address2;
     }
 }
 
