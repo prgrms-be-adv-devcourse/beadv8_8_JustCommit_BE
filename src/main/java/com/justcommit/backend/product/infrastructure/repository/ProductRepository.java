@@ -1,6 +1,7 @@
 package com.justcommit.backend.product.infrastructure.repository;
 
 import com.justcommit.backend.product.domain.Product;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -57,4 +58,6 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     @EntityGraph(attributePaths = {"species", "pictures"})
     Optional<Product> findWithDetailById(Long id);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE) // 커밋 전까지 이 상품 행을 잠가 주문 예약(reserve)과 동시에 실행돼도 덮어쓰지 않게 함
+    Optional<Product> findWithLockById(@Param("id") Long id);
 }

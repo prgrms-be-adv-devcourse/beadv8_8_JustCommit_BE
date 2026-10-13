@@ -28,10 +28,14 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
-
+import static org.mockito.BDDMockito.willThrow;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -99,7 +103,7 @@ class ProductControllerTest {
     private ProductDetailResponse detailResponse() {
         return new ProductDetailResponse(
                 10L, SELLER_ID, "몬스테라 분양합니다", "잘 자란 몬스테라입니다",
-                new BigDecimal("30000"), 50, "중형", "베란다에서 키웠어요", "ACTIVE",
+                new BigDecimal("30000"), 50, "중형", "베란다에서 키웠어요", "ACTIVE", false,
                 new ProductSpeciesResponse(1L, "몬스테라", "FOLIAGE", "MEDIUM", "WHEN_SURFACE_DRY", "EASY"),
                 List.of("https://example.com/a.jpg", "https://example.com/b.jpg"),
                 LocalDateTime.now(), LocalDateTime.now());
@@ -240,10 +244,11 @@ class ProductControllerTest {
 
     // ── 상세 ───────────────────────────────────────
 
+
     @Test
     @DisplayName("상품 상세를 조회하면 품종 정보와 사진 목록을 반환")
     void getProductDetail() throws Exception {
-        given(productService.getProductDetail(10L)).willReturn(detailResponse());
+        given(productService.getProductDetail(10L, null)).willReturn(detailResponse());
 
         mockMvc.perform(get("/api/v1/products/10"))
                 .andExpect(status().isOk())
@@ -252,15 +257,172 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.data.imageUrls.length()").value(2));
     }
 
+    // 로그인한 경우 숨긴 상품 판단을 위해 회원 ID를 서비스로 넘김
+    @Test
+    @DisplayName("로그인한 회원이 상세를 조회하면 회원 ID를 함께 넘김")
+    void getProductDetailWithLogin() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+        given(productService.getProductDetail(10L, SELLER_ID)).willReturn(detailResponse());
+
+        mockMvc.perform(get("/api/v1/products/10"))
+                .andExpect(status().isOk());
+    }
+
     // 없는 상품 -> 404
     @Test
     @DisplayName("없는 상품을 조회하면 404 PRODUCT_NOT_FOUND")
     void getProductDetailNotFound() throws Exception {
-        given(productService.getProductDetail(999L))
+        given(productService.getProductDetail(999L, null))
                 .willThrow(new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
 
         mockMvc.perform(get("/api/v1/products/999"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("PRODUCT_NOT_FOUND"));
+    }
+
+
+    // ── 수정 ───────────────────────────────────────
+
+    @Test
+    @DisplayName("상품을 수정하면 200과 수정된 상품 상세를 반환")
+    void updateProduct() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+        given(productService.updateProduct(eq(SELLER_ID), eq(10L), any())).willReturn(detailResponse());
+
+        mockMvc.perform(put("/api/v1/products/10")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_CREATE_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value(200))
+                .andExpect(jsonPath("$.data.productId").value(10));
+
+        verify(productService).updateProduct(eq(SELLER_ID), eq(10L), any());
+    }
+
+    // 다른 판매자의 상품 -> 403
+    @Test
+    @DisplayName("본인 상품이 아니면 403 NOT_PRODUCT_OWNER")
+    void updateProductByOtherSeller() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+        given(productService.updateProduct(eq(SELLER_ID), eq(10L), any()))
+                .willThrow(new BusinessException(ProductErrorCode.NOT_PRODUCT_OWNER));
+
+        mockMvc.perform(put("/api/v1/products/10")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_CREATE_BODY))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("NOT_PRODUCT_OWNER"));
+    }
+
+    @Test
+    @DisplayName("판매 중이 아닌 상품을 수정하면 409 PRODUCT_NOT_EDITABLE")
+    void updateProductNotEditable() throws Exception{
+        loginAs(SELLER_ID, SELLER);
+        given(productService.updateProduct(eq(SELLER_ID), eq(10L), any()))
+                .willThrow(new BusinessException(ProductErrorCode.PRODUCT_NOT_EDITABLE));
+
+        mockMvc.perform(put("/api/v1/products/10")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_CREATE_BODY))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PRODUCT_NOT_EDITABLE"));
+    }
+
+    // 없거나 삭제된 상품 -> 404
+    @Test
+    @DisplayName("없거나 삭제된 상품을 수정하면 404 PRODUCT_NOT_FOUND")
+    void updateProductNotFound() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+        given(productService.updateProduct(eq(SELLER_ID), eq(999L), any()))
+                .willThrow(new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
+
+        mockMvc.perform(put("/api/v1/products/999")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_CREATE_BODY))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("PRODUCT_NOT_FOUND"));
+    }
+
+    // 제목 공백 -> 400
+    @Test
+    @DisplayName("수정 시 제목이 비어 있으면 400 INVALID_FIELD_ERROR")
+    void updateProductWithBlankTitle() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+        String body = VALID_CREATE_BODY.replace("\"몬스테라 분양합니다\"", "\"  \"");
+
+        mockMvc.perform(put("/api/v1/products/10")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_FIELD_ERROR"));
+    }
+
+    // ── 삭제 ───────────────────────────────────────
+
+    @Test
+    @DisplayName("상품을 삭제하면 200")
+    void deleteProduct() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+
+        mockMvc.perform(delete("/api/v1/products/10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("상품을 삭제했습니다."));
+
+        verify(productService).deleteProduct(SELLER_ID, 10L);
+    }
+
+    @Test
+    @DisplayName("판매 중이 아닌 상품을 삭제하면 409 PRODUCT_NOT_DELETABLE")
+    void deleteProductNotDeletable() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+        willThrow(new BusinessException(ProductErrorCode.PRODUCT_NOT_DELETABLE))
+                .given(productService).deleteProduct(SELLER_ID, 10L);
+
+        mockMvc.perform(delete("/api/v1/products/10"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PRODUCT_NOT_DELETABLE"));
+    }
+
+    // ── 숨김 ───────────────────────────────────────
+
+    @Test
+    @DisplayName("상품을 숨기면 200")
+    void hideProduct() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+
+        mockMvc.perform(patch("/api/v1/products/10/hidden")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hidden\": true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("상품을 숨겼습니다."));
+
+        verify(productService).changeHidden(SELLER_ID, 10L, true);
+    }
+
+    // hidden을 빠뜨리면 false로 처리되지 않고 400
+    @Test
+    @DisplayName("hidden 값이 없으면 400 INVALID_FIELD_ERROR")
+    void changeHiddenWithoutValue() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+
+        mockMvc.perform(patch("/api/v1/products/10/hidden")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_FIELD_ERROR"));
+    }
+
+    @Test
+    @DisplayName("숨길 수 없는 상태면 409 PRODUCT_NOT_HIDEABLE")
+    void hideProductNotHideable() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+        willThrow(new BusinessException(ProductErrorCode.PRODUCT_NOT_HIDEABLE))
+                .given(productService).changeHidden(SELLER_ID, 10L, true);
+
+        mockMvc.perform(patch("/api/v1/products/10/hidden")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hidden\": true}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PRODUCT_NOT_HIDEABLE"));
     }
 }
