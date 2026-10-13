@@ -4,8 +4,10 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.MemberAccount;
 import com.justcommit.backend.member.MemberAddress;
 import com.justcommit.backend.member.MemberQuery;
+import com.justcommit.backend.member.SystemAccount;
 import com.justcommit.backend.member.domain.Address;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.domain.Role;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.infrastructure.repository.AddressRepository;
@@ -49,6 +51,15 @@ public class MemberQueryService implements MemberQuery {
     Address address = addressRepository.findByMemberIdAndIsDefaultTrue(memberId)
             .orElseThrow(() -> new BusinessException(MemberErrorCode.ADDRESS_NOT_FOUND));
     return toMemberAddress(address);
+  }
+
+  @Override
+  public Long getSystemMemberId(SystemAccount account) {
+    // 같은 이메일의 일반 회원이 있더라도 SYSTEM 권한일 때만 반환 (돈이 일반 회원에게 가는 사고 방지)
+    return memberRepository.findByEmail(account.email())
+            .filter(member -> member.getRole() == Role.SYSTEM)
+            .map(Member::getId)
+            .orElseThrow(() -> new IllegalStateException("시스템 계정이 없습니다: " + account));
   }
 
   // 엔티티 → 공개 DTO (다른 모듈에 Address 엔티티를 노출하지 않음)
