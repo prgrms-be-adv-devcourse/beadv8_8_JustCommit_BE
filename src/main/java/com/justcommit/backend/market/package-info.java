@@ -11,7 +11,8 @@
         displayName = "Market",
         allowedDependencies = {
                 "common::entity", "common::exception", "common::response", "common::request", "common::security",
-                "product",  "payment",
+                "product", "payment",
+                "member"
         }
 )
 package com.justcommit.backend.market;
