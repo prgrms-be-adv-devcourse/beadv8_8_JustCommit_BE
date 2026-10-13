@@ -51,6 +51,31 @@ public class PaymentService implements PaymentUseCase {
         return PaymentResult.paid(wallet.getBalance());
     }
 
+    @Override
+    @Transactional
+    public void depositSettlement(Long settlementId, Long sellerId, BigDecimal amount) {
+        validateRequest(settlementId, sellerId, amount);
+
+        Wallet wallet = walletRepository
+                .findByMemberIdForUpdate(sellerId)
+                .orElseThrow(() -> new BusinessException(
+                        PaymentErrorCode.WALLET_NOT_FOUND
+                ));
+
+        if (walletTransactionRepository.existsByRefTypeAndRefId(
+                RefType.SETTLEMENT, settlementId)) {
+            return;
+        }
+
+        wallet.credit(amount);
+
+        walletTransactionRepository.save(
+                WalletTransaction.settlementIn(
+                        wallet, settlementId, amount, LocalDateTime.now()
+                )
+        );
+    }
+
     private void validateRequest(Long orderId, Long buyerId, BigDecimal amount) {
         if (orderId == null || buyerId == null || amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(PaymentErrorCode.INVALID_AMOUNT, "주문 결제 요청 값이 올바르지 않습니다.");

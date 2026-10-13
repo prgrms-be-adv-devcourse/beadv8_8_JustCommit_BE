@@ -122,4 +122,45 @@ public class Product extends BaseTimeEntity {
     public boolean isPurchasable() {
         return status == ProductStatus.ACTIVE && !hidden;
     }
+
+    public void update(Species species, String title, String description,
+                       BigDecimal price, Integer heightCm, String potSize, String growNote,
+                       List<String> pictureUrls) {
+        if (status != ProductStatus.ACTIVE) {
+            throw new BusinessException(ProductErrorCode.PRODUCT_NOT_EDITABLE);
+        }
+        if (species.isBanned()) {
+            throw new BusinessException(ProductErrorCode.BANNED_SPECIES);
+        }
+        this.species = species;
+        this.title = title;
+        this.description = description;
+        this.price = price;
+        this.heightCm = heightCm;
+        this.potSize = potSize;
+        this.growNote = growNote;
+        replacePictures(pictureUrls);
+    }
+
+    public void delete(){
+        if (status != ProductStatus.ACTIVE) {
+            throw new BusinessException(ProductErrorCode.PRODUCT_NOT_DELETABLE);
+        }
+        this.status = ProductStatus.DELETED;
+    }
+
+    public void changeHidden(boolean hidden){
+        if (status != ProductStatus.ACTIVE && status  != ProductStatus.SOLD_OUT) {
+            throw new BusinessException(ProductErrorCode.PRODUCT_NOT_HIDEABLE);
+        }
+        this.hidden = hidden;
+    }
+
+    // 삭제된 상품은 아무에게도, 숨긴 상품은 판매자 본인에게만 보임
+    public boolean isVisibleTo(Long memberId) {
+        if (status == ProductStatus.DELETED) {
+            return false;
+        }
+        return !hidden || isOwnedBy(memberId);
+    }
 }
