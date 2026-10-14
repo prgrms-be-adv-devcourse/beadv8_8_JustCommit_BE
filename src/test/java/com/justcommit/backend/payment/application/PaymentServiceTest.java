@@ -15,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -32,6 +33,7 @@ class PaymentServiceTest {
 
     private static final Long ORDER_ID = 100L;
     private static final Long BUYER_ID = 10L;
+    private static final Long WALLET_ID = 1L;
 
     @Mock WalletRepository walletRepository;
     @Mock WalletTransactionRepository walletTransactionRepository;
@@ -41,7 +43,7 @@ class PaymentServiceTest {
     void debitsBalanceAndRecordsPaymentTransaction() {
         Wallet wallet = walletWithBalance("10000");
         when(walletRepository.findByMemberIdForUpdate(BUYER_ID)).thenReturn(Optional.of(wallet));
-        when(walletTransactionRepository.existsByRefTypeAndRefId(RefType.PAYMENT, ORDER_ID)).thenReturn(false);
+        when(walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(WALLET_ID, RefType.PAYMENT, ORDER_ID)).thenReturn(false);
 
         PaymentResult result = paymentService.pay(ORDER_ID, BUYER_ID, new BigDecimal("3000"));
 
@@ -65,7 +67,7 @@ class PaymentServiceTest {
     void debitsWholeBalanceWhenAmountEqualsBalance() {
         Wallet wallet = walletWithBalance("3000");
         when(walletRepository.findByMemberIdForUpdate(BUYER_ID)).thenReturn(Optional.of(wallet));
-        when(walletTransactionRepository.existsByRefTypeAndRefId(RefType.PAYMENT, ORDER_ID)).thenReturn(false);
+        when(walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(WALLET_ID, RefType.PAYMENT, ORDER_ID)).thenReturn(false);
 
         PaymentResult result = paymentService.pay(ORDER_ID, BUYER_ID, new BigDecimal("3000"));
 
@@ -77,7 +79,7 @@ class PaymentServiceTest {
     void returnsInsufficientBalanceWithoutDebiting() {
         Wallet wallet = walletWithBalance("2000");
         when(walletRepository.findByMemberIdForUpdate(BUYER_ID)).thenReturn(Optional.of(wallet));
-        when(walletTransactionRepository.existsByRefTypeAndRefId(RefType.PAYMENT, ORDER_ID)).thenReturn(false);
+        when(walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(WALLET_ID, RefType.PAYMENT, ORDER_ID)).thenReturn(false);
 
         PaymentResult result = paymentService.pay(ORDER_ID, BUYER_ID, new BigDecimal("3000"));
 
@@ -104,7 +106,7 @@ class PaymentServiceTest {
     void returnsAlreadyPaidWithoutDebitingTwice() {
         Wallet wallet = walletWithBalance("7000");
         when(walletRepository.findByMemberIdForUpdate(BUYER_ID)).thenReturn(Optional.of(wallet));
-        when(walletTransactionRepository.existsByRefTypeAndRefId(RefType.PAYMENT, ORDER_ID)).thenReturn(true);
+        when(walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(WALLET_ID, RefType.PAYMENT, ORDER_ID)).thenReturn(true);
 
         PaymentResult result = paymentService.pay(ORDER_ID, BUYER_ID, new BigDecimal("3000"));
 
@@ -139,6 +141,7 @@ class PaymentServiceTest {
     private Wallet walletWithBalance(String balance) {
         Wallet wallet = new Wallet(BUYER_ID);
         wallet.credit(new BigDecimal(balance));
+        ReflectionTestUtils.setField(wallet, "id", WALLET_ID);
         return wallet;
     }
 }

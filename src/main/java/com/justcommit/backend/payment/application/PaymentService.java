@@ -36,7 +36,7 @@ public class PaymentService implements PaymentUseCase {
         }
         Wallet wallet = found.get();
 
-        if (walletTransactionRepository.existsByRefTypeAndRefId(RefType.PAYMENT, orderId)) {
+        if (walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(wallet.getId(), RefType.PAYMENT, orderId)) {
             return PaymentResult.alreadyPaid(wallet.getBalance());
         }
 
@@ -62,8 +62,8 @@ public class PaymentService implements PaymentUseCase {
                         PaymentErrorCode.WALLET_NOT_FOUND
                 ));
 
-        if (walletTransactionRepository.existsByRefTypeAndRefId(
-                RefType.SETTLEMENT, settlementId)) {
+        if (walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(
+                wallet.getId(), RefType.SETTLEMENT, settlementId)) {
             return;
         }
 
