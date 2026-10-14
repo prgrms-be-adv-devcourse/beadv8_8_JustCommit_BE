@@ -1,9 +1,10 @@
 package com.justcommit.backend.market.shipment.application;
 
-import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.OrderResult;
 import com.justcommit.backend.market.OrdersItemResult;
 import com.justcommit.backend.market.SellerOrderResult;
+import com.justcommit.backend.market.ShipmentQuery;
+import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.shipment.domain.Shipment;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingException;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingRequest;
@@ -15,23 +16,45 @@ import com.justcommit.backend.member.MemberQuery;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ShipmentService {
+public class ShipmentService implements ShipmentQuery {
     private final ShipmentRepository shipmentRepository;
     private final CourierClient courierClient;
-    private final OrderQuery orderQuery;
     private final MemberQuery memberQuery;
 
-    public void createShipments(Long orderId) {
-        OrderResult order = orderQuery.getOrder(orderId);
+    @Override
+    @Transactional(readOnly = true)
+    public ShipmentResult findBySellerOrderId(Long sellerOrderId) {
+        return shipmentRepository.findBySellerOrderId(sellerOrderId)
+                .map(shipment -> new ShipmentResult(shipment.getId(), shipment.getStatus().name(),
+                        shipment.getDeliveredAt()))
+                .orElse(null);
+    }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Map<Long, ShipmentResult> findBySellerOrderIds(List<Long> sellerOrderIds) {
+        if (sellerOrderIds.isEmpty()) {
+            return Map.of();
+        }
+        return shipmentRepository.findBySellerOrderIdIn(sellerOrderIds).stream()
+                .collect(Collectors.toMap(Shipment::getSellerOrderId,
+                        shipment -> new ShipmentResult(shipment.getId(), shipment.getStatus().name(),
+                                shipment.getDeliveredAt())));
+    }
+
+
+    public void createShipments(OrderResult order) {
         for (SellerOrderResult sellerOrder : order.sellerOrders()) {
             createAndBook(order, sellerOrder);
         }

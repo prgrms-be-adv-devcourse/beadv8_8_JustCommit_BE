@@ -1,7 +1,11 @@
 package com.justcommit.backend.market.order.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderStatus;
+import com.justcommit.backend.market.OrderQuery;
+import com.justcommit.backend.market.PurchaseConfirmedEvent;
+import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.cart.application.CartService;
 import com.justcommit.backend.market.cart.domain.CartItem;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
@@ -9,9 +13,14 @@ import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
 import com.justcommit.backend.market.order.infrastructure.OrderPaymentTtlStore;
+import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
+import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
+import com.justcommit.backend.market.order.infrastructure.kafka.PurchaseConfirmedEventPublisher;
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
+import com.justcommit.backend.market.shipment.application.ShipmentService;
+import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.payment.PaymentResult;
 import com.justcommit.backend.payment.PaymentStatus;
 import com.justcommit.backend.payment.PaymentUseCase;
@@ -26,12 +35,7 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -44,11 +48,16 @@ public class OrderService {
     private static final Duration PAYMENT_WINDOW = Duration.ofMinutes(10);
 
     private final OrdersRepository ordersRepository;
+    private final OrdersItemRepository ordersItemRepository;
     private final CartService cartService;
     private final ProductQuery productQuery;
     private final ProductUseCase productUseCase;
     private final OrderPaymentTtlStore paymentTtlStore;
     private final PaymentUseCase paymentUseCase;
+    private final OrderQuery orderQuery;
+    private final ShipmentService shipmentService;
+    private final SellerOrderRepository sellerOrderRepository;
+    private final PurchaseConfirmedEventPublisher purchaseConfirmedEventPublisher;
 
     @Transactional
     public OrderCreateResponse create(Long memberId, CartOrderCreateRequest request) {
@@ -158,22 +167,6 @@ public class OrderService {
         return toResponse(order, expiresAt);
     }
 
-    private Orders orderPayment(Orders order) {
-        if (!productUseCase.markSoldOut(order.getId())) {
-            throw new BusinessException(OrderErrorCode.PRODUCT_UNAVAILABLE);
-        }
-        // 상품 벌크 업데이트가 영속성 컨텍스트를 비우므로 주문을 다시 관리 상태로 조회한다.
-        Orders managed = ordersRepository.findById(order.getId())
-                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
-        managed.paid();
-        return managed;
-    }
-
-    private OrderCreateResponse toResponse(Orders order, LocalDateTime expiresAt) {
-        return new OrderCreateResponse(order.getId(), order.getOrderNo(), order.getTotalAmount(),
-                order.getItemCount(), order.getCreatedAt(), order.getStatus(), expiresAt);
-    }
-
     @Transactional
     public void expirePendingOrders() {
         LocalDateTime cutoff = LocalDateTime.now().minus(PAYMENT_WINDOW);
@@ -190,6 +183,95 @@ public class OrderService {
             itemsByOrder.get(order.getId()).stream()
                     .forEach(item -> cartService.restoreItem(order.getBuyerId(), item.getProductId(), item.getPrice()));
         }
+    }
+
+    @Transactional
+    public void confirm(Long memberId, Long orderItemId) {
+        Long orderId = ordersItemRepository.findOrderIdByItemId(orderItemId).orElseThrow(()
+                -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
+        // 같은 주문의 서로 다른 판매자 주문도 직렬화하기 위해 부모 주문을 먼저 잠근다.
+        Orders order = ordersRepository.findLockedById(orderId).orElseThrow(()
+                -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+        Long sellerOrderId = ordersItemRepository.findSellerOrderIdByItemId(orderItemId).orElseThrow(()
+                -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
+        // 잠금 순서는 항상 주문 → 판매자 주문으로 유지한다.
+        SellerOrder sellerOrder = sellerOrderRepository.findLockedById(sellerOrderId).orElseThrow(()
+                -> new BusinessException(OrderErrorCode.SELLER_ORDER_NOT_FOUND));
+        OrdersItem item = ordersItemRepository.findById(orderItemId).orElseThrow(()
+                -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
+
+        if (!order.getBuyerId().equals(memberId)) {
+            throw new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND);
+        }
+
+        if (item.getStatus().equals(OrderItemStatus.CONFIRMED)) {
+            return;
+        } else if (!item.getStatus().equals(OrderItemStatus.NORMAL)) {
+            throw new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_CONFIRMABLE);
+        }
+
+        if (order.getStatus() != OrderStatus.PAID) {
+            throw new BusinessException(OrderErrorCode.ORDER_NOT_PAID);
+        }
+
+        ShipmentResult shipmentResult = shipmentService.findBySellerOrderId(sellerOrder.getId());
+        if (shipmentResult == null) {
+            throw new BusinessException(OrderErrorCode.SHIPMENT_NOT_FOUND);
+        }
+        if (!ShipmentStatus.DELIVERED.name().equals(shipmentResult.status())) {
+            throw new BusinessException(OrderErrorCode.SHIPMENT_NOT_DELIVERED);
+        }
+
+        item.confirm();
+        checkAndRequestSettlement(sellerOrder);
+        updateOrderStatus(order);
+    }
+
+    private void checkAndRequestSettlement(SellerOrder sellerOrder) {
+        if (sellerOrder.getConfirmedAt() != null) {
+            return;
+        }
+        if (sellerOrder.getSettlementBaseAmount().compareTo(BigDecimal.ZERO) < 1) {
+            //미정산대상
+            return;
+        }
+
+        if (!sellerOrder.getItems().stream().anyMatch(i ->
+                i.getStatus().equals(OrderItemStatus.NORMAL) || i.getStatus().equals(OrderItemStatus.REFUND_REQUESTED))) {
+            sellerOrder.confirmed();
+            purchaseConfirmedEventPublisher.publishAfterCommit(new PurchaseConfirmedEvent(
+                    sellerOrder.getId(), sellerOrder.getSellerId(), sellerOrder.getSettlementBaseAmount(),
+                    sellerOrder.getConfirmedAt()));
+        }
+    }
+
+    private void updateOrderStatus(Orders orders) {
+        if (orders.getSellerOrders().stream().anyMatch(s -> s.getConfirmedAt() == null && s.getSettlementBaseAmount().compareTo(BigDecimal.ZERO) > 0)) {
+            return;
+        }
+        if (orders.getSellerOrders().stream()
+                .allMatch(s -> s.getSettlementBaseAmount().compareTo(BigDecimal.ZERO) == 0)) {
+            orders.cancel();
+        } else {
+            orders.confirm();
+        }
+    }
+
+    private Orders orderPayment(Orders order) {
+        if (!productUseCase.markSoldOut(order.getId())) {
+            throw new BusinessException(OrderErrorCode.PRODUCT_UNAVAILABLE);
+        }
+        // 상품 벌크 업데이트가 영속성 컨텍스트를 비우므로 주문을 다시 관리 상태로 조회한다.
+        Orders managed = ordersRepository.findById(order.getId())
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+        managed.paid();
+        shipmentService.createShipments(orderQuery.getOrder(managed.getId()));
+        return managed;
+    }
+
+    private OrderCreateResponse toResponse(Orders order, LocalDateTime expiresAt) {
+        return new OrderCreateResponse(order.getId(), order.getOrderNo(), order.getTotalAmount(),
+                order.getItemCount(), order.getCreatedAt(), order.getStatus(), expiresAt);
     }
 
     private static String generateOrderNo() {

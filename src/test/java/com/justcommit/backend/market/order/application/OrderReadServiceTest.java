@@ -1,6 +1,9 @@
 package com.justcommit.backend.market.order.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.market.OrderItemStatus;
+import com.justcommit.backend.market.ShipmentQuery;
+import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
@@ -22,6 +25,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,6 +42,7 @@ class OrderReadServiceTest {
     @Mock OrdersRepository ordersRepository;
     @Mock SellerOrderRepository sellerOrderRepository;
     @Mock OrdersItemRepository ordersItemRepository;
+    @Mock ShipmentQuery shipmentQuery;
     @InjectMocks OrderReadService orderReadService;
 
     @Test
@@ -61,6 +66,7 @@ class OrderReadServiceTest {
     @Test
     void buyerDetailLoadsOnlyOwnedOrder() {
         Orders order = order(10L);
+        order.paid();
         OrdersItem item = item(order, 20L);
         SellerOrder sellerOrder = item.getSellerOrder();
         when(ordersRepository.findByIdAndBuyerId(9L, 10L)).thenReturn(Optional.of(order));
@@ -71,10 +77,64 @@ class OrderReadServiceTest {
 
         assertThat(response.sellerOrders()).singleElement().satisfies(seller -> {
             assertThat(seller.sellerId()).isEqualTo(20L);
-            assertThat(seller.items()).singleElement().satisfies(detail ->
-                    assertThat(detail.productName()).isEqualTo("몬스테라"));
+            assertThat(seller.shipmentStatus()).isNull();
+            assertThat(seller.items()).singleElement().satisfies(detail -> {
+                assertThat(detail.productName()).isEqualTo("몬스테라");
+                assertThat(detail.purchaseConfirmable()).isFalse();
+            });
         });
         verify(ordersRepository).findByIdAndBuyerId(9L, 10L);
+    }
+
+    @Test
+    void buyerDetailBatchesShipmentStatusAndDeterminesEligibilityPerItem() {
+        Orders order = order(10L);
+        order.paid();
+        OrdersItem deliveredItem = item(order, 20L);
+        SellerOrder readySellerOrder = new SellerOrder(order, 21L);
+        ReflectionTestUtils.setField(readySellerOrder, "id", 8L);
+        OrdersItem readyItem = new OrdersItem(readySellerOrder, 102L, "선인장", new BigDecimal("5000"));
+        ReflectionTestUtils.setField(readyItem, "id", 6L);
+        readySellerOrder.addItems(List.of(readyItem));
+        order.addSellerOrders(List.of(readySellerOrder));
+        when(ordersRepository.findByIdAndBuyerId(9L, 10L)).thenReturn(Optional.of(order));
+        when(sellerOrderRepository.findByOrder_Id(9L))
+                .thenReturn(List.of(deliveredItem.getSellerOrder(), readySellerOrder));
+        when(ordersItemRepository.findBySellerOrderIds(List.of(7L, 8L)))
+                .thenReturn(List.of(deliveredItem, readyItem));
+        when(shipmentQuery.findBySellerOrderIds(List.of(7L, 8L))).thenReturn(Map.of(
+                7L, new ShipmentResult(30L, "DELIVERED",
+                        LocalDateTime.of(2026, 10, 12, 13, 0)),
+                8L, new ShipmentResult(31L, "READY", null)));
+
+        var response = orderReadService.buyerOrder(10L, 9L);
+
+        assertThat(response.sellerOrders()).hasSize(2);
+        assertThat(response.sellerOrders().get(0).shipmentId()).isEqualTo(30L);
+        assertThat(response.sellerOrders().get(0).shipmentStatus()).isEqualTo("DELIVERED");
+        assertThat(response.sellerOrders().get(0).deliveredAt())
+                .isEqualTo(LocalDateTime.of(2026, 10, 12, 13, 0));
+        assertThat(response.sellerOrders().get(0).items().getFirst().purchaseConfirmable()).isTrue();
+        assertThat(response.sellerOrders().get(1).shipmentStatus()).isEqualTo("READY");
+        assertThat(response.sellerOrders().get(1).items().getFirst().purchaseConfirmable()).isFalse();
+        verify(shipmentQuery).findBySellerOrderIds(List.of(7L, 8L));
+    }
+
+    @Test
+    void cancelledItemIsNotConfirmableEvenAfterDelivery() {
+        Orders order = order(10L);
+        order.paid();
+        OrdersItem item = item(order, 20L);
+        ReflectionTestUtils.setField(item, "status", OrderItemStatus.CANCELLED);
+        when(ordersRepository.findByIdAndBuyerId(9L, 10L)).thenReturn(Optional.of(order));
+        when(sellerOrderRepository.findByOrder_Id(9L)).thenReturn(List.of(item.getSellerOrder()));
+        when(ordersItemRepository.findBySellerOrderIds(List.of(7L))).thenReturn(List.of(item));
+        when(shipmentQuery.findBySellerOrderIds(List.of(7L))).thenReturn(Map.of(
+                7L, new ShipmentResult(30L, "DELIVERED", null)));
+
+        var response = orderReadService.buyerOrder(10L, 9L);
+
+        assertThat(response.sellerOrders().getFirst().items().getFirst().purchaseConfirmable()).isFalse();
     }
 
     @Test
