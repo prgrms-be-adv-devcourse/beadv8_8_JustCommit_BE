@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.presentation.oauth2;
+package com.justcommit.backend.member.auth.presentation.oauth2;
 
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import jakarta.servlet.http.HttpServletRequest;

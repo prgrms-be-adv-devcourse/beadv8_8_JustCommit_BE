@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.presentation.support;
+package com.justcommit.backend.member.auth.presentation.support;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseCookie;

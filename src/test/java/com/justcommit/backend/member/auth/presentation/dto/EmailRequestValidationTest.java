@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.presentation.dto;
+package com.justcommit.backend.member.auth.presentation.dto;
 
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;

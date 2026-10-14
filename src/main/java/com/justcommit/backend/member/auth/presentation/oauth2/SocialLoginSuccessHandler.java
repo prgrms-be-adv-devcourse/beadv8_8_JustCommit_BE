@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.presentation.oauth2;
+package com.justcommit.backend.member.auth.presentation.oauth2;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.response.ApiResponse;
@@ -9,8 +9,8 @@ import com.justcommit.backend.member.auth.application.SocialLoginService;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.auth.infrastructure.oauth2.KakaoUserInfo;
-import com.justcommit.backend.member.presentation.dto.SocialLoginResponse;
-import com.justcommit.backend.member.presentation.support.RefreshTokenCookieFactory;
+import com.justcommit.backend.member.auth.presentation.dto.SocialLoginResponse;
+import com.justcommit.backend.member.auth.presentation.support.RefreshTokenCookieFactory;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
