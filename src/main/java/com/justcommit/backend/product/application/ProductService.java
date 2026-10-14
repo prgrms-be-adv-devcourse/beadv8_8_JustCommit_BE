@@ -1,6 +1,7 @@
 package com.justcommit.backend.product.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.member.MemberQuery;
 import com.justcommit.backend.product.ProductQuery;
 import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.product.ProductStatus;
@@ -25,7 +26,8 @@ import java.util.List;
 public class ProductService implements ProductQuery, ProductUseCase {
 
     private final ProductRepository productRepository;
-private final SpeciesRepository speciesRepository;
+    private final SpeciesRepository speciesRepository;
+    private final MemberQuery memberQuery;
 
     // ── ProductQuery ───────────────────────────────
 
@@ -86,9 +88,16 @@ private final SpeciesRepository speciesRepository;
                 product.getThumbnailUrl());
     }
 
-    // 상품 API
+    // ── 상품 API ───────────────────────────────
     @Transactional
     public ProductDetailResponse createProduct(Long sellerId, ProductRequest request){
+
+        //판매자 여부 확인
+        if (!memberQuery.isSeller(sellerId)) {
+            throw new BusinessException(ProductErrorCode.NOT_SELLER);
+        }
+
+
         Species species = speciesRepository.findById(request.speciesId())
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.SPECIES_NOT_FOUND));
 
@@ -98,15 +107,16 @@ private final SpeciesRepository speciesRepository;
                 species, sellerId, request.title(), request.description(), request.price(),
                 request.heightCm(), request.potSize(), request.growNote(), pictureUrls);
 
-        return ProductDetailResponse.from(productRepository.save(product));
+        return ProductDetailResponse.from(productRepository.save(product),   memberQuery.getNickname(sellerId));
     }
 
     // memberId: 로그인하지 않았으면 null
     public ProductDetailResponse getProductDetail(Long productId, Long memberId) {
-        return productRepository.findWithDetailById(productId)
-                .filter(product -> product.isVisibleTo(memberId))
-                .map(ProductDetailResponse::from)
+        Product product =  productRepository.findWithDetailById(productId)
+                .filter(p -> p.isVisibleTo(memberId))
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
+
+        return ProductDetailResponse.from(product, memberQuery.getNickname(product.getSellerId()));
     }
 
     public Page<ProductSearchResponse> searchProducts(ProductSearchRequest request) {
@@ -126,12 +136,13 @@ private final SpeciesRepository speciesRepository;
         Species species = speciesRepository.findById(request.speciesId())
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.SPECIES_NOT_FOUND));
 
+        String sellerName = memberQuery.getNickname(product.getSellerId());
         List<String> pictureUrls = request.pictureUrls() == null ? List.of() : request.pictureUrls();
 
         product.update(species, request.title(), request.description(), request.price(),
                 request.heightCm(), request.potSize(), request.growNote(), pictureUrls);
 
-         return  ProductDetailResponse.from(product);
+         return  ProductDetailResponse.from(product,sellerName);
     }
 
     private Product getOwnedProductForUpdate(Long memberId, Long productId){

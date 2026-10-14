@@ -1,6 +1,7 @@
 package com.justcommit.backend.product.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.member.MemberQuery;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.domain.Product;
 import com.justcommit.backend.product.domain.ProductPicture;
@@ -47,6 +48,9 @@ public class  ProductServiceTest {
     @Mock
     private SpeciesRepository speciesRepository;
 
+    @Mock
+    private MemberQuery memberQuery;
+
     @InjectMocks
     private ProductService productService;
 
@@ -72,6 +76,45 @@ public class  ProductServiceTest {
         ReflectionTestUtils.setField(product, "id", PRODUCT_ID);
         ReflectionTestUtils.setField(product, "status", status);
         return product;
+    }
+
+    // ── 등록 ───────────────────────────────────────
+
+    // 등록 요청
+    private ProductRequest createRequest(){
+        return new ProductRequest(1L, "몬스테라 분양합니다", "잘 자란 몬스테라입니다",
+                new BigDecimal("30000"), 50, "중형", null, List.of("https://example.com/a.jpg"));
+    }
+
+    @Test
+    @DisplayName("판매자로 등록되지 않은 회원이 상품을 등록하면 NOT_SELLER, 품종 조회·저장을 하지 않음")
+    void createProductByNotSeller(){
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(false);
+
+        assertThatThrownBy(() -> productService.createProduct(SELLER_ID, createRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.NOT_SELLER);
+
+        verify(speciesRepository, never()).findById(any()); //한 번도 호출되지 않았는지 확인. 판매자가 아닌 경우 품종 조회, 저장 안가야함
+        verify(productRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("판매자면 상품이 생성되고, 반환시 닉네임이 잘 담기는 확인")
+    void createProduct() {
+
+        //given 1) 회원 1번이 판매자? -> true 2)품종 1번 -> 품종 1번에 대한 정보 3)저장시 -> 저장 객체 반환
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
+        given(speciesRepository.findById(1L)).willReturn(Optional.of(species(1L, "몬스테라", false)));
+        given(productRepository.save(any(Product.class))).willAnswer(invocation -> invocation.getArgument(0)); //
+        given(memberQuery.getNickname(SELLER_ID)).willReturn("판매자1");
+
+        //when - 서비스 메소드 호출 . 위의 내용으로 상품 등록
+        ProductDetailResponse response = productService.createProduct(SELLER_ID, createRequest());
+
+        //then - 생성된 응답에 제대로 값이 드어갔는지 확인
+        assertThat(response.sellerName()).isEqualTo("판매자1");
+        assertThat(response.title()).isEqualTo("몬스테라 분양합니다");
     }
 
     // 수정 요청
@@ -299,6 +342,26 @@ public class  ProductServiceTest {
 
         assertThat(response.productId()).isEqualTo(PRODUCT_ID);
         assertThat(response.hidden()).isFalse();
+    }
+
+    @Test
+    @DisplayName("상품 상세에 판매자 닉네임을 담아 반환")
+    void getProductDetailWithSellerName() {
+
+        //given
+        Product product = product(ProductStatus.ACTIVE);
+
+        // 10번(PRODUCT_ID) 상품 조회시 위에서 만든 상품 return
+        given(productRepository.findWithDetailById(PRODUCT_ID)).willReturn(Optional.of(product));
+        // 회원 1(SELLER_ID)  조회시 판매자 1 응답
+        given(memberQuery.getNickname(SELLER_ID)).willReturn("판매자1");
+
+
+        //when : 서비스 호출  - 비로그인 조회라서 null 을 넣음
+        ProductDetailResponse response = productService.getProductDetail(PRODUCT_ID, null);
+
+        //then : 응답확인 - sellerName 이 일치하는지
+        assertThat(response.sellerName()).isEqualTo("판매자1");
     }
 
     @Test

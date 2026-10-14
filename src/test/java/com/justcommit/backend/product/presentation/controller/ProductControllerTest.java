@@ -100,7 +100,7 @@ class ProductControllerTest {
     // DetailResponse 가짜 응답 데이터
     private ProductDetailResponse detailResponse() {
         return new ProductDetailResponse(
-                10L, SELLER_ID, "몬스테라 분양합니다", "잘 자란 몬스테라입니다",
+                10L, SELLER_ID, "Seller01","몬스테라 분양합니다", "잘 자란 몬스테라입니다",
                 new BigDecimal("30000"), 50, "중형", "베란다에서 키웠어요", "ACTIVE", false,
                 new ProductSpeciesResponse(1L, "몬스테라", "FOLIAGE", "MEDIUM", "WHEN_SURFACE_DRY", "EASY"),
                 List.of("https://example.com/a.jpg", "https://example.com/b.jpg"),
@@ -144,6 +144,9 @@ class ProductControllerTest {
     @DisplayName("판매자가 아닌 회원이 등록하면 403 NOT_SELLER")
     void createProductByMember() throws Exception {
         loginAs(SELLER_ID, MEMBER);
+        given(productService.createProduct(eq(SELLER_ID), any()))
+                .willThrow(new BusinessException(ProductErrorCode.NOT_SELLER));
+
 
         mockMvc.perform(post("/api/v1/products")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -250,6 +253,7 @@ class ProductControllerTest {
 
         mockMvc.perform(get("/api/v1/products/10"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sellerName").value("Seller01"))
                 .andExpect(jsonPath("$.data.title").value("몬스테라 분양합니다"))
                 .andExpect(jsonPath("$.data.species.category").value("FOLIAGE"))
                 .andExpect(jsonPath("$.data.imageUrls.length()").value(2));
@@ -474,6 +478,5 @@ class ProductControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_FIELD_ERROR"));
     }
-
 
 }

@@ -1,12 +1,10 @@
 package com.justcommit.backend.product.presentation.controller;
 
 
-import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.response.ApiResponse;
 import com.justcommit.backend.common.response.PagingResponse;
 import com.justcommit.backend.common.security.AuthMember;
 import com.justcommit.backend.product.application.ProductService;
-import com.justcommit.backend.product.domain.exception.ProductErrorCode;
 import com.justcommit.backend.product.presentation.dto.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -31,7 +29,6 @@ public class ProductController {
             @AuthenticationPrincipal AuthMember authMember,
             @RequestBody @Valid  ProductRequest request) {
 
-        validateSeller(authMember);
         return ApiResponse.created("상품이 성공적으로 등록되었습니다.",
                 productService.createProduct(authMember.memberId(), request));
     }
@@ -87,12 +84,6 @@ public class ProductController {
         return ApiResponse.ok(request.hidden() ? "상품을 숨겼습니다." : "상품 숨김을 해제했습니다.");
     }
 
-    // 판매자(SELLER)와 관리자(ADMIN)만 상품 등록 가능
-    private void validateSeller(AuthMember authMember) {
-        if (!"SELLER".equals(authMember.role()) && !"ADMIN".equals(authMember.role())) {
-            throw new BusinessException(ProductErrorCode.NOT_SELLER);
-        }
-    }
 
     @Operation(summary = "내 판매 물품 조회", description = "로그인한 판매자가 등록한 상품을 최신순으로 조회합니다. 숨긴 상품은 포함하고 삭제된 상품은 제외합니다.")
     @GetMapping("/me")
