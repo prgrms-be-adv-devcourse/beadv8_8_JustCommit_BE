@@ -17,6 +17,9 @@ spring:
       port: ${REDIS_PORT:6379}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      properties:
+        max.block.ms: 3000  # 테스트 환경에 카프카가 없어도 3초만 기다리고 넘어감
   jpa:
     hibernate:
       ddl-auto: create-drop

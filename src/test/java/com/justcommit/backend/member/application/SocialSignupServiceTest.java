@@ -4,6 +4,7 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.security.JwtProvider;
 import com.justcommit.backend.common.security.SignupClaims;
 import com.justcommit.backend.common.security.TokenException;
+import com.justcommit.backend.member.MemberRegisteredEvent;
 import com.justcommit.backend.member.domain.Address;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Provider;
@@ -19,6 +20,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -29,9 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class SocialSignupServiceTest {
@@ -52,6 +52,9 @@ class SocialSignupServiceTest {
 
   @Mock
   private RefreshTokenIssuer refreshTokenIssuer;
+
+  @Mock
+  private ApplicationEventPublisher eventPublisher;
 
   @InjectMocks
   private SocialSignupService socialSignupService;
@@ -117,6 +120,9 @@ class SocialSignupServiceTest {
     assertThat(saved.getAccountNoEnc()).isEqualTo("v1:encrypted");
 
     verify(addressRepository).save(any(Address.class));
+
+    // 회원 생성 이벤트 발행 (systemAccount=false)
+    verify(eventPublisher).publishEvent(new MemberRegisteredEvent(5L, false));
   }
 
   @Test
@@ -147,6 +153,7 @@ class SocialSignupServiceTest {
 
     assertErrorCode(() -> socialSignupService.signup(SIGNUP_TOKEN, command()), MemberErrorCode.DUPLICATE_SOCIAL_ACCOUNT);
     verify(memberRepository, never()).saveAndFlush(any());
+    verifyNoInteractions(eventPublisher);
   }
 
   @Test
@@ -176,5 +183,6 @@ class SocialSignupServiceTest {
 
     assertErrorCode(() -> socialSignupService.signup(SIGNUP_TOKEN, command()), MemberErrorCode.DUPLICATE_SOCIAL_ACCOUNT);
     verify(addressRepository, never()).save(any());
+    verifyNoInteractions(eventPublisher);
   }
 }
