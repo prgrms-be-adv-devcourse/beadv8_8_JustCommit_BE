@@ -1,6 +1,6 @@
-package com.justcommit.backend.member.presentation.dto;
+package com.justcommit.backend.member.address.presentation.dto;
 
-import com.justcommit.backend.member.application.AddressCreateCommand;
+import com.justcommit.backend.member.address.application.AddressCreateCommand;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;

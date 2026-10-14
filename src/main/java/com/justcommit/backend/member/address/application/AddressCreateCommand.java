@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.application;
+package com.justcommit.backend.member.address.application;
 
 // 배송지 등록 입력값 (컨트롤러 -> 서비스)
 public record AddressCreateCommand(

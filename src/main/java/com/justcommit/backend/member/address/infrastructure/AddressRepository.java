@@ -1,6 +1,6 @@
-package com.justcommit.backend.member.infrastructure.repository;
+package com.justcommit.backend.member.address.infrastructure;
 
-import com.justcommit.backend.member.domain.Address;
+import com.justcommit.backend.member.address.domain.Address;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;

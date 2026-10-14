@@ -1,11 +1,11 @@
-package com.justcommit.backend.member.presentation.controller;
+package com.justcommit.backend.member.address.presentation;
 
 import com.justcommit.backend.common.response.ApiResponse;
 import com.justcommit.backend.common.security.AuthMember;
-import com.justcommit.backend.member.application.AddressResult;
-import com.justcommit.backend.member.application.AddressService;
-import com.justcommit.backend.member.presentation.dto.AddressCreateRequest;
-import com.justcommit.backend.member.presentation.dto.AddressResponse;
+import com.justcommit.backend.member.address.application.AddressResult;
+import com.justcommit.backend.member.address.application.AddressService;
+import com.justcommit.backend.member.address.presentation.dto.AddressCreateRequest;
+import com.justcommit.backend.member.address.presentation.dto.AddressResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;

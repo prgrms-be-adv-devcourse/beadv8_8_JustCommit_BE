@@ -1,10 +1,10 @@
-package com.justcommit.backend.member.application;
+package com.justcommit.backend.member.address.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.member.domain.Address;
+import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
-import com.justcommit.backend.member.infrastructure.repository.AddressRepository;
+import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

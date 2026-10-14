@@ -1,11 +1,11 @@
 package com.justcommit.backend.member.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.member.domain.Address;
+import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
-import com.justcommit.backend.member.infrastructure.repository.AddressRepository;
+import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;

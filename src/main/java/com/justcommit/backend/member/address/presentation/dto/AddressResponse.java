@@ -1,6 +1,6 @@
-package com.justcommit.backend.member.presentation.dto;
+package com.justcommit.backend.member.address.presentation.dto;
 
-import com.justcommit.backend.member.application.AddressResult;
+import com.justcommit.backend.member.address.application.AddressResult;
 
 // 배송지 응답 (목록·등록·기본 변경 공통)
 public record AddressResponse(

@@ -1,6 +1,6 @@
-package com.justcommit.backend.member.application;
+package com.justcommit.backend.member.address.application;
 
-import com.justcommit.backend.member.domain.Address;
+import com.justcommit.backend.member.address.domain.Address;
 
 // 배송지 조회·등록 결과 (서비스 → 컨트롤러)
 public record AddressResult(

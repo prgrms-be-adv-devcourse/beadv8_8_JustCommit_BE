@@ -2,11 +2,12 @@ package com.justcommit.backend.member.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.MemberRegisteredEvent;
+import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.domain.*;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
-import com.justcommit.backend.member.infrastructure.repository.AddressRepository;
+import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
