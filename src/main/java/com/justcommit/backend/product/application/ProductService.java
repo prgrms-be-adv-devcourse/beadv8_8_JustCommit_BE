@@ -28,6 +28,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
     private final ProductRepository productRepository;
     private final SpeciesRepository speciesRepository;
     private final MemberQuery memberQuery;
+    private final ProductImageUrlValidator imageUrlValidator;
 
     // ── ProductQuery ───────────────────────────────
 
@@ -97,17 +98,17 @@ public class ProductService implements ProductQuery, ProductUseCase {
             throw new BusinessException(ProductErrorCode.NOT_SELLER);
         }
 
+        List<String> pictureUrls = request.pictureUrls() == null ? List.of() : request.pictureUrls();
+        imageUrlValidator.validate(sellerId, pictureUrls);
 
         Species species = speciesRepository.findById(request.speciesId())
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.SPECIES_NOT_FOUND));
-
-        List<String> pictureUrls = request.pictureUrls() == null ? List.of() : request.pictureUrls();
 
         Product product = Product.create(
                 species, sellerId, request.title(), request.description(), request.price(),
                 request.heightCm(), request.potSize(), request.growNote(), pictureUrls);
 
-        return ProductDetailResponse.from(productRepository.save(product),   memberQuery.getNickname(sellerId));
+        return ProductDetailResponse.from(productRepository.save(product), memberQuery.getNickname(sellerId));
     }
 
     // memberId: 로그인하지 않았으면 null
@@ -138,6 +139,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
 
         String sellerName = memberQuery.getNickname(product.getSellerId());
         List<String> pictureUrls = request.pictureUrls() == null ? List.of() : request.pictureUrls();
+        imageUrlValidator.validate(product.getSellerId(),pictureUrls);
 
         product.update(species, request.title(), request.description(), request.price(),
                 request.heightCm(), request.potSize(), request.growNote(), pictureUrls);

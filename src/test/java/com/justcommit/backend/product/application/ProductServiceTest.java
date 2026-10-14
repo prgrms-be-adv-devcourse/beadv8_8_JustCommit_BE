@@ -35,7 +35,9 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -53,6 +55,9 @@ public class  ProductServiceTest {
 
     @InjectMocks
     private ProductService productService;
+
+    @Mock
+    private ProductImageUrlValidator imageUrlValidator;
 
     private static final Long SELLER_ID = 1L;        // 상품 주인
     private static final Long OTHER_MEMBER_ID = 2L;  // 남의 상품을 건드리는 사람
@@ -115,6 +120,22 @@ public class  ProductServiceTest {
         //then - 생성된 응답에 제대로 값이 드어갔는지 확인
         assertThat(response.sellerName()).isEqualTo("판매자1");
         assertThat(response.title()).isEqualTo("몬스테라 분양합니다");
+    }
+
+    @Test
+    @DisplayName("이미지 검증에 실패하면 상품을 저장하지 않음")
+    void createProductWithInvalidImage() {
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
+        //예외를 일으키는 상황을 만들기 - validate 호출시 해당 예외 던지는지 확인
+        willThrow(new BusinessException(ProductErrorCode.INVALID_IMAGE_URL))
+                .given(imageUrlValidator).validate(eq(SELLER_ID), any());
+
+        // 예외가 서비스 밖으로 잘 나왔는지 확인 : createProduct 시 예외가 나야하고, 해당하는 예외가 나지 않으면 실패
+        assertThatThrownBy(() -> productService.createProduct(SELLER_ID, createRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.INVALID_IMAGE_URL);
+        // 예외 후 저장까지 가지 않았는지 확인
+        verify(productRepository, never()).save(any());
     }
 
     // 수정 요청
@@ -436,4 +457,6 @@ public class  ProductServiceTest {
         assertThat(item.hidden()).isTrue(); //hidden: true가 제대로 담겼는지 검증
 
     }
+
+
 }

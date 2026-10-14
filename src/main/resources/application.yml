@@ -71,6 +71,8 @@ jwt:
   signup-token-expiration: 10m
 
 custom:
+  image:
+    base-url: ${IMAGE_BASE_URL:http://localhost:8080/images}
   kafka:
     topics:
       purchase-confirmed: ${PURCHASE_CONFIRMED_TOPIC:market.purchase-confirmed.v1}
