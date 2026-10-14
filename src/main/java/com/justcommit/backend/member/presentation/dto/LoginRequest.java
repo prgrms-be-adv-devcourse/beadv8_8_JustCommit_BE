@@ -1,6 +1,6 @@
 package com.justcommit.backend.member.presentation.dto;
 
-import com.justcommit.backend.member.application.LoginCommand;
+import com.justcommit.backend.member.auth.application.LoginCommand;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 

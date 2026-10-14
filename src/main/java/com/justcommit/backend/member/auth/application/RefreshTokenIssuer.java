@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.application;
+package com.justcommit.backend.member.auth.application;
 
 import com.justcommit.backend.member.infrastructure.redis.RefreshTokenRedisStore;
 import lombok.RequiredArgsConstructor;
@@ -13,7 +13,8 @@ import java.util.Base64;
 @RequiredArgsConstructor
 public class RefreshTokenIssuer {
 
-  static final Duration REFRESH_TOKEN_TTL = Duration.ofDays(1);
+  public static final Duration REFRESH_TOKEN_TTL = Duration.ofDays(1);
+
   private static final int REFRESH_TOKEN_BYTES = 32; // 256비트 랜덤
   private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 

@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.application;
+package com.justcommit.backend.member.auth.application;
 
 import java.time.Duration;
 

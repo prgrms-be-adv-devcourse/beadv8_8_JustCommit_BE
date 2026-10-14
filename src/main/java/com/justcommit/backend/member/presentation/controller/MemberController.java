@@ -3,6 +3,7 @@ package com.justcommit.backend.member.presentation.controller;
 import com.justcommit.backend.common.response.ApiResponse;
 import com.justcommit.backend.common.security.AuthMember;
 import com.justcommit.backend.member.application.*;
+import com.justcommit.backend.member.auth.application.LoginResult;
 import com.justcommit.backend.member.presentation.dto.*;
 import com.justcommit.backend.member.presentation.support.RefreshTokenCookieFactory;
 import jakarta.validation.Valid;

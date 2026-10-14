@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.application;
+package com.justcommit.backend.member.auth.application;
 
 // 소셜 로그인 결과 기존 회원이면 로그인, 신규 회원이면 추가정보 입력용 가입 토큰
 public sealed interface SocialLoginResult {

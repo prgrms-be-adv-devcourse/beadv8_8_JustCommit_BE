@@ -1,8 +1,8 @@
 package com.justcommit.backend.member.presentation.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.justcommit.backend.member.application.LoginResult;
-import com.justcommit.backend.member.application.SocialLoginResult;
+import com.justcommit.backend.member.auth.application.LoginResult;
+import com.justcommit.backend.member.auth.application.SocialLoginResult;
 
 // 소셜 로그인 콜백 응답
 // 기존 회원: 로그인 응답과 같은 필드 / 신규 회원: 추가정보 입력에 쓸 가입 토큰

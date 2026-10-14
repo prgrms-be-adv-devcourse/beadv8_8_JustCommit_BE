@@ -2,10 +2,10 @@ package com.justcommit.backend.member.presentation.oauth2;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.response.ApiResponse;
-import com.justcommit.backend.member.application.LoginResult;
-import com.justcommit.backend.member.application.SocialLoginCommand;
-import com.justcommit.backend.member.application.SocialLoginResult;
-import com.justcommit.backend.member.application.SocialLoginService;
+import com.justcommit.backend.member.auth.application.LoginResult;
+import com.justcommit.backend.member.auth.application.SocialLoginCommand;
+import com.justcommit.backend.member.auth.application.SocialLoginResult;
+import com.justcommit.backend.member.auth.application.SocialLoginService;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.oauth2.KakaoUserInfo;

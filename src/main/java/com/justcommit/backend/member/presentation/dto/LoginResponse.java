@@ -1,6 +1,6 @@
 package com.justcommit.backend.member.presentation.dto;
 
-import com.justcommit.backend.member.application.LoginResult;
+import com.justcommit.backend.member.auth.application.LoginResult;
 
 public record LoginResponse(
         String accessToken,
