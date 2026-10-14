@@ -1,6 +1,6 @@
 package com.justcommit.backend.member.seller.presentation.dto;
 
-import com.justcommit.backend.member.presentation.dto.MemberValidation;
+import com.justcommit.backend.member.presentation.validation.MemberValidation;
 import com.justcommit.backend.member.seller.application.SellerRegisterCommand;
 import jakarta.validation.constraints.Size;
 

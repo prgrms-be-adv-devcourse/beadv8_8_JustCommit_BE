@@ -6,7 +6,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
-import static com.justcommit.backend.member.presentation.dto.MemberValidation.*;
+import static com.justcommit.backend.member.presentation.validation.MemberValidation.*;
 
 public record SignupRequest(
         @NotBlank(message = "이메일을 입력해주세요.")

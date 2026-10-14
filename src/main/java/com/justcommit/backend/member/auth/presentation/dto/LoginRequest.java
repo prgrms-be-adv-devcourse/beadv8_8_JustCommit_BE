@@ -4,7 +4,7 @@ import com.justcommit.backend.member.auth.application.LoginCommand;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 
-import static com.justcommit.backend.member.presentation.dto.MemberValidation.EMAIL_REGEX;
+import static com.justcommit.backend.member.presentation.validation.MemberValidation.EMAIL_REGEX;
 
 public record LoginRequest(
         @NotBlank(message = "이메일을 입력해주세요.")

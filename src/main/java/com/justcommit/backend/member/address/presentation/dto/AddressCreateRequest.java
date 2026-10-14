@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
-import static com.justcommit.backend.member.presentation.dto.MemberValidation.*;
+import static com.justcommit.backend.member.presentation.validation.MemberValidation.*;
 
 // 배송지 등록
 public record AddressCreateRequest(

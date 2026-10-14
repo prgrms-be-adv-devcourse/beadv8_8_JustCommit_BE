@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
-import static com.justcommit.backend.member.presentation.dto.MemberValidation.*;
+import static com.justcommit.backend.member.presentation.validation.MemberValidation.*;
 
 // 소셜 회원가입 추가정보 (이메일·비밀번호 없음: 이메일은 가입 토큰에서, 비밀번호 사용x)
 public record SocialSignupRequest(

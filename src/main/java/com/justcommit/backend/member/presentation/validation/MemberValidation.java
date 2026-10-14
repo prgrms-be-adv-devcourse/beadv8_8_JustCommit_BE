@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.presentation.dto;
+package com.justcommit.backend.member.presentation.validation;
 
 // 회원 요청 DTO에서 함께 쓰는 입력 규칙
 public final class MemberValidation {
