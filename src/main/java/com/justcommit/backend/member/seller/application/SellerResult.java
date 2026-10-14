@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.application;
+package com.justcommit.backend.member.seller.application;
 
 import java.time.LocalDateTime;
 

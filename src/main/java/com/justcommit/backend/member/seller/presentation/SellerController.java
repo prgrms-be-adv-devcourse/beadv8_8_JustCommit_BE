@@ -1,10 +1,10 @@
-package com.justcommit.backend.member.presentation.controller;
+package com.justcommit.backend.member.seller.presentation;
 
 import com.justcommit.backend.common.response.ApiResponse;
 import com.justcommit.backend.common.security.AuthMember;
-import com.justcommit.backend.member.application.SellerRegisterService;
-import com.justcommit.backend.member.presentation.dto.SellerRegisterRequest;
-import com.justcommit.backend.member.presentation.dto.SellerResponse;
+import com.justcommit.backend.member.seller.application.SellerRegisterService;
+import com.justcommit.backend.member.seller.presentation.dto.SellerRegisterRequest;
+import com.justcommit.backend.member.seller.presentation.dto.SellerResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;

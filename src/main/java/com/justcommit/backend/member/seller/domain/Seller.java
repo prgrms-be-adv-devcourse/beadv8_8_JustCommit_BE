@@ -1,5 +1,6 @@
-package com.justcommit.backend.member.domain;
+package com.justcommit.backend.member.seller.domain;
 
+import com.justcommit.backend.member.domain.Member;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;

@@ -1,6 +1,6 @@
-package com.justcommit.backend.member.presentation.dto;
+package com.justcommit.backend.member.seller.presentation.dto;
 
-import com.justcommit.backend.member.application.SellerResult;
+import com.justcommit.backend.member.seller.application.SellerResult;
 
 import java.time.LocalDateTime;
 

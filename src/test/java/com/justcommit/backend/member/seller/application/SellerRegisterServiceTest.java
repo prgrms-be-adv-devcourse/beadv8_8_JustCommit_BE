@@ -1,12 +1,12 @@
-package com.justcommit.backend.member.application;
+package com.justcommit.backend.member.seller.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Role;
-import com.justcommit.backend.member.domain.Seller;
+import com.justcommit.backend.member.seller.domain.Seller;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
-import com.justcommit.backend.member.infrastructure.repository.SellerRepository;
+import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
