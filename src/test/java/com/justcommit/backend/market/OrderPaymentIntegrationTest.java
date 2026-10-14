@@ -8,9 +8,20 @@ import com.justcommit.backend.market.cart.infrastructure.CartRepository;
 import com.justcommit.backend.market.order.application.OrderService;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.infrastructure.OrderPaymentTtlStore;
+import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
+import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
+import com.justcommit.backend.market.order.infrastructure.kafka.PurchaseConfirmedEventPublisher;
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
+import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
+import com.justcommit.backend.market.shipment.domain.Shipment;
+import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingRequest;
+import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingResponse;
+import com.justcommit.backend.market.shipment.infrastructure.courier.CourierClient;
+import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
+import com.justcommit.backend.member.MemberAddress;
+import com.justcommit.backend.member.MemberQuery;
 import com.justcommit.backend.payment.PaymentResult;
 import com.justcommit.backend.payment.PaymentUseCase;
 import com.justcommit.backend.payment.application.PaymentService;
@@ -52,6 +63,7 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -64,6 +76,13 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = {
         "spring.flyway.enabled=false",
@@ -87,15 +106,21 @@ class OrderPaymentIntegrationTest {
 
     // Redis 키의 커밋 시점은 OrderPaymentTtlStoreTest에서 별도로 검증한다.
     @MockitoBean OrderPaymentTtlStore paymentTtlStore;
+    @MockitoBean CourierClient courierClient;
+    @MockitoBean MemberQuery memberQuery;
+    @MockitoBean PurchaseConfirmedEventPublisher purchaseConfirmedEventPublisher;
 
     @Autowired OrderService orderService;
     @Autowired OrdersRepository ordersRepository;
+    @Autowired OrdersItemRepository ordersItemRepository;
+    @Autowired SellerOrderRepository sellerOrderRepository;
     @Autowired ProductRepository productRepository;
     @Autowired SpeciesRepository speciesRepository;
     @Autowired CartRepository cartRepository;
     @Autowired CartItemRepository cartItemRepository;
     @Autowired WalletRepository walletRepository;
     @Autowired WalletTransactionRepository walletTransactionRepository;
+    @Autowired ShipmentRepository shipmentRepository;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired InterceptingProductQuery productQuery;
@@ -109,6 +134,7 @@ class OrderPaymentIntegrationTest {
 
     @Test
     void successfulPaymentUpdatesOrderProductWalletAndTransaction() {
+        stubShipmentBooking();
         long buyerId = 101L;
         Product product = product(201L);
         Long cartItemId = cartItem(buyerId, product);
@@ -122,10 +148,13 @@ class OrderPaymentIntegrationTest {
         assertThat(balance(buyerId)).isEqualByComparingTo("7000");
         assertThat(paymentCount(response.orderId())).isEqualTo(1);
         assertThat(cartItemRepository.existsById(cartItemId)).isFalse();
+        assertThat(shipmentsForOrder(response.orderId()))
+                .singleElement().satisfies(shipment -> assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.BOOKED));
     }
 
     @Test
     void insufficientBalanceThenRechargeAndRetryDebitsOnlyOnce() throws Exception {
+        stubShipmentBooking();
         long buyerId = 102L;
         Product product = product(202L);
         Long cartItemId = cartItem(buyerId, product);
@@ -138,6 +167,7 @@ class OrderPaymentIntegrationTest {
                 .isEqualTo(ProductStatus.PAYMENT_PENDING);
         assertThat(paymentCount(pending.orderId())).isZero();
         assertThat(cartItemRepository.existsById(cartItemId)).isFalse();
+        assertThat(shipmentsForOrder(pending.orderId())).isEmpty();
 
         Wallet charged = walletRepository.findByMemberId(buyerId).orElseThrow();
         charged.credit(new BigDecimal("20000"));
@@ -152,6 +182,7 @@ class OrderPaymentIntegrationTest {
         assertThat(productRepository.findById(product.getId()).orElseThrow().getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
         assertThat(balance(buyerId)).isEqualByComparingTo("7000");
         assertThat(paymentCount(pending.orderId())).isEqualTo(1);
+        assertThat(shipmentsForOrder(pending.orderId())).hasSize(1);
     }
 
     @Test
@@ -191,6 +222,7 @@ class OrderPaymentIntegrationTest {
 
     @Test
     void paymentHoldingOrderLockWinsWhenExpirationWindowPasses() throws Exception {
+        stubShipmentBooking();
         long buyerId = 107L;
         Product product = product(207L);
         Long cartItemId = cartItem(buyerId, product);
@@ -305,6 +337,63 @@ class OrderPaymentIntegrationTest {
                 transaction.getWallet().getId().equals(walletId));
     }
 
+    @Test
+    void concurrentConfirmationOfDifferentSellerOrdersCompletesParentOrder() throws Exception {
+        stubShipmentBooking();
+        long buyerId = 108L;
+        Long firstCartItemId = cartItem(buyerId, product(208L));
+        Long secondCartItemId = cartItem(buyerId, product(209L));
+        wallet(buyerId, "30000");
+        Long orderId = orderService.create(buyerId, request(firstCartItemId, secondCartItemId)).orderId();
+        List<Long> sellerOrderIds = sellerOrderRepository.findByOrder_Id(orderId).stream()
+                .map(sellerOrder -> sellerOrder.getId()).toList();
+        assertThat(sellerOrderIds).hasSize(2);
+        List<Long> itemIds = ordersItemRepository.findBySellerOrderIds(sellerOrderIds).stream()
+                .map(item -> item.getId()).toList();
+        jdbcTemplate.update("UPDATE shipment SET status = 'DELIVERED', delivered_at = CURRENT_TIMESTAMP " +
+                "WHERE seller_order_id IN (?, ?)", sellerOrderIds.get(0), sellerOrderIds.get(1));
+
+        // 부모 주문 잠금이 없으면 두 요청이 이 지점에 함께 도달해 서로의 미커밋 변경을 놓친다.
+        CountDownLatch bothReady = new CountDownLatch(2);
+        doAnswer(invocation -> {
+            bothReady.countDown();
+            // 부모 주문 잠금이 있으면 두 번째 요청은 여기까지 오지 못하므로 짧게 기다린 뒤 진행한다.
+            bothReady.await(1, TimeUnit.SECONDS);
+            return null;
+        }).when(purchaseConfirmedEventPublisher).publishAfterCommit(any(PurchaseConfirmedEvent.class));
+
+        concurrently(
+                () -> { orderService.confirm(buyerId, itemIds.get(0)); return true; },
+                () -> { orderService.confirm(buyerId, itemIds.get(1)); return true; });
+
+        assertThat(ordersItemRepository.findAllById(itemIds))
+                .allSatisfy(item -> assertThat(item.getStatus()).isEqualTo(OrderItemStatus.CONFIRMED));
+        assertThat(sellerOrderRepository.findAllById(sellerOrderIds))
+                .allSatisfy(sellerOrder -> assertThat(sellerOrder.getConfirmedAt()).isNotNull());
+        verify(purchaseConfirmedEventPublisher, times(2)).publishAfterCommit(any(PurchaseConfirmedEvent.class));
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.COMPLETED);
+    }
+
+    @Test
+    void concurrentConfirmationOfSameItemPublishesSettlementOnce() throws Exception {
+        stubShipmentBooking();
+        long buyerId = 109L;
+        Long cartItemId = cartItem(buyerId, product(210L));
+        wallet(buyerId, "20000");
+        Long orderId = orderService.create(buyerId, request(cartItemId)).orderId();
+        Long sellerOrderId = sellerOrderRepository.findByOrder_Id(orderId).getFirst().getId();
+        Long itemId = ordersItemRepository.findBySellerOrderIds(List.of(sellerOrderId)).getFirst().getId();
+        jdbcTemplate.update("UPDATE shipment SET status = 'DELIVERED', delivered_at = CURRENT_TIMESTAMP " +
+                "WHERE seller_order_id = ?", sellerOrderId);
+
+        concurrently(
+                () -> { orderService.confirm(buyerId, itemId); return true; },
+                () -> { orderService.confirm(buyerId, itemId); return true; });
+
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.COMPLETED);
+        verify(purchaseConfirmedEventPublisher, times(1)).publishAfterCommit(any(PurchaseConfirmedEvent.class));
+    }
+
     private Product product(long sellerId) {
         Species species = BeanUtils.instantiateClass(Species.class);
         ReflectionTestUtils.setField(species, "name", "integration-" + UUID.randomUUID());
@@ -337,6 +426,19 @@ class OrderPaymentIntegrationTest {
                 .filter(transaction -> transaction.getRefType() == RefType.PAYMENT)
                 .filter(transaction -> transaction.getRefId().equals(orderId))
                 .count();
+    }
+
+    private List<Shipment> shipmentsForOrder(Long orderId) {
+        return shipmentRepository.findBySellerOrderIdIn(sellerOrderRepository.findByOrder_Id(orderId).stream()
+                .map(sellerOrder -> sellerOrder.getId()).toList());
+    }
+
+    private void stubShipmentBooking() {
+        when(memberQuery.getDefaultAddress(anyLong())).thenReturn(new MemberAddress(
+                1L, "판매자", "010-1111-2222", "06236", "서울", null));
+        when(courierClient.book(anyString(), any(CourierBookingRequest.class))).thenAnswer(invocation ->
+                new CourierBookingResponse("tracking-" + invocation.getArgument(0), invocation.getArgument(0), "RESERVED",
+                        OffsetDateTime.now()));
     }
 
     private CartOrderCreateRequest request(Long... cartItemIds) {

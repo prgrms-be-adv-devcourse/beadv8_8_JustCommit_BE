@@ -4,8 +4,12 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.response.PagingResponse;
 import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.OrderResult;
+import com.justcommit.backend.market.OrderItemStatus;
+import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.OrdersItemResult;
 import com.justcommit.backend.market.SellerOrderResult;
+import com.justcommit.backend.market.ShipmentQuery;
+import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
@@ -37,6 +41,7 @@ public class OrderReadService implements OrderQuery {
     private final OrdersRepository ordersRepository;
     private final SellerOrderRepository sellerOrderRepository;
     private final OrdersItemRepository ordersItemRepository;
+    private final ShipmentQuery shipmentQuery;
 
     public PagingResponse<OrderResponse> buyerOrders(Long buyerId, OrderListRequest request) {
         Page<Orders> page = ordersRepository.findByBuyerId(buyerId, request.toPageable());
@@ -55,10 +60,13 @@ public class OrderReadService implements OrderQuery {
     public OrderDetailResponse buyerOrder(Long buyerId, Long orderId) {
         Orders order = ordersRepository.findByIdAndBuyerId(orderId, buyerId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+        List<OrderDetailResponse.SellerOrderDetail> sellerOrders = sellerResults(order.getId()).stream()
+                .map(seller -> toBuyerDetail(seller, order.getStatus()))
+                .toList();
         return new OrderDetailResponse(order.getId(), order.getOrderNo(), order.getTotalAmount(),
                 order.getItemCount(), order.getStatus(), order.getCreatedAt(), order.getRecipientName(),
                 order.getRecipientPhone(), order.getZipcode(), order.getShipAddress1(), order.getShipAddress2(),
-                sellerResults(order.getId()));
+                sellerOrders);
     }
 
     public PagingResponse<SellerOrderResponse> sellerOrders(Long sellerId, OrderListRequest request) {
@@ -106,7 +114,8 @@ public class OrderReadService implements OrderQuery {
     public SellerOrderResult getSellerOrder(Long sellerOrderId) {
         SellerOrder sellerOrder = sellerOrderRepository.findById(sellerOrderId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.SELLER_ORDER_NOT_FOUND));
-        return toResult(sellerOrder, itemsBySellerOrder(List.of(sellerOrderId)));
+        return toResult(sellerOrder, itemsBySellerOrder(List.of(sellerOrderId)),
+                shipmentsBySellerOrder(List.of(sellerOrderId)));
     }
 
     @Override
@@ -114,14 +123,18 @@ public class OrderReadService implements OrderQuery {
         List<SellerOrder> sellerOrders = sellerOrderRepository.findBySellerId(sellerId);
         Map<Long, List<OrdersItemResult>> items = itemsBySellerOrder(
                 sellerOrders.stream().map(SellerOrder::getId).toList());
-        return sellerOrders.stream().map(sellerOrder -> toResult(sellerOrder, items)).toList();
+        Map<Long, ShipmentResult> shipments = shipmentsBySellerOrder(
+                sellerOrders.stream().map(SellerOrder::getId).toList());
+        return sellerOrders.stream().map(sellerOrder -> toResult(sellerOrder, items, shipments)).toList();
     }
 
     private List<SellerOrderResult> sellerResults(Long orderId) {
         List<SellerOrder> sellerOrders = sellerOrderRepository.findByOrder_Id(orderId);
         Map<Long, List<OrdersItemResult>> items = itemsBySellerOrder(
                 sellerOrders.stream().map(SellerOrder::getId).toList());
-        return sellerOrders.stream().map(sellerOrder -> toResult(sellerOrder, items)).toList();
+        Map<Long, ShipmentResult> shipments = shipmentsBySellerOrder(
+                sellerOrders.stream().map(SellerOrder::getId).toList());
+        return sellerOrders.stream().map(sellerOrder -> toResult(sellerOrder, items, shipments)).toList();
     }
 
     private Map<Long, List<OrdersItemResult>> itemsBySellerOrder(List<Long> sellerOrderIds) {
@@ -137,9 +150,33 @@ public class OrderReadService implements OrderQuery {
         return result;
     }
 
-    private SellerOrderResult toResult(SellerOrder sellerOrder, Map<Long, List<OrdersItemResult>> items) {
+    private Map<Long, ShipmentResult> shipmentsBySellerOrder(List<Long> sellerOrderIds) {
+        if (sellerOrderIds.isEmpty()) {
+            return Map.of();
+        }
+        return shipmentQuery.findBySellerOrderIds(sellerOrderIds);
+    }
+
+    private SellerOrderResult toResult(SellerOrder sellerOrder, Map<Long, List<OrdersItemResult>> items,
+                                       Map<Long, ShipmentResult> shipments) {
+        ShipmentResult shipment = shipments.get(sellerOrder.getId());
         return new SellerOrderResult(sellerOrder.getId(), sellerOrder.getSellerId(),
                 items.getOrDefault(sellerOrder.getId(), List.of()), sellerOrder.getTotalAmount(),
-                sellerOrder.getConfirmedAt(), sellerOrder.getShippingFee());
+                sellerOrder.getConfirmedAt(), sellerOrder.getShippingFee(),
+                shipment == null ? null : shipment.shipmentId(),
+                shipment == null ? null : shipment.status(),
+                shipment == null ? null : shipment.deliveredAt());
+    }
+
+    private OrderDetailResponse.SellerOrderDetail toBuyerDetail(SellerOrderResult seller, OrderStatus orderStatus) {
+        boolean delivered = "DELIVERED".equals(seller.shipmentStatus());
+        List<OrderDetailResponse.OrderItemDetail> items = seller.items().stream()
+                .map(item -> new OrderDetailResponse.OrderItemDetail(item.id(), item.productId(),
+                        item.productName(), item.price(), item.status(),
+                        orderStatus == OrderStatus.PAID && delivered && item.status() == OrderItemStatus.NORMAL))
+                .toList();
+        return new OrderDetailResponse.SellerOrderDetail(seller.id(), seller.sellerId(), items,
+                seller.totalAmount(), seller.confirmedAt(), seller.shippingFee(), seller.shipmentId(),
+                seller.shipmentStatus(), seller.deliveredAt());
     }
 }
