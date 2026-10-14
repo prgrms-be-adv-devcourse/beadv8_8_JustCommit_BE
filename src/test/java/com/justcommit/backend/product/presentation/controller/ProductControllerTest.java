@@ -3,16 +3,16 @@ package com.justcommit.backend.product.presentation.controller;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.exception.GlobalExceptionHandler;
 import com.justcommit.backend.common.security.AuthMember;
+import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.application.ProductService;
 import com.justcommit.backend.product.domain.exception.ProductErrorCode;
-import com.justcommit.backend.product.presentation.dto.ProductDetailResponse;
-import com.justcommit.backend.product.presentation.dto.ProductSearchResponse;
-import com.justcommit.backend.product.presentation.dto.ProductSpeciesResponse;
+import com.justcommit.backend.product.presentation.dto.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
@@ -28,16 +28,14 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
-import static org.mockito.BDDMockito.willThrow;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verify;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -425,4 +423,57 @@ class ProductControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("PRODUCT_NOT_HIDEABLE"));
     }
+
+    // ── 내 판매 목록 ───────────────────────────────
+
+    //가짜 응답 데이터
+    private MyProductResponse myProductResponse(boolean hidden)
+    {
+        return new MyProductResponse(10L, "몬스테라 분양합니다", new BigDecimal("30000"),
+                "https://example.com/a.jpg", 1L, "몬스테라", "ACTIVE", hidden, LocalDateTime.now());
+    }
+
+    @Test
+    @DisplayName("내 판매 목록을 조회하면 로그인한 회원 ID로 조회하고 숨김 여부와 페이지 정보를 반환")
+    void getMyProducts() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+        given(productService.getMyProducts(eq(SELLER_ID), any()))
+                .willReturn(new PageImpl<>(List.of(myProductResponse(true)), PageRequest.of(0, 20), 1));
+
+        mockMvc.perform(get("/api/v1/products/me"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].productId").value(10))
+                .andExpect(jsonPath("$.data.content[0].hidden").value(true))
+                .andExpect(jsonPath("$.data.totalElements").value(1));
+    }
+
+    @Test
+    @DisplayName("상태/페이지 쿼리 파라미터를 요청 객체로 묶어 서비스에 넘김")
+    void getMyProductsWithStatus() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+        given(productService.getMyProducts(eq(SELLER_ID), any())).willReturn(new PageImpl<>(List.of()));
+
+        mockMvc.perform(get("/api/v1/products/me")
+                        .param("status", "SOLD_OUT").param("page", "1").param("size", "10"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<MyProductSearchRequest> captor = ArgumentCaptor.forClass(MyProductSearchRequest.class);
+        verify(productService).getMyProducts(eq(SELLER_ID), captor.capture());
+        assertThat(captor.getValue().status()).isEqualTo(ProductStatus.SOLD_OUT);
+        assertThat(captor.getValue().page()).isEqualTo(1);
+        assertThat(captor.getValue().size()).isEqualTo(10);
+    }
+
+    // 잘못된 상태 값 -> 400
+    @Test
+    @DisplayName("허용되지 않는 상태 값으로 조회하면 400 INVALID_FIELD_ERROR")
+    void getMyProductsWithInvalidStatus() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+
+        mockMvc.perform(get("/api/v1/products/me").param("status", "WRONG"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_FIELD_ERROR"));
+    }
+
+
 }

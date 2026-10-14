@@ -11,10 +11,7 @@ import com.justcommit.backend.product.domain.exception.ProductErrorCode;
 import com.justcommit.backend.product.infrastructure.repository.ProductRepository;
 import com.justcommit.backend.product.infrastructure.repository.ProductSpecifications;
 import com.justcommit.backend.product.infrastructure.repository.SpeciesRepository;
-import com.justcommit.backend.product.presentation.dto.ProductDetailResponse;
-import com.justcommit.backend.product.presentation.dto.ProductRequest;
-import com.justcommit.backend.product.presentation.dto.ProductSearchRequest;
-import com.justcommit.backend.product.presentation.dto.ProductSearchResponse;
+import com.justcommit.backend.product.presentation.dto.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
@@ -157,5 +154,12 @@ private final SpeciesRepository speciesRepository;
     @Transactional
     public void changeHidden(Long memberId, Long productId,  boolean hidden) {
         getOwnedProductForUpdate(memberId,productId).changeHidden(hidden);
+    }
+
+    public Page<MyProductResponse> getMyProducts(Long sellerId, MyProductSearchRequest request){
+        return productRepository.findAll(
+                ProductSpecifications.sellerCondition(sellerId,request.status()),
+                request.toPageable())
+                .map(MyProductResponse::from);
     }
 }

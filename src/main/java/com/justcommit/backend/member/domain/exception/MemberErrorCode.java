@@ -32,6 +32,7 @@ public enum MemberErrorCode implements ErrorCode {
 
   // 배송지
   ADDRESS_NOT_FOUND(HttpStatus.NOT_FOUND, "배송지를 찾을 수 없습니다."),
+  ADDRESS_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "배송지는 최대 10개까지 등록할 수 있습니다."),
 
   // 판매자
   ALREADY_SELLER(HttpStatus.CONFLICT, "이미 판매자로 등록된 회원입니다."),
