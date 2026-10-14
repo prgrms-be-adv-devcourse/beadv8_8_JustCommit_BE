@@ -55,4 +55,22 @@ public class Shipment extends BaseTimeEntity {
                 date.format(DateTimeFormatter.BASIC_ISO_DATE) + "-" +
                 String.format("%06d", getId());
     }
+
+    public boolean applyCourierStatus(ShipmentStatus newStatus, String trackingNo, LocalDateTime occurredAt) {
+        // 같거나 뒤로 가는 상태는 무시 (중복, 순서 뒤바뀜)
+        if (newStatus.ordinal() <= this.status.ordinal()) {
+            return false;
+        }
+
+        // 예약 응답을 놓친 경우 웹훅 값으로 채움
+        if (this.trackingNo == null) {
+            this.trackingNo = trackingNo;
+        }
+        this.status = newStatus;
+
+        if (newStatus == ShipmentStatus.DELIVERED) {
+            this.deliveredAt = occurredAt;
+        }
+        return true;
+    }
 }
