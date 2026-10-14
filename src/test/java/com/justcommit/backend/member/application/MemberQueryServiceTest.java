@@ -3,7 +3,7 @@ package com.justcommit.backend.member.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.MemberAccount;
 import com.justcommit.backend.member.MemberAddress;
-import com.justcommit.backend.member.SystemAccount;
+import com.justcommit.backend.member.domain.SystemAccount;
 import com.justcommit.backend.member.domain.Address;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Role;
@@ -143,14 +143,25 @@ class MemberQueryServiceTest {
   }
 
   @Test
-  @DisplayName("시스템 계정 ID 조회")
-  void getSystemMemberId() {
+  @DisplayName("홀딩 계정 ID 조회")
+  void getHoldingMemberId() {
     Member system = mock(Member.class);
     given(system.getRole()).willReturn(Role.SYSTEM);
     given(system.getId()).willReturn(6L);
     given(memberRepository.findByEmail(SystemAccount.HOLDING.email())).willReturn(Optional.of(system));
 
-    assertThat(memberQueryService.getSystemMemberId(SystemAccount.HOLDING)).isEqualTo(6L);
+    assertThat(memberQueryService.getHoldingMemberId()).isEqualTo(6L);
+  }
+
+  @Test
+  @DisplayName("매출 계정 ID 조회")
+  void getRevenueMemberId() {
+    Member system = mock(Member.class);
+    given(system.getRole()).willReturn(Role.SYSTEM);
+    given(system.getId()).willReturn(7L);
+    given(memberRepository.findByEmail(SystemAccount.REVENUE.email())).willReturn(Optional.of(system));
+
+    assertThat(memberQueryService.getRevenueMemberId()).isEqualTo(7L);
   }
 
   @Test
@@ -158,7 +169,7 @@ class MemberQueryServiceTest {
   void systemAccountMissing() {
     given(memberRepository.findByEmail(SystemAccount.HOLDING.email())).willReturn(Optional.empty());
 
-    assertThatThrownBy(() -> memberQueryService.getSystemMemberId(SystemAccount.HOLDING))
+    assertThatThrownBy(() -> memberQueryService.getHoldingMemberId())
             .isInstanceOf(IllegalStateException.class);
   }
 
@@ -169,7 +180,7 @@ class MemberQueryServiceTest {
     given(normal.getRole()).willReturn(Role.MEMBER);
     given(memberRepository.findByEmail(SystemAccount.HOLDING.email())).willReturn(Optional.of(normal));
 
-    assertThatThrownBy(() -> memberQueryService.getSystemMemberId(SystemAccount.HOLDING))
+    assertThatThrownBy(() -> memberQueryService.getHoldingMemberId())
             .isInstanceOf(IllegalStateException.class);
   }
 }

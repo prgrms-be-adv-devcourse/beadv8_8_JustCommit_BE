@@ -1,4 +1,4 @@
-package com.justcommit.backend.member;
+package com.justcommit.backend.member.domain;
 
 // 결제·정산용 시스템 계정
 // TODO: 최종에서 시스템 계정 값 정리 (이메일 도메인, 닉네임, 임시 휴대폰·계좌 값). 회원 테이블 대신 별도 구조가 나은지도 검토

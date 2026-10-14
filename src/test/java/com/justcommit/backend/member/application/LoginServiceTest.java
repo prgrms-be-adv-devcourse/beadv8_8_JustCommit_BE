@@ -2,7 +2,7 @@ package com.justcommit.backend.member.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.security.JwtProvider;
-import com.justcommit.backend.member.SystemAccount;
+import com.justcommit.backend.member.domain.SystemAccount;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;

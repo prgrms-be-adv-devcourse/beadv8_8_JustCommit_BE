@@ -1,6 +1,6 @@
 package com.justcommit.backend.member.application;
 
-import com.justcommit.backend.member.SystemAccount;
+import com.justcommit.backend.member.domain.SystemAccount;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Role;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
