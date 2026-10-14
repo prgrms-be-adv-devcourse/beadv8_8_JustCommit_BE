@@ -50,7 +50,7 @@ public class PaymentService implements PaymentUseCase {
         }
 
         buyerWallet.debit(amount);
-        LocalDateTime now = LocalDateTime.now(); // 구매자 출금·HOLDING 입금을 시각으로 기록
+        LocalDateTime now = LocalDateTime.now(); // 구매자 출금·HOLDING 입금을 같은 시각으로 기록
 
         walletTransactionRepository.save(
                 WalletTransaction.paymentOut(buyerWallet, orderId, amount, now));
