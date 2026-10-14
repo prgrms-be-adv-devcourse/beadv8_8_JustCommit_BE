@@ -4,7 +4,7 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.security.JwtProvider;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
-import com.justcommit.backend.member.infrastructure.redis.RefreshTokenRedisStore;
+import com.justcommit.backend.member.auth.infrastructure.redis.RefreshTokenRedisStore;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;

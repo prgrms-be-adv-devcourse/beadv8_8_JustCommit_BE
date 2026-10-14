@@ -5,7 +5,7 @@ import com.justcommit.backend.common.security.JwtProvider;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Role;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
-import com.justcommit.backend.member.infrastructure.redis.RefreshTokenRedisStore;
+import com.justcommit.backend.member.auth.infrastructure.redis.RefreshTokenRedisStore;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

@@ -1,6 +1,6 @@
 package com.justcommit.backend.member.auth.application;
 
-import com.justcommit.backend.member.infrastructure.redis.RefreshTokenRedisStore;
+import com.justcommit.backend.member.auth.infrastructure.redis.RefreshTokenRedisStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

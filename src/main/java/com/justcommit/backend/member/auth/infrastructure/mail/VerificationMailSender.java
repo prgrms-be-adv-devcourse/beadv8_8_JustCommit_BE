@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.infrastructure.mail;
+package com.justcommit.backend.member.auth.infrastructure.mail;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;

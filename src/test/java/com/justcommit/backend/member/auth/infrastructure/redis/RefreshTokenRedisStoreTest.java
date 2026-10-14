@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.infrastructure.redis;
+package com.justcommit.backend.member.auth.infrastructure.redis;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

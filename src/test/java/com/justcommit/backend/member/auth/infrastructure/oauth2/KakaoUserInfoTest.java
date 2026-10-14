@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.infrastructure.oauth2;
+package com.justcommit.backend.member.auth.infrastructure.oauth2;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
@@ -8,8 +8,8 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class KakaoUserInfoTest {
 

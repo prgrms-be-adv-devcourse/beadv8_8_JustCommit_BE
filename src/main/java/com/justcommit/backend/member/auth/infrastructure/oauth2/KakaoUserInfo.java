@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.infrastructure.oauth2;
+package com.justcommit.backend.member.auth.infrastructure.oauth2;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;

@@ -8,7 +8,7 @@ import com.justcommit.backend.member.auth.application.SocialLoginResult;
 import com.justcommit.backend.member.auth.application.SocialLoginService;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
-import com.justcommit.backend.member.infrastructure.oauth2.KakaoUserInfo;
+import com.justcommit.backend.member.auth.infrastructure.oauth2.KakaoUserInfo;
 import com.justcommit.backend.member.presentation.dto.SocialLoginResponse;
 import com.justcommit.backend.member.presentation.support.RefreshTokenCookieFactory;
 import jakarta.servlet.http.HttpServletRequest;

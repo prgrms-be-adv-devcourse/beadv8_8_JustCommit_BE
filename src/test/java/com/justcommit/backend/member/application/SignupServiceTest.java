@@ -5,7 +5,7 @@ import com.justcommit.backend.member.MemberRegisteredEvent;
 import com.justcommit.backend.member.domain.*;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
-import com.justcommit.backend.member.infrastructure.redis.EmailVerificationRedisStore;
+import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.infrastructure.repository.AddressRepository;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import org.junit.jupiter.api.DisplayName;

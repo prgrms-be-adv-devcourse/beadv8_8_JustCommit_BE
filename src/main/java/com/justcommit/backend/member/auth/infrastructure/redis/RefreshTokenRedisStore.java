@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.infrastructure.redis;
+package com.justcommit.backend.member.auth.infrastructure.redis;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;

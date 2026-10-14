@@ -1,6 +1,6 @@
 package com.justcommit.backend.member.auth.application;
 
-import com.justcommit.backend.member.infrastructure.redis.RefreshTokenRedisStore;
+import com.justcommit.backend.member.auth.infrastructure.redis.RefreshTokenRedisStore;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
