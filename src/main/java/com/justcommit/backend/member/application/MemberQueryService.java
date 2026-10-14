@@ -4,8 +4,10 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.MemberAccount;
 import com.justcommit.backend.member.MemberAddress;
 import com.justcommit.backend.member.MemberQuery;
+import com.justcommit.backend.member.domain.SystemAccount;
 import com.justcommit.backend.member.domain.Address;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.domain.Role;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.infrastructure.repository.AddressRepository;
@@ -51,6 +53,18 @@ public class MemberQueryService implements MemberQuery {
     return toMemberAddress(address);
   }
 
+  // 홀딩 계정 ID
+  @Override
+  public Long getHoldingMemberId() {
+    return findSystemMemberId(SystemAccount.HOLDING);
+  }
+
+  // 매출 계정 ID
+  @Override
+  public Long getRevenueMemberId() {
+    return findSystemMemberId(SystemAccount.REVENUE);
+  }
+
   // 엔티티 → 공개 DTO (다른 모듈에 Address 엔티티를 노출하지 않음)
   private MemberAddress toMemberAddress(Address address) {
     return new MemberAddress(
@@ -61,5 +75,14 @@ public class MemberQueryService implements MemberQuery {
             address.getAddress1(),
             address.getAddress2()
     );
+  }
+
+  // 기존 getSystemMemberId의 조회 로직을 private으로 옮김(SystemAccount 외부 공개x)
+  // 같은 이메일의 일반 회원이 있더라도 SYSTEM 권한일 때만 반환(돈이 일반 회원에게 가는 사고 방지)
+  private Long findSystemMemberId(SystemAccount account) {
+    return memberRepository.findByEmail(account.email())
+            .filter(member -> member.getRole() == Role.SYSTEM)
+            .map(Member::getId)
+            .orElseThrow(() -> new IllegalStateException("시스템 계정이 없습니다: " + account));
   }
 }

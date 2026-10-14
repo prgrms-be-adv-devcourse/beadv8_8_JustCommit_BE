@@ -3,8 +3,10 @@ package com.justcommit.backend.member.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.MemberAccount;
 import com.justcommit.backend.member.MemberAddress;
+import com.justcommit.backend.member.domain.SystemAccount;
 import com.justcommit.backend.member.domain.Address;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.domain.Role;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.infrastructure.repository.AddressRepository;
@@ -22,6 +24,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
 
 @ExtendWith(MockitoExtension.class)
 class MemberQueryServiceTest {
@@ -137,5 +140,47 @@ class MemberQueryServiceTest {
             .isInstanceOf(BusinessException.class)
             .extracting("errorCode")
             .isEqualTo(MemberErrorCode.ADDRESS_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("홀딩 계정 ID 조회")
+  void getHoldingMemberId() {
+    Member system = mock(Member.class);
+    given(system.getRole()).willReturn(Role.SYSTEM);
+    given(system.getId()).willReturn(6L);
+    given(memberRepository.findByEmail(SystemAccount.HOLDING.email())).willReturn(Optional.of(system));
+
+    assertThat(memberQueryService.getHoldingMemberId()).isEqualTo(6L);
+  }
+
+  @Test
+  @DisplayName("매출 계정 ID 조회")
+  void getRevenueMemberId() {
+    Member system = mock(Member.class);
+    given(system.getRole()).willReturn(Role.SYSTEM);
+    given(system.getId()).willReturn(7L);
+    given(memberRepository.findByEmail(SystemAccount.REVENUE.email())).willReturn(Optional.of(system));
+
+    assertThat(memberQueryService.getRevenueMemberId()).isEqualTo(7L);
+  }
+
+  @Test
+  @DisplayName("시스템 계정이 없으면 서버 설정 문제로 IllegalStateException")
+  void systemAccountMissing() {
+    given(memberRepository.findByEmail(SystemAccount.HOLDING.email())).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> memberQueryService.getHoldingMemberId())
+            .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  @DisplayName("같은 이메일이라도 SYSTEM 권한이 아니면 반환하지 않음(일반 회원에게 돈이 가는 것 방지)")
+  void notSystemRole() {
+    Member normal = mock(Member.class);
+    given(normal.getRole()).willReturn(Role.MEMBER);
+    given(memberRepository.findByEmail(SystemAccount.HOLDING.email())).willReturn(Optional.of(normal));
+
+    assertThatThrownBy(() -> memberQueryService.getHoldingMemberId())
+            .isInstanceOf(IllegalStateException.class);
   }
 }

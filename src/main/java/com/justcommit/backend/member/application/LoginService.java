@@ -3,6 +3,7 @@ package com.justcommit.backend.member.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.security.JwtProvider;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.domain.Role;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +30,7 @@ public class LoginService {
   @Value("${jwt.access-token-expiration}")
   private Duration accessTokenExpiration;
 
-  // 로그인: 회원 조회 → 비밀번호 확인 → Access 발급 → Refresh 발급·Redis 저장
+  // 로그인: 회원 조회 → 시스템 계정 차단 → 비밀번호 확인 → Access 발급 → Refresh 발급·Redis 저장
   @Transactional(readOnly = true)
   public LoginResult login(LoginCommand command) {
     String email = normalizeEmail(command.email());
@@ -37,6 +38,10 @@ public class LoginService {
     // 이메일 없음과 비밀번호 불일치를 같은 에러로 처리
     Member member = memberRepository.findByEmail(email)
             .orElseThrow(() -> new BusinessException(MemberErrorCode.LOGIN_FAILED));
+    // 시스템 계정은 서버 내부용이라 로그인 불가
+    if (member.getRole() == Role.SYSTEM) {
+      throw new BusinessException(MemberErrorCode.LOGIN_FAILED);
+    }
     if (!passwordEncoder.matches(command.password(), member.getPassword())) {
       throw new BusinessException(MemberErrorCode.LOGIN_FAILED);
     }

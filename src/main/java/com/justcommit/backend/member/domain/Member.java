@@ -105,6 +105,25 @@ public class Member extends BaseTimeEntity  {
                 return member;
         }
 
+        // 시스템 계정 (결제·정산 내부용). 비밀번호 없음 → 로그인 불가
+        // 휴대폰·계좌는 NOT NULL이라 임시값 사용
+        public static Member createSystem(String email, String nickname, String phone,
+                                          String bankCode, String encryptedAccountNo, String accountHolder) {
+                Member member = new Member();
+                member.email = email;
+                member.password = null;
+                member.nickname = nickname;
+                member.phone = phone;
+                member.role = Role.SYSTEM;
+                member.provider = Provider.LOCAL;
+                member.status = MemberStatus.ACTIVE;
+                member.bankCode = bankCode;
+                member.accountNoEnc = encryptedAccountNo;
+                member.accountHolder = accountHolder;
+                member.accountUpdatedAt = LocalDateTime.now();
+                return member;
+        }
+
         // 판매자 등록 시 권한 변경
         public void promoteToSeller() {
                 if (this.role == Role.MEMBER) {
