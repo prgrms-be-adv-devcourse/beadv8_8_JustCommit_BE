@@ -15,4 +15,10 @@ public interface MemberQuery {
   // 결제·정산용 시스템 계정 ID. 앱 시작 시 자동 생성되므로 없으면 서버 설정 문제
   Long getHoldingMemberId();
   Long getRevenueMemberId();
+
+  // 판매자로 등록된 회원인지 (회원이 없으면 false)
+  boolean isSeller(Long memberId);
+
+  // 판매자 닉네임. 회원이 없으면 MEMBER_NOT_FOUND(404)
+  String getNickname(Long memberId);
 }
