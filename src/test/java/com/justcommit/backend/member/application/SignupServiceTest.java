@@ -1,6 +1,7 @@
 package com.justcommit.backend.member.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.member.MemberRegisteredEvent;
 import com.justcommit.backend.member.domain.*;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
@@ -14,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -42,6 +44,9 @@ class SignupServiceTest {
 
   @Mock
   private AccountCipher accountCipher;
+
+  @Mock
+  private ApplicationEventPublisher eventPublisher;
 
   @InjectMocks
   private SignupService signupService;
@@ -128,6 +133,9 @@ class SignupServiceTest {
 
     // then: 인증 완료 기록 삭제
     then(verificationStore).should().deleteVerified(EMAIL);
+
+    // then: 회원 생성 이벤트 발행 (일반 회원이라 systemAccount=false)
+    then(eventPublisher).should().publishEvent(new MemberRegisteredEvent(1L, false));
   }
 
   @Test
@@ -174,6 +182,7 @@ class SignupServiceTest {
 
     then(memberRepository).should(never()).saveAndFlush(any());
     then(addressRepository).shouldHaveNoInteractions();
+    then(eventPublisher).shouldHaveNoInteractions(); // 가입 실패 시 이벤트 없음
   }
 
   @Test
@@ -220,6 +229,7 @@ class SignupServiceTest {
 
     then(addressRepository).shouldHaveNoInteractions();
     then(verificationStore).should(never()).deleteVerified(anyString());
+    then(eventPublisher).shouldHaveNoInteractions();
   }
 
   @Test
