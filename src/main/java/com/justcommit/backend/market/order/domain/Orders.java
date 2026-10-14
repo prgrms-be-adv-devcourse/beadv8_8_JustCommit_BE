@@ -85,4 +85,18 @@ public class Orders extends BaseTimeEntity {
         }
         status = OrderStatus.PAID;
     }
+
+    public void confirm() {
+        if (status != OrderStatus.PAID) {
+            throw new IllegalStateException("결제된 주문만 확정처리 할 수있습니다.");
+        }
+        status = OrderStatus.COMPLETED;
+    }
+
+    public void cancel() {
+        if (status != OrderStatus.PAID) {
+            throw new IllegalStateException("결제된 주문만 취소할수있습니다..");
+        }
+        status = OrderStatus.CANCELLED;
+    }
 }

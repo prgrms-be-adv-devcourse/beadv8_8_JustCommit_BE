@@ -45,4 +45,18 @@ public final class ProductSpecifications {
         }
         return Specification.allOf(specs);
     }
+
+    // 숨김 포함, 삭제만 제외
+    public static Specification<Product> sellerCondition(Long sellerId, ProductStatus status){
+        List<Specification<Product>> specs = new ArrayList<>();
+
+        specs.add((root, query, cb) -> cb.equal(root.get("sellerId"), sellerId));
+        specs.add((root, query, cb) -> cb.notEqual(root.get("status"), ProductStatus.DELETED)); // 삭제 제외
+
+        if(status != null && status != ProductStatus.DELETED){
+            specs.add((root, query, cb) -> cb.equal(root.get("status"), status));
+        }
+
+        return Specification.allOf(specs);
+    }
 }

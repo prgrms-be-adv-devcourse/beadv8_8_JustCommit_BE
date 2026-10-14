@@ -1,6 +1,7 @@
 package com.justcommit.backend.market.order.domain;
 
 import com.justcommit.backend.common.entity.BaseTimeEntity;
+import com.justcommit.backend.market.OrderItemStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -34,6 +35,9 @@ public class SellerOrder extends BaseTimeEntity {
     @Column(precision = 19, nullable = false)
     private BigDecimal totalAmount;
 
+    @Column(precision = 19, nullable = false)
+    private BigDecimal settlementBaseAmount;
+
     private LocalDateTime confirmedAt;
 
     @Column(precision = 19, nullable = false)
@@ -43,6 +47,7 @@ public class SellerOrder extends BaseTimeEntity {
         this.order = order;
         this.sellerId = sellerId;
         this.totalAmount = BigDecimal.ZERO;
+        this.settlementBaseAmount = BigDecimal.ZERO;
         this.shippingFee = BigDecimal.ZERO;
     }
 
@@ -53,11 +58,24 @@ public class SellerOrder extends BaseTimeEntity {
 
     public void setShippingFee(BigDecimal shippingFee) {
         this.shippingFee = shippingFee;
-        this.calculateTotalAmount();
     }
 
     private void calculateTotalAmount() {
         this.totalAmount = this.items.stream().map(OrdersItem::getPrice).reduce(BigDecimal.ZERO, BigDecimal::add);
+        this.calculateSettlementBaseAmount();
+    }
+
+    public void calculateSettlementBaseAmount() {
+        this.settlementBaseAmount = this.items.stream()
+                .filter(i->
+                        i.getStatus().equals(OrderItemStatus.NORMAL)
+                                || i.getStatus().equals(OrderItemStatus.REFUND_REQUESTED)
+                                || i.getStatus().equals(OrderItemStatus.CONFIRMED))
+                .map(OrdersItem::getPrice).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    public void confirmed() {
+        this.confirmedAt = LocalDateTime.now();
     }
 
 }

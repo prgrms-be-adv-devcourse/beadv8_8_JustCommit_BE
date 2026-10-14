@@ -8,15 +8,23 @@ import com.justcommit.backend.product.domain.Species;
 import com.justcommit.backend.product.domain.exception.ProductErrorCode;
 import com.justcommit.backend.product.infrastructure.repository.ProductRepository;
 import com.justcommit.backend.product.infrastructure.repository.SpeciesRepository;
+import com.justcommit.backend.product.presentation.dto.MyProductResponse;
+import com.justcommit.backend.product.presentation.dto.MyProductSearchRequest;
 import com.justcommit.backend.product.presentation.dto.ProductDetailResponse;
 import com.justcommit.backend.product.presentation.dto.ProductRequest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.BeanUtils;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -334,5 +342,35 @@ public class  ProductServiceTest {
         assertThatThrownBy(() -> productService.getProductDetail(PRODUCT_ID, SELLER_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND);
+    }
+
+
+
+    /*내 판매 목록*/
+    @Test
+    @DisplayName("내 판매 목록은 최신순/기본 페이지로 조회하고 숨김 여부를 응답에 담음")
+    void getMyProduct(){
+        Product product = product(ProductStatus.ACTIVE);
+        ReflectionTestUtils.setField(product, "hidden",true);
+
+        given(productRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .willReturn(new PageImpl<>(List.of(product)));
+
+        Page<MyProductResponse> result = productService.getMyProducts(SELLER_ID, new MyProductSearchRequest(null, null, null));
+
+        //서비스가 repo 에 넘김 Pageable 확인
+        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+        verify(productRepository).findAll(any(Specification.class), pageable.capture());
+
+        assertThat(pageable.getValue().getPageNumber()).isZero(); //page를 null로 넘겼을 때 toPageable()이 기본값 0으로 채웠는지 검증
+        assertThat(pageable.getValue().getPageSize()).isEqualTo(20);
+        assertThat(pageable.getValue().getSort()).isEqualTo(Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        MyProductResponse item = result.getContent().get(0);
+        // Page<MyProductResponse> 의 데이터 목록인 List<MyProductResponse> 중 첫번째 항목
+
+        assertThat(item.productId()).isEqualTo(PRODUCT_ID);
+        assertThat(item.hidden()).isTrue(); //hidden: true가 제대로 담겼는지 검증
+
     }
 }

@@ -43,6 +43,14 @@ public class Address extends BaseTimeEntity {
   // 회원가입 시 첫 배송지 = 기본 배송지
   public static Address createDefault(Member member, String recipientName, String recipientPhone,
                                       String zipcode, String address1, String address2, String addressName) {
+    return create(member, recipientName, recipientPhone,
+            zipcode, address1, address2, addressName, true);
+  }
+
+  // 배송지 추가용 - 기본 배송지 여부(isDefault)를 받아서 생성
+  public static Address create(Member member, String recipientName, String recipientPhone,
+                               String zipcode, String address1, String address2, String addressName,
+                               boolean isDefault) {
     Address address = new Address();
     address.member = member;
     address.recipientName = recipientName;
@@ -51,7 +59,17 @@ public class Address extends BaseTimeEntity {
     address.address1 = address1;
     address.address2 = address2;
     address.addressName = addressName;
-    address.isDefault = true;
+    address.isDefault = isDefault;
     return address;
+  }
+
+  // 기본 배송지로 지정
+  public void markDefault() {
+    this.isDefault = true;
+  }
+
+  // 기본 배송지 해제
+  public void unmarkDefault() {
+    this.isDefault = false;
   }
 }
