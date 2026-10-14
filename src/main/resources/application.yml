@@ -79,6 +79,7 @@ custom:
   courier:
     api-key: ${COURIER_API_KEY:}
     base-url: ${COURIER_BASE_URL:http://localhost:3000}
+    webhook-api-key: ${WEBHOOK_API_KEY:}
 
   cookie:
     # 쿠키 Secure 속성. 로컬·운영 HTTP는 false, 운영 HTTPS 적용 시 COOKIE_SECURE=true

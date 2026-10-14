@@ -24,6 +24,8 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class ShipmentService {
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+
     private final ShipmentRepository shipmentRepository;
     private final CourierClient courierClient;
     private final OrderQuery orderQuery;
@@ -40,7 +42,7 @@ public class ShipmentService {
     private void createAndBook(OrderResult order, SellerOrderResult sellerOrder) {
         Shipment shipment = shipmentRepository.save(new Shipment(sellerOrder.id()));
 
-        shipment.assignCourierOrderNo(LocalDate.now(ZoneId.of("Asia/Seoul")));
+        shipment.assignCourierOrderNo(LocalDate.now(SEOUL));
         shipmentRepository.save(shipment);
 
         MemberAddress seller = memberQuery.getDefaultAddress(sellerOrder.sellerId());
@@ -56,7 +58,7 @@ public class ShipmentService {
 
         try {
             CourierBookingResponse response = courierClient.book(shipment.getCourierOrderNo(), request);
-            shipment.book(response.trackingNo(), response.bookedAt().toLocalDateTime());
+            shipment.book(response.trackingNo(), response.bookedAt().atZoneSameInstant(SEOUL).toLocalDateTime());
             shipmentRepository.save(shipment);
         } catch (CourierBookingException e) {
             if (e.isRetryable()) {

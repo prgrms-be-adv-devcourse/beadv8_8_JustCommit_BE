@@ -82,6 +82,7 @@ public class SecurityConfig {
                         // 인증 필수 전환 허용할 경로만 적고 나머지는 모두 로그인 필요
                         .requestMatchers(HttpMethod.GET, "/api/v1/products", "/api/v1/products/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/species", "/api/v1/species/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/courier").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN") // 관리자 전용 (정산 API 경로 확정 시 조정)
                         .anyRequest().authenticated()) // permitAll → authenticated
 
