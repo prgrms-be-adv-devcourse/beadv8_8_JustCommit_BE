@@ -89,4 +89,21 @@ public class WalletTransaction extends BaseTimeEntity {
                 wallet.getBalance()
         );
     }
+
+    public static WalletTransaction holdingIn(
+            Wallet wallet,
+            Long orderId,
+            BigDecimal amount,
+            LocalDateTime occurredAt
+    ) {
+        return new WalletTransaction(
+                wallet,
+                RefType.PAYMENT,
+                orderId,
+                occurredAt,
+                TransactionStatus.IN,
+                amount,
+                wallet.getBalance()
+        );
+    }
 }
