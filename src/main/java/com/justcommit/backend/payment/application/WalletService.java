@@ -10,9 +10,11 @@ import com.justcommit.backend.payment.infrastructure.repository.WalletRepository
 import com.justcommit.backend.payment.infrastructure.repository.WalletTransactionRepository;
 import com.justcommit.backend.payment.presentation.dto.WalletTransactionResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -43,5 +45,17 @@ public class WalletService implements PaymentQuery {
     private Wallet getWallet(Long memberId) {
         return walletRepository.findByMemberId(memberId)
                 .orElseThrow(() -> new BusinessException(PaymentErrorCode.WALLET_NOT_FOUND));
+    }
+
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void createIfAbsent(Long memberId) {
+        if (walletRepository.findByMemberId(memberId).isPresent()) {
+            return;
+        }
+        try {
+            walletRepository.saveAndFlush(new Wallet(memberId));
+        } catch (DataIntegrityViolationException e) {
+            // 동시에 같은 회원 지갑을 만들려다 member_id UK에 걸린 경우 → 이미 생성됨
+        }
     }
 }
