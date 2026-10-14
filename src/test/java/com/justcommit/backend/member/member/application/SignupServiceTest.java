@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.application;
+package com.justcommit.backend.member.member.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.MemberRegisteredEvent;

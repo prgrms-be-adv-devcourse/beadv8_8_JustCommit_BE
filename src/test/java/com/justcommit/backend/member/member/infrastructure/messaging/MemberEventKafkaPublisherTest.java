@@ -1,6 +1,7 @@
-package com.justcommit.backend.member.infrastructure.messaging;
+package com.justcommit.backend.member.member.infrastructure.messaging;
 
 import com.justcommit.backend.member.MemberRegisteredEvent;
+import com.justcommit.backend.member.member.infrastructure.messaging.MemberEventKafkaPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

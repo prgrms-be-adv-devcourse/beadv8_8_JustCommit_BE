@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.application;
+package com.justcommit.backend.member.member.application;
 
 // 소셜 회원가입 추가정보 (presentation의 SocialSignupRequest → application)
 // 이메일·가입 경로·회원번호는 가입 토큰에서 꺼내므로 여기에 없음

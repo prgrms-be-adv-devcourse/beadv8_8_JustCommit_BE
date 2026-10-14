@@ -1,6 +1,6 @@
-package com.justcommit.backend.member.presentation.dto;
+package com.justcommit.backend.member.member.presentation.dto;
 
-import com.justcommit.backend.member.application.SignupCommand;
+import com.justcommit.backend.member.member.application.SignupCommand;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;

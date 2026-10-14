@@ -1,6 +1,6 @@
-package com.justcommit.backend.member.presentation.dto;
+package com.justcommit.backend.member.member.presentation.dto;
 
-import com.justcommit.backend.member.application.MyInfoResult;
+import com.justcommit.backend.member.member.application.MyInfoResult;
 
 public record MyInfoResponse(
         Long memberId,

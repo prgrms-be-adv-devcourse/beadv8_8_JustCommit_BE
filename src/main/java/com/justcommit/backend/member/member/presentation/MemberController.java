@@ -1,11 +1,11 @@
-package com.justcommit.backend.member.presentation.controller;
+package com.justcommit.backend.member.member.presentation;
 
 import com.justcommit.backend.common.response.ApiResponse;
 import com.justcommit.backend.common.security.AuthMember;
-import com.justcommit.backend.member.application.*;
 import com.justcommit.backend.member.auth.application.LoginResult;
 import com.justcommit.backend.member.auth.presentation.dto.LoginResponse;
-import com.justcommit.backend.member.presentation.dto.*;
+import com.justcommit.backend.member.member.application.*;
+import com.justcommit.backend.member.member.presentation.dto.*;
 import com.justcommit.backend.member.auth.presentation.support.RefreshTokenCookieFactory;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

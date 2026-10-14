@@ -1,14 +1,22 @@
-package com.justcommit.backend.member.presentation.dto;
+package com.justcommit.backend.member.member.presentation.dto;
 
-import com.justcommit.backend.member.application.SocialSignupCommand;
+import com.justcommit.backend.member.member.application.SignupCommand;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import static com.justcommit.backend.member.presentation.dto.MemberValidation.*;
 
-// 소셜 회원가입 추가정보 (이메일·비밀번호 없음: 이메일은 가입 토큰에서, 비밀번호 사용x)
-public record SocialSignupRequest(
+public record SignupRequest(
+        @NotBlank(message = "이메일을 입력해주세요.")
+        @Email(regexp = EMAIL_REGEX, message = "이메일 형식이 올바르지 않습니다.")
+        String email,
+
+        @NotBlank(message = "비밀번호를 입력해주세요.")
+        @Pattern(regexp = PASSWORD_REGEX, message = "비밀번호는 영문과 숫자를 포함한 8~20자여야 합니다.")
+        String password,
+
         @NotBlank(message = "닉네임을 입력해주세요.")
         @Pattern(regexp = NICKNAME_REGEX, message = "닉네임은 한글, 영문, 숫자 2~8자여야 합니다.")
         String nickname,
@@ -50,17 +58,16 @@ public record SocialSignupRequest(
 
         @Size(max = ADDRESS_NAME_MAX_LENGTH, message = "배송지 이름은 20자 이하여야 합니다.")
         String addressName
-
 ) {
-  public SocialSignupCommand toCommand() {
-    return new SocialSignupCommand(nickname, phone,
+  public SignupCommand toCommand() {
+    return new SignupCommand(email, password, nickname, phone,
             bankCode, accountNo, accountHolder,
             recipientName, recipientPhone, zipcode, address1,
             blankToNull(address2), blankToNull(addressName)
     );
   }
 
-  // 선택 입력값 빈 문자열은 NULL로 통일
+  // 선택 입력값은 빈 문자열("", "  ")을 NULL로 통일
   private static String blankToNull(String value) {
     return (value == null || value.isBlank()) ? null : value;
   }

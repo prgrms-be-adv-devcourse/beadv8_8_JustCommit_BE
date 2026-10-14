@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.application;
+package com.justcommit.backend.member.member.application;
 
 // 정보 조회 결과(계좌번호는 마스킹된 값)
 public record MyInfoResult(

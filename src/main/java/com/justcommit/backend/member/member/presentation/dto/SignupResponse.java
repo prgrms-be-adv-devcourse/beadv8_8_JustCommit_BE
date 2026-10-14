@@ -1,6 +1,6 @@
-package com.justcommit.backend.member.presentation.dto;
+package com.justcommit.backend.member.member.presentation.dto;
 
-import com.justcommit.backend.member.application.SignupResult;
+import com.justcommit.backend.member.member.application.SignupResult;
 
 // 회원가입 응답
 public record SignupResponse(

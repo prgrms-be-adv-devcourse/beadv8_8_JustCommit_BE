@@ -1,4 +1,4 @@
-package com.justcommit.backend.member.infrastructure.messaging;
+package com.justcommit.backend.member.member.infrastructure.messaging;
 
 import com.justcommit.backend.member.MemberRegisteredEvent;
 import lombok.RequiredArgsConstructor;
