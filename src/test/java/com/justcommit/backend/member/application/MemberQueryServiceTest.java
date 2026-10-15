@@ -3,14 +3,15 @@ package com.justcommit.backend.member.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.MemberAccount;
 import com.justcommit.backend.member.MemberAddress;
-import com.justcommit.backend.member.domain.SystemAccount;
-import com.justcommit.backend.member.domain.Address;
+import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Role;
+import com.justcommit.backend.member.domain.SystemAccount;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
-import com.justcommit.backend.member.infrastructure.repository.AddressRepository;
+import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,6 +35,9 @@ class MemberQueryServiceTest {
 
   @Mock
   private AddressRepository addressRepository;
+
+  @Mock
+  private SellerRepository sellerRepository;
 
   @Mock
   private AccountCipher accountCipher;
@@ -182,5 +186,44 @@ class MemberQueryServiceTest {
 
     assertThatThrownBy(() -> memberQueryService.getHoldingMemberId())
             .isInstanceOf(IllegalStateException.class);
+  }
+
+  // 판매자 여부
+  @Test
+  @DisplayName("판매자로 등록된 회원이면 true")
+  void isSeller_true() {
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(true);
+
+    assertThat(memberQueryService.isSeller(MEMBER_ID)).isTrue();
+  }
+
+  @Test
+  @DisplayName("판매자로 등록되지 않았거나 없는 회원이면 false")
+  void isSeller_false() {
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
+
+    assertThat(memberQueryService.isSeller(MEMBER_ID)).isFalse();
+  }
+
+  // 닉네임
+  @Test
+  @DisplayName("회원 닉네임을 반환한다")
+  void getNickname() {
+    Member member = Member.createLocal("test@gmail.com", "encoded", "떡볶이", "01012345678",
+            "004", "v1:encrypted-account", "홍길동");
+    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(member));
+
+    assertThat(memberQueryService.getNickname(MEMBER_ID)).isEqualTo("떡볶이");
+  }
+
+  @Test
+  @DisplayName("회원이 없으면 닉네임 조회 시 MEMBER_NOT_FOUND")
+  void getNickname_notFound() {
+    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> memberQueryService.getNickname(MEMBER_ID))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MemberErrorCode.MEMBER_NOT_FOUND);
   }
 }

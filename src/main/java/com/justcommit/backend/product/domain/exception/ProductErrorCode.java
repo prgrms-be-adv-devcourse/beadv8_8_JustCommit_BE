@@ -7,7 +7,8 @@ import org.springframework.http.HttpStatus;
 
 @Getter
 @RequiredArgsConstructor
-public enum ProductErrorCode implements ErrorCode {
+public enum
+ProductErrorCode implements ErrorCode {
 
     SPECIES_NOT_FOUND(HttpStatus.NOT_FOUND, "품종을 찾을 수 없습니다."),
     BANNED_SPECIES(HttpStatus.BAD_REQUEST, "판매가 금지된 품종입니다."),
@@ -16,7 +17,9 @@ public enum ProductErrorCode implements ErrorCode {
     NOT_PRODUCT_OWNER(HttpStatus.FORBIDDEN, "본인이 등록한 상품만 변경할 수 있습니다."),
     PRODUCT_NOT_EDITABLE(HttpStatus.CONFLICT, "판매 중인 상품만 수정할 수 있습니다."),
     PRODUCT_NOT_DELETABLE(HttpStatus.CONFLICT, "판매 중인 상품만 삭제할 수 있습니다."),
-    PRODUCT_NOT_HIDEABLE(HttpStatus.CONFLICT, "판매 중이거나 판매 완료된 상품만 숨길 수 있습니다.");
+    PRODUCT_NOT_HIDEABLE(HttpStatus.CONFLICT, "판매 중이거나 판매 완료된 상품만 숨길 수 있습니다."),
+    INVALID_IMAGE_URL(HttpStatus.BAD_REQUEST, "업로드한 이미지만 등록할 수 있습니다."),
+    INVALID_IMAGE_FILE(HttpStatus.BAD_REQUEST, "jpg, png, webp 형식의 10MB 이하 이미지만 업로드할 수 있습니다.");
     private final HttpStatus status;
     private final String message;
 }

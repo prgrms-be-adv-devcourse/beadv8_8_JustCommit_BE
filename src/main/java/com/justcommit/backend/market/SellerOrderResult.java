@@ -10,6 +10,9 @@ public record SellerOrderResult(
         List<OrdersItemResult> items,
         BigDecimal totalAmount,
         LocalDateTime confirmedAt,
-        BigDecimal shippingFee
+        BigDecimal shippingFee,
+        Long shipmentId,
+        String shipmentStatus, //TODO : 배송상태 공개시 변경
+        LocalDateTime deliveredAt
 ) {
 }

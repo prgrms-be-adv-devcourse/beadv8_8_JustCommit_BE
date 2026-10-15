@@ -42,3 +42,10 @@ jwt:
 # 로컬 개발 전용 키 (운영 사용 금지)
 account:
   encryption-key: ${ACCOUNT_ENCRYPTION_KEY:D9RKon3RSo0PthLJcaInlxu9yunudk2/5kvlBmOppgc=}
+
+# 로컬 S3 호환 저장소(RustFS, docker compose). 로컬 전용 더미 계정
+custom:
+  s3:
+    endpoint: http://localhost:9000
+    access-key: replantlocal
+    secret-key: replantlocal123

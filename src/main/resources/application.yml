@@ -53,7 +53,7 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
       properties:
-        "[spring.json.trusted.packages]": com.justcommit.backend
+        "[spring.json.trusted.packages]": "com.justcommit.backend.*"
 
 management:
   endpoints:
@@ -71,6 +71,16 @@ jwt:
   signup-token-expiration: 10m
 
 custom:
+  image:
+    base-url: ${S3_PUBLIC_BASE_URL:http://localhost:9000/team06-replant-images}
+  s3:
+    bucket: ${S3_BUCKET_NAME:team06-replant-images}
+    region: ${AWS_REGION:ap-northeast-2}
+    endpoint: ${S3_ENDPOINT:}
+    upload-url-duration: 10m
+  kafka:
+    topics:
+      purchase-confirmed: ${PURCHASE_CONFIRMED_TOPIC:market.purchase-confirmed.v1}
   payment:
     toss:
       secret-key: ${TOSS_SECRET_KEY:}
@@ -79,10 +89,15 @@ custom:
   courier:
     api-key: ${COURIER_API_KEY:}
     base-url: ${COURIER_BASE_URL:http://localhost:3000}
+    webhook-api-key: ${WEBHOOK_API_KEY:}
 
   cookie:
     # 쿠키 Secure 속성. 로컬·운영 HTTP는 false, 운영 HTTPS 적용 시 COOKIE_SECURE=true
     secure: ${COOKIE_SECURE:false}
+
+  frontend:
+    # 소셜 로그인 후 돌아갈 프론트 주소. 운영은 FRONTEND_BASE_URL 환경변수로 주입
+    base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
 
 # 환급 계좌번호 AES-256-GCM 암호화 키 (32바이트, Base64). 운영은 환경변수로 주입
 account:

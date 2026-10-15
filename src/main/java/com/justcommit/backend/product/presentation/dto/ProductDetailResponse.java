@@ -10,6 +10,7 @@ import java.util.List;
 public record ProductDetailResponse(
         Long productId,
         Long sellerId,
+        String sellerName,
         String title,
         String description,
         BigDecimal price,
@@ -24,10 +25,11 @@ public record ProductDetailResponse(
         LocalDateTime updatedAt
 ) {
 
-    public static ProductDetailResponse from(Product product) {
+    public static ProductDetailResponse from(Product product, String sellerName) {
         return new ProductDetailResponse(
                 product.getId(),
                 product.getSellerId(),
+                sellerName,
                 product.getTitle(),
                 product.getDescription(),
                 product.getPrice(),

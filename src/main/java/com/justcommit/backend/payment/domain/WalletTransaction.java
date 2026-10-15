@@ -89,4 +89,99 @@ public class WalletTransaction extends BaseTimeEntity {
                 wallet.getBalance()
         );
     }
+
+    // HOLDING 정산금 출금
+    public static WalletTransaction settlementOut(
+            Wallet wallet,
+            Long settlementId,
+            BigDecimal amount,
+            LocalDateTime occurredAt
+    ) {
+        return new WalletTransaction(
+                wallet,
+                RefType.SETTLEMENT,
+                settlementId,
+                occurredAt,
+                TransactionStatus.OUT,
+                amount,
+                wallet.getBalance()
+        );
+    }
+
+    public static WalletTransaction holdingIn(
+            Wallet wallet,
+            Long orderId,
+            BigDecimal amount,
+            LocalDateTime occurredAt
+    ) {
+        return new WalletTransaction(
+                wallet,
+                RefType.PAYMENT,
+                orderId,
+                occurredAt,
+                TransactionStatus.IN,
+                amount,
+                wallet.getBalance()
+        );
+    }
+
+    // REVENUE 수수료 적립
+    public static WalletTransaction settlementFeeIn(
+            Wallet wallet,
+            Long settlementId,
+            BigDecimal amount,
+            LocalDateTime occurredAt
+    ) {
+        return new WalletTransaction(
+                wallet,
+                RefType.SETTLEMENT_FEE,
+                settlementId,
+                occurredAt,
+                TransactionStatus.IN,
+                amount,
+                wallet.getBalance()
+        );
+    }
+
+    // REVENUE 배송비 적립
+    public static WalletTransaction shippingFeeIn(
+            Wallet wallet,
+            Long settlementId,
+            BigDecimal amount,
+            LocalDateTime occurredAt
+    ) {
+        return new WalletTransaction(
+                wallet,
+                RefType.SHIPPING_FEE,
+                settlementId,
+                occurredAt,
+                TransactionStatus.IN,
+                amount,
+                wallet.getBalance()
+        );
+    }
+
+    public static WalletTransaction refundIn(
+            Wallet wallet,
+            RefType refType,
+            Long refId,
+            BigDecimal amount,
+            LocalDateTime occurredAt
+    ) {
+        return new WalletTransaction(
+                wallet, refType, refId, occurredAt,
+                TransactionStatus.IN, amount, wallet.getBalance());
+    }
+
+    public static WalletTransaction refundOut(
+            Wallet wallet,
+            RefType refType,
+            Long refId,
+            BigDecimal amount,
+            LocalDateTime occurredAt
+    ) {
+        return new WalletTransaction(
+                wallet, refType, refId, occurredAt,
+                TransactionStatus.OUT, amount, wallet.getBalance());
+    }
 }

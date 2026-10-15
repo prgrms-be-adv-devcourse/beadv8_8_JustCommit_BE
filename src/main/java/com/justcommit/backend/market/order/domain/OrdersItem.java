@@ -1,6 +1,7 @@
 package com.justcommit.backend.market.order.domain;
 
 import com.justcommit.backend.common.entity.BaseTimeEntity;
+import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.market.OrderItemStatus;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -38,6 +39,20 @@ public class OrdersItem extends BaseTimeEntity {
         this.productName = productName;
         this.price = price;
         this.status = OrderItemStatus.NORMAL;
+    }
+
+    public void confirm() {
+        if (this.status != OrderItemStatus.NORMAL) {
+            throw new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_CONFIRMABLE);
+        }
+        this.status = OrderItemStatus.CONFIRMED;
+    }
+
+    public void cancel() {
+        if (this.status != OrderItemStatus.NORMAL) {
+            throw new IllegalStateException("일반 상태의 주문 상품만 취소할수 있습니다.");
+        }
+        this.status = OrderItemStatus.CANCELLED;
     }
 
 }

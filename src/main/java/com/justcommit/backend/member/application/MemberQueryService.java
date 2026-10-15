@@ -5,13 +5,14 @@ import com.justcommit.backend.member.MemberAccount;
 import com.justcommit.backend.member.MemberAddress;
 import com.justcommit.backend.member.MemberQuery;
 import com.justcommit.backend.member.domain.SystemAccount;
-import com.justcommit.backend.member.domain.Address;
+import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Role;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
-import com.justcommit.backend.member.infrastructure.repository.AddressRepository;
+import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +25,7 @@ public class MemberQueryService implements MemberQuery {
 
   private final MemberRepository memberRepository;
   private final AddressRepository addressRepository;
+  private final SellerRepository sellerRepository;
   private final AccountCipher accountCipher;
 
   @Override
@@ -63,6 +65,20 @@ public class MemberQueryService implements MemberQuery {
   @Override
   public Long getRevenueMemberId() {
     return findSystemMemberId(SystemAccount.REVENUE);
+  }
+
+  // 판매자 테이블 PK = 회원 ID(@MapsId)라서 existsById로 바로 확인
+  @Override
+  public boolean isSeller(Long memberId) {
+    return sellerRepository.existsById(memberId);
+  }
+
+  // 상품 상세용 판매자 닉네임
+  @Override
+  public String getNickname(Long memberId) {
+    return memberRepository.findById(memberId)
+            .map(Member::getNickname)
+            .orElseThrow(() -> new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
   }
 
   // 엔티티 → 공개 DTO (다른 모듈에 Address 엔티티를 노출하지 않음)

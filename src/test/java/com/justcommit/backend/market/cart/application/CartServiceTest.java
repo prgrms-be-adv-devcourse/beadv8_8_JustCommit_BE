@@ -12,6 +12,7 @@ import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.product.ProductStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -26,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,6 +38,36 @@ class CartServiceTest {
     @Mock CartItemRepository cartItemRepository;
     @Mock ProductQuery productQuery;
     @InjectMocks CartService cartService;
+
+    @Test
+    void createsCartForMemberWithoutOne() {
+        when(cartRepository.countByMemberId(10L)).thenReturn(0);
+
+        cartService.createCart(10L);
+
+        ArgumentCaptor<Cart> savedCart = ArgumentCaptor.forClass(Cart.class);
+        verify(cartRepository).save(savedCart.capture());
+        assertThat(savedCart.getValue().getMemberId()).isEqualTo(10L);
+    }
+
+    @Test
+    void keepsExistingCartWhenRegistrationEventIsRepeated() {
+        when(cartRepository.countByMemberId(10L)).thenReturn(0, 1);
+
+        cartService.createCart(10L);
+        cartService.createCart(10L);
+
+        verify(cartRepository, times(1)).save(any(Cart.class));
+    }
+
+    @Test
+    void doesNotCreateCartIfMemberAlreadyHasOne() {
+        when(cartRepository.countByMemberId(10L)).thenReturn(1);
+
+        cartService.createCart(10L);
+
+        verify(cartRepository, never()).save(any(Cart.class));
+    }
 
     @Test
     void createsCartWhenMemberHasNoCart() {

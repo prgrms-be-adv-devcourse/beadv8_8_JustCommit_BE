@@ -73,6 +73,7 @@ public class SecurityConfig {
                         .requestMatchers(PUBLIC_PATHS).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/users", "/api/v1/users/social").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/checkNickname").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/users/checkPhone").permitAll()
                         // 기존 코드
 //                        .requestMatchers("/api/v1/users/me").authenticated()
 //                        .requestMatchers("/api/v1/cart", "/api/v1/cart/**").authenticated()
@@ -83,6 +84,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/products/me").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/products", "/api/v1/products/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/species", "/api/v1/species/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/courier").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN") // 관리자 전용 (정산 API 경로 확정 시 조정)
                         .anyRequest().authenticated()) // permitAll → authenticated
 

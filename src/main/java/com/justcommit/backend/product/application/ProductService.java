@@ -1,11 +1,13 @@
 package com.justcommit.backend.product.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.member.MemberQuery;
 import com.justcommit.backend.product.ProductQuery;
 import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.ProductUseCase;
 import com.justcommit.backend.product.domain.Product;
+import com.justcommit.backend.product.domain.ProductPicture;
 import com.justcommit.backend.product.domain.Species;
 import com.justcommit.backend.product.domain.exception.ProductErrorCode;
 import com.justcommit.backend.product.infrastructure.repository.ProductRepository;
@@ -25,8 +27,10 @@ import java.util.List;
 public class ProductService implements ProductQuery, ProductUseCase {
 
     private final ProductRepository productRepository;
-private final SpeciesRepository speciesRepository;
-
+    private final SpeciesRepository speciesRepository;
+    private final MemberQuery memberQuery;
+    private final ProductImageUrlValidator imageUrlValidator;
+    private final ProductImageCleaner imageCleaner;
     // ── ProductQuery ───────────────────────────────
 
     @Override
@@ -65,6 +69,12 @@ private final SpeciesRepository speciesRepository;
 
     @Override
     @Transactional
+    public boolean releaseItem(Long productId){
+        return productRepository.releaseItem(productId)>0;
+    }
+
+    @Override
+    @Transactional
     public boolean release(Long orderId) {
         return productRepository.release(orderId) > 0;
     }
@@ -86,27 +96,35 @@ private final SpeciesRepository speciesRepository;
                 product.getThumbnailUrl());
     }
 
-    // 상품 API
+    // ── 상품 API ───────────────────────────────
     @Transactional
     public ProductDetailResponse createProduct(Long sellerId, ProductRequest request){
-        Species species = speciesRepository.findById(request.speciesId())
-                .orElseThrow(() -> new BusinessException(ProductErrorCode.SPECIES_NOT_FOUND));
+
+        //판매자 여부 확인
+        if (!memberQuery.isSeller(sellerId)) {
+            throw new BusinessException(ProductErrorCode.NOT_SELLER);
+        }
 
         List<String> pictureUrls = request.pictureUrls() == null ? List.of() : request.pictureUrls();
+        imageUrlValidator.validate(sellerId, pictureUrls);
+
+        Species species = speciesRepository.findById(request.speciesId())
+                .orElseThrow(() -> new BusinessException(ProductErrorCode.SPECIES_NOT_FOUND));
 
         Product product = Product.create(
                 species, sellerId, request.title(), request.description(), request.price(),
                 request.heightCm(), request.potSize(), request.growNote(), pictureUrls);
 
-        return ProductDetailResponse.from(productRepository.save(product));
+        return ProductDetailResponse.from(productRepository.save(product), memberQuery.getNickname(sellerId));
     }
 
     // memberId: 로그인하지 않았으면 null
     public ProductDetailResponse getProductDetail(Long productId, Long memberId) {
-        return productRepository.findWithDetailById(productId)
-                .filter(product -> product.isVisibleTo(memberId))
-                .map(ProductDetailResponse::from)
+        Product product =  productRepository.findWithDetailById(productId)
+                .filter(p -> p.isVisibleTo(memberId))
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
+
+        return ProductDetailResponse.from(product, memberQuery.getNickname(product.getSellerId()));
     }
 
     public Page<ProductSearchResponse> searchProducts(ProductSearchRequest request) {
@@ -120,18 +138,37 @@ private final SpeciesRepository speciesRepository;
     }
 
     @Transactional
-    public ProductDetailResponse updateProduct(Long memberId, Long productId,  ProductRequest request) {
+    public ProductDetailResponse updateProduct(Long memberId, Long productId, ProductRequest request) {
 
-        Product product = getOwnedProductForUpdate(memberId,productId);
+        Product product = getOwnedProductForUpdate(memberId, productId);
+        List<String> pictureUrls = request.pictureUrls() == null ? List.of() : request.pictureUrls();
+        imageUrlValidator.validate(product.getSellerId(), pictureUrls);
+
         Species species = speciesRepository.findById(request.speciesId())
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.SPECIES_NOT_FOUND));
 
-        List<String> pictureUrls = request.pictureUrls() == null ? List.of() : request.pictureUrls();
+        List<String> oldPictureUrls = pictureUrlsOf(product);   // update 전에 꺼내 둠
 
         product.update(species, request.title(), request.description(), request.price(),
                 request.heightCm(), request.potSize(), request.growNote(), pictureUrls);
 
-         return  ProductDetailResponse.from(product);
+        // 기존 사진 중 새 목록에서 빠진 것만 커밋 후 삭제
+        imageCleaner.deleteAfterCommit(oldPictureUrls.stream()
+                .filter(url -> !pictureUrls.contains(url))
+                .toList());
+
+        return ProductDetailResponse.from(product, memberQuery.getNickname(product.getSellerId()));
+    }
+
+    @Transactional
+    public void deleteProduct(Long memberId, Long productId) {
+        Product product = getOwnedProductForUpdate(memberId, productId);
+        product.delete();
+        imageCleaner.deleteAfterCommit(pictureUrlsOf(product));
+    }
+
+    private List<String> pictureUrlsOf(Product product) {
+        return product.getPictures().stream().map(ProductPicture::getS3Url).toList();
     }
 
     private Product getOwnedProductForUpdate(Long memberId, Long productId){
@@ -144,11 +181,6 @@ private final SpeciesRepository speciesRepository;
         }
 
         return product;
-    }
-
-    @Transactional
-    public void deleteProduct(Long memberId, Long productId) {
-        getOwnedProductForUpdate(memberId, productId).delete();
     }
 
     @Transactional

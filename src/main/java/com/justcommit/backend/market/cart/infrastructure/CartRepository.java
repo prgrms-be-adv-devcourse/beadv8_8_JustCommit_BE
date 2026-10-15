@@ -9,4 +9,5 @@ public interface CartRepository extends JpaRepository<Cart, Long> {
 
     Optional<Cart> findByMemberId(long memberId);
 
+    int countByMemberId(Long memberId);
 }

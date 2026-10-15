@@ -4,6 +4,7 @@ import com.justcommit.backend.common.exception.GlobalExceptionHandler;
 import com.justcommit.backend.common.security.AuthMember;
 import com.justcommit.backend.common.response.PagingResponse;
 import com.justcommit.backend.market.OrderStatus;
+import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.order.application.OrderReadService;
 import com.justcommit.backend.market.order.application.OrderService;
 import org.junit.jupiter.api.AfterEach;
@@ -152,6 +153,24 @@ class OrderControllerTest {
     }
 
     @Test
+    void confirmsItemForAuthenticatedBuyer() throws Exception {
+        mockMvc.perform(post("/api/v1/orders/items/11/confirm"))
+                .andExpect(status().isOk());
+
+        verify(orderService).confirm(10L, 11L);
+    }
+
+    @Test
+    void rejectsUnauthenticatedItemConfirmation() throws Exception {
+        SecurityContextHolder.clearContext();
+
+        mockMvc.perform(post("/api/v1/orders/items/11/confirm"))
+                .andExpect(status().isUnauthorized());
+
+        verify(orderService, never()).confirm(any(), any());
+    }
+
+    @Test
     void listsOnlyAuthenticatedBuyersOrders() throws Exception {
         when(orderReadService.buyerOrders(eq(10L), any(OrderListRequest.class)))
                 .thenReturn(new PagingResponse<>(List.of(new OrderResponse(9L, "ORD-test",
@@ -171,11 +190,18 @@ class OrderControllerTest {
         when(orderReadService.buyerOrder(10L, 9L))
                 .thenReturn(new OrderDetailResponse(9L, "ORD-test", new BigDecimal("13000"), 1,
                         OrderStatus.PAID, LocalDateTime.of(2026, 10, 9, 12, 0), "구매자",
-                        "01012345678", "12345", "서울시", null, List.of()));
+                        "01012345678", "12345", "서울시", null,
+                        List.of(new OrderDetailResponse.SellerOrderDetail(7L, 20L,
+                                List.of(new OrderDetailResponse.OrderItemDetail(5L, 101L, "몬스테라",
+                                        new BigDecimal("10000"), OrderItemStatus.NORMAL, true)),
+                                new BigDecimal("10000"), null, new BigDecimal("3000"),
+                                30L, "DELIVERED", LocalDateTime.of(2026, 10, 12, 13, 0)))));
 
         mockMvc.perform(get("/api/v1/orders/9"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.orderNo").value("ORD-test"));
+                .andExpect(jsonPath("$.orderNo").value("ORD-test"))
+                .andExpect(jsonPath("$.sellerOrders[0].shipmentStatus").value("DELIVERED"))
+                .andExpect(jsonPath("$.sellerOrders[0].items[0].purchaseConfirmable").value(true));
 
         verify(orderReadService).buyerOrder(10L, 9L);
     }
