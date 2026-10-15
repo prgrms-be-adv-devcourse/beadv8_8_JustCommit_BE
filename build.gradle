@@ -22,6 +22,11 @@ dependencyManagement {
     imports {
         mavenBom 'org.springframework.modulith:spring-modulith-bom:2.1.1'
     }
+
+    imports {
+        mavenBom 'org.springframework.modulith:spring-modulith-bom:2.1.1'
+        mavenBom 'software.amazon.awssdk:bom:2.55.10'
+    }
 }
 
 dependencies {
@@ -43,6 +48,10 @@ dependencies {
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.13.0'
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.0'
+
+
+    // 이미지 업로드 (S3 Presigned URL)
+    implementation 'software.amazon.awssdk:s3'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
