@@ -4,6 +4,7 @@ package com.justcommit.backend.product.presentation.controller;
 import com.justcommit.backend.common.response.ApiResponse;
 import com.justcommit.backend.common.response.PagingResponse;
 import com.justcommit.backend.common.security.AuthMember;
+import com.justcommit.backend.product.application.ProductImageService;
 import com.justcommit.backend.product.application.ProductService;
 import com.justcommit.backend.product.presentation.dto.*;
 import io.swagger.v3.oas.annotations.Operation;
@@ -14,12 +15,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @Tag(name = "product-controller", description = "판매글 등록 및 조회 API")
 @RequestMapping("/api/v1/products")
 @RequiredArgsConstructor
 public class ProductController {
 
+    private final ProductImageService productImageService;
     private final ProductService productService;
 
     @Operation(summary = "상품 등록", description = "로그인한 회원을 판매자로 상품을 등록합니다. 금지 품종은 등록할 수 없습니다.")
@@ -94,5 +98,15 @@ public class ProductController {
         return ApiResponse.ok("내 판매 목록을 조회했습니다", PagingResponse.from(productService.getMyProducts(authMember.memberId(), request)));
     }
 
+    @Operation(summary = "상품 이미지 업로드 링크 발급",
+            description = "판매자만 발급받을 수 있습니다. 응답의 uploadUrl로 파일을 PUT 업로드하고, "
+                    + "imageUrl을 상품 등록·수정의 pictureUrls에 넣어 주세요. 링크는 10분간 유효합니다.")
+    @PostMapping("/images/upload-urls")
+    public ApiResponse<List<ImageUploadUrlResponse>> issueImageUploadUrls(
+            @AuthenticationPrincipal AuthMember authMember,
+            @RequestBody @Valid ImageUploadUrlRequest request) {
 
+        return ApiResponse.ok("이미지 업로드 링크를 발급했습니다.",
+                productImageService.issueUploadUrls(authMember.memberId(), request));
+    }
 }

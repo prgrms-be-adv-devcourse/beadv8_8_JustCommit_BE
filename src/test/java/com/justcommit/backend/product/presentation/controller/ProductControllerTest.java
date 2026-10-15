@@ -4,6 +4,7 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.exception.GlobalExceptionHandler;
 import com.justcommit.backend.common.security.AuthMember;
 import com.justcommit.backend.product.ProductStatus;
+import com.justcommit.backend.product.application.ProductImageService;
 import com.justcommit.backend.product.application.ProductService;
 import com.justcommit.backend.product.domain.exception.ProductErrorCode;
 import com.justcommit.backend.product.presentation.dto.*;
@@ -73,12 +74,15 @@ class ProductControllerTest {
     @Mock
     private ProductService productService;
 
+    @Mock
+    ProductImageService productImageService;
+
     private MockMvc mockMvc;  // HTTP 요청을 흉내 내서 Controller 호출
 
     // 테스트마다 새로운 MockMvc 생성
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new ProductController(productService))   // Controller 하나만 등록
+        mockMvc = MockMvcBuilders.standaloneSetup(new ProductController(productImageService, productService))   // Controller 하나만 등록
                 .setControllerAdvice(new GlobalExceptionHandler())
                 // @AuthenticationPrincipal AuthMember를 SecurityContext에서 꺼내 주는 처리기
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
