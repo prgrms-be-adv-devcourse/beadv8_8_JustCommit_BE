@@ -70,6 +70,11 @@ class ShipmentBookingFailureTest {
         assertThat(saved.getSellerOrderId()).isEqualTo(7L);
         assertThat(saved.getStatus()).isEqualTo(ShipmentStatus.READY);
         assertThat(saved.getCourierOrderNo()).isNotBlank();
+        // 재예약 때 같은 요청을 보낼 수 있게 예약 정보가 저장된다
+        assertThat(saved.getSellerId()).isEqualTo(20L);
+        assertThat(saved.getReceiverName()).isEqualTo("구매자");
+        assertThat(saved.getReceiverAddress()).isEqualTo("부산");
+        assertThat(saved.getItemSummary()).isEqualTo("몬스테라");
     }
 
     private OrderResult order() {

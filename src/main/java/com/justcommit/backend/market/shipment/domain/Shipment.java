@@ -35,8 +35,25 @@ public class Shipment extends BaseTimeEntity {
 
     private LocalDateTime deliveredAt;
 
-    public Shipment(Long sellerOrderId) {
+    // 재예약 때 처음과 같은 요청을 보내려고 결제 시점의 예약 정보를 저장한다.
+    private Long sellerId;
+
+    private String receiverName;
+
+    private String receiverPhone;
+
+    private String receiverAddress;
+
+    private String itemSummary;
+
+    public Shipment(Long sellerOrderId, Long sellerId, String receiverName, String receiverPhone,
+                    String receiverAddress, String itemSummary) {
         this.sellerOrderId = sellerOrderId;
+        this.sellerId = sellerId;
+        this.receiverName = receiverName;
+        this.receiverPhone = receiverPhone;
+        this.receiverAddress = receiverAddress;
+        this.itemSummary = itemSummary;
         this.status = ShipmentStatus.READY;
     }
 
