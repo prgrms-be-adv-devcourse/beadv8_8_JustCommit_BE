@@ -15,7 +15,10 @@ public enum PaymentErrorCode implements ErrorCode {
     INVALID_AMOUNT(HttpStatus.BAD_REQUEST, "금액은 0보다 커야 합니다."),
     INSUFFICIENT_BALANCE(HttpStatus.BAD_REQUEST, "예치금 잔액이 부족합니다."),
     WALLET_NOT_FOUND(HttpStatus.NOT_FOUND, "지갑을 찾을 수 없습니다."),
-    INVALID_CHARGE_AMOUNT(HttpStatus.BAD_REQUEST, "충전 금액은 10,000원 이상, 10,000원 단위입니다.");
+    INVALID_CHARGE_AMOUNT(HttpStatus.BAD_REQUEST, "충전 금액은 10,000원 이상, 10,000원 단위입니다."),
+    REFUND_INFO_MISMATCH(HttpStatus.CONFLICT, "기존 환불 내역과 요청 정보가 일치하지 않습니다."),
+    REFUND_REFERENCE_CONFLICT(HttpStatus.CONFLICT, "이미 다른 구매자에게 처리된 환불 건입니다.");
+
 
     private final HttpStatus status;
     private final String message;

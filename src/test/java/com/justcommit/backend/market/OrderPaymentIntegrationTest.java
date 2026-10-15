@@ -669,5 +669,16 @@ class OrderPaymentIntegrationTest {
                                          BigDecimal payoutAmount, BigDecimal fee) {
             delegate.distributeSettlement(settlementId, sellerId, payoutAmount, fee);
         }
+
+        @Override
+        public PaymentResult refundCancelledItem(Long orderItemId, Long buyerId, BigDecimal amount) {
+            return delegate.refundCancelledItem(orderItemId, buyerId, amount);
+        }
+
+        @Override
+        public PaymentResult refundShippingFee(Long sellerOrderId, Long buyerId, BigDecimal amount) {
+            return delegate.refundShippingFee(sellerOrderId, buyerId, amount);
+        }
+
     }
 }
