@@ -253,4 +253,20 @@ class SignupServiceTest {
 
     assertThat(signupService.isNicknameAvailable(NICKNAME)).isFalse();
   }
+
+  @Test
+  @DisplayName("이미 있는 휴대폰 번호면 사용 불가(false)")
+  void isPhoneAvailable_taken() {
+    given(memberRepository.existsByPhone(PHONE)).willReturn(true);
+
+    assertThat(signupService.isPhoneAvailable(PHONE)).isFalse();
+  }
+
+  @Test
+  @DisplayName("없는 휴대폰 번호면 사용 가능(true)")
+  void isPhoneAvailable_available() {
+    given(memberRepository.existsByPhone(PHONE)).willReturn(false);
+
+    assertThat(signupService.isPhoneAvailable(PHONE)).isTrue();
+  }
 }

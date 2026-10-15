@@ -18,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Locale;
 
-// 회원가입·닉네임 중복 확인
+// 회원가입·닉네임·휴대폰 중복 확인
 @Service
 @RequiredArgsConstructor
 public class SignupService {
@@ -89,6 +89,12 @@ public class SignupService {
   @Transactional(readOnly = true)
   public boolean isNicknameAvailable(String nickname) {
     return !memberRepository.existsByNickname(nickname);
+  }
+
+  // 핸드폰 번호 사용 가능 여부 (중복 확인 API)
+  @Transactional(readOnly = true)
+  public boolean isPhoneAvailable(String phone) {
+    return !memberRepository.existsByPhone(phone);
   }
 
   // DB가 알려 준 제약 이름으로 어떤 값이 겹쳤는지 구분

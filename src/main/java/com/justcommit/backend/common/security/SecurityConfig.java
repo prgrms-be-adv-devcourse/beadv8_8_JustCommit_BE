@@ -73,6 +73,7 @@ public class SecurityConfig {
                         .requestMatchers(PUBLIC_PATHS).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/users", "/api/v1/users/social").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/checkNickname").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/users/checkPhone").permitAll()
                         // 기존 코드
 //                        .requestMatchers("/api/v1/users/me").authenticated()
 //                        .requestMatchers("/api/v1/cart", "/api/v1/cart/**").authenticated()
