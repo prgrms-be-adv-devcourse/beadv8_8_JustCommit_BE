@@ -57,10 +57,9 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             p.reservedOrderId = null,
             p.updatedAt = CURRENT_TIMESTAMP
         WHERE p.id = :productId
-          AND p.reservedOrderId = :orderId
           AND p.status = com.justcommit.backend.product.ProductStatus.SOLD_OUT
         """)
-    int releaseSoldItem(@Param("orderId") Long orderId, @Param("productId") Long productId);
+    int releaseItem( @Param("productId") Long productId);
 
     // 목록: 품종을 함께 조회해 N+1 방지 (사진은 Product의 @BatchSize로 처리)
     @Override
