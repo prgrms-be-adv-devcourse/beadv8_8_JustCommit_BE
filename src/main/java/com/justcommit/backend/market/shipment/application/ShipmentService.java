@@ -6,6 +6,7 @@ import com.justcommit.backend.market.SellerOrderResult;
 import com.justcommit.backend.market.ShipmentQuery;
 import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.shipment.domain.Shipment;
+import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingException;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingRequest;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingResponse;
@@ -24,11 +25,11 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -65,25 +66,37 @@ public class ShipmentService implements ShipmentQuery {
 
 
     // 1단계: 결제 트랜잭션 안에서 호출된다.
-    // 배송 행(READY + courierOrderNo)만 만들어 결제와 함께 커밋하고, 택배사 예약은 커밋 후로 미룬다.
+    // 배송 행(READY + courierOrderNo + 예약 정보)만 만들어 결제와 함께 커밋하고, 택배사 예약은 커밋 후로 미룬다.
     public void createShipments(OrderResult order) {
+        String receiverAddress = fullAddress(order.address1(), order.address2());
         List<Shipment> shipments = new ArrayList<>();
         for (SellerOrderResult sellerOrder : order.sellerOrders()) {
-            Shipment shipment = shipmentRepository.save(new Shipment(sellerOrder.id()));
+            Shipment shipment = shipmentRepository.save(new Shipment(sellerOrder.id(), sellerOrder.sellerId(),
+                    order.recipientName(), order.recipientPhone(), receiverAddress,
+                    itemSummary(sellerOrder.items())));
             shipment.assignCourierOrderNo(LocalDate.now(SEOUL));
             shipments.add(shipmentRepository.save(shipment));
         }
-        runAfterCommit(() -> bookAll(order, shipments));
+        runAfterCommit(() -> bookAll(shipments));
+    }
+
+    // 대사: 예약되지 않고 남은 READY 배송을 같은 courierOrderNo(멱등키)로 다시 예약한다.
+    // 트랜잭션 밖에서 호출해야 택배사를 기다리는 동안 트랜잭션을 잡지 않는다.
+    public void rebookReadyShipments(LocalDateTime createdBefore) {
+        List<Shipment> shipments = shipmentRepository
+                .findTop100ByStatusAndCreatedAtBeforeOrderByIdAsc(ShipmentStatus.READY, createdBefore);
+        if (!shipments.isEmpty()) {
+            log.info("READY 배송 재예약: {}건", shipments.size());
+        }
+        bookAll(shipments);
     }
 
     // 2단계: 결제 커밋 후, 트랜잭션 밖에서 택배사에 예약한다.
     // 실패한 배송은 READY로 남고, 대사 작업이 같은 courierOrderNo로 다시 예약한다.
-    private void bookAll(OrderResult order, List<Shipment> shipments) {
-        Map<Long, SellerOrderResult> sellerOrders = order.sellerOrders().stream()
-                .collect(Collectors.toMap(SellerOrderResult::id, Function.identity()));
+    private void bookAll(List<Shipment> shipments) {
         for (Shipment shipment : shipments) {
             try {
-                book(order, sellerOrders.get(shipment.getSellerOrderId()), shipment);
+                book(shipment);
             } catch (RuntimeException e) {
                 // 판매자 주소 조회 실패 등. 한 판매자의 실패가 다른 판매자 예약을 막지 않게 한다.
                 log.error("택배 예약 준비 실패: shipmentId={}", shipment.getId(), e);
@@ -108,16 +121,16 @@ public class ShipmentService implements ShipmentQuery {
         });
     }
 
-    private void book(OrderResult order, SellerOrderResult sellerOrder, Shipment shipment) {
-        MemberAddress seller = memberQuery.getDefaultAddress(sellerOrder.sellerId());
+    private void book(Shipment shipment) {
+        MemberAddress seller = memberQuery.getDefaultAddress(shipment.getSellerId());
         CourierBookingRequest request = new CourierBookingRequest(
                 new CourierBookingRequest.Party(seller.recipientName(),
                         seller.recipientPhone(),
                         fullAddress(seller.address1(), seller.address2())),
-                new CourierBookingRequest.Party(order.recipientName(),
-                        order.recipientPhone(),
-                        fullAddress(order.address1(), order.address2())),
-                itemSummary(sellerOrder.items())
+                new CourierBookingRequest.Party(shipment.getReceiverName(),
+                        shipment.getReceiverPhone(),
+                        shipment.getReceiverAddress()),
+                shipment.getItemSummary()
         );
 
         try {

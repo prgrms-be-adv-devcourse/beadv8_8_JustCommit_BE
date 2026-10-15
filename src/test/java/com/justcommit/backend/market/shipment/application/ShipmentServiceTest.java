@@ -30,7 +30,7 @@ class ShipmentServiceTest {
 
     @Test
     void findsShipmentsBySellerOrderIdsInOneQuery() {
-        Shipment shipment = new Shipment(7L);
+        Shipment shipment = newShipment(7L);
         ReflectionTestUtils.setField(shipment, "id", 30L);
         ReflectionTestUtils.setField(shipment, "status", ShipmentStatus.DELIVERED);
         LocalDateTime deliveredAt = LocalDateTime.of(2026, 10, 12, 13, 0);
@@ -53,7 +53,7 @@ class ShipmentServiceTest {
 
     @Test
     void findsShipmentBySellerOrderId() {
-        Shipment shipment = new Shipment(7L);
+        Shipment shipment = newShipment(7L);
         ReflectionTestUtils.setField(shipment, "id", 30L);
         ReflectionTestUtils.setField(shipment, "status", ShipmentStatus.DELIVERED);
         LocalDateTime deliveredAt = LocalDateTime.of(2026, 10, 12, 13, 0);
@@ -72,5 +72,9 @@ class ShipmentServiceTest {
         when(shipmentRepository.findBySellerOrderId(7L)).thenReturn(Optional.empty());
 
         assertThat(shipmentService.findBySellerOrderId(7L)).isNull();
+    }
+
+    private Shipment newShipment(Long sellerOrderId) {
+        return new Shipment(sellerOrderId, 20L, "구매자", "01000000000", "부산", "몬스테라");
     }
 }
