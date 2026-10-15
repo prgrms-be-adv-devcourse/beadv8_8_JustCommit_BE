@@ -27,6 +27,7 @@ import com.justcommit.backend.payment.PaymentUseCase;
 import com.justcommit.backend.payment.application.PaymentService;
 import com.justcommit.backend.payment.domain.RefType;
 import com.justcommit.backend.payment.domain.Wallet;
+import com.justcommit.backend.payment.domain.TransactionStatus;
 import com.justcommit.backend.payment.infrastructure.repository.WalletRepository;
 import com.justcommit.backend.payment.infrastructure.repository.WalletTransactionRepository;
 import com.justcommit.backend.product.ProductQuery;
@@ -424,6 +425,7 @@ class OrderPaymentIntegrationTest {
     private long paymentCount(long orderId) {
         return walletTransactionRepository.findAll().stream()
                 .filter(transaction -> transaction.getRefType() == RefType.PAYMENT)
+                .filter(transaction -> transaction.getStatus() == TransactionStatus.OUT) // 구매자 출금 내역만 카운트하고 HOLDING 지갑 내역은 제외한다.
                 .filter(transaction -> transaction.getRefId().equals(orderId))
                 .count();
     }
