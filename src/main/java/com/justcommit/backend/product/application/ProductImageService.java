@@ -5,7 +5,6 @@ import com.justcommit.backend.member.MemberQuery;
 import com.justcommit.backend.product.domain.exception.ProductErrorCode;
 import com.justcommit.backend.product.presentation.dto.ImageUploadUrlRequest;
 import com.justcommit.backend.product.presentation.dto.ImageUploadUrlResponse;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -24,14 +23,14 @@ public class ProductImageService {
 
     private final ImageUploadUrlIssuer uploadUrlIssuer;
     private final MemberQuery memberQuery;
-    private final String baseUrl;
+    private final ProductImageUrls imageUrls;
 
     public ProductImageService(ImageUploadUrlIssuer uploadUrlIssuer,
                                MemberQuery memberQuery,
-                               @Value("${custom.image.base-url}") String baseUrl) {
+                               ProductImageUrls imageUrls) {
         this.uploadUrlIssuer = uploadUrlIssuer;
         this.memberQuery = memberQuery;
-        this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+        this.imageUrls = imageUrls;
     }
 
     public List<ImageUploadUrlResponse> issueUploadUrls(Long sellerId, ImageUploadUrlRequest request) {
@@ -48,10 +47,10 @@ public class ProductImageService {
         if (extension == null || size > MAX_SIZE) {
             throw new BusinessException(ProductErrorCode.INVALID_IMAGE_FILE);
         }
-        String key = "products/" + sellerId + "/" + UUID.randomUUID() + "." + extension;
+        String key = imageUrls.keyOf(sellerId, UUID.randomUUID() + "." + extension);
 
         return new ImageUploadUrlResponse(
                 uploadUrlIssuer.issue(key, contentType, size),
-                baseUrl + "/" + key);
+                imageUrls.urlOf(key));
     }
 }

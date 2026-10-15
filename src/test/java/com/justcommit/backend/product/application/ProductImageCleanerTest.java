@@ -29,7 +29,7 @@ class ProductImageCleanerTest {
 
     @BeforeEach
     void setUp() {
-        cleaner = new ProductImageCleaner(imageDeleter, BASE_URL + "/");   // 끝 '/'도 같이 확인
+        cleaner = new ProductImageCleaner(imageDeleter, new ProductImageUrls(BASE_URL + "/"));
         TransactionSynchronizationManager.initSynchronization();          // 트랜잭션 안인 것처럼
     }
 

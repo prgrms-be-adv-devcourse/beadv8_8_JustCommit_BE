@@ -8,13 +8,12 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ProductImageUrlValidatorTest {
 
     private static final String BASE_URL = "https://bucket.example.com";
-    private final ProductImageUrlValidator validator = new ProductImageUrlValidator(BASE_URL);
-
+    private final ProductImageUrlValidator validator = new ProductImageUrlValidator(new ProductImageUrls(BASE_URL));
 
     @Test
     @DisplayName("판매자 본인 경로의 이미지는 통과")
@@ -59,8 +58,7 @@ class ProductImageUrlValidatorTest {
     @Test
     @DisplayName("기본 URL 끝에 '/'가 있어도 판매자 본인 경로의 이미지는 통과")
     void baseUrlWithTrailingSlash() {
-        ProductImageUrlValidator slashValidator = new ProductImageUrlValidator(BASE_URL + "/");
-
+        ProductImageUrlValidator slashValidator = new ProductImageUrlValidator(new ProductImageUrls(BASE_URL + "/"));
         assertThatCode(() -> slashValidator.validate(1L, List.of(BASE_URL + "/products/1/a.jpg")))
                 .doesNotThrowAnyException();
     }

@@ -40,7 +40,7 @@ public class ProductImageServiceTest {
 
     @BeforeEach
     void setUp() {
-        productImageService = new ProductImageService(uploadUrlIssuer, memberQuery, BASE_URL);
+        productImageService = new ProductImageService(uploadUrlIssuer, memberQuery, new ProductImageUrls(BASE_URL));
     }
 
     private ImageUploadUrlRequest request(ImageUploadUrlRequest.ImageFile... files) {
@@ -84,7 +84,7 @@ public class ProductImageServiceTest {
     @Test
     @DisplayName("기본 URL 끝에 '/'가 있어도 최종 URL에 슬래시가 두 번 들어가지 않음")
     void baseUrlWithTrailingSlash() {
-        ProductImageService service = new ProductImageService(uploadUrlIssuer, memberQuery, BASE_URL + "/");
+        ProductImageService service = new ProductImageService(uploadUrlIssuer, memberQuery, new ProductImageUrls(BASE_URL + "/"));
         given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
         given(uploadUrlIssuer.issue(anyString(), anyString(), anyLong())).willReturn("https://signed-url");
 

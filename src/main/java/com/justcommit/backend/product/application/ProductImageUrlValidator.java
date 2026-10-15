@@ -2,7 +2,6 @@ package com.justcommit.backend.product.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.product.domain.exception.ProductErrorCode;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -10,16 +9,15 @@ import java.util.List;
 @Component
 public class ProductImageUrlValidator {
 
-    private final String baseUrl;
+    private final ProductImageUrls imageUrls;
 
-    public ProductImageUrlValidator(@Value("${custom.image.base-url}") String baseUrl){
-        this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+    public ProductImageUrlValidator(ProductImageUrls imageUrls) {
+        this.imageUrls = imageUrls;
     }
 
-    public void validate(Long sellerId, List<String> pictureUrls){
-        String allowedPrefix = baseUrl + "/products/" + sellerId + "/";
+    public void validate(Long sellerId, List<String> pictureUrls) {
         for (String url : pictureUrls) {
-            if (!url.startsWith(allowedPrefix) || url.contains("..")) {
+            if (!imageUrls.isOwnedBy(sellerId, url)) {
                 throw new BusinessException(ProductErrorCode.INVALID_IMAGE_URL);
             }
         }
