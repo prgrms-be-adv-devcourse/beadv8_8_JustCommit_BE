@@ -4,8 +4,6 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.OrderQuery;
-import com.justcommit.backend.market.PurchaseConfirmedEvent;
-import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.cart.application.CartService;
 import com.justcommit.backend.market.cart.domain.CartItem;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
@@ -15,12 +13,12 @@ import com.justcommit.backend.market.order.domain.SellerOrder;
 import com.justcommit.backend.market.order.infrastructure.OrderPaymentTtlStore;
 import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
-import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
-import com.justcommit.backend.market.order.infrastructure.kafka.PurchaseConfirmedEventPublisher;
+import com.justcommit.backend.market.order.infrastructure.AutoConfirmTarget;
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
 import com.justcommit.backend.market.shipment.application.ShipmentService;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
+import lombok.extern.slf4j.Slf4j;
 import com.justcommit.backend.payment.PaymentResult;
 import com.justcommit.backend.payment.PaymentStatus;
 import com.justcommit.backend.payment.PaymentUseCase;
@@ -41,6 +39,7 @@ import java.util.stream.Collectors;
 
 import static com.justcommit.backend.market.order.domain.OrderErrorCode.CHECKOUT_DATA_MISMATCH;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderService {
@@ -56,8 +55,7 @@ public class OrderService {
     private final PaymentUseCase paymentUseCase;
     private final OrderQuery orderQuery;
     private final ShipmentService shipmentService;
-    private final SellerOrderRepository sellerOrderRepository;
-    private final PurchaseConfirmedEventPublisher purchaseConfirmedEventPublisher;
+    private final OrderItemConfirmationService orderItemConfirmationService;
 
     @Transactional
     public OrderCreateResponse create(Long memberId, CartOrderCreateRequest request) {
@@ -185,76 +183,21 @@ public class OrderService {
         }
     }
 
-    @Transactional
+    public void autoConfirmDeliveredItems() {
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(3);
+        for (AutoConfirmTarget target : ordersItemRepository.findAutoConfirmTargets(
+                OrderStatus.PAID, OrderItemStatus.NORMAL, ShipmentStatus.DELIVERED, cutoff)) {
+            try {
+                orderItemConfirmationService.autoConfirmOrderItem(target.orderItemId());
+            } catch (RuntimeException exception) {
+                log.error("자동 구매확정 실패: orderId={}, sellerOrderId={}, orderItemId={}",
+                        target.orderId(), target.sellerOrderId(), target.orderItemId(), exception);
+            }
+        }
+    }
+
     public void confirm(Long memberId, Long orderItemId) {
-        Long orderId = ordersItemRepository.findOrderIdByItemId(orderItemId).orElseThrow(()
-                -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
-        // 같은 주문의 서로 다른 판매자 주문도 직렬화하기 위해 부모 주문을 먼저 잠근다.
-        Orders order = ordersRepository.findLockedById(orderId).orElseThrow(()
-                -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
-        Long sellerOrderId = ordersItemRepository.findSellerOrderIdByItemId(orderItemId).orElseThrow(()
-                -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
-        // 잠금 순서는 항상 주문 → 판매자 주문으로 유지한다.
-        SellerOrder sellerOrder = sellerOrderRepository.findLockedById(sellerOrderId).orElseThrow(()
-                -> new BusinessException(OrderErrorCode.SELLER_ORDER_NOT_FOUND));
-        OrdersItem item = ordersItemRepository.findById(orderItemId).orElseThrow(()
-                -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
-
-        if (!order.getBuyerId().equals(memberId)) {
-            throw new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND);
-        }
-
-        if (item.getStatus().equals(OrderItemStatus.CONFIRMED)) {
-            return;
-        } else if (!item.getStatus().equals(OrderItemStatus.NORMAL)) {
-            throw new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_CONFIRMABLE);
-        }
-
-        if (order.getStatus() != OrderStatus.PAID) {
-            throw new BusinessException(OrderErrorCode.ORDER_NOT_PAID);
-        }
-
-        ShipmentResult shipmentResult = shipmentService.findBySellerOrderId(sellerOrder.getId());
-        if (shipmentResult == null) {
-            throw new BusinessException(OrderErrorCode.SHIPMENT_NOT_FOUND);
-        }
-        if (!ShipmentStatus.DELIVERED.name().equals(shipmentResult.status())) {
-            throw new BusinessException(OrderErrorCode.SHIPMENT_NOT_DELIVERED);
-        }
-
-        item.confirm();
-        checkAndRequestSettlement(sellerOrder);
-        updateOrderStatus(order);
-    }
-
-    private void checkAndRequestSettlement(SellerOrder sellerOrder) {
-        if (sellerOrder.getConfirmedAt() != null) {
-            return;
-        }
-        if (sellerOrder.getSettlementBaseAmount().compareTo(BigDecimal.ZERO) < 1) {
-            //미정산대상
-            return;
-        }
-
-        if (!sellerOrder.getItems().stream().anyMatch(i ->
-                i.getStatus().equals(OrderItemStatus.NORMAL) || i.getStatus().equals(OrderItemStatus.REFUND_REQUESTED))) {
-            sellerOrder.confirmed();
-            purchaseConfirmedEventPublisher.publishAfterCommit(new PurchaseConfirmedEvent(
-                    sellerOrder.getId(), sellerOrder.getSellerId(), sellerOrder.getSettlementBaseAmount(),
-                    sellerOrder.getConfirmedAt()));
-        }
-    }
-
-    private void updateOrderStatus(Orders orders) {
-        if (orders.getSellerOrders().stream().anyMatch(s -> s.getConfirmedAt() == null && s.getSettlementBaseAmount().compareTo(BigDecimal.ZERO) > 0)) {
-            return;
-        }
-        if (orders.getSellerOrders().stream()
-                .allMatch(s -> s.getSettlementBaseAmount().compareTo(BigDecimal.ZERO) == 0)) {
-            orders.cancel();
-        } else {
-            orders.confirm();
-        }
+        orderItemConfirmationService.confirm(memberId, orderItemId);
     }
 
     private Orders orderPayment(Orders order) {
@@ -265,6 +208,7 @@ public class OrderService {
         Orders managed = ordersRepository.findById(order.getId())
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
         managed.paid();
+
         shipmentService.createShipments(orderQuery.getOrder(managed.getId()));
         return managed;
     }

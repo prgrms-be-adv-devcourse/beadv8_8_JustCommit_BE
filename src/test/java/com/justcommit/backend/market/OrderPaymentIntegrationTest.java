@@ -6,12 +6,15 @@ import com.justcommit.backend.market.cart.domain.CartItem;
 import com.justcommit.backend.market.cart.infrastructure.CartItemRepository;
 import com.justcommit.backend.market.cart.infrastructure.CartRepository;
 import com.justcommit.backend.market.order.application.OrderService;
+import com.justcommit.backend.market.order.application.OrderItemConfirmationService;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.infrastructure.OrderPaymentTtlStore;
 import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
+import com.justcommit.backend.market.order.infrastructure.AutoConfirmTarget;
 import com.justcommit.backend.market.order.infrastructure.kafka.PurchaseConfirmedEventPublisher;
+import com.justcommit.backend.market.order.infrastructure.scheduler.OrderScheduler;
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
@@ -39,6 +42,7 @@ import com.justcommit.backend.product.infrastructure.repository.ProductRepositor
 import com.justcommit.backend.product.infrastructure.repository.SpeciesRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -111,6 +115,8 @@ class OrderPaymentIntegrationTest {
     @MockitoBean PurchaseConfirmedEventPublisher purchaseConfirmedEventPublisher;
 
     @Autowired OrderService orderService;
+    @Autowired OrderItemConfirmationService orderItemConfirmationService;
+    @Autowired OrderScheduler orderScheduler;
     @Autowired OrdersRepository ordersRepository;
     @Autowired OrdersItemRepository ordersItemRepository;
     @Autowired SellerOrderRepository sellerOrderRepository;
@@ -390,6 +396,125 @@ class OrderPaymentIntegrationTest {
                 () -> { orderService.confirm(buyerId, itemId); return true; },
                 () -> { orderService.confirm(buyerId, itemId); return true; });
 
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.COMPLETED);
+        verify(purchaseConfirmedEventPublisher, times(1)).publishAfterCommit(any(PurchaseConfirmedEvent.class));
+    }
+
+    @Test
+    void autoConfirmsOnlyAfterThreeDaysFromDelivery() {
+        stubShipmentBooking();
+        long buyerId = 110L;
+        Long cartItemId = cartItem(buyerId, product(211L));
+        wallet(buyerId, "20000");
+        Long orderId = orderService.create(buyerId, request(cartItemId)).orderId();
+        Long sellerOrderId = sellerOrderRepository.findByOrder_Id(orderId).getFirst().getId();
+        Long itemId = ordersItemRepository.findBySellerOrderIds(List.of(sellerOrderId)).getFirst().getId();
+        jdbcTemplate.update("UPDATE shipment SET status = 'DELIVERED', delivered_at = ? WHERE seller_order_id = ?",
+                Timestamp.valueOf(LocalDateTime.now().minusDays(2)), sellerOrderId);
+
+        orderScheduler.autoConfirmDeliveredItems();
+        assertThat(ordersItemRepository.findById(itemId).orElseThrow().getStatus()).isEqualTo(OrderItemStatus.NORMAL);
+
+        jdbcTemplate.update("UPDATE shipment SET delivered_at = ? WHERE seller_order_id = ?",
+                Timestamp.valueOf(LocalDateTime.now().minusDays(4)), sellerOrderId);
+        assertThat(ordersItemRepository.findAutoConfirmTargets(OrderStatus.PAID, OrderItemStatus.NORMAL,
+                ShipmentStatus.DELIVERED, LocalDateTime.now().minusDays(3)))
+                .contains(new AutoConfirmTarget(orderId, sellerOrderId, itemId));
+
+        orderScheduler.autoConfirmDeliveredItems();
+        assertThat(ordersItemRepository.findById(itemId).orElseThrow().getStatus()).isEqualTo(OrderItemStatus.CONFIRMED);
+        assertThat(sellerOrderRepository.findById(sellerOrderId).orElseThrow().getConfirmedAt()).isNotNull();
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.COMPLETED);
+        verify(purchaseConfirmedEventPublisher, times(1)).publishAfterCommit(any(PurchaseConfirmedEvent.class));
+
+        orderScheduler.autoConfirmDeliveredItems();
+        verify(purchaseConfirmedEventPublisher, times(1)).publishAfterCommit(any(PurchaseConfirmedEvent.class));
+    }
+
+    @Test
+    void autoConfirmsRemainingItemAfterOneItemWasManuallyConfirmed() {
+        stubShipmentBooking();
+        long buyerId = 112L;
+        Long firstCartItemId = cartItem(buyerId, product(213L));
+        Long secondCartItemId = cartItem(buyerId, product(213L));
+        wallet(buyerId, "30000");
+        Long orderId = orderService.create(buyerId, request(firstCartItemId, secondCartItemId)).orderId();
+        Long sellerOrderId = sellerOrderRepository.findByOrder_Id(orderId).getFirst().getId();
+        List<Long> itemIds = ordersItemRepository.findBySellerOrderIds(List.of(sellerOrderId)).stream()
+                .map(item -> item.getId()).toList();
+        assertThat(itemIds).hasSize(2);
+        jdbcTemplate.update("UPDATE shipment SET status = 'DELIVERED', delivered_at = ? WHERE seller_order_id = ?",
+                Timestamp.valueOf(LocalDateTime.now().minusDays(4)), sellerOrderId);
+
+        orderService.confirm(buyerId, itemIds.get(0));
+        assertThat(sellerOrderRepository.findById(sellerOrderId).orElseThrow().getConfirmedAt()).isNull();
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAID);
+        verify(purchaseConfirmedEventPublisher, times(0)).publishAfterCommit(any(PurchaseConfirmedEvent.class));
+
+        orderScheduler.autoConfirmDeliveredItems();
+
+        assertThat(ordersItemRepository.findAllById(itemIds))
+                .allSatisfy(item -> assertThat(item.getStatus()).isEqualTo(OrderItemStatus.CONFIRMED));
+        assertThat(sellerOrderRepository.findById(sellerOrderId).orElseThrow().getConfirmedAt()).isNotNull();
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.COMPLETED);
+        verify(purchaseConfirmedEventPublisher, times(1)).publishAfterCommit(any(PurchaseConfirmedEvent.class));
+    }
+
+    @Test
+    void autoConfirmationExcludesCancelledItemAndSettlesOnlyRemainingItem() {
+        stubShipmentBooking();
+        long buyerId = 113L;
+        Long firstCartItemId = cartItem(buyerId, product(214L));
+        Long secondCartItemId = cartItem(buyerId, product(214L));
+        wallet(buyerId, "30000");
+        Long orderId = orderService.create(buyerId, request(firstCartItemId, secondCartItemId)).orderId();
+        Long sellerOrderId = sellerOrderRepository.findByOrder_Id(orderId).getFirst().getId();
+        List<Long> itemIds = ordersItemRepository.findBySellerOrderIds(List.of(sellerOrderId)).stream()
+                .map(item -> item.getId()).toList();
+        assertThat(itemIds).hasSize(2);
+        jdbcTemplate.update("UPDATE shipment SET status = 'DELIVERED', delivered_at = ? WHERE seller_order_id = ?",
+                Timestamp.valueOf(LocalDateTime.now().minusDays(4)), sellerOrderId);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            ordersItemRepository.findById(itemIds.get(0)).orElseThrow().cancel();
+            sellerOrderRepository.findById(sellerOrderId).orElseThrow().calculateSettlementBaseAmount();
+        });
+
+        assertThat(ordersItemRepository.findAutoConfirmTargets(OrderStatus.PAID, OrderItemStatus.NORMAL,
+                ShipmentStatus.DELIVERED, LocalDateTime.now().minusDays(3)))
+                .contains(new AutoConfirmTarget(orderId, sellerOrderId, itemIds.get(1)))
+                .doesNotContain(new AutoConfirmTarget(orderId, sellerOrderId, itemIds.get(0)));
+
+        orderScheduler.autoConfirmDeliveredItems();
+
+        assertThat(ordersItemRepository.findById(itemIds.get(0)).orElseThrow().getStatus())
+                .isEqualTo(OrderItemStatus.CANCELLED);
+        assertThat(ordersItemRepository.findById(itemIds.get(1)).orElseThrow().getStatus())
+                .isEqualTo(OrderItemStatus.CONFIRMED);
+        assertThat(sellerOrderRepository.findById(sellerOrderId).orElseThrow().getSettlementBaseAmount())
+                .isEqualByComparingTo("10000");
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.COMPLETED);
+        ArgumentCaptor<PurchaseConfirmedEvent> event = ArgumentCaptor.forClass(PurchaseConfirmedEvent.class);
+        verify(purchaseConfirmedEventPublisher, times(1)).publishAfterCommit(event.capture());
+        assertThat(event.getValue().saleAmount()).isEqualByComparingTo("10000");
+    }
+
+    @Test
+    void manualAndAutomaticConfirmationOfSameItemPublishOnce() throws Exception {
+        stubShipmentBooking();
+        long buyerId = 111L;
+        Long cartItemId = cartItem(buyerId, product(212L));
+        wallet(buyerId, "20000");
+        Long orderId = orderService.create(buyerId, request(cartItemId)).orderId();
+        Long sellerOrderId = sellerOrderRepository.findByOrder_Id(orderId).getFirst().getId();
+        Long itemId = ordersItemRepository.findBySellerOrderIds(List.of(sellerOrderId)).getFirst().getId();
+        jdbcTemplate.update("UPDATE shipment SET status = 'DELIVERED', delivered_at = ? WHERE seller_order_id = ?",
+                Timestamp.valueOf(LocalDateTime.now().minusDays(4)), sellerOrderId);
+
+        concurrently(
+                () -> { orderService.confirm(buyerId, itemId); return true; },
+                () -> { orderItemConfirmationService.autoConfirmOrderItem(itemId); return true; });
+
+        assertThat(ordersItemRepository.findById(itemId).orElseThrow().getStatus()).isEqualTo(OrderItemStatus.CONFIRMED);
         assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.COMPLETED);
         verify(purchaseConfirmedEventPublisher, times(1)).publishAfterCommit(any(PurchaseConfirmedEvent.class));
     }

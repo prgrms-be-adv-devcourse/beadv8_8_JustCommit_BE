@@ -40,7 +40,7 @@ class OrderConfirmationPolicyTest {
     @Mock SellerOrderRepository sellerOrderRepository;
     @Mock ShipmentService shipmentService;
     @Mock PurchaseConfirmedEventPublisher eventPublisher;
-    @InjectMocks OrderService orderService;
+    @InjectMocks OrderItemConfirmationService confirmationService;
 
     @Test
     void refundRequestedItemBlocksSettlementAfterAnotherItemIsConfirmed() {
@@ -48,7 +48,7 @@ class OrderConfirmationPolicyTest {
         ReflectionTestUtils.setField(fixture.second(), "status", OrderItemStatus.REFUND_REQUESTED);
         stubDelivered(fixture, fixture.first());
 
-        orderService.confirm(10L, 11L);
+        confirmationService.confirm(10L, 11L);
 
         assertThat(fixture.first().getStatus()).isEqualTo(OrderItemStatus.CONFIRMED);
         assertThat(fixture.sellerOrder().getConfirmedAt()).isNull();
@@ -63,7 +63,7 @@ class OrderConfirmationPolicyTest {
         fixture.second().cancel();
         fixture.sellerOrder().calculateSettlementBaseAmount();
 
-        ReflectionTestUtils.invokeMethod(orderService, "updateOrderStatus", fixture.sellerOrder().getOrder());
+        ReflectionTestUtils.invokeMethod(confirmationService, "updateOrderStatus", fixture.sellerOrder().getOrder());
 
         assertThat(fixture.sellerOrder().getSettlementBaseAmount()).isEqualByComparingTo("0");
         assertThat(fixture.sellerOrder().getOrder().getStatus()).isEqualTo(OrderStatus.CANCELLED);
@@ -99,10 +99,10 @@ class OrderConfirmationPolicyTest {
         when(shipmentService.findBySellerOrderId(8L))
                 .thenReturn(new ShipmentResult(32L, "DELIVERED", LocalDateTime.now()));
 
-        orderService.confirm(10L, 11L);
+        confirmationService.confirm(10L, 11L);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
 
-        orderService.confirm(10L, 12L);
+        confirmationService.confirm(10L, 12L);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.COMPLETED);
         verify(eventPublisher, times(2)).publishAfterCommit(any(PurchaseConfirmedEvent.class));
     }
@@ -114,7 +114,7 @@ class OrderConfirmationPolicyTest {
         fixture.sellerOrder().calculateSettlementBaseAmount();
         stubDelivered(fixture, fixture.first());
 
-        orderService.confirm(10L, 11L);
+        confirmationService.confirm(10L, 11L);
 
         assertSettlementUsesRemainingProductAmount(fixture);
     }
@@ -126,7 +126,7 @@ class OrderConfirmationPolicyTest {
         fixture.sellerOrder().calculateSettlementBaseAmount();
         stubDelivered(fixture, fixture.first());
 
-        orderService.confirm(10L, 11L);
+        confirmationService.confirm(10L, 11L);
 
         assertSettlementUsesRemainingProductAmount(fixture);
     }
