@@ -36,6 +36,7 @@ public class TossPaymentClient {
         try {
             return restClient.post()
                     .uri(CONFIRM_PATH)
+                    .header("Idempotency-Key", orderId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(request)
                     .retrieve()
