@@ -74,17 +74,23 @@ class ShipmentTest {
     }
 
     @Test
-    @DisplayName("택배사 상태가 앞으로 가면 반영하고, 배송 완료면 완료 시각을 저장한다")
+    @DisplayName("택배사 상태가 앞으로 가면 반영하고, 수거·출발·완료 시각을 각각 저장한다")
     void applyCourierStatusForward() {
         Shipment shipment = bookedShipment();
+        LocalDateTime pickedUpAt = LocalDateTime.of(2026, 10, 12, 10, 3);
+        LocalDateTime inTransitAt = LocalDateTime.of(2026, 10, 12, 10, 5);
         LocalDateTime deliveredAt = LocalDateTime.of(2026, 10, 12, 15, 0);
 
-        boolean pickedUp = shipment.applyCourierStatus(ShipmentStatus.PICKED_UP, "404000000001", LocalDateTime.of(2026, 10, 12, 10, 3));
+        boolean pickedUp = shipment.applyCourierStatus(ShipmentStatus.PICKED_UP, "404000000001", pickedUpAt);
+        boolean inTransit = shipment.applyCourierStatus(ShipmentStatus.IN_TRANSIT, "404000000001", inTransitAt);
         boolean delivered = shipment.applyCourierStatus(ShipmentStatus.DELIVERED, "404000000001", deliveredAt);
 
         assertThat(pickedUp).isTrue();
+        assertThat(inTransit).isTrue();
         assertThat(delivered).isTrue();
         assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.DELIVERED);
+        assertThat(shipment.getPickedUpAt()).isEqualTo(pickedUpAt);
+        assertThat(shipment.getInTransitAt()).isEqualTo(inTransitAt);
         assertThat(shipment.getDeliveredAt()).isEqualTo(deliveredAt);
     }
 

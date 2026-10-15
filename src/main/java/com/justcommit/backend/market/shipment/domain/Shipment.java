@@ -29,6 +29,10 @@ public class Shipment extends BaseTimeEntity {
 
     private LocalDateTime bookedAt;
 
+    private LocalDateTime pickedUpAt;
+
+    private LocalDateTime inTransitAt;
+
     private LocalDateTime deliveredAt;
 
     public Shipment(Long sellerOrderId) {
@@ -68,8 +72,12 @@ public class Shipment extends BaseTimeEntity {
         }
         this.status = newStatus;
 
-        if (newStatus == ShipmentStatus.DELIVERED) {
-            this.deliveredAt = occurredAt;
+        // 중간 웹훅을 놓쳐 단계를 건너뛰면 그 단계 시각은 비어 있다
+        switch (newStatus) {
+            case PICKED_UP -> this.pickedUpAt = occurredAt;
+            case IN_TRANSIT -> this.inTransitAt = occurredAt;
+            case DELIVERED -> this.deliveredAt = occurredAt;
+            default -> { }
         }
         return true;
     }
