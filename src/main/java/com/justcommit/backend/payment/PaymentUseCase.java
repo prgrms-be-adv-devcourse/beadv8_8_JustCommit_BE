@@ -18,10 +18,12 @@ public interface PaymentUseCase {
      */
     PaymentResult pay(Long orderId, Long buyerId, BigDecimal amount);
 
-    /**
-     * 정산금을 판매자 지갑에 입금한다.
-     * 같은 settlementId는 한 번만 입금된다 (ref_type = SETTLEMENT, ref_id = settlementId).
-     */
-    void depositSettlement(Long settlementId, Long sellerId, BigDecimal amount);
+    void distributeSettlement(
+            Long settlementId,
+            Long sellerId,
+            BigDecimal payoutAmount,
+            BigDecimal fee
+            // BigDecimal shippingFee
+    );
 
 }
