@@ -50,7 +50,7 @@ public class OrdersItem extends BaseTimeEntity {
 
     public void cancel() {
         if (this.status != OrderItemStatus.NORMAL) {
-            throw new IllegalStateException("일반 상태의 주문 상품만 구매확정 처리할수 있습니다.");
+            throw new IllegalStateException("일반 상태의 주문 상품만 취소할수 있습니다.");
         }
         this.status = OrderItemStatus.CANCELLED;
     }

@@ -73,6 +73,16 @@ public class OrderController {
         return ResponseEntity.ok(orderService.repayment(member.memberId(), orderId));
     }
 
+    @PostMapping("/items/{orderItemId}/cancel")
+    public ResponseEntity<Void> cancel(@AuthenticationPrincipal AuthMember member, @PathVariable Long orderItemId) {
+        if (member == null) {
+            throw new BusinessException(OrderErrorCode.AUTH_REQUIRED);
+        }
+        orderService.itemCancel(member.memberId(), orderItemId);
+
+        return ResponseEntity.ok().build();
+    }
+
     @PostMapping("/items/{orderItemId}/confirm")
     public ResponseEntity<Void> confirm(@AuthenticationPrincipal AuthMember member, @PathVariable Long orderItemId) {
         if (member == null) {
