@@ -436,4 +436,20 @@ public class  ProductServiceTest {
         assertThat(item.hidden()).isTrue(); //hidden: true가 제대로 담겼는지 검증
 
     }
+
+    @Test
+    @DisplayName("판매 완료 상품 단건 복구에 성공하면 true")
+    void releaseSoldItem(){
+        given(productRepository.releaseSoleItem(100L, PRODUCT_ID)).willReturn(1);
+        assertThat(productService.releaseSoldItem(100L, PRODUCT_ID)).isTrue();
+    }
+
+    @Test
+    @DisplayName("복구할 상품이 없으면 false")
+    void releaseSoldItemNotFound(){
+        given(productRepository.releaseSoleItem(100L, PRODUCT_ID)).willReturn(0);
+        assertThat(productService.releaseSoldItem(100L, PRODUCT_ID)).isFalse();
+    }
+
+
 }

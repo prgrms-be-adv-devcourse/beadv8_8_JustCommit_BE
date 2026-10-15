@@ -34,4 +34,13 @@ public interface ProductUseCase {
      *         호출하는 쪽에서 결제 취소 등 후속 처리가 필요함)
      */
     boolean markSoldOut(Long orderId);
+
+    /**
+     * 결제 완료된 주문에서 상품 한 건을 취소할 때, 그 상품을 다시 판매 중으로 되돌린다. (SOLD_OUT → ACTIVE)
+     * 결제 대기 중인 주문 전체 취소는 release(orderId)를 사용한다.
+     *
+     * @return 복구되면 true, 이 주문으로 판매 완료된 상품이 아니면 false
+     *         (이미 복구된 경우에도 false이며, 두 번 호출되어도 안전함)
+     */
+    boolean releaseSoldItem(Long orderId, Long productId);
 }
