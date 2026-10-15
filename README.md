@@ -62,3 +62,6 @@ Local defaults match `docker-compose.yml`. Production does not include database 
 ## Architecture and infrastructure TODOs
 
 See [module architecture](docs/module-architecture.md) for module responsibilities and [infrastructure TODOs](docs/infrastructure-todo.md) for Redis key namespaces, Kafka event candidates, and the rule that future asynchronous events use Kafka rather than a parallel Spring Event implementation.
+
+## 데이터 출처
+- 품종 정보 및 사진: 농촌진흥청 농사로 (https://www.nongsaro.go.kr)

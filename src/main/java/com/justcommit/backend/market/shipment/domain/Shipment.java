@@ -29,10 +29,31 @@ public class Shipment extends BaseTimeEntity {
 
     private LocalDateTime bookedAt;
 
+    private LocalDateTime pickedUpAt;
+
+    private LocalDateTime inTransitAt;
+
     private LocalDateTime deliveredAt;
 
-    public Shipment(Long sellerOrderId) {
+    // 재예약 때 처음과 같은 요청을 보내려고 결제 시점의 예약 정보를 저장한다.
+    private Long sellerId;
+
+    private String receiverName;
+
+    private String receiverPhone;
+
+    private String receiverAddress;
+
+    private String itemSummary;
+
+    public Shipment(Long sellerOrderId, Long sellerId, String receiverName, String receiverPhone,
+                    String receiverAddress, String itemSummary) {
         this.sellerOrderId = sellerOrderId;
+        this.sellerId = sellerId;
+        this.receiverName = receiverName;
+        this.receiverPhone = receiverPhone;
+        this.receiverAddress = receiverAddress;
+        this.itemSummary = itemSummary;
         this.status = ShipmentStatus.READY;
     }
 
@@ -68,8 +89,12 @@ public class Shipment extends BaseTimeEntity {
         }
         this.status = newStatus;
 
-        if (newStatus == ShipmentStatus.DELIVERED) {
-            this.deliveredAt = occurredAt;
+        // 중간 웹훅을 놓쳐 단계를 건너뛰면 그 단계 시각은 비어 있다
+        switch (newStatus) {
+            case PICKED_UP -> this.pickedUpAt = occurredAt;
+            case IN_TRANSIT -> this.inTransitAt = occurredAt;
+            case DELIVERED -> this.deliveredAt = occurredAt;
+            default -> { }
         }
         return true;
     }

@@ -33,13 +33,18 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
+import org.mockito.ArgumentCaptor;
+
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -114,6 +119,44 @@ class ShipmentAfterCommitIntegrationTest {
             assertThat(shipment.getCourierOrderNo()).isNotBlank();
         });
         verify(courierClient, never()).book(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("예약되지 않고 남은 READY 배송은 대사 작업이 저장된 예약 정보로 다시 예약한다")
+    void rebooksReadyShipment() {
+        when(memberQuery.getDefaultAddress(20L))
+                .thenThrow(new IllegalStateException("일시적 실패"))
+                .thenReturn(new MemberAddress(1L, "판매자", "01012345678", "12345", "서울", null));
+        when(courierClient.book(anyString(), any(CourierBookingRequest.class)))
+                .thenReturn(new CourierBookingResponse("404000000001", "shipment-20261015-000001", "RESERVED",
+                        OffsetDateTime.parse("2026-10-15T10:00:00+09:00")));
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> shipmentService.createShipments(order()));
+        String courierOrderNo = shipmentRepository.findBySellerOrderId(7L).orElseThrow().getCourierOrderNo();
+
+        shipmentService.rebookReadyShipments(LocalDateTime.now().plusMinutes(1));
+
+        ArgumentCaptor<CourierBookingRequest> request = ArgumentCaptor.forClass(CourierBookingRequest.class);
+        verify(courierClient).book(eq(courierOrderNo), request.capture()); // 같은 멱등키
+        assertThat(request.getValue().receiver().name()).isEqualTo("구매자");
+        assertThat(request.getValue().receiver().address()).isEqualTo("부산");
+        assertThat(request.getValue().itemSummary()).isEqualTo("몬스테라");
+        assertThat(shipmentRepository.findBySellerOrderId(7L)).hasValueSatisfying(shipment -> {
+            assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.BOOKED);
+            assertThat(shipment.getTrackingNo()).isEqualTo("404000000001");
+        });
+    }
+
+    @Test
+    @DisplayName("기준 시각 이후에 만들어진 READY 배송은 재예약하지 않는다")
+    void skipsRecentReadyShipment() {
+        when(memberQuery.getDefaultAddress(20L)).thenThrow(new IllegalStateException("기본 배송지 없음"));
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> shipmentService.createShipments(order()));
+
+        shipmentService.rebookReadyShipments(LocalDateTime.now().minusMinutes(1));
+
+        verify(memberQuery, times(1)).getDefaultAddress(20L); // 커밋 후 첫 시도 한 번뿐
+        assertThat(shipmentRepository.findBySellerOrderId(7L))
+                .hasValueSatisfying(shipment -> assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.READY));
     }
 
     private void stubSellerAndCourier() {
