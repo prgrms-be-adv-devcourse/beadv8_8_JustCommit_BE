@@ -49,6 +49,18 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             """)
     int markSoldOut(@Param("orderId") Long orderId);
 
+    // 이 주문으로 판매 완료된 상품 한 건만 판매중으로 되돌림 (결제 후 단건 취소)
+    @Modifying(flushAutomatically = true,clearAutomatically = true)
+    @Query("""
+        UPDATE Product p
+        SET p.status = com.justcommit.backend.product.ProductStatus.ACTIVE,
+            p.reservedOrderId = null,
+            p.updatedAt = CURRENT_TIMESTAMP
+        WHERE p.id = :productId
+          AND p.status = com.justcommit.backend.product.ProductStatus.SOLD_OUT
+        """)
+    int releaseItem( @Param("productId") Long productId);
+
     // 목록: 품종을 함께 조회해 N+1 방지 (사진은 Product의 @BatchSize로 처리)
     @Override
     @EntityGraph(attributePaths = "species") //상품 조회시 품종을 함께 Join 으로 가져옴
