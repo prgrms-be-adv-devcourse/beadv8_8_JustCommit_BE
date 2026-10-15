@@ -55,6 +55,17 @@ class ProductImageUrlValidatorTest {
         assertInvalid(1L, BASE_URL + "/products/1/../2/a.jpg");
     }
 
+
+    @Test
+    @DisplayName("기본 URL 끝에 '/'가 있어도 판매자 본인 경로의 이미지는 통과")
+    void baseUrlWithTrailingSlash() {
+        ProductImageUrlValidator slashValidator = new ProductImageUrlValidator(BASE_URL + "/");
+
+        assertThatCode(() -> slashValidator.validate(1L, List.of(BASE_URL + "/products/1/a.jpg")))
+                .doesNotThrowAnyException();
+    }
+
+
     private void assertInvalid(Long sellerId, String url) {
         assertThatThrownBy(() -> validator.validate(sellerId, List.of(url)))
                 .isInstanceOf(BusinessException.class)

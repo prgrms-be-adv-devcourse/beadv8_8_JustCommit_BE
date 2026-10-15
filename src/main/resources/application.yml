@@ -72,7 +72,7 @@ jwt:
 
 custom:
   image:
-    base-url: ${IMAGE_BASE_URL:http://localhost:8080/images}
+    base-url: ${S3_PUBLIC_BASE_URL:http://localhost:9000/team06-replant-images}
   kafka:
     topics:
       purchase-confirmed: ${PURCHASE_CONFIRMED_TOPIC:market.purchase-confirmed.v1}

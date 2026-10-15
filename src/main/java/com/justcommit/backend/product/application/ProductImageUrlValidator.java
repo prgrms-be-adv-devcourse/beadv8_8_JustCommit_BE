@@ -13,7 +13,7 @@ public class ProductImageUrlValidator {
     private final String baseUrl;
 
     public ProductImageUrlValidator(@Value("${custom.image.base-url}") String baseUrl){
-        this.baseUrl =baseUrl;
+        this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     }
 
     public void validate(Long sellerId, List<String> pictureUrls){
