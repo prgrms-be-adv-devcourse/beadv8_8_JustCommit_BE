@@ -73,7 +73,7 @@ public class ShipmentService implements ShipmentQuery {
         for (SellerOrderResult sellerOrder : order.sellerOrders()) {
             Shipment shipment = shipmentRepository.save(new Shipment(sellerOrder.id(), sellerOrder.sellerId(),
                     order.recipientName(), order.recipientPhone(), receiverAddress,
-                    itemSummary(sellerOrder.items())));
+                    itemSummary(sellerOrder.items()), sellerOrder.shippingFee()));
             shipment.assignCourierOrderNo(LocalDate.now(SEOUL));
             shipments.add(shipmentRepository.save(shipment));
         }
