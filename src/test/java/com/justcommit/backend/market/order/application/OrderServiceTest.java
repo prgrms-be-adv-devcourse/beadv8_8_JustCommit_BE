@@ -16,6 +16,7 @@ import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
 import com.justcommit.backend.market.order.infrastructure.OrderPaymentTtlStore;
+import com.justcommit.backend.market.order.infrastructure.AutoConfirmTarget;
 import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
@@ -23,6 +24,8 @@ import com.justcommit.backend.market.order.infrastructure.kafka.PurchaseConfirme
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
 import com.justcommit.backend.market.shipment.application.ShipmentService;
+import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
+import org.junit.jupiter.api.BeforeEach;
 import com.justcommit.backend.payment.PaymentResult;
 import com.justcommit.backend.payment.PaymentUseCase;
 import com.justcommit.backend.product.ProductResult;
@@ -51,6 +54,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
@@ -72,8 +76,16 @@ class OrderServiceTest {
     @Mock OrderResult orderResult;
     @Mock ShipmentService shipmentService;
     @Mock PurchaseConfirmedEventPublisher purchaseConfirmedEventPublisher;
+    @Mock OrderItemConfirmationService orderItemConfirmationService;
     @InjectMocks OrderService orderService;
+    private OrderItemConfirmationService confirmationServiceUnderTest;
     private Orders savedOrder;
+
+    @BeforeEach
+    void setUpConfirmationService() {
+        confirmationServiceUnderTest = new OrderItemConfirmationService(ordersRepository, ordersItemRepository,
+                sellerOrderRepository, shipmentService, purchaseConfirmedEventPublisher);
+    }
 
     @Test
     void stopsBeforeProductLookupWhenCartSelectionIsInvalid() {
@@ -394,7 +406,7 @@ class OrderServiceTest {
         when(shipmentService.findBySellerOrderId(7L))
                 .thenReturn(new ShipmentResult(8L, "DELIVERED", LocalDateTime.now()));
 
-        orderService.confirm(10L, 11L);
+        confirmationServiceUnderTest.confirm(10L, 11L);
 
         InOrder lookup = inOrder(ordersItemRepository, ordersRepository, sellerOrderRepository);
         lookup.verify(ordersItemRepository).findOrderIdByItemId(11L);
@@ -436,12 +448,12 @@ class OrderServiceTest {
         when(shipmentService.findBySellerOrderId(7L))
                 .thenReturn(new ShipmentResult(8L, "DELIVERED", LocalDateTime.now()));
 
-        orderService.confirm(10L, 11L);
+        confirmationServiceUnderTest.confirm(10L, 11L);
         assertThat(sellerOrder.getConfirmedAt()).isNull();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         verify(purchaseConfirmedEventPublisher, never()).publishAfterCommit(any());
 
-        orderService.confirm(10L, 12L);
+        confirmationServiceUnderTest.confirm(10L, 12L);
         assertThat(sellerOrder.getConfirmedAt()).isNotNull();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.COMPLETED);
         verify(purchaseConfirmedEventPublisher).publishAfterCommit(any(PurchaseConfirmedEvent.class));
@@ -451,7 +463,7 @@ class OrderServiceTest {
     void rejectsConfirmationWhenShipmentIsMissing() {
         OrdersItem item = stubConfirmableItem();
 
-        assertThatThrownBy(() -> orderService.confirm(10L, item.getId()))
+        assertThatThrownBy(() -> confirmationServiceUnderTest.confirm(10L, item.getId()))
                 .isInstanceOfSatisfying(BusinessException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.SHIPMENT_NOT_FOUND));
         assertThat(item.getStatus()).isEqualTo(OrderItemStatus.NORMAL);
@@ -464,7 +476,7 @@ class OrderServiceTest {
         when(shipmentService.findBySellerOrderId(7L))
                 .thenReturn(new ShipmentResult(8L, "BOOKED", null));
 
-        assertThatThrownBy(() -> orderService.confirm(10L, item.getId()))
+        assertThatThrownBy(() -> confirmationServiceUnderTest.confirm(10L, item.getId()))
                 .isInstanceOfSatisfying(BusinessException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.SHIPMENT_NOT_DELIVERED));
         assertThat(item.getStatus()).isEqualTo(OrderItemStatus.NORMAL);
@@ -475,7 +487,7 @@ class OrderServiceTest {
     void rejectsConfirmationForAnotherBuyer() {
         OrdersItem item = stubConfirmableItem();
 
-        assertThatThrownBy(() -> orderService.confirm(20L, item.getId()))
+        assertThatThrownBy(() -> confirmationServiceUnderTest.confirm(20L, item.getId()))
                 .isInstanceOfSatisfying(BusinessException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
         verify(shipmentService, never()).findBySellerOrderId(any());
@@ -486,7 +498,7 @@ class OrderServiceTest {
         OrdersItem item = stubConfirmableItem();
         ReflectionTestUtils.setField(item.getSellerOrder().getOrder(), "status", OrderStatus.PAYMENT_PENDING);
 
-        assertThatThrownBy(() -> orderService.confirm(10L, item.getId()))
+        assertThatThrownBy(() -> confirmationServiceUnderTest.confirm(10L, item.getId()))
                 .isInstanceOfSatisfying(BusinessException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_NOT_PAID));
         verify(shipmentService, never()).findBySellerOrderId(any());
@@ -498,12 +510,47 @@ class OrderServiceTest {
         when(shipmentService.findBySellerOrderId(7L))
                 .thenReturn(new ShipmentResult(8L, "DELIVERED", LocalDateTime.now()));
 
-        orderService.confirm(10L, item.getId());
-        orderService.confirm(10L, item.getId());
+        confirmationServiceUnderTest.confirm(10L, item.getId());
+        confirmationServiceUnderTest.confirm(10L, item.getId());
 
         assertThat(item.getSellerOrder().getOrder().getStatus()).isEqualTo(OrderStatus.COMPLETED);
         verify(shipmentService).findBySellerOrderId(7L);
         verify(purchaseConfirmedEventPublisher).publishAfterCommit(any(PurchaseConfirmedEvent.class));
+    }
+
+    @Test
+    void autoConfirmationSkipsRefundRequestedItemAfterCandidateLookup() {
+        OrdersItem item = stubConfirmableItem();
+        ReflectionTestUtils.setField(item, "status", OrderItemStatus.REFUND_REQUESTED);
+
+        confirmationServiceUnderTest.autoConfirmOrderItem(item.getId());
+
+        assertThat(item.getStatus()).isEqualTo(OrderItemStatus.REFUND_REQUESTED);
+        verify(shipmentService, never()).findBySellerOrderId(any());
+        verify(purchaseConfirmedEventPublisher, never()).publishAfterCommit(any());
+    }
+
+    @Test
+    void autoConfirmationSkipsOrderThatIsNoLongerPaid() {
+        OrdersItem item = stubConfirmableItem();
+        ReflectionTestUtils.setField(item.getSellerOrder().getOrder(), "status", OrderStatus.CANCELLED);
+
+        confirmationServiceUnderTest.autoConfirmOrderItem(item.getId());
+
+        assertThat(item.getStatus()).isEqualTo(OrderItemStatus.NORMAL);
+        verify(shipmentService, never()).findBySellerOrderId(any());
+    }
+
+    @Test
+    void autoConfirmationSkipsDeliveryWithoutCompletionTime() {
+        OrdersItem item = stubConfirmableItem();
+        when(shipmentService.findBySellerOrderId(7L))
+                .thenReturn(new ShipmentResult(8L, "DELIVERED", null));
+
+        confirmationServiceUnderTest.autoConfirmOrderItem(item.getId());
+
+        assertThat(item.getStatus()).isEqualTo(OrderItemStatus.NORMAL);
+        verify(purchaseConfirmedEventPublisher, never()).publishAfterCommit(any());
     }
 
     @Test
@@ -513,10 +560,32 @@ class OrderServiceTest {
         when(shipmentService.findBySellerOrderId(7L))
                 .thenReturn(new ShipmentResult(8L, "DELIVERED", LocalDateTime.now()));
 
-        orderService.confirm(10L, item.getId());
+        confirmationServiceUnderTest.confirm(10L, item.getId());
 
         assertThat(item.getStatus()).isEqualTo(OrderItemStatus.CONFIRMED);
         verify(purchaseConfirmedEventPublisher, never()).publishAfterCommit(any());
+    }
+
+    @Test
+    void delegatesManualConfirmationToTransactionalService() {
+        orderService.confirm(10L, 11L);
+
+        verify(orderItemConfirmationService).confirm(10L, 11L);
+    }
+
+    @Test
+    void autoConfirmationContinuesWithNextItemAfterFailure() {
+        when(ordersItemRepository.findAutoConfirmTargets(eq(OrderStatus.PAID), eq(OrderItemStatus.NORMAL),
+                eq(ShipmentStatus.DELIVERED), any(LocalDateTime.class)))
+                .thenReturn(List.of(new AutoConfirmTarget(1L, 10L, 100L),
+                        new AutoConfirmTarget(1L, 10L, 101L)));
+        doThrow(new IllegalStateException("일시적 실패"))
+                .when(orderItemConfirmationService).autoConfirmOrderItem(100L);
+
+        orderService.autoConfirmDeliveredItems();
+
+        verify(orderItemConfirmationService).autoConfirmOrderItem(100L);
+        verify(orderItemConfirmationService).autoConfirmOrderItem(101L);
     }
 
     private OrdersItem stubConfirmableItem() {
