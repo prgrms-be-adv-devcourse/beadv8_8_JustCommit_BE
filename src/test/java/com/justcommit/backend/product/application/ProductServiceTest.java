@@ -53,11 +53,14 @@ public class  ProductServiceTest {
     @Mock
     private MemberQuery memberQuery;
 
-    @InjectMocks
-    private ProductService productService;
+    @Mock
+    private ProductImageCleaner imageCleaner;
 
     @Mock
     private ProductImageUrlValidator imageUrlValidator;
+
+    @InjectMocks
+    private ProductService productService;
 
     private static final Long SELLER_ID = 1L;        // 상품 주인
     private static final Long OTHER_MEMBER_ID = 2L;  // 남의 상품을 건드리는 사람
@@ -456,6 +459,60 @@ public class  ProductServiceTest {
         assertThat(item.productId()).isEqualTo(PRODUCT_ID);
         assertThat(item.hidden()).isTrue(); //hidden: true가 제대로 담겼는지 검증
 
+    }
+
+    @Test
+    @DisplayName("상품을 수정하면 새 목록에서 빠진 기존 사진만 삭제 예약")
+    void updateProductDeletesRemovedPictures() {
+        Product product = product(ProductStatus.ACTIVE);   // 기존 사진: a.jpg
+        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
+        given(speciesRepository.findById(NEW_SPECIES_ID))
+                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스", false)));
+
+        productService.updateProduct(SELLER_ID, PRODUCT_ID,
+                updateRequest(List.of("https://example.com/c.jpg")));
+
+        verify(imageCleaner).deleteAfterCommit(List.of("https://example.com/a.jpg"));
+    }
+
+    @Test
+    @DisplayName("기존 사진을 그대로 두고 수정하면 삭제할 사진이 없음")
+    void updateProductKeepsPictures() {
+        Product product = product(ProductStatus.ACTIVE);
+        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
+        given(speciesRepository.findById(NEW_SPECIES_ID))
+                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스", false)));
+
+        productService.updateProduct(SELLER_ID, PRODUCT_ID,
+                updateRequest(List.of("https://example.com/a.jpg", "https://example.com/c.jpg")));
+
+        verify(imageCleaner).deleteAfterCommit(List.of());
+    }
+
+    @Test
+    @DisplayName("상품을 삭제하면 사진 전부 삭제 예약")
+    void deleteProductDeletesAllPictures() {
+        Product product = product(ProductStatus.ACTIVE);
+        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
+
+        productService.deleteProduct(SELLER_ID, PRODUCT_ID);
+
+        verify(imageCleaner).deleteAfterCommit(List.of("https://example.com/a.jpg"));
+    }
+
+    @Test
+    @DisplayName("판매 중이 아니라 수정에 실패하면 사진을 삭제하지 않음")
+    void updateProductFailsDoesNotDeletePictures() {
+        Product product = product(ProductStatus.SOLD_OUT);
+        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
+        given(speciesRepository.findById(NEW_SPECIES_ID))
+                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스", false)));
+
+        assertThatThrownBy(() -> productService.updateProduct(SELLER_ID, PRODUCT_ID,
+                updateRequest(List.of("https://example.com/c.jpg"))))
+                .isInstanceOf(BusinessException.class);
+
+        verify(imageCleaner, never()).deleteAfterCommit(any());
     }
 
 
