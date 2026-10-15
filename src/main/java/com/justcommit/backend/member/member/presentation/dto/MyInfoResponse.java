@@ -2,6 +2,8 @@ package com.justcommit.backend.member.member.presentation.dto;
 
 import com.justcommit.backend.member.member.application.MyInfoResult;
 
+import java.time.LocalDateTime;
+
 public record MyInfoResponse(
         Long memberId,
         String email,
@@ -9,6 +11,7 @@ public record MyInfoResponse(
         String phone,
         String role,
         String provider,
+        LocalDateTime createdAt,
         AccountResponse account,
         DefaultAddressResponse defaultAddress
 ) {
@@ -21,6 +24,7 @@ public record MyInfoResponse(
             result.phone(),
             result.role(),
             result.provider(),
+            result.createdAt(),
             AccountResponse.from(result.account()),
             DefaultAddressResponse.from(result.defaultAddress())
     );

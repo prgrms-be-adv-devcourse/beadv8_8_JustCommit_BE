@@ -1,5 +1,7 @@
 package com.justcommit.backend.member.member.application;
 
+import java.time.LocalDateTime;
+
 // 정보 조회 결과(계좌번호는 마스킹된 값)
 public record MyInfoResult(
         Long memberId,
@@ -8,6 +10,7 @@ public record MyInfoResult(
         String phone,
         String role,
         String provider,
+        LocalDateTime createdAt,
         Account account,
         DefaultAddress defaultAddress
 ) {
