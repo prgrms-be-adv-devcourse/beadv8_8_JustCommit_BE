@@ -23,4 +23,12 @@ public record PaymentResult(PaymentStatus status, BigDecimal balanceAfter) {
     public static PaymentResult walletNotFound() {
         return new PaymentResult(PaymentStatus.WALLET_NOT_FOUND, null);
     }
+
+    public static PaymentResult refunded(BigDecimal balanceAfter) {
+        return new PaymentResult(PaymentStatus.REFUNDED, balanceAfter);
+    }
+
+    public static PaymentResult alreadyRefunded(BigDecimal balance) {
+        return new PaymentResult(PaymentStatus.ALREADY_REFUNDED, balance);
+    }
 }

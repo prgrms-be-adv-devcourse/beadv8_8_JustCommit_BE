@@ -5,6 +5,7 @@ import com.justcommit.backend.member.MemberQuery;
 import com.justcommit.backend.payment.PaymentResult;
 import com.justcommit.backend.payment.PaymentUseCase;
 import com.justcommit.backend.payment.domain.RefType;
+import com.justcommit.backend.payment.domain.TransactionStatus;
 import com.justcommit.backend.payment.domain.Wallet;
 import com.justcommit.backend.payment.domain.WalletTransaction;
 import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
@@ -169,5 +170,97 @@ public class PaymentService implements PaymentUseCase {
     }
 
 
+    /**
+     * 취소된 주문상품 금액을 HOLDING에서 구매자 지갑으로 환불한다.
+     * 실패는 BusinessException으로 던지며, 호출 측 트랜잭션(주문 취소)과 함께 롤백된다.
+     */
+    @Override
+    @Transactional
+    public PaymentResult refundCancelledItem(Long orderItemId, Long buyerId, BigDecimal amount) {
+        return refundFromHolding(RefType.ORDER_ITEM_CANCEL_REFUND, orderItemId, buyerId, amount);
+    }
+
+    /**
+     * 판매자 주문의 상품이 모두 취소됐을 때 배송비를 HOLDING에서 구매자 지갑으로 환불한다.
+     * 실패는 BusinessException으로 던지며, 호출 측 트랜잭션(주문 취소)과 함께 롤백된다.
+     */
+    @Override
+    @Transactional
+    public PaymentResult refundShippingFee(Long sellerOrderId, Long buyerId, BigDecimal amount) {
+        return refundFromHolding(RefType.SHIPPING_FEE_REFUND, sellerOrderId, buyerId, amount);
+    }
+
+
+    private PaymentResult refundFromHolding(RefType refType, Long refId, Long buyerId, BigDecimal amount) {
+        // 요청값 검증
+        if (refId == null || buyerId == null || amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(PaymentErrorCode.INVALID_AMOUNT, "환불 요청 값이 올바르지 않습니다.");
+        }
+
+        // 구매자 지갑 잠금
+        Wallet buyerWallet = walletRepository
+                .findByMemberIdForUpdate(buyerId)
+                .orElseThrow(() -> new BusinessException(PaymentErrorCode.WALLET_NOT_FOUND));
+
+        // 중복 환불 검증
+        Optional<WalletTransaction> existing =
+                walletTransactionRepository
+                        .findByWallet_IdAndRefTypeAndRefId(
+                                buyerWallet.getId(),
+                                refType,
+                                refId
+                        );
+
+        if (existing.isPresent()) {
+            WalletTransaction previous = existing.get();
+
+            if (previous.getStatus() != TransactionStatus.IN
+                    || previous.getAmount().compareTo(amount) != 0) {
+                throw new BusinessException(
+                        PaymentErrorCode.REFUND_INFO_MISMATCH
+                );
+            }
+
+            return PaymentResult.alreadyRefunded(
+                    buyerWallet.getBalance()
+            );
+        }
+
+        // HOLDING 지갑 잠금
+        Wallet holdingWallet = walletRepository
+                .findByMemberIdForUpdate(memberQuery.getHoldingMemberId())
+                .orElseThrow(() -> new BusinessException(PaymentErrorCode.WALLET_NOT_FOUND));
+
+        if (walletTransactionRepository
+                .existsByWallet_IdAndRefTypeAndRefId(
+                        holdingWallet.getId(),
+                        refType,
+                        refId
+                )) {
+            throw new BusinessException(
+                    PaymentErrorCode.REFUND_REFERENCE_CONFLICT
+            );
+        }
+
+        LocalDateTime now = LocalDateTime.now(); // HOLDING 출금·구매자 입금을 같은 시각으로 기록
+
+        // HOLDING 출금 (잔액 부족 시 INSUFFICIENT_BALANCE 예외)
+        holdingWallet.debit(amount);
+        walletTransactionRepository.save(
+                WalletTransaction.refundOut(
+                        holdingWallet, refType, refId, amount, now
+                )
+        );
+
+        // 구매자 지갑 환불
+        buyerWallet.credit(amount);
+        walletTransactionRepository.save(
+                WalletTransaction.refundIn(
+                        buyerWallet, refType, refId, amount, now
+                )
+        );
+
+        return PaymentResult.refunded(buyerWallet.getBalance());
+    }
 
 }
