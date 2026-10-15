@@ -60,8 +60,43 @@ services:
       retries: 10
       start_period: 20s
 
+  # 로컬용 S3 호환 저장소. 운영 S3 대신 써서 AWS 키 없이 이미지 업로드를 개발한다.
+  rustfs:
+    image: rustfs/rustfs:1.0.1
+    container_name: justcommit-rustfs
+    environment:
+      RUSTFS_ACCESS_KEY: replantlocal
+      RUSTFS_SECRET_KEY: replantlocal123
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # 웹 콘솔
+    volumes:
+      - rustfs-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:9000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 처음 한 번 버킷·공개 정책·CORS를 운영과 같게 만들고 종료한다.
+  rustfs-init:
+    image: amazon/aws-cli:2.38.0
+    container_name: justcommit-rustfs-init
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: replantlocal
+      AWS_SECRET_ACCESS_KEY: replantlocal123
+      AWS_DEFAULT_REGION: ap-northeast-2
+    entrypoint: ["/bin/sh", "/init/init.sh"]
+    volumes:
+      - ./docker/s3:/init:ro
+    restart: "no"
+
 volumes:
   postgres-data:
   redis-data:
   kafka-data:
+  rustfs-data:
 
