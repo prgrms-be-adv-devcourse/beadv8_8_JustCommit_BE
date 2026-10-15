@@ -157,6 +157,12 @@ public class CartService {
         cartItemRepository.delete(cartItem);
     }
 
+    public void createCart(Long memberId) {
+        if (cartRepository.countByMemberId(memberId) < 1) {
+            create(memberId);
+        }
+    }
+
     private Cart create(Long memberId) {
         return cartRepository.save(new Cart(memberId));
     }
