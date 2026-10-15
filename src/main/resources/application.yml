@@ -71,6 +71,13 @@ jwt:
   signup-token-expiration: 10m
 
 custom:
+  image:
+    base-url: ${S3_PUBLIC_BASE_URL:http://localhost:9000/team06-replant-images}
+  s3:
+    bucket: ${S3_BUCKET_NAME:team06-replant-images}
+    region: ${AWS_REGION:ap-northeast-2}
+    endpoint: ${S3_ENDPOINT:}
+    upload-url-duration: 10m
   kafka:
     topics:
       purchase-confirmed: ${PURCHASE_CONFIRMED_TOPIC:market.purchase-confirmed.v1}

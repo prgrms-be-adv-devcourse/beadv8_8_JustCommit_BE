@@ -35,7 +35,9 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -50,6 +52,12 @@ public class  ProductServiceTest {
 
     @Mock
     private MemberQuery memberQuery;
+
+    @Mock
+    private ProductImageCleaner imageCleaner;
+
+    @Mock
+    private ProductImageUrlValidator imageUrlValidator;
 
     @InjectMocks
     private ProductService productService;
@@ -115,6 +123,22 @@ public class  ProductServiceTest {
         //then - 생성된 응답에 제대로 값이 드어갔는지 확인
         assertThat(response.sellerName()).isEqualTo("판매자1");
         assertThat(response.title()).isEqualTo("몬스테라 분양합니다");
+    }
+
+    @Test
+    @DisplayName("이미지 검증에 실패하면 상품을 저장하지 않음")
+    void createProductWithInvalidImage() {
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
+        //예외를 일으키는 상황을 만들기 - validate 호출시 해당 예외 던지는지 확인
+        willThrow(new BusinessException(ProductErrorCode.INVALID_IMAGE_URL))
+                .given(imageUrlValidator).validate(eq(SELLER_ID), any());
+
+        // 예외가 서비스 밖으로 잘 나왔는지 확인 : createProduct 시 예외가 나야하고, 해당하는 예외가 나지 않으면 실패
+        assertThatThrownBy(() -> productService.createProduct(SELLER_ID, createRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.INVALID_IMAGE_URL);
+        // 예외 후 저장까지 가지 않았는지 확인
+        verify(productRepository, never()).save(any());
     }
 
     // 수정 요청
@@ -438,19 +462,58 @@ public class  ProductServiceTest {
     }
 
     @Test
-    @DisplayName("판매 완료 상품 단건 복구에 성공하면 true")
-    void releaseItem() {
-        given(productRepository.releaseItem(PRODUCT_ID)).willReturn(1);
+    @DisplayName("상품을 수정하면 새 목록에서 빠진 기존 사진만 삭제 예약")
+    void updateProductDeletesRemovedPictures() {
+        Product product = product(ProductStatus.ACTIVE);   // 기존 사진: a.jpg
+        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
+        given(speciesRepository.findById(NEW_SPECIES_ID))
+                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스", false)));
 
-        assertThat(productService.releaseItem(PRODUCT_ID)).isTrue();
+        productService.updateProduct(SELLER_ID, PRODUCT_ID,
+                updateRequest(List.of("https://example.com/c.jpg")));
+
+        verify(imageCleaner).deleteAfterCommit(List.of("https://example.com/a.jpg"));
     }
 
     @Test
-    @DisplayName("판매 완료 상태가 아니면 복구하지 않고 false")
-    void releaseItemNotSoldOut() {
-        given(productRepository.releaseItem(PRODUCT_ID)).willReturn(0);
+    @DisplayName("기존 사진을 그대로 두고 수정하면 삭제할 사진이 없음")
+    void updateProductKeepsPictures() {
+        Product product = product(ProductStatus.ACTIVE);
+        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
+        given(speciesRepository.findById(NEW_SPECIES_ID))
+                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스", false)));
 
-        assertThat(productService.releaseItem(PRODUCT_ID)).isFalse();
+        productService.updateProduct(SELLER_ID, PRODUCT_ID,
+                updateRequest(List.of("https://example.com/a.jpg", "https://example.com/c.jpg")));
+
+        verify(imageCleaner).deleteAfterCommit(List.of());
     }
+
+    @Test
+    @DisplayName("상품을 삭제하면 사진 전부 삭제 예약")
+    void deleteProductDeletesAllPictures() {
+        Product product = product(ProductStatus.ACTIVE);
+        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
+
+        productService.deleteProduct(SELLER_ID, PRODUCT_ID);
+
+        verify(imageCleaner).deleteAfterCommit(List.of("https://example.com/a.jpg"));
+    }
+
+    @Test
+    @DisplayName("판매 중이 아니라 수정에 실패하면 사진을 삭제하지 않음")
+    void updateProductFailsDoesNotDeletePictures() {
+        Product product = product(ProductStatus.SOLD_OUT);
+        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
+        given(speciesRepository.findById(NEW_SPECIES_ID))
+                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스", false)));
+
+        assertThatThrownBy(() -> productService.updateProduct(SELLER_ID, PRODUCT_ID,
+                updateRequest(List.of("https://example.com/c.jpg"))))
+                .isInstanceOf(BusinessException.class);
+
+        verify(imageCleaner, never()).deleteAfterCommit(any());
+    }
+
 
 }

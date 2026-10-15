@@ -7,6 +7,7 @@ import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.ProductUseCase;
 import com.justcommit.backend.product.domain.Product;
+import com.justcommit.backend.product.domain.ProductPicture;
 import com.justcommit.backend.product.domain.Species;
 import com.justcommit.backend.product.domain.exception.ProductErrorCode;
 import com.justcommit.backend.product.infrastructure.repository.ProductRepository;
@@ -28,7 +29,8 @@ public class ProductService implements ProductQuery, ProductUseCase {
     private final ProductRepository productRepository;
     private final SpeciesRepository speciesRepository;
     private final MemberQuery memberQuery;
-
+    private final ProductImageUrlValidator imageUrlValidator;
+    private final ProductImageCleaner imageCleaner;
     // ── ProductQuery ───────────────────────────────
 
     @Override
@@ -103,17 +105,17 @@ public class ProductService implements ProductQuery, ProductUseCase {
             throw new BusinessException(ProductErrorCode.NOT_SELLER);
         }
 
+        List<String> pictureUrls = request.pictureUrls() == null ? List.of() : request.pictureUrls();
+        imageUrlValidator.validate(sellerId, pictureUrls);
 
         Species species = speciesRepository.findById(request.speciesId())
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.SPECIES_NOT_FOUND));
-
-        List<String> pictureUrls = request.pictureUrls() == null ? List.of() : request.pictureUrls();
 
         Product product = Product.create(
                 species, sellerId, request.title(), request.description(), request.price(),
                 request.heightCm(), request.potSize(), request.growNote(), pictureUrls);
 
-        return ProductDetailResponse.from(productRepository.save(product),   memberQuery.getNickname(sellerId));
+        return ProductDetailResponse.from(productRepository.save(product), memberQuery.getNickname(sellerId));
     }
 
     // memberId: 로그인하지 않았으면 null
@@ -136,19 +138,37 @@ public class ProductService implements ProductQuery, ProductUseCase {
     }
 
     @Transactional
-    public ProductDetailResponse updateProduct(Long memberId, Long productId,  ProductRequest request) {
+    public ProductDetailResponse updateProduct(Long memberId, Long productId, ProductRequest request) {
 
-        Product product = getOwnedProductForUpdate(memberId,productId);
+        Product product = getOwnedProductForUpdate(memberId, productId);
+        List<String> pictureUrls = request.pictureUrls() == null ? List.of() : request.pictureUrls();
+        imageUrlValidator.validate(product.getSellerId(), pictureUrls);
+
         Species species = speciesRepository.findById(request.speciesId())
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.SPECIES_NOT_FOUND));
 
-        String sellerName = memberQuery.getNickname(product.getSellerId());
-        List<String> pictureUrls = request.pictureUrls() == null ? List.of() : request.pictureUrls();
+        List<String> oldPictureUrls = pictureUrlsOf(product);   // update 전에 꺼내 둠
 
         product.update(species, request.title(), request.description(), request.price(),
                 request.heightCm(), request.potSize(), request.growNote(), pictureUrls);
 
-         return  ProductDetailResponse.from(product,sellerName);
+        // 기존 사진 중 새 목록에서 빠진 것만 커밋 후 삭제
+        imageCleaner.deleteAfterCommit(oldPictureUrls.stream()
+                .filter(url -> !pictureUrls.contains(url))
+                .toList());
+
+        return ProductDetailResponse.from(product, memberQuery.getNickname(product.getSellerId()));
+    }
+
+    @Transactional
+    public void deleteProduct(Long memberId, Long productId) {
+        Product product = getOwnedProductForUpdate(memberId, productId);
+        product.delete();
+        imageCleaner.deleteAfterCommit(pictureUrlsOf(product));
+    }
+
+    private List<String> pictureUrlsOf(Product product) {
+        return product.getPictures().stream().map(ProductPicture::getS3Url).toList();
     }
 
     private Product getOwnedProductForUpdate(Long memberId, Long productId){
@@ -161,11 +181,6 @@ public class ProductService implements ProductQuery, ProductUseCase {
         }
 
         return product;
-    }
-
-    @Transactional
-    public void deleteProduct(Long memberId, Long productId) {
-        getOwnedProductForUpdate(memberId, productId).delete();
     }
 
     @Transactional

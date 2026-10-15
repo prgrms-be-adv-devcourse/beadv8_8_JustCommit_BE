@@ -4,6 +4,7 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.exception.GlobalExceptionHandler;
 import com.justcommit.backend.common.security.AuthMember;
 import com.justcommit.backend.product.ProductStatus;
+import com.justcommit.backend.product.application.ProductImageService;
 import com.justcommit.backend.product.application.ProductService;
 import com.justcommit.backend.product.domain.exception.ProductErrorCode;
 import com.justcommit.backend.product.presentation.dto.*;
@@ -73,12 +74,15 @@ class ProductControllerTest {
     @Mock
     private ProductService productService;
 
+    @Mock
+    ProductImageService productImageService;
+
     private MockMvc mockMvc;  // HTTP 요청을 흉내 내서 Controller 호출
 
     // 테스트마다 새로운 MockMvc 생성
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new ProductController(productService))   // Controller 하나만 등록
+        mockMvc = MockMvcBuilders.standaloneSetup(new ProductController(productImageService, productService))   // Controller 하나만 등록
                 .setControllerAdvice(new GlobalExceptionHandler())
                 // @AuthenticationPrincipal AuthMember를 SecurityContext에서 꺼내 주는 처리기
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
@@ -475,6 +479,52 @@ class ProductControllerTest {
         loginAs(SELLER_ID, SELLER);
 
         mockMvc.perform(get("/api/v1/products/me").param("status", "WRONG"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_FIELD_ERROR"));
+    }
+    // ── 이미지 업로드 링크 ─────────────────────────
+
+    @Test
+    @DisplayName("업로드 링크를 발급하면 로그인 회원 ID로 요청하고 링크 목록을 반환")
+    void issueImageUploadUrls() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+        given(productImageService.issueUploadUrls(eq(SELLER_ID), any()))
+                .willReturn(List.of(new ImageUploadUrlResponse("https://signed-url", "https://bucket/products/1/a.jpg")));
+
+        mockMvc.perform(post("/api/v1/products/images/upload-urls")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            { "files": [ { "contentType": "image/jpeg", "size": 1000 } ] }
+                            """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].uploadUrl").value("https://signed-url"))
+                .andExpect(jsonPath("$.data[0].imageUrl").value("https://bucket/products/1/a.jpg"));
+    }
+
+    @Test
+    @DisplayName("파일 목록이 비어 있으면 400 INVALID_FIELD_ERROR")
+    void issueImageUploadUrlsWithEmptyFiles() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+
+        mockMvc.perform(post("/api/v1/products/images/upload-urls")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            { "files": [] }
+                            """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_FIELD_ERROR"));
+    }
+
+    @Test
+    @DisplayName("파일 크기가 0이면 400 INVALID_FIELD_ERROR")
+    void issueImageUploadUrlsWithZeroSize() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+
+        mockMvc.perform(post("/api/v1/products/images/upload-urls")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            { "files": [ { "contentType": "image/jpeg", "size": 0 } ] }
+                            """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_FIELD_ERROR"));
     }
