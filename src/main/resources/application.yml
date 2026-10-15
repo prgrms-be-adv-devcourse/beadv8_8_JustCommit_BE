@@ -88,6 +88,10 @@ custom:
     # 쿠키 Secure 속성. 로컬·운영 HTTP는 false, 운영 HTTPS 적용 시 COOKIE_SECURE=true
     secure: ${COOKIE_SECURE:false}
 
+  frontend:
+    # 소셜 로그인 후 돌아갈 프론트 주소. 운영은 FRONTEND_BASE_URL 환경변수로 주입
+    base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
+
 # 환급 계좌번호 AES-256-GCM 암호화 키 (32바이트, Base64). 운영은 환경변수로 주입
 account:
   encryption-key: ${ACCOUNT_ENCRYPTION_KEY}
