@@ -4,16 +4,14 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.OrderQuery;
+import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.cart.application.CartService;
 import com.justcommit.backend.market.cart.domain.CartItem;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
-import com.justcommit.backend.market.order.infrastructure.OrderPaymentTtlStore;
-import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
-import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
-import com.justcommit.backend.market.order.infrastructure.AutoConfirmTarget;
+import com.justcommit.backend.market.order.infrastructure.*;
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
 import com.justcommit.backend.market.shipment.application.ShipmentService;
@@ -47,6 +45,7 @@ public class OrderService {
     private static final Duration PAYMENT_WINDOW = Duration.ofMinutes(10);
 
     private final OrdersRepository ordersRepository;
+    private final SellerOrderRepository sellerOrderRepository;
     private final OrdersItemRepository ordersItemRepository;
     private final CartService cartService;
     private final ProductQuery productQuery;
@@ -198,6 +197,70 @@ public class OrderService {
 
     public void confirm(Long memberId, Long orderItemId) {
         orderItemConfirmationService.confirm(memberId, orderItemId);
+    }
+
+    @Transactional
+    public void itemCancel(Long memberId, Long orderItemId) {
+        Long orderId = ordersItemRepository.findOrderIdByItemId(orderItemId).orElseThrow(()
+                -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
+        // 같은 주문의 서로 다른 판매자 주문도 직렬화하기 위해 부모 주문을 먼저 잠근다.
+        Orders order = ordersRepository.findLockedById(orderId).orElseThrow(()
+                -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+        Long sellerOrderId = ordersItemRepository.findSellerOrderIdByItemId(orderItemId).orElseThrow(()
+                -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
+        // 잠금 순서는 항상 주문 → 판매자 주문으로 유지한다.
+        SellerOrder sellerOrder = sellerOrderRepository.findLockedById(sellerOrderId).orElseThrow(()
+                -> new BusinessException(OrderErrorCode.SELLER_ORDER_NOT_FOUND));
+        OrdersItem item = ordersItemRepository.findById(orderItemId).orElseThrow(()
+                -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
+
+        if (!order.getBuyerId().equals(memberId)) {
+            throw new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND);
+        }
+
+        if (item.getStatus().equals(OrderItemStatus.CANCELLED)) {
+            return;
+        }
+
+        if (item.getStatus() != OrderItemStatus.NORMAL) {
+            throw new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_CANCELABLE);
+        }
+
+        if (order.getStatus() != OrderStatus.PAID) {
+            throw new BusinessException(OrderErrorCode.ORDER_NOT_PAID);
+        }
+
+        //배송상태 체크
+        ShipmentResult shipmentResult = shipmentService.findBySellerOrderId(sellerOrderId);
+
+        if (shipmentResult == null) {
+            throw new BusinessException(OrderErrorCode.SHIPMENT_NOT_FOUND);
+        }
+
+        if (!(Objects.equals(shipmentResult.status(), "BOOKED") || Objects.equals(shipmentResult.status(), "READY"))) {
+            throw new BusinessException(OrderErrorCode.SHIPMENT_NOT_CANCELABLE);
+        }
+
+        item.cancel();
+        //PaymentReuslt result = paymentUseCase.refundCancelledItem(Long orderItemId, Long buyerId, BigDecimal amount);
+        // if (result.status == ...) { 에러처리 }
+        sellerOrder.calculateSettlementBaseAmount();
+        finishCancellation(sellerOrder, order);
+        //productUseCase.releaseItem(item.getProductId());
+    }
+
+    private void finishCancellation(SellerOrder sellerOrder, Orders order) {
+        if (sellerOrder.getItems().stream().allMatch(item -> item.getStatus().equals(OrderItemStatus.CANCELLED))) {
+            if (sellerOrder.getShippingFee().compareTo(BigDecimal.ZERO) > 0) {
+                //PaymentReuslt result = paymentUseCase.refundShippingFee(Long sellerOrderId, Long buyerId, BigDecimal amount);
+                // if (result.status == ...) { 에러처리 }
+            }
+        }
+        if (order.getSellerOrders().stream()
+                .flatMap(remainingSellerOrder -> remainingSellerOrder.getItems().stream())
+                .allMatch(remainingItem -> remainingItem.getStatus() == OrderItemStatus.CANCELLED)) {
+            order.cancel();
+        }
     }
 
     private Orders orderPayment(Orders order) {
