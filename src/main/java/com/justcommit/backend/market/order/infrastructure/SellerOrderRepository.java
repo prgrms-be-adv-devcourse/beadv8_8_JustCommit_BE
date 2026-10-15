@@ -20,6 +20,10 @@ public interface SellerOrderRepository extends JpaRepository<SellerOrder, Long> 
     @Query("select s from SellerOrder s where s.id = :sellerOrderId")
     Optional<SellerOrder> findLockedById(@Param("sellerOrderId") Long sellerOrderId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from SellerOrder s where s.order.id = :orderId order by s.id")
+    List<SellerOrder> findAllLockedByOrderId(@Param("orderId") Long orderId);
+
     @EntityGraph(attributePaths = "order")
     Page<SellerOrder> findBySellerId(Long sellerId, Pageable pageable);
 

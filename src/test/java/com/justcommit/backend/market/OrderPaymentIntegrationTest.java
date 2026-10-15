@@ -8,6 +8,8 @@ import com.justcommit.backend.market.cart.infrastructure.CartRepository;
 import com.justcommit.backend.market.order.application.OrderService;
 import com.justcommit.backend.market.order.application.OrderItemConfirmationService;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
+import com.justcommit.backend.market.order.domain.OrdersItem;
+import com.justcommit.backend.market.order.domain.SellerOrder;
 import com.justcommit.backend.market.order.infrastructure.OrderPaymentTtlStore;
 import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
@@ -137,6 +139,7 @@ class OrderPaymentIntegrationTest {
     void clearQueryHook() {
         productQuery.afterLookup = () -> {};
         paymentUseCase.beforePayment = () -> {};
+        paymentUseCase.beforeRefund = () -> {};
     }
 
     @Test
@@ -520,6 +523,298 @@ class OrderPaymentIntegrationTest {
         verify(purchaseConfirmedEventPublisher, times(1)).publishAfterCommit(any(PurchaseConfirmedEvent.class));
     }
 
+    @Test
+    void cancellingOneItemRefundsOnlyItsPriceAndKeepsShippingFee() {
+        stubShipmentBooking();
+        long buyerId = 301L;
+        Product first = product(401L);
+        Product second = product(401L);
+        wallet(buyerId, "30000");
+        Long orderId = orderService.create(buyerId, request(
+                cartItem(buyerId, first), cartItem(buyerId, second))).orderId();
+        Long sellerOrderId = sellerOrderRepository.findByOrder_Id(orderId).getFirst().getId();
+        Long firstItemId = ordersItemRepository.findBySellerOrderIds(List.of(sellerOrderId)).stream()
+                .filter(item -> item.getProductId().equals(first.getId())).findFirst().orElseThrow().getId();
+
+        orderService.itemCancel(buyerId, firstItemId);
+        orderService.itemCancel(buyerId, firstItemId);
+
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(ordersItemRepository.findById(firstItemId).orElseThrow().getStatus()).isEqualTo(OrderItemStatus.CANCELLED);
+        assertThat(sellerOrderRepository.findById(sellerOrderId).orElseThrow().getSettlementBaseAmount())
+                .isEqualByComparingTo("10000");
+        assertThat(productRepository.findById(first.getId()).orElseThrow().getStatus()).isEqualTo(ProductStatus.ACTIVE);
+        assertThat(productRepository.findById(second.getId()).orElseThrow().getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+        assertThat(balance(buyerId)).isEqualByComparingTo("17000");
+        assertThat(refundCount(RefType.ORDER_ITEM_CANCEL_REFUND, firstItemId)).isEqualTo(2);
+        assertThat(refundCount(RefType.SHIPPING_FEE_REFUND, sellerOrderId)).isZero();
+    }
+
+    @Test
+    void cancellingLastItemRefundsShippingFeeOnceAndCancelsOrder() {
+        stubShipmentBooking();
+        long buyerId = 302L;
+        Product product = product(402L);
+        wallet(buyerId, "20000");
+        Long orderId = orderService.create(buyerId, request(cartItem(buyerId, product))).orderId();
+        Long sellerOrderId = sellerOrderRepository.findByOrder_Id(orderId).getFirst().getId();
+        Long itemId = ordersItemRepository.findBySellerOrderIds(List.of(sellerOrderId)).getFirst().getId();
+
+        orderService.itemCancel(buyerId, itemId);
+        orderService.itemCancel(buyerId, itemId);
+
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(ordersItemRepository.findById(itemId).orElseThrow().getStatus()).isEqualTo(OrderItemStatus.CANCELLED);
+        assertThat(sellerOrderRepository.findById(sellerOrderId).orElseThrow().getSettlementBaseAmount())
+                .isEqualByComparingTo("0");
+        assertThat(productRepository.findById(product.getId()).orElseThrow().getStatus()).isEqualTo(ProductStatus.ACTIVE);
+        assertThat(balance(buyerId)).isEqualByComparingTo("20000");
+        assertThat(refundCount(RefType.ORDER_ITEM_CANCEL_REFUND, itemId)).isEqualTo(2);
+        assertThat(refundCount(RefType.SHIPPING_FEE_REFUND, sellerOrderId)).isEqualTo(2);
+    }
+
+    @Test
+    void fullCancellationAfterPartialCancellationRefundsOnlyRemainingItems() {
+        stubShipmentBooking();
+        long buyerId = 303L;
+        Product first = product(403L);
+        Product second = product(403L);
+        Product third = product(404L);
+        wallet(buyerId, "50000");
+        Long orderId = orderService.create(buyerId, request(cartItem(buyerId, first),
+                cartItem(buyerId, second), cartItem(buyerId, third))).orderId();
+        List<Long> sellerOrderIds = sellerOrderRepository.findByOrder_Id(orderId).stream()
+                .map(SellerOrder::getId).toList();
+        List<OrdersItem> items = ordersItemRepository.findBySellerOrderIds(sellerOrderIds);
+        Long firstItemId = items.stream().filter(item -> item.getProductId().equals(first.getId()))
+                .findFirst().orElseThrow().getId();
+
+        orderService.itemCancel(buyerId, firstItemId);
+        orderService.cancel(buyerId, orderId);
+        orderService.cancel(buyerId, orderId);
+
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(ordersItemRepository.findAllById(items.stream().map(OrdersItem::getId).toList()))
+                .allSatisfy(item -> {
+                    assertThat(item.getStatus()).isEqualTo(OrderItemStatus.CANCELLED);
+                    assertThat(refundCount(RefType.ORDER_ITEM_CANCEL_REFUND, item.getId())).isEqualTo(2);
+                    assertThat(productRepository.findById(item.getProductId()).orElseThrow().getStatus())
+                            .isEqualTo(ProductStatus.ACTIVE);
+                });
+        assertThat(sellerOrderRepository.findAllById(sellerOrderIds))
+                .allSatisfy(sellerOrder -> {
+                    assertThat(sellerOrder.getSettlementBaseAmount()).isEqualByComparingTo("0");
+                    assertThat(refundCount(RefType.SHIPPING_FEE_REFUND, sellerOrder.getId())).isEqualTo(2);
+                });
+        assertThat(balance(buyerId)).isEqualByComparingTo("50000");
+    }
+
+    @Test
+    void fullCancellationSkipsSellerOrderAlreadyCancelledByItemRequest() {
+        stubShipmentBooking();
+        long buyerId = 304L;
+        Product first = product(405L);
+        Product second = product(406L);
+        wallet(buyerId, "30000");
+        Long orderId = orderService.create(buyerId, request(
+                cartItem(buyerId, first), cartItem(buyerId, second))).orderId();
+        List<Long> sellerOrderIds = sellerOrderRepository.findByOrder_Id(orderId).stream()
+                .map(SellerOrder::getId).toList();
+        List<OrdersItem> items = ordersItemRepository.findBySellerOrderIds(sellerOrderIds);
+        OrdersItem firstItem = items.stream().filter(item -> item.getProductId().equals(first.getId()))
+                .findFirst().orElseThrow();
+        Long firstSellerOrderId = firstItem.getSellerOrder().getId();
+
+        orderService.itemCancel(buyerId, firstItem.getId());
+        jdbcTemplate.update("UPDATE shipment SET status = 'CANCELLED' WHERE seller_order_id = ?", firstSellerOrderId);
+        orderService.cancel(buyerId, orderId);
+
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(balance(buyerId)).isEqualByComparingTo("30000");
+        assertThat(refundCount(RefType.ORDER_ITEM_CANCEL_REFUND, firstItem.getId())).isEqualTo(2);
+        assertThat(refundCount(RefType.SHIPPING_FEE_REFUND, firstSellerOrderId)).isEqualTo(2);
+        assertThat(productRepository.findById(second.getId()).orElseThrow().getStatus()).isEqualTo(ProductStatus.ACTIVE);
+    }
+
+    @Test
+    void fullCancellationRejectsMixedShipmentStatusesBeforeAnyRefund() {
+        stubShipmentBooking();
+        long buyerId = 305L;
+        Product first = product(407L);
+        Product second = product(408L);
+        wallet(buyerId, "30000");
+        Long orderId = orderService.create(buyerId, request(
+                cartItem(buyerId, first), cartItem(buyerId, second))).orderId();
+        List<Long> sellerOrderIds = sellerOrderRepository.findByOrder_Id(orderId).stream()
+                .map(SellerOrder::getId).toList();
+        List<Long> itemIds = ordersItemRepository.findBySellerOrderIds(sellerOrderIds).stream()
+                .map(OrdersItem::getId).toList();
+        jdbcTemplate.update("UPDATE shipment SET status = 'PICKED_UP' WHERE seller_order_id = ?", sellerOrderIds.getFirst());
+
+        assertThatThrownBy(() -> orderService.cancel(buyerId, orderId))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.SHIPMENT_NOT_CANCELABLE));
+
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(ordersItemRepository.findAllById(itemIds))
+                .allSatisfy(item -> assertThat(item.getStatus()).isEqualTo(OrderItemStatus.NORMAL));
+        assertThat(productRepository.findById(first.getId()).orElseThrow().getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+        assertThat(productRepository.findById(second.getId()).orElseThrow().getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+        assertThat(balance(buyerId)).isEqualByComparingTo("4000");
+        assertThat(walletTransactionRepository.findAll()).noneMatch(transaction ->
+                itemIds.contains(transaction.getRefId()) && transaction.getRefType() == RefType.ORDER_ITEM_CANCEL_REFUND);
+    }
+
+    @Test
+    void cancellationRejectsOtherBuyerAndPendingOrder() {
+        stubShipmentBooking();
+        long buyerId = 306L;
+        Product paidProduct = product(409L);
+        wallet(buyerId, "20000");
+        Long paidOrderId = orderService.create(buyerId, request(cartItem(buyerId, paidProduct))).orderId();
+        Long paidSellerOrderId = sellerOrderRepository.findByOrder_Id(paidOrderId).getFirst().getId();
+        Long paidItemId = ordersItemRepository.findBySellerOrderIds(List.of(paidSellerOrderId)).getFirst().getId();
+
+        assertThatThrownBy(() -> orderService.cancel(9999L, paidOrderId))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_NOT_FOUND));
+        assertThatThrownBy(() -> orderService.itemCancel(9999L, paidItemId))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
+
+        long pendingBuyerId = 307L;
+        Product pendingProduct = product(410L);
+        wallet(pendingBuyerId, "0");
+        Long pendingOrderId = orderService.create(pendingBuyerId, request(cartItem(pendingBuyerId, pendingProduct))).orderId();
+        assertThatThrownBy(() -> orderService.cancel(pendingBuyerId, pendingOrderId))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_NOT_PAID));
+        assertThat(ordersRepository.findById(paidOrderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(ordersRepository.findById(pendingOrderId).orElseThrow().getStatus())
+                .isEqualTo(OrderStatus.PAYMENT_PENDING);
+        assertThat(refundCount(RefType.ORDER_ITEM_CANCEL_REFUND, paidItemId)).isZero();
+    }
+
+    @Test
+    void productRestoreFailureRollsBackOrderCancellation() {
+        stubShipmentBooking();
+        long buyerId = 308L;
+        Product product = product(411L);
+        wallet(buyerId, "20000");
+        Long orderId = orderService.create(buyerId, request(cartItem(buyerId, product))).orderId();
+        Long sellerOrderId = sellerOrderRepository.findByOrder_Id(orderId).getFirst().getId();
+        Long itemId = ordersItemRepository.findBySellerOrderIds(List.of(sellerOrderId)).getFirst().getId();
+        jdbcTemplate.update("UPDATE product SET status = 'ACTIVE' WHERE id = ?", product.getId());
+
+        assertThatThrownBy(() -> orderService.cancel(buyerId, orderId)).isInstanceOf(BusinessException.class);
+
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(ordersItemRepository.findById(itemId).orElseThrow().getStatus()).isEqualTo(OrderItemStatus.NORMAL);
+        assertThat(sellerOrderRepository.findById(sellerOrderId).orElseThrow().getSettlementBaseAmount())
+                .isEqualByComparingTo("10000");
+        assertThat(balance(buyerId)).isEqualByComparingTo("7000");
+        assertThat(refundCount(RefType.ORDER_ITEM_CANCEL_REFUND, itemId)).isZero();
+    }
+
+    @Test
+    void paymentFailureRollsBackOrderProductAndEarlierRefund() {
+        stubShipmentBooking();
+        long buyerId = 309L;
+        Product first = product(412L);
+        Product second = product(412L);
+        wallet(buyerId, "30000");
+        Long orderId = orderService.create(buyerId, request(
+                cartItem(buyerId, first), cartItem(buyerId, second))).orderId();
+        Long sellerOrderId = sellerOrderRepository.findByOrder_Id(orderId).getFirst().getId();
+        List<Long> itemIds = ordersItemRepository.findBySellerOrderIds(List.of(sellerOrderId)).stream()
+                .map(OrdersItem::getId).toList();
+        int[] refundCalls = {0};
+        paymentUseCase.beforeRefund = () -> {
+            if (++refundCalls[0] == 2) {
+                throw new IllegalStateException("두 번째 환불 실패");
+            }
+        };
+
+        assertThatThrownBy(() -> orderService.cancel(buyerId, orderId))
+                .isInstanceOf(IllegalStateException.class).hasMessage("두 번째 환불 실패");
+
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(ordersItemRepository.findAllById(itemIds))
+                .allSatisfy(item -> assertThat(item.getStatus()).isEqualTo(OrderItemStatus.NORMAL));
+        assertThat(sellerOrderRepository.findById(sellerOrderId).orElseThrow().getSettlementBaseAmount())
+                .isEqualByComparingTo("20000");
+        assertThat(productRepository.findById(first.getId()).orElseThrow().getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+        assertThat(productRepository.findById(second.getId()).orElseThrow().getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+        assertThat(balance(buyerId)).isEqualByComparingTo("7000");
+        assertThat(itemIds).allSatisfy(itemId -> assertThat(refundCount(RefType.ORDER_ITEM_CANCEL_REFUND, itemId)).isZero());
+        assertThat(refundCount(RefType.SHIPPING_FEE_REFUND, sellerOrderId)).isZero();
+    }
+
+    @Test
+    void itemCancellationProductFailureRollsBackEarlierItemAndShippingRefunds() {
+        stubShipmentBooking();
+        long buyerId = 310L;
+        Product product = product(413L);
+        wallet(buyerId, "20000");
+        Long orderId = orderService.create(buyerId, request(cartItem(buyerId, product))).orderId();
+        Long sellerOrderId = sellerOrderRepository.findByOrder_Id(orderId).getFirst().getId();
+        Long itemId = ordersItemRepository.findBySellerOrderIds(List.of(sellerOrderId)).getFirst().getId();
+        jdbcTemplate.update("UPDATE product SET status = 'ACTIVE' WHERE id = ?", product.getId());
+
+        assertThatThrownBy(() -> orderService.itemCancel(buyerId, itemId)).isInstanceOf(BusinessException.class);
+
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(ordersItemRepository.findById(itemId).orElseThrow().getStatus()).isEqualTo(OrderItemStatus.NORMAL);
+        assertThat(sellerOrderRepository.findById(sellerOrderId).orElseThrow().getSettlementBaseAmount())
+                .isEqualByComparingTo("10000");
+        assertThat(balance(buyerId)).isEqualByComparingTo("7000");
+        assertThat(refundCount(RefType.ORDER_ITEM_CANCEL_REFUND, itemId)).isZero();
+        assertThat(refundCount(RefType.SHIPPING_FEE_REFUND, sellerOrderId)).isZero();
+    }
+
+    @Test
+    void itemCancellationPaymentFailureLeavesOrderAndProductUnchanged() {
+        stubShipmentBooking();
+        long buyerId = 311L;
+        Product product = product(414L);
+        wallet(buyerId, "20000");
+        Long orderId = orderService.create(buyerId, request(cartItem(buyerId, product))).orderId();
+        Long sellerOrderId = sellerOrderRepository.findByOrder_Id(orderId).getFirst().getId();
+        Long itemId = ordersItemRepository.findBySellerOrderIds(List.of(sellerOrderId)).getFirst().getId();
+        paymentUseCase.beforeRefund = () -> { throw new IllegalStateException("환불 실패"); };
+
+        assertThatThrownBy(() -> orderService.itemCancel(buyerId, itemId))
+                .isInstanceOf(IllegalStateException.class).hasMessage("환불 실패");
+
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(ordersItemRepository.findById(itemId).orElseThrow().getStatus()).isEqualTo(OrderItemStatus.NORMAL);
+        assertThat(productRepository.findById(product.getId()).orElseThrow().getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+        assertThat(balance(buyerId)).isEqualByComparingTo("7000");
+        assertThat(refundCount(RefType.ORDER_ITEM_CANCEL_REFUND, itemId)).isZero();
+    }
+
+    @Test
+    void concurrentItemAndFullCancellationRefundOnlyOnce() throws Exception {
+        stubShipmentBooking();
+        long buyerId = 312L;
+        Product product = product(415L);
+        wallet(buyerId, "20000");
+        Long orderId = orderService.create(buyerId, request(cartItem(buyerId, product))).orderId();
+        Long sellerOrderId = sellerOrderRepository.findByOrder_Id(orderId).getFirst().getId();
+        Long itemId = ordersItemRepository.findBySellerOrderIds(List.of(sellerOrderId)).getFirst().getId();
+
+        concurrently(
+                () -> { orderService.itemCancel(buyerId, itemId); return true; },
+                () -> { orderService.cancel(buyerId, orderId); return true; });
+
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(ordersItemRepository.findById(itemId).orElseThrow().getStatus()).isEqualTo(OrderItemStatus.CANCELLED);
+        assertThat(productRepository.findById(product.getId()).orElseThrow().getStatus()).isEqualTo(ProductStatus.ACTIVE);
+        assertThat(balance(buyerId)).isEqualByComparingTo("20000");
+        assertThat(refundCount(RefType.ORDER_ITEM_CANCEL_REFUND, itemId)).isEqualTo(2);
+        assertThat(refundCount(RefType.SHIPPING_FEE_REFUND, sellerOrderId)).isEqualTo(2);
+    }
+
     private Product product(long sellerId) {
         Species species = BeanUtils.instantiateClass(Species.class);
         ReflectionTestUtils.setField(species, "name", "integration-" + UUID.randomUUID());
@@ -552,6 +847,13 @@ class OrderPaymentIntegrationTest {
                 .filter(transaction -> transaction.getRefType() == RefType.PAYMENT)
                 .filter(transaction -> transaction.getStatus() == TransactionStatus.OUT) // 구매자 출금 내역만 카운트하고 HOLDING 지갑 내역은 제외한다.
                 .filter(transaction -> transaction.getRefId().equals(orderId))
+                .count();
+    }
+
+    private long refundCount(RefType refType, Long refId) {
+        return walletTransactionRepository.findAll().stream()
+                .filter(transaction -> transaction.getRefType() == refType)
+                .filter(transaction -> transaction.getRefId().equals(refId))
                 .count();
     }
 
@@ -653,6 +955,7 @@ class OrderPaymentIntegrationTest {
     static class InterceptingPaymentUseCase implements PaymentUseCase {
         private final PaymentService delegate;
         volatile Runnable beforePayment = () -> {};
+        volatile Runnable beforeRefund = () -> {};
 
         InterceptingPaymentUseCase(PaymentService delegate) {
             this.delegate = delegate;
@@ -672,6 +975,7 @@ class OrderPaymentIntegrationTest {
 
         @Override
         public PaymentResult refundCancelledItem(Long orderItemId, Long buyerId, BigDecimal amount) {
+            beforeRefund.run();
             return delegate.refundCancelledItem(orderItemId, buyerId, amount);
         }
 
