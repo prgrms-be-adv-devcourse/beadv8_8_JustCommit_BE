@@ -665,8 +665,9 @@ class OrderPaymentIntegrationTest {
         }
 
         @Override
-        public void depositSettlement(Long settlementId, Long sellerId, BigDecimal amount) {
-            delegate.depositSettlement(settlementId, sellerId, amount);
+        public void distributeSettlement(Long settlementId, Long sellerId,
+                                         BigDecimal payoutAmount, BigDecimal fee) {
+            delegate.distributeSettlement(settlementId, sellerId, payoutAmount, fee);
         }
     }
 }
