@@ -140,6 +140,17 @@ class CartAndOrderPersistenceIntegrationTest {
     }
 
     @Test
+    void doesNotPersistTwoCartsForTheSameMember() {
+        entityManager.persist(new Cart(301L));
+        entityManager.flush();
+
+        assertThatThrownBy(() -> {
+            entityManager.persist(new Cart(301L));
+            entityManager.flush();
+        }).isInstanceOf(PersistenceException.class);
+    }
+
+    @Test
     void savesAndReloadsOrderHierarchyAndUpdatesAuditTimestamp() throws InterruptedException {
         Orders order = order("ORD-20261008-0001");
         SellerOrder sellerOrder = new SellerOrder(order, 201L);

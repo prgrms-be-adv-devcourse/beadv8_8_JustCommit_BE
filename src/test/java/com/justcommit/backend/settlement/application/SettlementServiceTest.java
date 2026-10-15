@@ -48,8 +48,10 @@ class SettlementServiceTest {
         assertThat(result.getPayoutAmount()).isEqualByComparingTo("28500");
         assertThat(result.getSettledAt()).isNotNull();
         verify(settlementRepository).save(any(Settlement.class));
-        verify(paymentUseCase).depositSettlement(
-                any(), eq(SELLER_ID), argThat(amount -> amount.compareTo(new BigDecimal("28500")) == 0));
+        verify(paymentUseCase).distributeSettlement(
+                any(), eq(SELLER_ID),
+                argThat(payout -> payout.compareTo(new BigDecimal("28500")) == 0),
+                argThat(fee -> fee.compareTo(new BigDecimal("1500")) == 0));
     }
 
     @Test
@@ -65,7 +67,7 @@ class SettlementServiceTest {
         assertThat(result.getPayoutAmount()).isEqualByComparingTo("28500");
         assertThat(result.getSettledAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 15, 0));
         verify(settlementRepository, never()).save(any());
-        verify(paymentUseCase, never()).depositSettlement(any(), any(), any());
+        verify(paymentUseCase, never()).distributeSettlement(any(), any(), any(), any());
     }
 
     @Test

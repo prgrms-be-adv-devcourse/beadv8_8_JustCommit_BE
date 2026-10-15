@@ -57,6 +57,12 @@ public class MemberController {
     return ApiResponse.ok("닉네임 사용 가능 여부를 확인했습니다.", new NicknameCheckResponse(available));
   }
 
+  @GetMapping("/checkPhone")
+  public ApiResponse<PhoneCheckResponse> checkPhone(@RequestParam String phone) {
+    boolean available = signupService.isPhoneAvailable(phone);
+    return ApiResponse.ok("휴대폰 번호 사용 가능 여부를 확인했습니다.", new PhoneCheckResponse(available));
+  }
+
   @GetMapping("/me")
   public ApiResponse<MyInfoResponse> getMyInfo(@AuthenticationPrincipal AuthMember authMember) {
     MyInfoResult result = myInfoService.getMyInfo(authMember.memberId());

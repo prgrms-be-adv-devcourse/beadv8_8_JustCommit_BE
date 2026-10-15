@@ -53,7 +53,7 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
       properties:
-        "[spring.json.trusted.packages]": com.justcommit.backend
+        "[spring.json.trusted.packages]": "com.justcommit.backend.*"
 
 management:
   endpoints:
