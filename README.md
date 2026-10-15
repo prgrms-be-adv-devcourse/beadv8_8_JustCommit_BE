@@ -25,6 +25,9 @@ docker compose up -d
 | PostgreSQL | `localhost` | `5432` | database/user/password: `justcommit` / `justcommit` / `justcommit` |
 | Redis | `localhost` | `6379` | none |
 | Kafka | `localhost` | `9092` | plaintext local broker |
+| S3 (RustFS) | `localhost` | `9000` (API), `9001` (웹 콘솔) | access/secret key: `replantlocal` / `replantlocal123` (로컬 전용) |
+
+로컬 S3는 운영 S3 대신 쓰는 S3 호환 저장소(RustFS)입니다. `rustfs-init`이 처음 한 번 운영과 같은 버킷(`team06-replant-images`), 공개 읽기 정책(`products/*`, `species/*`), CORS를 만들고 종료합니다. 설정 파일은 `docker/s3/`에 있습니다. AWS SDK에서는 endpoint를 `http://localhost:9000`으로, path-style 접근을 켜서 사용합니다. 업로드한 파일은 `http://localhost:9000/team06-replant-images/{key}`로 조회되고, 웹 콘솔(`http://localhost:9001`)에서 확인할 수 있습니다.
 
 운영 서버(EC2)에서는 `docker-compose.prod.yml`을 사용합니다. `.env.example`을 `.env`로 복사해 값을 채운 뒤 `docker compose -f docker-compose.prod.yml up -d`로 실행합니다. 운영 Redis는 비밀번호, 메모리 제한(`noeviction`), `127.0.0.1` 바인딩이 적용되어 로컬 설정과 다릅니다.
 
@@ -50,6 +53,8 @@ Run only the Modulith architecture check with:
 - `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`
 - `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` (prod only)
 - `KAFKA_BOOTSTRAP_SERVERS`
+- `AWS_REGION`, `S3_BUCKET_NAME`, `S3_PUBLIC_BASE_URL` (prod는 EC2 IAM 역할로 인증하므로 AWS 키를 두지 않습니다)
+- `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` (local only, 로컬 RustFS 접속용)
 - `SPRING_APPLICATION_NAME` (optional)
 
 Local defaults match `docker-compose.yml`. Production does not include database credentials in source configuration.

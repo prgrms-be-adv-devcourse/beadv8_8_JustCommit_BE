@@ -72,4 +72,61 @@ class ShipmentTest {
 
         assertThat(shipment.getCourierOrderNo()).isEqualTo("shipment-20261012-000045");
     }
+
+    @Test
+    @DisplayName("택배사 상태가 앞으로 가면 반영하고, 배송 완료면 완료 시각을 저장한다")
+    void applyCourierStatusForward() {
+        Shipment shipment = bookedShipment();
+        LocalDateTime deliveredAt = LocalDateTime.of(2026, 10, 12, 15, 0);
+
+        boolean pickedUp = shipment.applyCourierStatus(ShipmentStatus.PICKED_UP, "404000000001", LocalDateTime.of(2026, 10, 12, 10, 3));
+        boolean delivered = shipment.applyCourierStatus(ShipmentStatus.DELIVERED, "404000000001", deliveredAt);
+
+        assertThat(pickedUp).isTrue();
+        assertThat(delivered).isTrue();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.DELIVERED);
+        assertThat(shipment.getDeliveredAt()).isEqualTo(deliveredAt);
+    }
+
+    @Test
+    @DisplayName("같은 상태가 다시 오면 무시한다")
+    void applyCourierStatusDuplicateIgnored() {
+        Shipment shipment = bookedShipment();
+        shipment.applyCourierStatus(ShipmentStatus.PICKED_UP, "404000000001", LocalDateTime.of(2026, 10, 12, 10, 3));
+
+        boolean applied = shipment.applyCourierStatus(ShipmentStatus.PICKED_UP, "404000000001", LocalDateTime.of(2026, 10, 12, 10, 3));
+
+        assertThat(applied).isFalse();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.PICKED_UP);
+    }
+
+    @Test
+    @DisplayName("뒤로 가는 상태가 늦게 도착하면 무시한다")
+    void applyCourierStatusOutOfOrderIgnored() {
+        Shipment shipment = bookedShipment();
+        shipment.applyCourierStatus(ShipmentStatus.IN_TRANSIT, "404000000001", LocalDateTime.of(2026, 10, 12, 10, 5));
+
+        boolean applied = shipment.applyCourierStatus(ShipmentStatus.PICKED_UP, "404000000001", LocalDateTime.of(2026, 10, 12, 10, 3));
+
+        assertThat(applied).isFalse();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.IN_TRANSIT);
+    }
+
+    @Test
+    @DisplayName("예약 응답을 놓쳐 송장번호가 없으면 웹훅의 송장번호로 채운다")
+    void applyCourierStatusFillsMissingTrackingNo() {
+        Shipment shipment = new Shipment(SELLER_ORDER_ID); // READY, 송장번호 없음
+
+        boolean applied = shipment.applyCourierStatus(ShipmentStatus.PICKED_UP, "404000000001", LocalDateTime.of(2026, 10, 12, 10, 3));
+
+        assertThat(applied).isTrue();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.PICKED_UP);
+        assertThat(shipment.getTrackingNo()).isEqualTo("404000000001");
+    }
+
+    private Shipment bookedShipment() {
+        Shipment shipment = new Shipment(SELLER_ORDER_ID);
+        shipment.book("404000000001", LocalDateTime.of(2026, 10, 12, 10, 0));
+        return shipment;
+    }
 }
