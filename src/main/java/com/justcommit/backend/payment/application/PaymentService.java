@@ -71,34 +71,103 @@ public class PaymentService implements PaymentUseCase {
         return PaymentResult.paid(buyerWallet.getBalance());
     }
 
-    @Override
-    @Transactional
-    public void depositSettlement(Long settlementId, Long sellerId, BigDecimal amount) {
-        validateRequest(settlementId, sellerId, amount);
-
-        Wallet wallet = walletRepository
-                .findByMemberIdForUpdate(sellerId)
-                .orElseThrow(() -> new BusinessException(
-                        PaymentErrorCode.WALLET_NOT_FOUND
-                ));
-
-        if (walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(
-                wallet.getId(), RefType.SETTLEMENT, settlementId)) {
-            return;
-        }
-
-        wallet.credit(amount);
-
-        walletTransactionRepository.save(
-                WalletTransaction.settlementIn(
-                        wallet, settlementId, amount, LocalDateTime.now()
-                )
-        );
-    }
-
     private void validateRequest(Long orderId, Long buyerId, BigDecimal amount) {
         if (orderId == null || buyerId == null || amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(PaymentErrorCode.INVALID_AMOUNT, "주문 결제 요청 값이 올바르지 않습니다.");
         }
     }
+
+    @Override
+    @Transactional
+    public void distributeSettlement(
+            Long settlementId,
+            Long sellerId,
+            BigDecimal payoutAmount,    // 판매자 정산금
+            BigDecimal fee              // 수수료
+           // BigDecimal shippingFee    // 배송비
+    ) {
+        // 요청값 검증
+        if (settlementId == null || sellerId == null
+                || payoutAmount == null || fee == null // || shippingFee == null
+                || payoutAmount.compareTo(BigDecimal.ZERO) <= 0
+                || fee.compareTo(BigDecimal.ZERO) < 0
+                // || shippingFee.compareTo(BigDecimal.ZERO) < 0
+        ) {
+            throw new BusinessException(PaymentErrorCode.INVALID_AMOUNT);
+        }
+
+        Long holdingId = memberQuery.getHoldingMemberId();
+        Long revenueId = memberQuery.getRevenueMemberId();
+
+        // 판매자 지갑 잠금
+        Wallet sellerWallet = walletRepository
+                .findByMemberIdForUpdate(sellerId)
+                .orElseThrow(() -> new BusinessException(
+                        PaymentErrorCode.WALLET_NOT_FOUND
+                ));
+
+        // 중복 정산 방지
+        if (walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(
+                sellerWallet.getId(), RefType.SETTLEMENT, settlementId)) {
+            return;
+        }
+
+        // HOLDING 지갑 잠금
+        Wallet holdingWallet = walletRepository
+                .findByMemberIdForUpdate(holdingId)
+                .orElseThrow(() -> new BusinessException(
+                        PaymentErrorCode.WALLET_NOT_FOUND
+                ));
+
+        // REVENUE 지갑 잠금
+        Wallet revenueWallet = walletRepository
+                .findByMemberIdForUpdate(revenueId)
+                .orElseThrow(() -> new BusinessException(
+                        PaymentErrorCode.WALLET_NOT_FOUND
+                ));
+
+        BigDecimal totalAmount = payoutAmount.add(fee);  // .add(shippingFee);
+        LocalDateTime now = LocalDateTime.now();
+
+        // HOLDING 출금
+        holdingWallet.debit(totalAmount);
+        walletTransactionRepository.save(
+                WalletTransaction.settlementOut(
+                        holdingWallet, settlementId, totalAmount, now
+                )
+        );
+
+        // 판매자 지갑 적립
+        sellerWallet.credit(payoutAmount);
+        walletTransactionRepository.save(
+                WalletTransaction.settlementIn(
+                        sellerWallet, settlementId, payoutAmount, now
+                )
+        );
+
+        // REVENUE 수수료 적립
+        if (fee.compareTo(BigDecimal.ZERO) > 0) {
+            revenueWallet.credit(fee);
+            walletTransactionRepository.save(
+                    WalletTransaction.settlementFeeIn(
+                            revenueWallet, settlementId, fee, now
+                    )
+            );
+        }
+
+        /*
+        // REVENUE 배송비 적립
+        if (shippingFee.compareTo(BigDecimal.ZERO) > 0) {
+            revenueWallet.credit(shippingFee);
+            walletTransactionRepository.save(
+                    WalletTransaction.shippingFeeIn(
+                            revenueWallet, settlementId, shippingFee, now
+                    )
+            );
+        }
+         */
+    }
+
+
+
 }

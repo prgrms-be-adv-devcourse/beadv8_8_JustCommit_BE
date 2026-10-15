@@ -1,9 +1,9 @@
 package com.justcommit.backend.settlement.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.payment.PaymentUseCase;
 import com.justcommit.backend.settlement.SettlementResult;
-import com.justcommit.backend.settlement.SettlementUseCase;
 import com.justcommit.backend.settlement.domain.Settlement;
 import com.justcommit.backend.settlement.domain.exception.SettlementErrorCode;
 import com.justcommit.backend.settlement.infrastructure.repository.SettlementRepository;
@@ -17,12 +17,11 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
-public class SettlementService implements SettlementUseCase {
+public class SettlementService {
 
     private final SettlementRepository settlementRepository;
     private final PaymentUseCase paymentUseCase;
 
-    @Override
     @Transactional
     public SettlementResult settle(Long sellerOrderId, Long sellerId, BigDecimal saleAmount) {
         validateRequest(sellerOrderId, sellerId);
@@ -34,10 +33,15 @@ public class SettlementService implements SettlementUseCase {
         }
 
         Settlement settlement = settlementRepository.save(
-                Settlement.createSettlement(sellerOrderId, saleAmount, LocalDateTime.now())
+                Settlement.createSettlement(sellerOrderId, saleAmount, LocalDateTime.now()) //settled_at
         );
 
-        paymentUseCase.depositSettlement(settlement.getId(), sellerId, settlement.getPayoutAmount());
+        paymentUseCase.distributeSettlement(
+                settlement.getId(),
+                sellerId,
+                settlement.getPayoutAmount(),
+                settlement.getFee()
+        );
 
         return toResult(settlement);
     }
