@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import lombok.extern.slf4j.Slf4j;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -23,6 +24,7 @@ import java.util.Optional;
  * 사용자->시스템 순서로 지갑 잠금
  */
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PaymentService implements PaymentUseCase {
@@ -85,14 +87,12 @@ public class PaymentService implements PaymentUseCase {
             Long sellerId,
             BigDecimal payoutAmount,    // 판매자 정산금
             BigDecimal fee              // 수수료
-           // BigDecimal shippingFee    // 배송비
     ) {
         // 요청값 검증
         if (settlementId == null || sellerId == null
-                || payoutAmount == null || fee == null // || shippingFee == null
+                || payoutAmount == null || fee == null
                 || payoutAmount.compareTo(BigDecimal.ZERO) <= 0
                 || fee.compareTo(BigDecimal.ZERO) < 0
-                // || shippingFee.compareTo(BigDecimal.ZERO) < 0
         ) {
             throw new BusinessException(PaymentErrorCode.INVALID_AMOUNT);
         }
@@ -155,20 +155,59 @@ public class PaymentService implements PaymentUseCase {
                     )
             );
         }
-
-        /*
-        // REVENUE 배송비 적립
-        if (shippingFee.compareTo(BigDecimal.ZERO) > 0) {
-            revenueWallet.credit(shippingFee);
-            walletTransactionRepository.save(
-                    WalletTransaction.shippingFeeIn(
-                            revenueWallet, settlementId, shippingFee, now
-                    )
-            );
-        }
-         */
     }
 
+    /**
+     * 택배가 수거된 판매자 주문의 배송비를 HOLDING에서 REVENUE로 옮긴다.
+     * 시스템 지갑만 잠그며, 순서는 distributeSettlement와 같은 HOLDING -> REVENUE.
+     */
+    @Override
+    @Transactional
+    public void collectShippingFee(Long sellerOrderId, BigDecimal shippingFee) {
+        // 요청값 검증
+        if (sellerOrderId == null || (shippingFee != null && shippingFee.signum() < 0)) {
+            throw new BusinessException(PaymentErrorCode.INVALID_AMOUNT, "배송비 수납 요청 값이 올바르지 않습니다.");
+        }
+        // 무료 배송이거나, 택배비 컬럼이 생기기 전에 만들어진 배송이면 옮길 돈이 없다
+        if (shippingFee == null || shippingFee.signum() == 0) {
+            return;
+        }
+
+        // HOLDING 지갑 잠금
+        Wallet holdingWallet = walletRepository
+                .findByMemberIdForUpdate(memberQuery.getHoldingMemberId())
+                .orElseThrow(() -> new BusinessException(PaymentErrorCode.WALLET_NOT_FOUND));
+
+        // 중복 수신 방지
+        if (walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(
+                holdingWallet.getId(), RefType.SHIPPING_FEE, sellerOrderId)) {
+            return;
+        }
+
+        // 수거 전 취소로 이미 구매자에게 환불된 배송비면 HOLDING에 남은 몫이 없다
+        if (walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(
+                holdingWallet.getId(), RefType.SHIPPING_FEE_REFUND, sellerOrderId)) {
+            log.warn("이미 환불된 배송비라 수납하지 않음: sellerOrderId={}", sellerOrderId);
+            return;
+        }
+
+        // REVENUE 지갑 잠금
+        Wallet revenueWallet = walletRepository
+                .findByMemberIdForUpdate(memberQuery.getRevenueMemberId())
+                .orElseThrow(() -> new BusinessException(PaymentErrorCode.WALLET_NOT_FOUND));
+
+        LocalDateTime now = LocalDateTime.now(); // HOLDING 출금·REVENUE 입금을 같은 시각으로 기록
+
+        // HOLDING 출금 (잔액 부족 시 INSUFFICIENT_BALANCE 예외)
+        holdingWallet.debit(shippingFee);
+        walletTransactionRepository.save(
+                WalletTransaction.shippingFeeOut(holdingWallet, sellerOrderId, shippingFee, now));
+
+        // REVENUE 배송비 적립
+        revenueWallet.credit(shippingFee);
+        walletTransactionRepository.save(
+                WalletTransaction.shippingFeeIn(revenueWallet, sellerOrderId, shippingFee, now));
+    }
 
     /**
      * 취소된 주문상품 금액을 HOLDING에서 구매자 지갑으로 환불한다.
