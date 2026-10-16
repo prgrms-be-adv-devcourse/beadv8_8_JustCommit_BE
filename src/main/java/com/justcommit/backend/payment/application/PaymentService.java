@@ -229,7 +229,8 @@ public class PaymentService implements PaymentUseCase {
         return refundFromHolding(RefType.SHIPPING_FEE_REFUND, sellerOrderId, buyerId, amount);
     }
 
-
+    /** HOLDING 지갑에 보관 중인 돈을 구매자 지갑으로 환불
+     * */
     private PaymentResult refundFromHolding(RefType refType, Long refId, Long buyerId, BigDecimal amount) {
         // 요청값 검증
         if (refId == null || buyerId == null || amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
@@ -243,8 +244,7 @@ public class PaymentService implements PaymentUseCase {
 
         // 중복 환불 검증
         Optional<WalletTransaction> existing =
-                walletTransactionRepository
-                        .findByWallet_IdAndRefTypeAndRefId(
+                walletTransactionRepository.findByWallet_IdAndRefTypeAndRefId(
                                 buyerWallet.getId(),
                                 refType,
                                 refId
@@ -269,6 +269,17 @@ public class PaymentService implements PaymentUseCase {
         Wallet holdingWallet = walletRepository
                 .findByMemberIdForUpdate(memberQuery.getHoldingMemberId())
                 .orElseThrow(() -> new BusinessException(PaymentErrorCode.WALLET_NOT_FOUND));
+
+        // 이미 수납된 배송비는 환불 불가
+        if (refType == RefType.SHIPPING_FEE_REFUND
+                && walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(
+                        holdingWallet.getId(),
+                        RefType.SHIPPING_FEE,
+                        refId)) {
+
+            throw new BusinessException(
+                    PaymentErrorCode.SHIPPING_FEE_ALREADY_COLLECTED);
+        }
 
         if (walletTransactionRepository
                 .existsByWallet_IdAndRefTypeAndRefId(
