@@ -19,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.justcommit.backend.payment.infrastructure.pg.TossPaymentClient;
 import com.justcommit.backend.payment.infrastructure.repository.WalletTransactionRepository;
 
+import java.math.BigDecimal;
+
 @Service
 @RequiredArgsConstructor
 public class ChargeService {
@@ -28,10 +30,7 @@ public class ChargeService {
     private final WalletTransactionRepository walletTransactionRepository;
 
     @Transactional
-    public ChargeCreateResponse createCharge(
-            Long memberId,
-            ChargeCreateRequest request
-    ) {
+    public ChargeCreateResponse createCharge(Long memberId, ChargeCreateRequest request) {
         // 지갑 조회
         Wallet wallet = walletRepository.findByMemberId(memberId)
                 .orElseThrow(() -> new BusinessException(
@@ -49,23 +48,37 @@ public class ChargeService {
 
     @Transactional
     public ChargeConfirmResponse confirmCharge(Long memberId, Long chargeId, ChargeConfirmRequest request) {
-        // 내 충전 요청인지 확인하며 조회
-        Charge charge = chargeRepository.findByIdAndWallet_MemberId(chargeId, memberId)
+
+        Wallet wallet = walletRepository.findByMemberIdForUpdate(memberId)
+                .orElseThrow(() -> new BusinessException(PaymentErrorCode.WALLET_NOT_FOUND));
+
+        Charge charge = chargeRepository.findByIdAndMemberIdForUpdate(chargeId, memberId)
                 .orElseThrow(() -> new BusinessException(PaymentErrorCode.CHARGE_NOT_FOUND));
 
         charge.validateReady();
-        // 프론트가 보낸 값과 서버에 저장된 값 대조 (금액 위변조 방지)
         charge.validateConfirmInfo(request.getOrderId(), request.getAmount());
 
         // 토스 승인 요청
         TossConfirmResponse tossResponse = tossPaymentClient.confirm(
                 request.getPaymentKey(), request.getOrderId(), request.getAmount());
 
+        // 토스 승인 응답 검증
+        if (tossResponse == null
+                || !"DONE".equals(tossResponse.status())
+                || !request.getPaymentKey().equals(tossResponse.paymentKey())
+                || !charge.getPgOrderNo().equals(tossResponse.orderId())
+                || tossResponse.totalAmount() == null
+                || tossResponse.approvedAt() == null
+                || charge.getAmount().compareTo(BigDecimal.valueOf(tossResponse.totalAmount())
+        ) != 0) {
+            throw new BusinessException(
+                    PaymentErrorCode.PG_CONFIRM_FAILED
+            );
+        }
         // 충전 승인 처리
         charge.approve(tossResponse.paymentKey(), tossResponse.approvedAt().toLocalDateTime());
 
-        // 지갑 입금
-        Wallet wallet = charge.getWallet();
+        // 지갑 잔액 증가
         wallet.credit(charge.getAmount());
 
         // 거래 내역 기록
