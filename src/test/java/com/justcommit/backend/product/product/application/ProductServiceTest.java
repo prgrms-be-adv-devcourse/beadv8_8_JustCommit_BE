@@ -177,19 +177,6 @@ public class  ProductServiceTest {
     }
 
     @Test
-    @DisplayName("사진 없이 수정하면 사진 목록이 사라짐")
-    void updateProductWithoutPicture(){
-        Product product = product(ProductStatus.ACTIVE);
-
-        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
-        given(speciesRepository.findById(NEW_SPECIES_ID))
-                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스", false)));
-
-        productService.updateProduct(SELLER_ID,PRODUCT_ID,updateRequest(null));
-        assertThat(product.getPictures()).isEmpty();
-    }
-
-    @Test
     @DisplayName("없는 상품을 수정하면 PRODUCT_NOT_FOUND")
     void updateProductNotFound() {
         given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.empty());

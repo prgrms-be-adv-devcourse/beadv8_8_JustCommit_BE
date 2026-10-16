@@ -34,7 +34,8 @@ public class ProductController {
     private final ProductImageService productImageService;
     private final ProductService productService;
 
-    @Operation(summary = "상품 등록", description = "로그인한 회원을 판매자로 상품을 등록합니다. 금지 품종은 등록할 수 없습니다.")
+    @Operation(summary = "상품 등록", description = "로그인한 회원을 판매자로 상품을 등록합니다. 금지 품종은 등록할 수 없습니다. "
+            + "사진(pictureUrls)은 1장 이상 10장 이하로 보내야 합니다.")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<ProductDetailResponse> createProduct(
@@ -66,7 +67,8 @@ public class ProductController {
                 productService.getProductDetail(productId, memberId));
     }
 
-    @Operation(summary="상품 수정", description  ="판매 중인 본인 상품만 수정할 수 있습니다.")
+    @Operation(summary="상품 수정", description  ="판매 중인 본인 상품만 수정할 수 있습니다. "
+            + "사진(pictureUrls)은 1장 이상 10장 이하로 보내야 하며, 보낸 목록으로 통째로 바뀝니다.")
     @PutMapping("/{productId}")
     public ApiResponse<ProductDetailResponse> updateProduct(
             @AuthenticationPrincipal AuthMember authMember,

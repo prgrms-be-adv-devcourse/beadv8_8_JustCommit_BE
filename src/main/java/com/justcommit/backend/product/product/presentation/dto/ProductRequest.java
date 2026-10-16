@@ -13,6 +13,8 @@ public record ProductRequest(
         @Positive Integer heightCm,
         @Size(max = 20) String potSize,
         @Size(max = 500) String growNote,
-        @Size(max = 10) List<@NotBlank String> pictureUrls
+        @NotEmpty(message = "사진을 1장 이상 등록해 주세요.")
+        @Size(max = 10, message = "사진은 최대 10장까지 등록할 수 있어요.")
+        List<@NotBlank String> pictureUrls
         ) {
 }
