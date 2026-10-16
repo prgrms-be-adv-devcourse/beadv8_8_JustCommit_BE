@@ -1,5 +1,6 @@
 package com.justcommit.backend.common.security;
 
+import jakarta.servlet.DispatcherType;
 import com.justcommit.backend.common.security.handler.JwtAccessDeniedHandler;
 import com.justcommit.backend.common.security.handler.JwtAuthenticationEntryPoint;
 import com.justcommit.backend.common.security.jwt.JwtAuthenticationFilter;
@@ -70,6 +71,9 @@ public class SecurityConfig {
                         .authenticationEntryPoint(new JwtAuthenticationEntryPoint())
                         .accessDeniedHandler(new JwtAccessDeniedHandler()))
                 .authorizeHttpRequests(auth -> auth
+                        // SSE 응답을 보내는 비동기 디스패치는 처음 요청에서 이미 인증을 거쳤으므로 통과시킨다
+                        // (JWT 필터는 비동기 디스패치에서 다시 돌지 않아 막으면 알림 전송 때 401·403이 남)
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers(PUBLIC_PATHS).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/users", "/api/v1/users/social").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/users/checkNickname").permitAll()

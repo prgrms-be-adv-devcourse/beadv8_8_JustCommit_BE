@@ -9,11 +9,14 @@ import com.justcommit.backend.notification.presentation.dto.NotificationListRequ
 import com.justcommit.backend.notification.presentation.dto.NotificationReadRequest;
 import com.justcommit.backend.notification.presentation.dto.NotificationResponse;
 import com.justcommit.backend.notification.presentation.dto.UnreadCountResponse;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
 @RequestMapping("/api/v1/notifications")
@@ -26,6 +29,14 @@ public class NotificationController {
     public ResponseEntity<PagingResponse<NotificationResponse>> list(@AuthenticationPrincipal AuthMember member,
                                                                      @ModelAttribute NotificationListRequest request) {
         return ResponseEntity.ok(notificationService.list(member.memberId(), request.isRead(), request.toPageable()));
+    }
+
+    // 실시간 구독 (text/event-stream). event: unread / data: 안 읽은 알림 수
+    @GetMapping(value = "/subscribe", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter subscribe(@AuthenticationPrincipal AuthMember member, HttpServletResponse response) {
+        // Nginx가 응답을 모아 두지 않고 바로 보내게 한다 (끝나지 않는 응답이라 모으면 브라우저가 아무것도 못 받음)
+        response.setHeader("X-Accel-Buffering", "no");
+        return notificationService.subscribe(member.memberId());
     }
 
     @GetMapping("/unread-count")

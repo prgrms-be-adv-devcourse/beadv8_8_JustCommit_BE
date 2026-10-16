@@ -19,10 +19,12 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -30,7 +32,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
@@ -67,6 +72,18 @@ class NotificationControllerTest {
                 .andExpect(jsonPath("$.content[0].type").value("SHIPMENT_DELIVERED"))
                 .andExpect(jsonPath("$.content[0].isRead").value(false))
                 .andExpect(jsonPath("$.totalElements").value(1));
+    }
+
+    @Test
+    void subscribesWithEventStream() throws Exception {
+        SseEmitter emitter = new SseEmitter();
+        emitter.send(SseEmitter.event().name("unread").data(3));
+        when(notificationService.subscribe(MEMBER_ID)).thenReturn(emitter);
+
+        mockMvc.perform(get("/api/v1/notifications/subscribe").accept("text/event-stream"))
+                .andExpect(request().asyncStarted())
+                .andExpect(header().string("X-Accel-Buffering", "no"))
+                .andExpect(content().string(containsString("event:unread\ndata:3")));
     }
 
     @Test
