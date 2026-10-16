@@ -75,6 +75,7 @@ class ShipmentBookingFailureTest {
         assertThat(saved.getReceiverName()).isEqualTo("구매자");
         assertThat(saved.getReceiverAddress()).isEqualTo("부산");
         assertThat(saved.getItemSummary()).isEqualTo("몬스테라");
+        assertThat(saved.getShippingFee()).isEqualByComparingTo("3000");
     }
 
     private OrderResult order() {
