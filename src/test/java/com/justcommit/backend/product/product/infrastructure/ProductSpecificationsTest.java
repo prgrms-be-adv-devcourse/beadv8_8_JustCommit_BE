@@ -4,6 +4,9 @@ import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.species.domain.Species;
+import com.justcommit.backend.product.species.domain.enums.Difficulty;
+import com.justcommit.backend.product.species.domain.enums.Light;
+import com.justcommit.backend.product.species.domain.enums.Watering;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -89,6 +92,25 @@ class ProductSpecificationsTest {
         entityManager.clear();   // 메모리의 엔티티를 비워서 다시 덮어쓰지 않게 함
     }
 
+    // 관리 조건을 가진 품종 저장 (품종명은 unique)
+    private Species species(String name, Light light, Watering watering, Difficulty difficulty) {
+        Species species = BeanUtils.instantiateClass(Species.class);
+        ReflectionTestUtils.setField(species, "name", name);
+        ReflectionTestUtils.setField(species, "light", light);
+        ReflectionTestUtils.setField(species, "watering", watering);
+        ReflectionTestUtils.setField(species, "difficulty", difficulty);
+        entityManager.persist(species);
+        return species;
+    }
+
+    // 공개 목록 검색 (품종·카테고리·가격 조건 없이)
+    private List<Long> search(String keyword, Light light, Watering watering, Difficulty difficulty, Boolean onSale) {
+        entityManager.flush();
+        return idsOf(productRepository.findAll(
+                ProductSpecifications.searchCondition(keyword, null, null,
+                        light, watering, difficulty, null, null, onSale), LATEST));
+    }
+
     // 상품 하나 저장
     private Product save(Species species, Long sellerId, String title) {
         Product product = Product.create(species, sellerId, title, "설명",
@@ -143,5 +165,50 @@ class ProductSpecificationsTest {
 
         // 필터가 무시되었으니, 3개 (status 상관없이) 가 나와야함
         assertThat(idsOf(result)).doesNotContain(deleted.getId()).hasSize(3);
+    }
+    @Test
+    @DisplayName("관리 조건 하나로 검색하면 품종 값이 일치하는 상품만 조회")
+    void searchConditionWithSingleCareFilter() {
+        Product shade = save(species("스킨답서스", Light.LOW, Watering.WHEN_SURFACE_DRY, Difficulty.EASY), SELLER_ID, "그늘 식물");
+        save(species("하월시아", Light.HIGH, Watering.WHEN_MOSTLY_DRY, Difficulty.HARD), SELLER_ID, "양지 식물");
+
+        // 관리 조건이 비어 있는 기존 품종 상품은 나오지 않아야 함
+        assertThat(search(null, Light.LOW, null, null, null)).containsExactly(shade.getId());
+    }
+
+    @Test
+    @DisplayName("관리 조건 여러 개를 함께 주면 모두 만족하는 상품만 조회")
+    void searchConditionWithCombinedCareFilters() {
+        save(species("스킨답서스", Light.LOW, Watering.WHEN_SURFACE_DRY, Difficulty.EASY), SELLER_ID, "그늘 식물");
+        Product sunny = save(species("하월시아", Light.HIGH, Watering.WHEN_MOSTLY_DRY, Difficulty.HARD), SELLER_ID, "양지 식물");
+
+        assertThat(search(null, Light.HIGH, Watering.WHEN_MOSTLY_DRY, Difficulty.HARD, null))
+                .containsExactly(sunny.getId());
+        assertThat(search(null, Light.LOW, null, Difficulty.HARD, null)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("키워드가 제목에 없어도 품종명에 포함되면 조회")
+    void searchConditionWithKeywordMatchingSpeciesName() {
+        Product product = save(species("알로카시아 아마조니카", Light.HIGH, Watering.KEEP_MOIST, Difficulty.HARD),
+                SELLER_ID, "거실에서 키운 대형 화분");
+
+        assertThat(search("아마조니카", null, null, null, null)).containsExactly(product.getId());
+        // 제목 검색은 기존처럼 동작
+        assertThat(search("판매 중", null, null, null, null)).containsExactly(active.getId());
+    }
+
+    @Test
+    @DisplayName("onSale=true면 판매 중 상품만, false·미전달이면 결제 대기·판매완료도 함께 조회")
+    void searchConditionWithOnSale() {
+        Product pending = save(species("필레아", null, null, null), SELLER_ID, "결제 대기");
+        ReflectionTestUtils.setField(pending, "status", ProductStatus.PAYMENT_PENDING);
+
+        assertThat(search(null, null, null, null, true))
+                .containsExactlyInAnyOrder(active.getId(), others.getId());
+        assertThat(search(null, null, null, null, false))
+                .containsExactlyInAnyOrder(active.getId(), others.getId(), soldOut.getId(), pending.getId());
+        assertThat(search(null, null, null, null, null))
+                .containsExactlyInAnyOrder(active.getId(), others.getId(), soldOut.getId(), pending.getId());
     }
 }

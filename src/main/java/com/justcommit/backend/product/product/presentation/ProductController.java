@@ -45,7 +45,8 @@ public class ProductController {
                 productService.createProduct(authMember.memberId(), request));
     }
 
-    @Operation(summary = "상품 목록 조회", description = "키워드(제목·품종명), 품종, 카테고리, 광량, 물주기, 난이도, 가격 범위로 검색합니다. 삭제·숨김 상품은 제외됩니다.")
+    @Operation(summary = "상품 목록 조회", description = "키워드(제목·품종명), 품종, 카테고리, 광량·물주기·난이도(품종 기준), 가격 범위로 검색합니다. "
+            + "onSale=true면 판매 중인 상품만 조회합니다. 삭제·숨김 상품은 항상 제외됩니다.")
     @GetMapping
     public ApiResponse<PagingResponse<ProductSearchResponse>> searchProducts (
             @ModelAttribute ProductSearchRequest request) {
