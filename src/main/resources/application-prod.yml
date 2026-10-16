@@ -20,6 +20,12 @@ spring:
       # 최종 프로젝트 때 Flyway 마이그레이션 + validate로 되돌린다.
       ddl-auto: update
 
+# 메일(Gmail SMTP) 접속 상태는 헬스 체크에서 뺀다. 메일 서버가 잠깐 느려도 앱 전체가 DOWN(503)으로 보이지 않게 하기 위함
+management:
+  health:
+    mail:
+      enabled: false
+
 # Nginx 리버스 프록시 뒤에서 X-Forwarded-* 헤더로 원래 주소(https·호스트) 계산
 # (카카오 redirect_uri가 http://localhost:8080 등으로 잘못 만들어지지 않도록)
 server:
