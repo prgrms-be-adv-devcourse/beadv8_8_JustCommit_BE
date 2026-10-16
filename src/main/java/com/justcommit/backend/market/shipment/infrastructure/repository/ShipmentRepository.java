@@ -16,4 +16,7 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
     Optional<Shipment> findBySellerOrderId(Long sellerOrderId);
 
     List<Shipment> findTop100ByStatusAndCreatedAtBeforeOrderByIdAsc(ShipmentStatus status, LocalDateTime createdAt);
+
+    List<Shipment> findTop100ByStatusAndCourierCancelledAtIsNullAndCancelledAtBeforeOrderByIdAsc(
+            ShipmentStatus status, LocalDateTime cancelledAt);
 }

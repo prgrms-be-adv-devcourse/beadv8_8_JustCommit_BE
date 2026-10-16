@@ -78,6 +78,37 @@ class CourierClientTest {
                 .satisfies(e -> assertThat(((CourierBookingException) e).isRetryable()).isTrue());
     }
 
+    @Test
+    @DisplayName("택배사 취소 응답 200·404·409를 각각 취소됨·없음·취소 불가로 돌려준다")
+    void cancelResults() {
+        stubCancel("404000000001", 200);
+        stubCancel("404000000002", 404);
+        stubCancel("404000000003", 409);
+
+        assertThat(courierClient.cancel("404000000001")).isEqualTo(CourierCancelResult.CANCELLED);
+        assertThat(courierClient.cancel("404000000002")).isEqualTo(CourierCancelResult.NOT_FOUND);
+        assertThat(courierClient.cancel("404000000003")).isEqualTo(CourierCancelResult.NOT_CANCELLABLE);
+        wireMock.verify(postRequestedFor(urlEqualTo(BOOKING_PATH + "/404000000001/cancel"))
+                .withHeader("X-Api-Key", equalTo("test-key")));
+    }
+
+    @Test
+    @DisplayName("택배사가 500으로 응답하면 다시 시도할 취소 실패로 알린다")
+    void cancelServerErrorThrows() {
+        stubCancel("404000000001", 500);
+
+        assertThatThrownBy(() -> courierClient.cancel("404000000001"))
+                .isInstanceOf(CourierCancelException.class);
+    }
+
+    private void stubCancel(String trackingNo, int status) {
+        wireMock.stubFor(post(urlEqualTo(BOOKING_PATH + "/" + trackingNo + "/cancel"))
+                .willReturn(aResponse()
+                        .withStatus(status)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"status\":" + status + ",\"message\":\"\"}")));
+    }
+
     private CourierBookingRequest request() {
         return new CourierBookingRequest(
                 new CourierBookingRequest.Party("김판매", "010-1111-2222", "서울시 강남구"),

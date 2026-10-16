@@ -131,6 +131,68 @@ class ShipmentTest {
         assertThat(shipment.getTrackingNo()).isEqualTo("404000000001");
     }
 
+    @Test
+    @DisplayName("예약된 배송을 취소하면 CANCELLED가 되고 취소 시각이 저장된다")
+    void cancelBooked() {
+        Shipment shipment = bookedShipment();
+        LocalDateTime cancelledAt = LocalDateTime.of(2026, 10, 12, 10, 1);
+
+        boolean cancelled = shipment.cancel(cancelledAt);
+
+        assertThat(cancelled).isTrue();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCELLED);
+        assertThat(shipment.getCancelledAt()).isEqualTo(cancelledAt);
+    }
+
+    @Test
+    @DisplayName("이미 취소된 배송을 다시 취소하면 아무것도 바꾸지 않는다")
+    void cancelTwiceIgnored() {
+        Shipment shipment = newShipment();
+        LocalDateTime firstCancelledAt = LocalDateTime.of(2026, 10, 12, 10, 1);
+        shipment.cancel(firstCancelledAt);
+
+        boolean cancelled = shipment.cancel(LocalDateTime.of(2026, 10, 12, 11, 0));
+
+        assertThat(cancelled).isFalse();
+        assertThat(shipment.getCancelledAt()).isEqualTo(firstCancelledAt);
+    }
+
+    @Test
+    @DisplayName("수거된 배송은 취소할 수 없다")
+    void cancelPickedUpFails() {
+        Shipment shipment = bookedShipment();
+        shipment.applyCourierStatus(ShipmentStatus.PICKED_UP, "404000000001", LocalDateTime.of(2026, 10, 12, 10, 3));
+
+        assertThatThrownBy(() -> shipment.cancel(LocalDateTime.of(2026, 10, 12, 10, 5)))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.PICKED_UP);
+    }
+
+    @Test
+    @DisplayName("취소 후 웹훅이 와도 상태가 바뀌지 않는다")
+    void webhookAfterCancelIgnored() {
+        Shipment shipment = bookedShipment();
+        shipment.cancel(LocalDateTime.of(2026, 10, 12, 10, 1));
+
+        boolean applied = shipment.applyCourierStatus(ShipmentStatus.PICKED_UP, "404000000001", LocalDateTime.of(2026, 10, 12, 10, 3));
+
+        assertThat(applied).isFalse();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCELLED);
+    }
+
+    @Test
+    @DisplayName("READY에서 취소한 배송은 택배사 취소를 기록할 때 받아 온 송장번호로 채운다")
+    void markCourierCancelledFillsTrackingNo() {
+        Shipment shipment = newShipment();
+        shipment.cancel(LocalDateTime.of(2026, 10, 12, 10, 1));
+        LocalDateTime courierCancelledAt = LocalDateTime.of(2026, 10, 12, 10, 2);
+
+        shipment.markCourierCancelled("404000000001", courierCancelledAt);
+
+        assertThat(shipment.getTrackingNo()).isEqualTo("404000000001");
+        assertThat(shipment.getCourierCancelledAt()).isEqualTo(courierCancelledAt);
+    }
+
     private Shipment newShipment() {
         return new Shipment(SELLER_ORDER_ID, 20L, "구매자", "01000000000", "부산", "몬스테라", new BigDecimal("3000"));
     }
