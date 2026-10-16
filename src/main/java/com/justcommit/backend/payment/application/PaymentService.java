@@ -127,7 +127,7 @@ public class PaymentService implements PaymentUseCase {
                         PaymentErrorCode.WALLET_NOT_FOUND
                 ));
 
-        BigDecimal totalAmount = payoutAmount.add(fee);  // .add(shippingFee);
+        BigDecimal totalAmount = payoutAmount.add(fee);
         LocalDateTime now = LocalDateTime.now();
 
         // HOLDING 출금
@@ -165,12 +165,12 @@ public class PaymentService implements PaymentUseCase {
     @Transactional
     public void collectShippingFee(Long sellerOrderId, BigDecimal shippingFee) {
         // 요청값 검증
-        if (sellerOrderId == null || (shippingFee != null && shippingFee.signum() < 0)) {
-            throw new BusinessException(PaymentErrorCode.INVALID_AMOUNT, "배송비 수납 요청 값이 올바르지 않습니다.");
-        }
-        // 무료 배송이거나, 택배비 컬럼이 생기기 전에 만들어진 배송이면 옮길 돈이 없다
-        if (shippingFee == null || shippingFee.signum() == 0) {
-            return;
+        if (sellerOrderId == null || shippingFee == null || shippingFee.signum() <= 0) {
+            throw new BusinessException(
+                    PaymentErrorCode.INVALID_AMOUNT,
+                    "배송비 적립 요청 값이 올바르지 않습니다. sellerOrderId="
+                            + sellerOrderId + ", shippingFee=" + shippingFee
+            );
         }
 
         // HOLDING 지갑 잠금

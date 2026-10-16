@@ -72,14 +72,13 @@ public interface PaymentUseCase {
      * <p>배송비는 정산(구매확정)과 별개로, 수거되어 더 이상 취소할 수 없게 된 시점에 매출로 잡는다.
      * 같은 판매자 주문은 한 번만 처리되며, 다시 호출되면 아무것도 하지 않는다(Kafka 중복 수신 대비).</p>
      *
-     * <p>배송비가 null이거나 0이면 옮길 돈이 없으므로 아무것도 하지 않는다.
-     * 수거 전 취소로 배송비가 이미 구매자에게 환불된 판매자 주문도 건너뛴다.</p>
+     * <p>수거 전 취소로 배송비가 이미 구매자에게 환불된 판매자 주문은 건너뛴다.</p>
      *
      * @param sellerOrderId 판매자 주문 ID. 중복 처리 판정 기준
      * @param shippingFee   배송비
      * @throws com.justcommit.backend.common.exception.BusinessException
      *         <ul>
-     *           <li>INVALID_AMOUNT: sellerOrderId가 null이거나 배송비가 음수</li>
+     *           <li>INVALID_AMOUNT: sellerOrderId가 null이거나 배송비가 null 또는 0 이하</li>
      *           <li>WALLET_NOT_FOUND: HOLDING 또는 REVENUE 지갑 없음</li>
      *           <li>INSUFFICIENT_BALANCE: HOLDING 잔액 부족</li>
      *         </ul>

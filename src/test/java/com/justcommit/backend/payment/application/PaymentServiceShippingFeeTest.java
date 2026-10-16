@@ -129,18 +129,11 @@ class PaymentServiceShippingFeeTest {
     }
 
     @Test
-    @DisplayName("배송비가 null이거나 0이면 지갑을 건드리지 않고 끝낸다")
-    void skipsWhenNoShippingFee() {
-        paymentService.collectShippingFee(SELLER_ORDER_ID, null);
-        paymentService.collectShippingFee(SELLER_ORDER_ID, BigDecimal.ZERO);
-
-        verifyNoInteractions(walletRepository, walletTransactionRepository, memberQuery);
-    }
-
-    @Test
     @DisplayName("판매자 주문 ID가 없거나 배송비가 음수면 INVALID_AMOUNT 예외")
     void rejectsInvalidRequest() {
         assertInvalid(null, new BigDecimal("3000"));
+        assertInvalid(SELLER_ORDER_ID, null);
+        assertInvalid(SELLER_ORDER_ID, BigDecimal.ZERO);
         assertInvalid(SELLER_ORDER_ID, new BigDecimal("-1"));
 
         verifyNoInteractions(walletRepository, walletTransactionRepository, memberQuery);
