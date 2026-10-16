@@ -24,7 +24,8 @@ spring:
   jpa:
     open-in-view: false
   flyway:
-    enabled: true
+    # 세미 프로젝트에서는 마이그레이션 없이 ddl-auto로 테이블을 만든다. 최종 프로젝트 때 true + 운영 validate로 되돌린다.
+    enabled: false
     locations: classpath:db/migration
     validate-migration-naming: true
     clean-disabled: true

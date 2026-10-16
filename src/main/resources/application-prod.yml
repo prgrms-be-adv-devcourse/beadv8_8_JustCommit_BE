@@ -16,7 +16,9 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
   jpa:
     hibernate:
-      ddl-auto: validate
+      # 세미 프로젝트: Flyway 없이 엔티티로 테이블을 만든다 (컬럼 추가만 하고 삭제·이름 변경은 하지 않음).
+      # 최종 프로젝트 때 Flyway 마이그레이션 + validate로 되돌린다.
+      ddl-auto: update
 
 # Nginx 리버스 프록시 뒤에서 X-Forwarded-* 헤더로 원래 주소(https·호스트) 계산
 # (카카오 redirect_uri가 http://localhost:8080 등으로 잘못 만들어지지 않도록)
