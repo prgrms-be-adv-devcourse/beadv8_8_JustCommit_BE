@@ -51,4 +51,26 @@ class ProductTest {
         assertThat(product.getStatus()).isEqualTo(ProductStatus.ACTIVE);
         assertThat(product.isHidden()).isFalse();
     }
+    @Test
+    @DisplayName("결제 대기 중인 상품도 숨길 수 있음")
+    void hidePaymentPendingProduct() {
+        Product product = create(species(false));
+        ReflectionTestUtils.setField(product, "status", ProductStatus.PAYMENT_PENDING);
+
+        product.changeHidden(true);
+
+        assertThat(product.isHidden()).isTrue();
+    }
+
+    @Test
+    @DisplayName("삭제된 상품은 숨김을 바꿀 수 없음 (PRODUCT_NOT_HIDEABLE)")
+    void hideDeletedProduct() {
+        Product product = create(species(false));
+        product.delete();
+
+        assertThatThrownBy(() -> product.changeHidden(true))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_HIDEABLE);
+    }
+
 }

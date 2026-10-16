@@ -8,13 +8,7 @@ import com.justcommit.backend.product.image.application.ProductImageService;
 import com.justcommit.backend.product.image.presentation.dto.ImageUploadUrlRequest;
 import com.justcommit.backend.product.image.presentation.dto.ImageUploadUrlResponse;
 import com.justcommit.backend.product.product.application.ProductService;
-import com.justcommit.backend.product.product.presentation.dto.MyProductResponse;
-import com.justcommit.backend.product.product.presentation.dto.MyProductSearchRequest;
-import com.justcommit.backend.product.product.presentation.dto.ProductDetailResponse;
-import com.justcommit.backend.product.product.presentation.dto.ProductHiddenRequest;
-import com.justcommit.backend.product.product.presentation.dto.ProductRequest;
-import com.justcommit.backend.product.product.presentation.dto.ProductSearchRequest;
-import com.justcommit.backend.product.product.presentation.dto.ProductSearchResponse;
+import com.justcommit.backend.product.product.presentation.dto.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -86,7 +80,7 @@ public class ProductController {
         return ApiResponse.ok("상품을 삭제했습니다.");
     }
 
-    @Operation(summary="상품 숨김 설정", description  ="판매 중이거나 판매 완료된 본인 상품을 숨기거나 다시 노출합니다")
+    @Operation(summary="상품 숨김 설정", description  ="삭제되지 않은 본인 상품을 숨기거나 다시 노출합니다. 결제 대기 중인 상품도 숨길 수 있습니다.")
     @PatchMapping("/{productId}/hidden")
     public ApiResponse<Void> changeHidden(
             @AuthenticationPrincipal AuthMember authMember,
@@ -98,7 +92,8 @@ public class ProductController {
     }
 
 
-    @Operation(summary = "내 판매 물품 조회", description = "로그인한 판매자가 등록한 상품을 최신순으로 조회합니다. 숨긴 상품은 포함하고 삭제된 상품은 제외합니다.")
+    @Operation(summary = "내 판매 물품 조회", description = "로그인한 판매자가 등록한 상품을 최신순으로 조회합니다. 삭제된 상품은 제외합니다. "
+            + "status로 상태를, hidden으로 숨김 여부를 거를 수 있습니다 (hidden 생략 시 숨긴 상품 포함 전체).")
     @GetMapping("/me")
     public ApiResponse<PagingResponse<MyProductResponse>> getMyProducts(
             @AuthenticationPrincipal AuthMember authMember,
@@ -117,5 +112,16 @@ public class ProductController {
 
         return ApiResponse.ok("이미지 업로드 링크를 발급했습니다.",
                 productImageService.issueUploadUrls(authMember.memberId(), request));
+    }
+
+    @Operation(summary = "내 판매 물품 상태별 개수", description = "내 판매 목록 탭에 표시할 상태별 개수를 조회합니다. 삭제된 상품은 제외합니다. "
+            + "hidden 규칙은 내 판매 물품 조회와 같습니다.")
+    @GetMapping("/me/counts")
+    public ApiResponse<MyProductCountResponse> getMyProductCounts(
+            @AuthenticationPrincipal AuthMember authMember,
+            @RequestParam(required = false) Boolean hidden) {
+
+        return ApiResponse.ok("내 판매 상품 개수를 조회했습니다.",
+                productService.getMyProductCounts(authMember.memberId(), hidden));
     }
 }

@@ -81,7 +81,7 @@ public class SecurityConfig {
 //                        .requestMatchers("/api/v1/products", "/api/v1/products/**").authenticated()
 //                        .anyRequest().permitAll())
                         // 인증 필수 전환 허용할 경로만 적고 나머지는 모두 로그인 필요
-                        .requestMatchers(HttpMethod.GET, "/api/v1/products/me").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/products/me", "/api/v1/products/me/**").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/products", "/api/v1/products/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/species", "/api/v1/species/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/courier").permitAll()

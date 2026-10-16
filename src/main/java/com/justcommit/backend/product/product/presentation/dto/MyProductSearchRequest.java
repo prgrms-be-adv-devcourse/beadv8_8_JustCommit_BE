@@ -6,6 +6,7 @@ import org.springframework.data.domain.Sort;
 
 
 public record MyProductSearchRequest ( ProductStatus status,
+                                      Boolean hidden, // null: 전체 / true: 숨긴 것만 / false: 숨기지 않은 것만
                                       Integer page,
                                       Integer size)
 implements PagingRequest {

@@ -13,12 +13,7 @@ import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.product.domain.ProductPicture;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import com.justcommit.backend.product.product.infrastructure.ProductSpecifications;
-import com.justcommit.backend.product.product.presentation.dto.MyProductResponse;
-import com.justcommit.backend.product.product.presentation.dto.MyProductSearchRequest;
-import com.justcommit.backend.product.product.presentation.dto.ProductDetailResponse;
-import com.justcommit.backend.product.product.presentation.dto.ProductRequest;
-import com.justcommit.backend.product.product.presentation.dto.ProductSearchRequest;
-import com.justcommit.backend.product.product.presentation.dto.ProductSearchResponse;
+import com.justcommit.backend.product.product.presentation.dto.*;
 import com.justcommit.backend.product.species.domain.Species;
 import com.justcommit.backend.product.species.infrastructure.SpeciesRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +22,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -197,8 +194,15 @@ public class ProductService implements ProductQuery, ProductUseCase {
 
     public Page<MyProductResponse> getMyProducts(Long sellerId, MyProductSearchRequest request){
         return productRepository.findAll(
-                ProductSpecifications.sellerCondition(sellerId,request.status()),
+                ProductSpecifications.sellerCondition(sellerId,request.status(),request.hidden()),
                 request.toPageable())
                 .map(MyProductResponse::from);
+    }
+
+    // 마이페이지 - Status 별 상품 개수 조회
+    public MyProductCountResponse getMyProductCounts(Long sellerId, Boolean hidden) {
+        Map<ProductStatus, Long> counts = productRepository.countByStatus(sellerId, hidden).stream()
+                .collect(Collectors.toMap(ProductRepository.StatusCount::getStatus, ProductRepository.StatusCount::getCount));
+        return MyProductCountResponse.from(counts);
     }
 }

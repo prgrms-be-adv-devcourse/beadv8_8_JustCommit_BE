@@ -66,15 +66,21 @@ public final class ProductSpecifications {
         return Specification.allOf(specs);
     }
 
-    // 숨김 포함, 삭제만 제외
-    public static Specification<Product> sellerCondition(Long sellerId, ProductStatus status){
+    // 삭제 제외. 숨김은 hidden 값으로 필터 (null 은 전체)
+    public static Specification<Product> sellerCondition(Long sellerId, ProductStatus status, Boolean hidden){
         List<Specification<Product>> specs = new ArrayList<>();
 
         specs.add((root, query, cb) -> cb.equal(root.get("sellerId"), sellerId));
         specs.add((root, query, cb) -> cb.notEqual(root.get("status"), ProductStatus.DELETED)); // 삭제 제외
 
+        // 삭제 지외
         if(status != null && status != ProductStatus.DELETED){
             specs.add((root, query, cb) -> cb.equal(root.get("status"), status));
+        }
+
+        // hidden 이 null 이 아닌 경우 필터 추가
+        if(hidden != null){
+            specs.add((root, query, cb) -> cb.equal(root.get("hidden"), hidden));
         }
 
         return Specification.allOf(specs);
