@@ -143,17 +143,35 @@ public class WalletTransaction extends BaseTimeEntity {
         );
     }
 
-    // REVENUE 배송비 적립
-    public static WalletTransaction shippingFeeIn(
+    // HOLDING 배송비 출금 (택배 수거 시)
+    public static WalletTransaction shippingFeeOut(
             Wallet wallet,
-            Long settlementId,
+            Long sellerOrderId,
             BigDecimal amount,
             LocalDateTime occurredAt
     ) {
         return new WalletTransaction(
                 wallet,
                 RefType.SHIPPING_FEE,
-                settlementId,
+                sellerOrderId,
+                occurredAt,
+                TransactionStatus.OUT,
+                amount,
+                wallet.getBalance()
+        );
+    }
+
+    // REVENUE 배송비 적립 (택배 수거 시)
+    public static WalletTransaction shippingFeeIn(
+            Wallet wallet,
+            Long sellerOrderId,
+            BigDecimal amount,
+            LocalDateTime occurredAt
+    ) {
+        return new WalletTransaction(
+                wallet,
+                RefType.SHIPPING_FEE,
+                sellerOrderId,
                 occurredAt,
                 TransactionStatus.IN,
                 amount,

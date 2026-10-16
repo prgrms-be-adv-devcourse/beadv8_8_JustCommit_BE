@@ -680,5 +680,9 @@ class OrderPaymentIntegrationTest {
             return delegate.refundShippingFee(sellerOrderId, buyerId, amount);
         }
 
+        @Override
+        public void collectShippingFee(Long sellerOrderId, BigDecimal shippingFee) {
+            delegate.collectShippingFee(sellerOrderId, shippingFee);
+        }
     }
 }
