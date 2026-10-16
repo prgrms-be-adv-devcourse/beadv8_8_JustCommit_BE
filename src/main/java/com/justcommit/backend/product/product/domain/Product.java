@@ -151,7 +151,7 @@ public class Product extends BaseTimeEntity {
     }
 
     public void changeHidden(boolean hidden){
-        if (status != ProductStatus.ACTIVE && status  != ProductStatus.SOLD_OUT) {
+        if (status == ProductStatus.DELETED) {
             throw new BusinessException(ProductErrorCode.PRODUCT_NOT_HIDEABLE);
         }
         this.hidden = hidden;

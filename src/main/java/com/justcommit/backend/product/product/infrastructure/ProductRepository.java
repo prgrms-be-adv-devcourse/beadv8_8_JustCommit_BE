@@ -1,5 +1,7 @@
 package com.justcommit.backend.product.product.infrastructure;
 
+import com.justcommit.backend.product.ProductStatus;
+import com.justcommit.backend.product.product.domain.Product;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -9,7 +11,6 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
-import com.justcommit.backend.product.product.domain.Product;
 
 public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpecificationExecutor<Product> {
 
@@ -72,4 +73,21 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
 
     @Lock(LockModeType.PESSIMISTIC_WRITE) // 커밋 전까지 이 상품 행을 잠가 주문 예약(reserve)과 동시에 실행돼도 덮어쓰지 않게 함
     Optional<Product> findWithLockById(@Param("id") Long id);
+
+    //상태별 개수 조회 결과
+    interface StatusCount{
+        ProductStatus getStatus();
+        Long getCount();
+    }
+
+    // 판매자의 상품 상태별로 count ( 삭제 제외, hidden=null 로 들어오면 숨김 여부로 필터링 하지 않음)
+    @Query("""
+            SELECT p.status AS status, COUNT(p) AS count
+            FROM Product p
+            WHERE p.sellerId = :sellerId
+              AND p.status <> com.justcommit.backend.product.ProductStatus.DELETED
+              AND (:hidden IS NULL OR p.hidden = :hidden)
+            GROUP BY p.status
+            """)
+    List<StatusCount> countByStatus(@Param("sellerId") Long sellerId, @Param("hidden") Boolean hidden);
 }

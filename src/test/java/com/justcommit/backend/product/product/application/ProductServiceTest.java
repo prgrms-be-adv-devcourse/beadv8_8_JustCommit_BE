@@ -9,10 +9,7 @@ import com.justcommit.backend.product.image.application.ProductImageUrlValidator
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.product.domain.ProductPicture;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
-import com.justcommit.backend.product.product.presentation.dto.MyProductResponse;
-import com.justcommit.backend.product.product.presentation.dto.MyProductSearchRequest;
-import com.justcommit.backend.product.product.presentation.dto.ProductDetailResponse;
-import com.justcommit.backend.product.product.presentation.dto.ProductRequest;
+import com.justcommit.backend.product.product.presentation.dto.*;
 import com.justcommit.backend.product.species.domain.Species;
 import com.justcommit.backend.product.species.infrastructure.SpeciesRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -86,6 +83,13 @@ public class  ProductServiceTest {
         ReflectionTestUtils.setField(product, "id", PRODUCT_ID);
         ReflectionTestUtils.setField(product, "status", status);
         return product;
+    }
+
+    private ProductRepository.StatusCount statusCount(ProductStatus status, long count) {
+        return new ProductRepository.StatusCount() {
+            @Override public ProductStatus getStatus() { return status; }
+            @Override public Long getCount() { return count; }
+        };
     }
 
     // ── 등록 ───────────────────────────────────────
@@ -338,15 +342,25 @@ public class  ProductServiceTest {
     }
 
     @Test
-    @DisplayName("결제 대기 중인 상품을 숨기면 PRODUCT_NOT_HIDEABLE")
+    @DisplayName("결제 대기 중인 상품도 숨길 수 있음")
     void hidePaymentPendingProduct() {
         Product product = product(ProductStatus.PAYMENT_PENDING);
         given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
 
+        productService.changeHidden(SELLER_ID, PRODUCT_ID, true);
+
+        assertThat(product.isHidden()).isTrue();
+    }
+
+    @Test
+    @DisplayName("삭제된 상품의 숨김을 바꾸려 하면 PRODUCT_NOT_FOUND")
+    void hideDeletedProduct() {
+        Product product = product(ProductStatus.DELETED);
+        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
+
         assertThatThrownBy(() -> productService.changeHidden(SELLER_ID, PRODUCT_ID, true))
                 .isInstanceOf(BusinessException.class)
-                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_HIDEABLE);
-        assertThat(product.isHidden()).isFalse();
+                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND);
     }
 
     // ── 상세 ───────────────────────────────────────
@@ -445,7 +459,7 @@ public class  ProductServiceTest {
         given(productRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .willReturn(new PageImpl<>(List.of(product)));
 
-        Page<MyProductResponse> result = productService.getMyProducts(SELLER_ID, new MyProductSearchRequest(null, null, null));
+        Page<MyProductResponse> result = productService.getMyProducts(SELLER_ID, new MyProductSearchRequest(null,null, null, null));
 
         //서비스가 repo 에 넘김 Pageable 확인
         ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
@@ -517,5 +531,18 @@ public class  ProductServiceTest {
         verify(imageCleaner, never()).deleteAfterCommit(any());
     }
 
+    @Test
+    @DisplayName("상태별 개수를 탭 개수로 변환하고 없는 상태는 0, 전체는 합계")
+    void getMyProductCounts() {
+        given(productRepository.countByStatus(SELLER_ID, null))
+                .willReturn(List.of(statusCount(ProductStatus.ACTIVE, 2), statusCount(ProductStatus.SOLD_OUT, 1)));
+
+        MyProductCountResponse result = productService.getMyProductCounts(SELLER_ID, null);
+
+        assertThat(result.total()).isEqualTo(3);
+        assertThat(result.active()).isEqualTo(2);
+        assertThat(result.paymentPending()).isZero();
+        assertThat(result.soldOut()).isEqualTo(1);
+    }
 
 }

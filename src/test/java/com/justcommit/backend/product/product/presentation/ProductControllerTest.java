@@ -464,13 +464,14 @@ class ProductControllerTest {
         given(productService.getMyProducts(eq(SELLER_ID), any())).willReturn(new PageImpl<>(List.of()));
 
         mockMvc.perform(get("/api/v1/products/me")
-                        .param("status", "SOLD_OUT").param("page", "1").param("size", "10"))
+                        .param("status", "SOLD_OUT").param("hidden", "true").param("page", "1").param("size", "10"))
                 .andExpect(status().isOk());
 
         ArgumentCaptor<MyProductSearchRequest> captor = ArgumentCaptor.forClass(MyProductSearchRequest.class);
         verify(productService).getMyProducts(eq(SELLER_ID), captor.capture());
         assertThat(captor.getValue().status()).isEqualTo(ProductStatus.SOLD_OUT);
         assertThat(captor.getValue().page()).isEqualTo(1);
+        assertThat(captor.getValue().hidden()).isTrue();
         assertThat(captor.getValue().size()).isEqualTo(10);
     }
 
@@ -543,5 +544,20 @@ class ProductControllerTest {
         ArgumentCaptor<ProductSearchRequest> captor = ArgumentCaptor.forClass(ProductSearchRequest.class);
         verify(productService).searchProducts(captor.capture());
         assertThat(captor.getValue().onSale()).isTrue();
+    }
+
+    @Test
+    @DisplayName("탭 개수를 조회하면 로그인 회원 ID와 숨김 필터로 조회해 상태별 개수를 반환")
+    void getMyProductCounts() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+        given(productService.getMyProductCounts(SELLER_ID, true))
+                .willReturn(new MyProductCountResponse(1, 1, 0, 0));
+
+        mockMvc.perform(get("/api/v1/products/me/counts").param("hidden", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.active").value(1))
+                .andExpect(jsonPath("$.data.paymentPending").value(0))
+                .andExpect(jsonPath("$.data.soldOut").value(0));
     }
 }

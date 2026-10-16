@@ -29,7 +29,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -137,7 +140,7 @@ class ProductSpecificationsTest {
     void sellerConditionWithoutStatus() {
         // when: 판매자 1번, 상태 필터 없음, 최신순 조회
         Page<Product> result = productRepository.findAll(
-                ProductSpecifications.sellerCondition(SELLER_ID, null), LATEST);
+                ProductSpecifications.sellerCondition(SELLER_ID, null,null), LATEST);
 
         // 숨긴 상품 포함/ 삭제 상품 제외/ 남의 상품 제외 / 최신순 인지
         assertThat(idsOf(result))
@@ -149,7 +152,7 @@ class ProductSpecificationsTest {
     void sellerConditionWithStatus() {
         // 상태 필터 SOLD_OUT 일 떄 추가
         Page<Product> result = productRepository.findAll(
-                ProductSpecifications.sellerCondition(SELLER_ID, ProductStatus.SOLD_OUT), LATEST);
+                ProductSpecifications.sellerCondition(SELLER_ID, ProductStatus.SOLD_OUT,null), LATEST);
 
         // 판매 완료 상품만 조회되도록
         assertThat(idsOf(result)).containsExactly(soldOut.getId());
@@ -161,7 +164,7 @@ class ProductSpecificationsTest {
 
         //판매자라고 하더라도 DELETED 로 조회시 삭제된 상품은 나오지 않도록 함
         Page<Product> result = productRepository.findAll(
-                ProductSpecifications.sellerCondition(SELLER_ID, ProductStatus.DELETED), LATEST);
+                ProductSpecifications.sellerCondition(SELLER_ID, ProductStatus.DELETED,null), LATEST);
 
         // 필터가 무시되었으니, 3개 (status 상관없이) 가 나와야함
         assertThat(idsOf(result)).doesNotContain(deleted.getId()).hasSize(3);
@@ -210,5 +213,80 @@ class ProductSpecificationsTest {
                 .containsExactlyInAnyOrder(active.getId(), others.getId(), soldOut.getId(), pending.getId());
         assertThat(search(null, null, null, null, null))
                 .containsExactlyInAnyOrder(active.getId(), others.getId(), soldOut.getId(), pending.getId());
+    }
+
+    @Test
+    @DisplayName("숨김 필터: true면 숨긴 상품만, false면 숨기지 않은 상품만 조회")
+    void sellerConditionWithHidden() {
+        assertThat(idsOf(productRepository.findAll(
+                ProductSpecifications.sellerCondition(SELLER_ID, null, true), LATEST)))
+                .containsExactly(hidden.getId());
+        assertThat(idsOf(productRepository.findAll(
+                ProductSpecifications.sellerCondition(SELLER_ID, null, false), LATEST)))
+                .containsExactly(active.getId(), soldOut.getId());
+    }
+
+    @Test
+    @DisplayName("상태와 숨김 필터를 함께 주면 둘 다 만족하는 상품만 조회")
+    void sellerConditionWithStatusAndHidden() {
+        assertThat(idsOf(productRepository.findAll(
+                ProductSpecifications.sellerCondition(SELLER_ID, ProductStatus.ACTIVE, true), LATEST)))
+                .containsExactly(hidden.getId());
+        assertThat(idsOf(productRepository.findAll(
+                ProductSpecifications.sellerCondition(SELLER_ID, ProductStatus.ACTIVE, false), LATEST)))
+                .containsExactly(active.getId());
+        assertThat(idsOf(productRepository.findAll(
+                ProductSpecifications.sellerCondition(SELLER_ID, ProductStatus.SOLD_OUT, true), LATEST)))
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("상태별 개수는 삭제·남의 상품을 빼고, 숨김 필터별로 목록 totalElements와 일치")
+    void countByStatusMatchesList() {
+        for (Boolean hidden : Arrays.asList(null, true, false)) {
+            Map<ProductStatus, Long> counts = productRepository.countByStatus(SELLER_ID, hidden).stream()
+                    .collect(Collectors.toMap(ProductRepository.StatusCount::getStatus, ProductRepository.StatusCount::getCount));
+            long listTotal = productRepository.findAll(
+                    ProductSpecifications.sellerCondition(SELLER_ID, null, hidden), LATEST).getTotalElements();
+
+            assertThat(counts).doesNotContainKey(ProductStatus.DELETED);
+            assertThat(counts.values().stream().mapToLong(Long::longValue).sum())
+                    .as("hidden=%s", hidden).isEqualTo(listTotal);
+        }
+
+        Map<ProductStatus, Long> all = productRepository.countByStatus(SELLER_ID, null).stream()
+                .collect(Collectors.toMap(ProductRepository.StatusCount::getStatus, ProductRepository.StatusCount::getCount));
+        assertThat(all).containsEntry(ProductStatus.ACTIVE, 2L).containsEntry(ProductStatus.SOLD_OUT, 1L);
+    }
+
+    @Test
+    @DisplayName("결제 대기 중 숨긴 상품은 결제 완료 시 판매완료가 되고 숨김이 유지됨")
+    void markSoldOutKeepsHidden() {
+        Long orderId = 100L;
+        assertThat(productRepository.reserve(orderId, List.of(active.getId()))).isEqualTo(1);
+        productRepository.findById(active.getId()).orElseThrow().changeHidden(true);
+        entityManager.flush();
+
+        assertThat(productRepository.markSoldOut(orderId)).isEqualTo(1);
+
+        Product sold = productRepository.findById(active.getId()).orElseThrow();
+        assertThat(sold.getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+        assertThat(sold.isHidden()).isTrue();
+    }
+
+    @Test
+    @DisplayName("결제 대기 중 숨긴 상품은 결제 실패·만료 시 판매중으로 돌아오지만 숨김이 유지돼 다시 예약할 수 없음")
+    void releaseKeepsHiddenAndBlocksReserve() {
+        Long orderId = 100L;
+        assertThat(productRepository.reserve(orderId, List.of(active.getId()))).isEqualTo(1);
+        productRepository.findById(active.getId()).orElseThrow().changeHidden(true);
+        entityManager.flush();
+
+        assertThat(productRepository.release(orderId)).isEqualTo(1);
+
+        Product released = productRepository.findById(active.getId()).orElseThrow();
+        assertThat(released.getStatus()).isEqualTo(ProductStatus.ACTIVE);
+        assertThat(released.isHidden()).isTrue();
+        assertThat(productRepository.reserve(200L, List.of(active.getId()))).isZero();
     }
 }
