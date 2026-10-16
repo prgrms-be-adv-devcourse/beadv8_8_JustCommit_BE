@@ -14,6 +14,12 @@ services:
     ports:
       - "127.0.0.1:8080:8080" # Nginx만 접근
     mem_limit: 1g
+    networks:
+      default: {}
+      # 모의 택배사(404-express, 별도 compose)와 같은 서버에서 통신하는 공유 네트워크
+      # 404-express는 웹훅을 http://replant-app:8080/api/v1/webhooks/courier 로 보낸다
+      replant-net:
+        aliases: [replant-app]
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,6 +102,11 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
+
+networks:
+  # 서버에서 처음 한 번 만든다: docker network create replant-net
+  replant-net:
+    external: true
 
 volumes:
   postgres-data:

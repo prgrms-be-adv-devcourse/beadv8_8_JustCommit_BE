@@ -34,7 +34,8 @@ docker compose up -d
 운영 서버는 Nginx(HTTPS, `replant.kro.kr`)가 요청을 받아 같은 서버의 Spring 컨테이너(`127.0.0.1:8080`)로 넘깁니다. `docker-compose.prod.yml`에 Spring(app), PostgreSQL, Redis, Kafka가 있고, 모든 포트는 `127.0.0.1`에만 열립니다.
 
 ```bash
-cp .env.example .env   # 처음 한 번. 값을 채우고 chmod 600 .env
+cp .env.example .env              # 처음 한 번. 값을 채우고 chmod 600 .env
+docker network create replant-net # 처음 한 번. 모의 택배사(404-express)와 함께 쓰는 네트워크
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
