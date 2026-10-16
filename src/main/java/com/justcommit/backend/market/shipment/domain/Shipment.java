@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -46,15 +47,27 @@ public class Shipment extends BaseTimeEntity {
 
     private String itemSummary;
 
+    // 수거되면 정산에 매출로 넘기는 택배비
+    @Column(precision = 19)
+    private BigDecimal shippingFee;
+
     public Shipment(Long sellerOrderId, Long sellerId, String receiverName, String receiverPhone,
-                    String receiverAddress, String itemSummary) {
+                    String receiverAddress, String itemSummary, BigDecimal shippingFee) {
         this.sellerOrderId = sellerOrderId;
         this.sellerId = sellerId;
         this.receiverName = receiverName;
         this.receiverPhone = receiverPhone;
         this.receiverAddress = receiverAddress;
         this.itemSummary = itemSummary;
+        this.shippingFee = shippingFee;
         this.status = ShipmentStatus.READY;
+    }
+
+    // 수거 이후 상태(수거·출발·완료)인지. 수거되면 더 이상 취소할 수 없다.
+    public boolean isPickedUp() {
+        return status == ShipmentStatus.PICKED_UP
+                || status == ShipmentStatus.IN_TRANSIT
+                || status == ShipmentStatus.DELIVERED;
     }
 
     public void book(String trackingNo, LocalDateTime bookedAt) {

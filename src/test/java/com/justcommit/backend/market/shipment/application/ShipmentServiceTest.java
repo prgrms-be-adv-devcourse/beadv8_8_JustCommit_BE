@@ -12,6 +12,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -75,6 +76,6 @@ class ShipmentServiceTest {
     }
 
     private Shipment newShipment(Long sellerOrderId) {
-        return new Shipment(sellerOrderId, 20L, "구매자", "01000000000", "부산", "몬스테라");
+        return new Shipment(sellerOrderId, 20L, "구매자", "01000000000", "부산", "몬스테라", new BigDecimal("3000"));
     }
 }

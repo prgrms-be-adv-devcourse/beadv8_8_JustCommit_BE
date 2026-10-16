@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -131,7 +132,7 @@ class ShipmentTest {
     }
 
     private Shipment newShipment() {
-        return new Shipment(SELLER_ORDER_ID, 20L, "구매자", "01000000000", "부산", "몬스테라");
+        return new Shipment(SELLER_ORDER_ID, 20L, "구매자", "01000000000", "부산", "몬스테라", new BigDecimal("3000"));
     }
 
     private Shipment bookedShipment() {
