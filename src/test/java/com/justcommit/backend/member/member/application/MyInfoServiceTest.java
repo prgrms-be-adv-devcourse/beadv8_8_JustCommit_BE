@@ -108,6 +108,15 @@ class MyInfoServiceTest {
     assertThat(MyInfoService.mask("12345678901234")).isEqualTo("****1234");  // 최대 14자리
   }
 
+  @Test
+  @DisplayName("예금주 가리기 - 첫 글자와 마지막 글자만 남김")
+  void maskHolder() {
+    assertThat(MyInfoService.maskHolder("김민")).isEqualTo("김*");
+    assertThat(MyInfoService.maskHolder("김채린")).isEqualTo("김*린");
+    assertThat(MyInfoService.maskHolder("남궁민수")).isEqualTo("남**수");
+    assertThat(MyInfoService.maskHolder("김")).isEqualTo("김");
+  }
+
   // Member는 정적 팩토리 인자가 많아서 필요한 getter만 가짜로 만듦
   private Member givenMember() {
     Member member = mock(Member.class);

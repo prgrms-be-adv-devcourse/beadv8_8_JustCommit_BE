@@ -32,7 +32,7 @@ public class MyInfoService {
     MyInfoResult.Account account = new MyInfoResult.Account(
             member.getBankCode(),
             mask(accountCipher.decrypt(member.getAccountNoEnc())),
-            member.getAccountHolder()
+            maskHolder(member.getAccountHolder())
     );
 
     // 기본 배송지가 없어도 마이페이지는 열려야 하므로 404 대신 null
@@ -56,6 +56,23 @@ public class MyInfoService {
   // 뒤 4자리만 남기고 가림
   static String mask(String accountNo) {
     return MASK + accountNo.substring(accountNo.length() - VISIBLE_DIGITS);
+  }
+
+  // 예금주 가리기, 정산용 계좌 조회(MemberQuery.getAccount)는 실제 지급에 필요해서 원문 유지
+  static String maskHolder(String holder) {
+    if (holder == null || holder.isEmpty()) {
+      return holder;
+    }
+    int[] chars = holder.codePoints().toArray();
+    if (chars.length == 1) {
+      return holder;
+    }
+    String first = new String(chars, 0, 1);
+    if (chars.length == 2) {
+      return first + "*";
+    }
+    String last = new String(chars, chars.length - 1, 1);
+    return first + "*".repeat(chars.length - 2) + last;
   }
 
   private static MyInfoResult.DefaultAddress toDefaultAddress(Address address) {
