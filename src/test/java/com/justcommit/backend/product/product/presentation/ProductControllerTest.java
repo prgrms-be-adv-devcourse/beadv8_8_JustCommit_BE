@@ -36,6 +36,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -131,17 +132,34 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.data.imageUrls[0]").value("https://example.com/a.jpg"));
     }
 
-    // 사진 없이 등록 -> 201
+    // 사진 누락 -> 400
     @Test
-    @DisplayName("사진 없이도 상품을 등록할 수 있음")
+    @DisplayName("사진 없이 등록하면 400 INVALID_FIELD_ERROR")
     void createProductWithoutPictures() throws Exception {
         loginAs(SELLER_ID, SELLER);
-        given(productService.createProduct(eq(SELLER_ID), any())).willReturn(detailResponse());
 
         mockMvc.perform(post("/api/v1/products")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(NO_PICTURE_CREATE_BODY))
-                .andExpect(status().isCreated());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_FIELD_ERROR"));
+
+        verify(productService, never()).createProduct(any(), any());
+    }
+
+    // 사진 빈 목록 -> 400
+    @Test
+    @DisplayName("사진을 빈 목록으로 등록하면 400 INVALID_FIELD_ERROR")
+    void createProductWithEmptyPictures() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+        String body = VALID_CREATE_BODY.replace(
+                "[\"https://example.com/a.jpg\", \"https://example.com/b.jpg\"]", "[]");
+
+        mockMvc.perform(post("/api/v1/products")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_FIELD_ERROR"));
     }
 
     // 판매자가 아닌 회원 -> 403
@@ -305,6 +323,23 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.data.productId").value(10));
 
         verify(productService).updateProduct(eq(SELLER_ID), eq(10L), any());
+    }
+
+    // 수정 시 사진 빈 목록 -> 400 (기존 사진이 지워지지 않도록)
+    @Test
+    @DisplayName("사진을 빈 목록으로 수정하면 400 INVALID_FIELD_ERROR")
+    void updateProductWithEmptyPictures() throws Exception {
+        loginAs(SELLER_ID, SELLER);
+        String body = VALID_CREATE_BODY.replace(
+                "[\"https://example.com/a.jpg\", \"https://example.com/b.jpg\"]", "[]");
+
+        mockMvc.perform(put("/api/v1/products/10")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_FIELD_ERROR"));
+
+        verify(productService, never()).updateProduct(any(), any(), any());
     }
 
     // 다른 판매자의 상품 -> 403
