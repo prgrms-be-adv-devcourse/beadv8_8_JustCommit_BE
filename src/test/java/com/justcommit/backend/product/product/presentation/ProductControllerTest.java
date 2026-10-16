@@ -8,11 +8,7 @@ import com.justcommit.backend.product.exception.ProductErrorCode;
 import com.justcommit.backend.product.image.application.ProductImageService;
 import com.justcommit.backend.product.image.presentation.dto.ImageUploadUrlResponse;
 import com.justcommit.backend.product.product.application.ProductService;
-import com.justcommit.backend.product.product.presentation.dto.MyProductResponse;
-import com.justcommit.backend.product.product.presentation.dto.MyProductSearchRequest;
-import com.justcommit.backend.product.product.presentation.dto.ProductDetailResponse;
-import com.justcommit.backend.product.product.presentation.dto.ProductSearchResponse;
-import com.justcommit.backend.product.product.presentation.dto.ProductSpeciesResponse;
+import com.justcommit.backend.product.product.presentation.dto.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -231,7 +227,7 @@ class ProductControllerTest {
     void searchProducts() throws Exception {
         ProductSearchResponse item = new ProductSearchResponse(
                 10L, "몬스테라 분양합니다", new BigDecimal("30000"), "https://example.com/a.jpg",
-                1L, "몬스테라", "FOLIAGE", "ACTIVE", LocalDateTime.now());
+                1L, "몬스테라", "FOLIAGE", "MEDIUM", "WHEN_SURFACE_DRY", "EASY", "ACTIVE", LocalDateTime.now());
         given(productService.searchProducts(any()))
                 .willReturn(new PageImpl<>(List.of(item), PageRequest.of(0, 20), 1));
 
@@ -240,6 +236,7 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.code").doesNotExist())
                 .andExpect(jsonPath("$.data.content[0].productId").value(10))
                 .andExpect(jsonPath("$.data.content[0].speciesName").value("몬스테라"))
+                .andExpect(jsonPath("$.data.content[0].light").value("MEDIUM"))
                 .andExpect(jsonPath("$.data.totalElements").value(1));
     }
 
@@ -534,4 +531,17 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.code").value("INVALID_FIELD_ERROR"));
     }
 
+    @Test
+    @DisplayName("onSale=true를 보내면 요청 객체에 담겨 서비스로 전달")
+    void searchProductsWithOnSale() throws Exception {
+        given(productService.searchProducts(any()))
+                .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+        mockMvc.perform(get("/api/v1/products").param("onSale", "true"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ProductSearchRequest> captor = ArgumentCaptor.forClass(ProductSearchRequest.class);
+        verify(productService).searchProducts(captor.capture());
+        assertThat(captor.getValue().onSale()).isTrue();
+    }
 }

@@ -21,21 +21,36 @@ public final class ProductSpecifications {
     public static Specification<Product> searchCondition(
             String keyword, Long speciesId, SpeciesCategory category,
             Light light, Watering watering, Difficulty difficulty,
-            BigDecimal minPrice, BigDecimal maxPrice)  {
+            BigDecimal minPrice, BigDecimal maxPrice, Boolean onSale)  {
         List<Specification<Product>> specs = new ArrayList<>();
 
         // 항상 적용: 삭제·숨김 상품 제외
         specs.add((root, query, cb) -> cb.notEqual(root.get("status"), ProductStatus.DELETED));
         specs.add((root, query, cb) -> cb.isFalse(root.get("hidden")));
 
+        // 제목 또는 품종명에 키워드가 포함된 상품
         if (StringUtils.hasText(keyword)) {
-            specs.add((root, query, cb) -> cb.like(root.get("title"), "%" + keyword.trim() + "%"));
+            String pattern = "%" + keyword.trim() + "%";
+            specs.add((root, query, cb) -> cb.or(
+                    cb.like(root.get("title"), pattern),
+                    cb.like(root.get("species").get("name"), pattern)));
         }
+
         if (speciesId != null) {
             specs.add((root, query, cb) -> cb.equal(root.get("species").get("id"), speciesId));
         }
         if (category != null) {
             specs.add((root, query, cb) -> cb.equal(root.get("species").get("category"), category));
+        }
+
+        if (light != null) {
+            specs.add((root, query, cb) -> cb.equal(root.get("species").get("light"), light));
+        }
+        if (watering != null) {
+            specs.add((root, query, cb) -> cb.equal(root.get("species").get("watering"), watering));
+        }
+        if (difficulty != null) {
+            specs.add((root, query, cb) -> cb.equal(root.get("species").get("difficulty"), difficulty));
         }
         if (minPrice != null) {
             specs.add((root, query, cb) -> cb.greaterThanOrEqualTo(root.get("price"), minPrice));
@@ -43,6 +58,11 @@ public final class ProductSpecifications {
         if (maxPrice != null) {
             specs.add((root, query, cb) -> cb.lessThanOrEqualTo(root.get("price"), maxPrice));
         }
+
+        if (Boolean.TRUE.equals(onSale)) {
+            specs.add((root, query, cb) -> cb.equal(root.get("status"), ProductStatus.ACTIVE));
+        }
+
         return Specification.allOf(specs);
     }
 

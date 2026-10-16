@@ -139,7 +139,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
                         ProductSpecifications.searchCondition(
                                 request.keyword(), request.speciesId(), request.category(),
                                 request.light(), request.watering(), request.difficulty(),
-                                request.minPrice(), request.maxPrice()),
+                                request.minPrice(), request.maxPrice(),request.onSale()),
                         request.toPageable())
                 .map(ProductSearchResponse::from);
     }

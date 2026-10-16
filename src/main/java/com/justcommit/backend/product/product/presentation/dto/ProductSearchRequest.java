@@ -18,6 +18,7 @@ public record ProductSearchRequest
            Difficulty difficulty,
            BigDecimal minPrice,
            BigDecimal maxPrice,
+           Boolean onSale,
            String sort,
            Integer page,
            Integer size

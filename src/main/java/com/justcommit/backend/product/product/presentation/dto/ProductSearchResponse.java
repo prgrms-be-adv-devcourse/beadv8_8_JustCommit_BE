@@ -1,10 +1,11 @@
 package com.justcommit.backend.product.product.presentation.dto;
 
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.species.domain.Species;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 public record ProductSearchResponse (
         Long productId,
@@ -14,6 +15,9 @@ public record ProductSearchResponse (
         Long speciesId,
         String speciesName,
         String category,
+        String light,
+        String watering,
+        String difficulty,
         String status,
         LocalDateTime createdAt
 ){
@@ -26,8 +30,15 @@ public record ProductSearchResponse (
                 product.getThumbnailUrl(),
                 species.getId(),
                 species.getName(),
-                species.getCategory() == null ? null : species.getCategory().name(),
+                nameOf(species.getCategory()),
+                nameOf(species.getLight()),
+                nameOf(species.getWatering()),
+                nameOf(species.getDifficulty()),
                 product.getStatus().name(),
                 product.getCreatedAt());
+    }
+
+    private static String nameOf(Enum<?> value) {
+        return value == null ? null : value.name();
     }
 }
