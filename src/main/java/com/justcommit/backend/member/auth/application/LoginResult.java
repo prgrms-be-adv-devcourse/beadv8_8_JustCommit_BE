@@ -4,6 +4,7 @@ import java.time.Duration;
 
 // 로그인 결과 (Access는 응답 Body, Refresh는 컨트롤러에서 쿠키로 내려줌)
 public record LoginResult(
+        Long memberId,
         String accessToken,
         long expiresIn, // Access 토큰 유효 시간(초)
         String nickname,

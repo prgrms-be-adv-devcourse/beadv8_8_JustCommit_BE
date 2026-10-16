@@ -152,6 +152,7 @@ public class SocialSignupService {
     String refreshToken = refreshTokenIssuer.issue(member.getId());
 
     return new LoginResult(
+            member.getId(),
             accessToken,
             accessTokenExpiration.toSeconds(),
             member.getNickname(),

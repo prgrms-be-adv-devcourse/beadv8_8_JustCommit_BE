@@ -51,6 +51,7 @@ public class LoginService {
     String refreshToken = refreshTokenIssuer.issue(member.getId());
 
     return new LoginResult(
+            member.getId(),
             accessToken,
             accessTokenExpiration.toSeconds(),
             member.getNickname(),
