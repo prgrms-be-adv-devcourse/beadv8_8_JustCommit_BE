@@ -15,6 +15,7 @@ import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBook
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierCancelException;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierCancelResult;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierClient;
+import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
 import com.justcommit.backend.member.MemberAddress;
 import com.justcommit.backend.member.MemberQuery;
@@ -76,6 +77,7 @@ class ShipmentCancelIntegrationTest {
 
     @MockitoBean CourierClient courierClient;
     @MockitoBean MemberQuery memberQuery;
+    @MockitoBean ShipmentStatusChangedEventPublisher statusChangedEventPublisher;
 
     @Autowired ShipmentService shipmentService;
     @Autowired ShipmentRepository shipmentRepository;

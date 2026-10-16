@@ -48,6 +48,9 @@ public class Shipment extends BaseTimeEntity {
     // 재예약 때 처음과 같은 요청을 보내려고 결제 시점의 예약 정보를 저장한다.
     private Long sellerId;
 
+    // 배송 상태 알림을 받을 구매자
+    private Long buyerId;
+
     private String receiverName;
 
     private String receiverPhone;
@@ -60,10 +63,11 @@ public class Shipment extends BaseTimeEntity {
     @Column(precision = 19)
     private BigDecimal shippingFee;
 
-    public Shipment(Long sellerOrderId, Long sellerId, String receiverName, String receiverPhone,
+    public Shipment(Long sellerOrderId, Long sellerId, Long buyerId, String receiverName, String receiverPhone,
                     String receiverAddress, String itemSummary, BigDecimal shippingFee) {
         this.sellerOrderId = sellerOrderId;
         this.sellerId = sellerId;
+        this.buyerId = buyerId;
         this.receiverName = receiverName;
         this.receiverPhone = receiverPhone;
         this.receiverAddress = receiverAddress;

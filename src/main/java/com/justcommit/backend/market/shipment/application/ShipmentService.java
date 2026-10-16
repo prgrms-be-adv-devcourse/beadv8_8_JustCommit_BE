@@ -14,6 +14,7 @@ import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBook
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingResponse;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierCancelResult;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierClient;
+import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
 import com.justcommit.backend.member.MemberAddress;
 import com.justcommit.backend.member.MemberQuery;
@@ -46,6 +47,7 @@ public class ShipmentService implements ShipmentQuery {
     private final CourierClient courierClient;
     private final MemberQuery memberQuery;
     private final PlatformTransactionManager transactionManager;
+    private final ShipmentStatusChangedEventPublisher statusChangedEventPublisher;
 
     @Override
     @Transactional(readOnly = true)
@@ -75,7 +77,7 @@ public class ShipmentService implements ShipmentQuery {
         String receiverAddress = fullAddress(order.address1(), order.address2());
         List<Shipment> shipments = new ArrayList<>();
         for (SellerOrderResult sellerOrder : order.sellerOrders()) {
-            Shipment shipment = shipmentRepository.save(new Shipment(sellerOrder.id(), sellerOrder.sellerId(),
+            Shipment shipment = shipmentRepository.save(new Shipment(sellerOrder.id(), sellerOrder.sellerId(), order.buyerId(),
                     order.recipientName(), order.recipientPhone(), receiverAddress,
                     itemSummary(sellerOrder.items()), sellerOrder.shippingFee()));
             shipment.assignCourierOrderNo(LocalDate.now(SEOUL));
@@ -130,6 +132,7 @@ public class ShipmentService implements ShipmentQuery {
             CourierBookingResponse response = courierClient.book(shipment.getCourierOrderNo(), bookingRequest(shipment));
             shipment.book(response.trackingNo(), response.bookedAt().atZoneSameInstant(SEOUL).toLocalDateTime());
             shipmentRepository.save(shipment);
+            statusChangedEventPublisher.publishAfterCommit(shipment, shipment.getBookedAt());
         } catch (CourierBookingException e) {
             if (e.isRetryable()) {
                 log.warn("택배 예약 실패, 나중에 다시 시도: shipmentId={}", shipment.getId(), e);
