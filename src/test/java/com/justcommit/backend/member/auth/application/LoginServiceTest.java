@@ -117,7 +117,7 @@ class LoginServiceTest {
   @Test
   @DisplayName("LoginResult를 문자열로 출력해도 토큰 원문은 보이지 않음")
   void loginResult_toStringHidesTokens() {
-    LoginResult result = new LoginResult("access-token", 1800, "떡볶이", "MEMBER",
+    LoginResult result = new LoginResult(1L,"access-token", 1800, "떡볶이", "MEMBER",
             "refresh-token", Duration.ofDays(1));
 
     assertThat(result.toString())
