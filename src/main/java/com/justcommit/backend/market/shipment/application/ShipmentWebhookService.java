@@ -20,6 +20,7 @@ import java.time.ZoneId;
 @RequiredArgsConstructor
 public class ShipmentWebhookService {
 
+    // 택배사가 보낸 +09:00 시각을 우리 기준(서울)으로 바꿀 때 쓴다
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     private final ShipmentRepository shipmentRepository;

@@ -19,14 +19,12 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class NotificationService {
 
-    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     // 시간이 지나면 연결을 닫고, 브라우저가 다시 연결한다
     private static final long SSE_TIMEOUT_MS = 30 * 60 * 1000L;
 
@@ -66,14 +64,14 @@ public class NotificationService {
     public NotificationResponse read(Long memberId, Long notificationId) {
         Notification notification = notificationRepository.findByIdAndMemberId(notificationId, memberId)
                 .orElseThrow(() -> new BusinessException(NotificationErrorCode.NOTIFICATION_NOT_FOUND));
-        notification.read(LocalDateTime.now(SEOUL));
+        notification.read(LocalDateTime.now());
         pushUnreadCountAfterCommit(memberId); // 다른 탭의 숫자도 맞춘다
         return NotificationResponse.from(notification);
     }
 
     @Transactional
     public void readAll(Long memberId) {
-        notificationRepository.readAll(memberId, LocalDateTime.now(SEOUL));
+        notificationRepository.readAll(memberId, LocalDateTime.now());
         pushUnreadCountAfterCommit(memberId);
     }
 
