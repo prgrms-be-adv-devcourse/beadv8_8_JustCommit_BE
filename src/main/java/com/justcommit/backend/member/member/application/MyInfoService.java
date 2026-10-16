@@ -47,6 +47,7 @@ public class MyInfoService {
             member.getPhone(),
             member.getRole().name(),
             member.getProvider().name(),
+            member.getCreatedAt(),
             account,
             defaultAddress
     );
