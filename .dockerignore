@@ -1,0 +1,13 @@
+# 이미지 빌드에 필요 없는 것과 비밀값은 빌드 컨텍스트에서 뺀다
+.git
+.gradle
+.idea
+.omc
+build
+out
+*.iml
+.env
+*.pem
+docker
+scripts
+docs

@@ -29,7 +29,26 @@ docker compose up -d
 
 로컬 S3는 운영 S3 대신 쓰는 S3 호환 저장소(RustFS)입니다. `rustfs-init`이 처음 한 번 운영과 같은 버킷(`team06-replant-images`), 공개 읽기 정책(`products/*`, `species/*`), CORS를 만들고 종료합니다. 설정 파일은 `docker/s3/`에 있습니다. AWS SDK에서는 endpoint를 `http://localhost:9000`으로, path-style 접근을 켜서 사용합니다. 업로드한 파일은 `http://localhost:9000/team06-replant-images/{key}`로 조회되고, 웹 콘솔(`http://localhost:9001`)에서 확인할 수 있습니다.
 
-운영 서버(EC2)에서는 `docker-compose.prod.yml`을 사용합니다. `.env.example`을 `.env`로 복사해 값을 채운 뒤 `docker compose -f docker-compose.prod.yml up -d`로 실행합니다. 운영 Redis는 비밀번호, 메모리 제한(`noeviction`), `127.0.0.1` 바인딩이 적용되어 로컬 설정과 다릅니다.
+## Production deploy (EC2)
+
+운영 서버는 Nginx(HTTPS, `replant.kro.kr`)가 요청을 받아 같은 서버의 Spring 컨테이너(`127.0.0.1:8080`)로 넘깁니다. `docker-compose.prod.yml`에 Spring(app), PostgreSQL, Redis, Kafka가 있고, 모든 포트는 `127.0.0.1`에만 열립니다.
+
+```bash
+cp .env.example .env              # 처음 한 번. 값을 채우고 chmod 600 .env
+docker network create replant-net # 처음 한 번. 모의 택배사(404-express)와 함께 쓰는 네트워크
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+- 프로젝트 이름이 `replant`로 고정되어 있어 어느 폴더에서 실행해도 같은 볼륨(데이터)을 씁니다.
+- 세미 프로젝트에서는 Flyway를 끄고 `ddl-auto: update`로 테이블을 만듭니다. 품종 데이터는 첫 배포 후 한 번 넣습니다 (이미 있는 행은 건너뜀).
+
+```bash
+docker compose -f docker-compose.prod.yml exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < src/main/resources/db/data/species.sql
+```
+
+- 확인: `curl https://replant.kro.kr/actuator/health` 가 `UP`이면 정상입니다.
+- `KAKAO_CLIENT_ID`, `KAKAO_CLIENT_SECRET`이 비어 있으면 Spring이 기동에 실패합니다.
+- 운영 Redis는 비밀번호, 메모리 제한(`noeviction`), `127.0.0.1` 바인딩이 적용되어 로컬 설정과 다릅니다.
 
 PostgreSQL data is retained in the `postgres-data` Docker volume. Stop services with `docker compose down`; use `docker compose down -v` only when intentionally removing local data.
 
