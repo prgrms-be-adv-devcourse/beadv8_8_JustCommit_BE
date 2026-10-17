@@ -87,6 +87,7 @@ custom:
     toss:
       secret-key: ${TOSS_SECRET_KEY:}
       base-url: https://api.tosspayments.com
+      key-encryption-key: ${PAYMENT_KEY_ENCRYPTION_KEY}
 
   courier:
     api-key: ${COURIER_API_KEY:}

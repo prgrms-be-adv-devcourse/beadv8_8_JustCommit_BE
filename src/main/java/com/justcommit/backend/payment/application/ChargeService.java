@@ -6,6 +6,7 @@ import com.justcommit.backend.payment.domain.ChargeType;
 import com.justcommit.backend.payment.domain.Wallet;
 import com.justcommit.backend.payment.domain.WalletTransaction;
 import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
+import com.justcommit.backend.payment.infrastructure.crypto.PaymentKeyCipher;
 import com.justcommit.backend.payment.infrastructure.pg.TossConfirmResponse;
 import com.justcommit.backend.payment.infrastructure.repository.ChargeRepository;
 import com.justcommit.backend.payment.infrastructure.repository.WalletRepository;
@@ -28,6 +29,7 @@ public class ChargeService {
     private final WalletRepository walletRepository;
     private final TossPaymentClient tossPaymentClient;
     private final WalletTransactionRepository walletTransactionRepository;
+    private final PaymentKeyCipher paymentKeyCipher;
 
     @Transactional
     public ChargeCreateResponse createCharge(Long memberId, ChargeCreateRequest request) {
@@ -58,6 +60,10 @@ public class ChargeService {
         charge.validateReady();
         charge.validateConfirmInfo(request.getOrderId(), request.getAmount());
 
+        // 암호화
+        String encryptedPaymentKey =
+                paymentKeyCipher.encrypt(request.getPaymentKey());
+
         // 토스 승인 요청
         TossConfirmResponse tossResponse = tossPaymentClient.confirm(
                 request.getPaymentKey(), request.getOrderId(), request.getAmount());
@@ -76,7 +82,7 @@ public class ChargeService {
             );
         }
         // 충전 승인 처리
-        charge.approve(tossResponse.paymentKey(), tossResponse.approvedAt().toLocalDateTime());
+        charge.approve(encryptedPaymentKey, tossResponse.approvedAt().toLocalDateTime());
 
         // 지갑 잔액 증가
         wallet.credit(charge.getAmount());
@@ -85,5 +91,6 @@ public class ChargeService {
         walletTransactionRepository.save(WalletTransaction.chargeIn(wallet, charge));
 
         return ChargeConfirmResponse.from(charge);
+
     }
 }
