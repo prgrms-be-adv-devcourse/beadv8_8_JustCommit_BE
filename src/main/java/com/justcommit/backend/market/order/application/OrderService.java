@@ -273,7 +273,7 @@ public class OrderService {
             }
         }
         for (Map.Entry<Long, BigDecimal> shippingFee : shippingFeesToRefund.entrySet()) {
-            //TODO: 배송 예약 취소 요청
+            shipmentService.cancelShipment(shippingFee.getKey());
             PaymentResult result = paymentUseCase.refundShippingFee(shippingFee.getKey(), memberId, shippingFee.getValue());
             if (result.status() != PaymentStatus.REFUNDED && result.status() != PaymentStatus.ALREADY_REFUNDED) {
                 throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
@@ -338,7 +338,7 @@ public class OrderService {
     private void finishCancellation(SellerOrder sellerOrder, Orders order) {
         if (sellerOrder.getItems().stream().allMatch(item -> item.getStatus().equals(OrderItemStatus.CANCELLED))) {
             if (sellerOrder.getShippingFee().compareTo(BigDecimal.ZERO) > 0) {
-                //TODO: 배송 예약 취소 요청
+                shipmentService.cancelShipment(sellerOrder.getId());
                 PaymentResult result = paymentUseCase.refundShippingFee(sellerOrder.getId(), order.getBuyerId(), sellerOrder.getShippingFee());
                 if (!(result.status().equals(PaymentStatus.REFUNDED) || result.status().equals(PaymentStatus.ALREADY_REFUNDED))) {
                     throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);

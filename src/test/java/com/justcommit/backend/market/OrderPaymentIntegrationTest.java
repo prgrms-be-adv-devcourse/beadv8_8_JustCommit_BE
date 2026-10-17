@@ -23,6 +23,7 @@ import com.justcommit.backend.market.shipment.domain.Shipment;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingRequest;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingResponse;
+import com.justcommit.backend.market.shipment.infrastructure.courier.CourierCancelResult;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierClient;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
 import com.justcommit.backend.member.MemberAddress;
@@ -140,6 +141,7 @@ class OrderPaymentIntegrationTest {
         productQuery.afterLookup = () -> {};
         paymentUseCase.beforePayment = () -> {};
         paymentUseCase.beforeRefund = () -> {};
+        paymentUseCase.beforeShippingRefund = () -> {};
     }
 
     @Test
@@ -548,6 +550,9 @@ class OrderPaymentIntegrationTest {
         assertThat(balance(buyerId)).isEqualByComparingTo("17000");
         assertThat(refundCount(RefType.ORDER_ITEM_CANCEL_REFUND, firstItemId)).isEqualTo(2);
         assertThat(refundCount(RefType.SHIPPING_FEE_REFUND, sellerOrderId)).isZero();
+        assertThat(shipmentRepository.findBySellerOrderId(sellerOrderId).orElseThrow().getStatus())
+                .isEqualTo(ShipmentStatus.BOOKED);
+        verify(courierClient, times(0)).cancel(anyString());
     }
 
     @Test
@@ -571,6 +576,10 @@ class OrderPaymentIntegrationTest {
         assertThat(balance(buyerId)).isEqualByComparingTo("20000");
         assertThat(refundCount(RefType.ORDER_ITEM_CANCEL_REFUND, itemId)).isEqualTo(2);
         assertThat(refundCount(RefType.SHIPPING_FEE_REFUND, sellerOrderId)).isEqualTo(2);
+        Shipment shipment = shipmentRepository.findBySellerOrderId(sellerOrderId).orElseThrow();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCELLED);
+        assertThat(shipment.getCourierCancelledAt()).isNotNull();
+        verify(courierClient, times(1)).cancel(shipment.getTrackingNo());
     }
 
     @Test
@@ -607,6 +616,9 @@ class OrderPaymentIntegrationTest {
                     assertThat(refundCount(RefType.SHIPPING_FEE_REFUND, sellerOrder.getId())).isEqualTo(2);
                 });
         assertThat(balance(buyerId)).isEqualByComparingTo("50000");
+        assertThat(shipmentsForOrder(orderId))
+                .allSatisfy(shipment -> assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCELLED));
+        verify(courierClient, times(sellerOrderIds.size())).cancel(anyString());
     }
 
     @Test
@@ -634,6 +646,52 @@ class OrderPaymentIntegrationTest {
         assertThat(refundCount(RefType.ORDER_ITEM_CANCEL_REFUND, firstItem.getId())).isEqualTo(2);
         assertThat(refundCount(RefType.SHIPPING_FEE_REFUND, firstSellerOrderId)).isEqualTo(2);
         assertThat(productRepository.findById(second.getId()).orElseThrow().getStatus()).isEqualTo(ProductStatus.ACTIVE);
+        verify(courierClient, times(2)).cancel(anyString());
+    }
+
+    @Test
+    void cancellingReadyShipmentBooksWithSameKeyThenCancelsAfterCommit() {
+        stubShipmentBooking();
+        long buyerId = 313L;
+        Product product = product(416L);
+        wallet(buyerId, "20000");
+        Long orderId = orderService.create(buyerId, request(cartItem(buyerId, product))).orderId();
+        Long sellerOrderId = sellerOrderRepository.findByOrder_Id(orderId).getFirst().getId();
+        Long itemId = ordersItemRepository.findBySellerOrderIds(List.of(sellerOrderId)).getFirst().getId();
+        String courierOrderNo = shipmentRepository.findBySellerOrderId(sellerOrderId).orElseThrow().getCourierOrderNo();
+        jdbcTemplate.update("UPDATE shipment SET status = 'READY', tracking_no = NULL, booked_at = NULL WHERE seller_order_id = ?",
+                sellerOrderId);
+
+        orderService.itemCancel(buyerId, itemId);
+
+        Shipment shipment = shipmentRepository.findBySellerOrderId(sellerOrderId).orElseThrow();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCELLED);
+        assertThat(shipment.getTrackingNo()).isEqualTo("tracking-" + courierOrderNo);
+        assertThat(shipment.getCourierCancelledAt()).isNotNull();
+        verify(courierClient, times(2)).book(org.mockito.ArgumentMatchers.eq(courierOrderNo),
+                any(CourierBookingRequest.class));
+        verify(courierClient, times(1)).cancel(shipment.getTrackingNo());
+    }
+
+    @Test
+    void courierCancelFailureAfterCommitKeepsOrderCancelledForRetry() {
+        stubShipmentBooking();
+        long buyerId = 314L;
+        Product product = product(417L);
+        wallet(buyerId, "20000");
+        Long orderId = orderService.create(buyerId, request(cartItem(buyerId, product))).orderId();
+        Long sellerOrderId = sellerOrderRepository.findByOrder_Id(orderId).getFirst().getId();
+        Long itemId = ordersItemRepository.findBySellerOrderIds(List.of(sellerOrderId)).getFirst().getId();
+        when(courierClient.cancel(anyString())).thenThrow(new IllegalStateException("택배사 취소 실패"));
+
+        orderService.itemCancel(buyerId, itemId);
+
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        Shipment shipment = shipmentRepository.findBySellerOrderId(sellerOrderId).orElseThrow();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCELLED);
+        assertThat(shipment.getCourierCancelledAt()).isNull();
+        assertThat(balance(buyerId)).isEqualByComparingTo("20000");
+        verify(courierClient, times(1)).cancel(shipment.getTrackingNo());
     }
 
     @Test
@@ -748,6 +806,32 @@ class OrderPaymentIntegrationTest {
         assertThat(balance(buyerId)).isEqualByComparingTo("7000");
         assertThat(itemIds).allSatisfy(itemId -> assertThat(refundCount(RefType.ORDER_ITEM_CANCEL_REFUND, itemId)).isZero());
         assertThat(refundCount(RefType.SHIPPING_FEE_REFUND, sellerOrderId)).isZero();
+        assertThat(shipmentRepository.findBySellerOrderId(sellerOrderId).orElseThrow().getStatus())
+                .isEqualTo(ShipmentStatus.BOOKED);
+        verify(courierClient, times(0)).cancel(anyString());
+    }
+
+    @Test
+    void shippingRefundFailureRollsBackFullCancellationAndShipment() {
+        stubShipmentBooking();
+        long buyerId = 315L;
+        Product product = product(418L);
+        wallet(buyerId, "20000");
+        Long orderId = orderService.create(buyerId, request(cartItem(buyerId, product))).orderId();
+        Long sellerOrderId = sellerOrderRepository.findByOrder_Id(orderId).getFirst().getId();
+        Long itemId = ordersItemRepository.findBySellerOrderIds(List.of(sellerOrderId)).getFirst().getId();
+        paymentUseCase.beforeShippingRefund = () -> { throw new IllegalStateException("배송비 환불 실패"); };
+
+        assertThatThrownBy(() -> orderService.cancel(buyerId, orderId))
+                .isInstanceOf(IllegalStateException.class).hasMessage("배송비 환불 실패");
+
+        assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(ordersItemRepository.findById(itemId).orElseThrow().getStatus()).isEqualTo(OrderItemStatus.NORMAL);
+        assertThat(shipmentRepository.findBySellerOrderId(sellerOrderId).orElseThrow().getStatus())
+                .isEqualTo(ShipmentStatus.BOOKED);
+        assertThat(productRepository.findById(product.getId()).orElseThrow().getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+        assertThat(balance(buyerId)).isEqualByComparingTo("7000");
+        verify(courierClient, times(0)).cancel(anyString());
     }
 
     @Test
@@ -770,6 +854,9 @@ class OrderPaymentIntegrationTest {
         assertThat(balance(buyerId)).isEqualByComparingTo("7000");
         assertThat(refundCount(RefType.ORDER_ITEM_CANCEL_REFUND, itemId)).isZero();
         assertThat(refundCount(RefType.SHIPPING_FEE_REFUND, sellerOrderId)).isZero();
+        assertThat(shipmentRepository.findBySellerOrderId(sellerOrderId).orElseThrow().getStatus())
+                .isEqualTo(ShipmentStatus.BOOKED);
+        verify(courierClient, times(0)).cancel(anyString());
     }
 
     @Test
@@ -868,6 +955,7 @@ class OrderPaymentIntegrationTest {
         when(courierClient.book(anyString(), any(CourierBookingRequest.class))).thenAnswer(invocation ->
                 new CourierBookingResponse("tracking-" + invocation.getArgument(0), invocation.getArgument(0), "RESERVED",
                         OffsetDateTime.now()));
+        when(courierClient.cancel(anyString())).thenReturn(CourierCancelResult.CANCELLED);
     }
 
     private CartOrderCreateRequest request(Long... cartItemIds) {
@@ -956,6 +1044,7 @@ class OrderPaymentIntegrationTest {
         private final PaymentService delegate;
         volatile Runnable beforePayment = () -> {};
         volatile Runnable beforeRefund = () -> {};
+        volatile Runnable beforeShippingRefund = () -> {};
 
         InterceptingPaymentUseCase(PaymentService delegate) {
             this.delegate = delegate;
@@ -981,6 +1070,7 @@ class OrderPaymentIntegrationTest {
 
         @Override
         public PaymentResult refundShippingFee(Long sellerOrderId, Long buyerId, BigDecimal amount) {
+            beforeShippingRefund.run();
             return delegate.refundShippingFee(sellerOrderId, buyerId, amount);
         }
 
