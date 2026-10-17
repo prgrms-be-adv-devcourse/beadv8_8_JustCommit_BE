@@ -4,6 +4,7 @@ import com.justcommit.backend.market.ShipmentPickedUpEvent;
 import com.justcommit.backend.market.shipment.domain.Shipment;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentPickedUpEventPublisher;
+import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
 import com.justcommit.backend.market.shipment.presentation.CourierWebhookRequest;
 import org.junit.jupiter.api.DisplayName;
@@ -31,6 +32,7 @@ class ShipmentWebhookServiceTest {
 
     @Mock ShipmentRepository shipmentRepository;
     @Mock ShipmentPickedUpEventPublisher pickedUpEventPublisher;
+    @Mock ShipmentStatusChangedEventPublisher statusChangedEventPublisher;
     @InjectMocks ShipmentWebhookService shipmentWebhookService;
 
     @Test
@@ -78,8 +80,19 @@ class ShipmentWebhookServiceTest {
         verify(pickedUpEventPublisher).publishAfterCommit(any());
     }
 
+    @Test
+    @DisplayName("반영된 웹훅마다 배송 상태 알림 이벤트를 보내고, 반영 안 된 웹훅은 보내지 않는다")
+    void publishesStatusChangedOnlyWhenApplied() {
+        Shipment shipment = bookedShipment();
+
+        shipmentWebhookService.receive(webhook("PICKED_UP", "2026-10-15T10:03:00+09:00"));
+        shipmentWebhookService.receive(webhook("PICKED_UP", "2026-10-15T10:03:00+09:00")); // 중복
+
+        verify(statusChangedEventPublisher).publishAfterCommit(shipment, LocalDateTime.of(2026, 10, 15, 10, 3));
+    }
+
     private Shipment bookedShipment() {
-        Shipment shipment = new Shipment(7L, 20L, "구매자", "01000000000", "부산", "몬스테라", new BigDecimal("3000"));
+        Shipment shipment = new Shipment(7L, 20L, 10L, "구매자", "01000000000", "부산", "몬스테라", new BigDecimal("3000"));
         shipment.book(TRACKING_NO, LocalDateTime.of(2026, 10, 15, 10, 0));
         when(shipmentRepository.findByCourierOrderNo(COURIER_ORDER_NO)).thenReturn(Optional.of(shipment));
         return shipment;

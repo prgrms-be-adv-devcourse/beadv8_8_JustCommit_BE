@@ -10,6 +10,7 @@ import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingException;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingRequest;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierClient;
+import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
 import com.justcommit.backend.member.MemberAddress;
 import com.justcommit.backend.member.MemberQuery;
@@ -38,6 +39,7 @@ class ShipmentBookingFailureTest {
     @Mock ShipmentRepository shipmentRepository;
     @Mock CourierClient courierClient;
     @Mock MemberQuery memberQuery;
+    @Mock ShipmentStatusChangedEventPublisher statusChangedEventPublisher;
     @InjectMocks ShipmentService shipmentService;
 
     @Test
