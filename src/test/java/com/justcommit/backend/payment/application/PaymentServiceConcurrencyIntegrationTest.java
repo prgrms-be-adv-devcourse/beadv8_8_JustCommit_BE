@@ -30,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -287,4 +288,122 @@ class PaymentServiceConcurrencyIntegrationTest {
         // 미리 저장한 거래내역 1건만 남아야 함
         assertThat(walletTransactionRepository.count()).isEqualTo(1);
     }
+
+
+    @Test
+    @DisplayName("배송비 수납과 환불이 동시에 발생해도 한쪽만 처리된다")
+    void preventsConcurrentShippingFeeCollectionAndRefund() throws Exception {
+        Long sellerOrderId = 700L;
+        Long buyerId = 20L;
+        Long revenueId = 998L;
+        BigDecimal shippingFee = new BigDecimal("3000");
+
+        given(memberQuery.getRevenueMemberId()).willReturn(revenueId);
+
+        // 초기 지갑 준비
+        Wallet holding = walletRepository.findByMemberId(HOLDING_ID)
+                .orElseThrow();
+        holding.credit(new BigDecimal("10000"));
+        walletRepository.saveAndFlush(holding);
+
+        walletRepository.saveAndFlush(new Wallet(buyerId));
+        walletRepository.saveAndFlush(new Wallet(revenueId));
+
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            // 배송비 수납
+            Future<?> collect = executor.submit(() -> {
+                ready.countDown();
+                start.await();
+
+                paymentUseCase.collectShippingFee(
+                        sellerOrderId, shippingFee);
+                return null;
+            });
+
+            // 배송비 환불
+            Future<?> refund = executor.submit(() -> {
+                ready.countDown();
+                start.await();
+
+                try {
+                    paymentUseCase.refundShippingFee(
+                            sellerOrderId, buyerId, shippingFee);
+                } catch (BusinessException e) {
+                    if (e.getErrorCode()
+                            != PaymentErrorCode.SHIPPING_FEE_ALREADY_COLLECTED) {
+                        throw e;
+                    }
+                }
+                return null;
+            });
+
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            collect.get(30, TimeUnit.SECONDS);
+            refund.get(30, TimeUnit.SECONDS);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+
+        // 두 거래 유형 중 하나만 처리되어야 한다
+        List<WalletTransaction> transactions =
+                walletTransactionRepository.findAll();
+
+        long collected = transactions.stream()
+                .filter(t -> t.getRefType() == RefType.SHIPPING_FEE)
+                .count();
+
+        long refunded = transactions.stream()
+                .filter(t -> t.getRefType() == RefType.SHIPPING_FEE_REFUND)
+                .count();
+
+        // 성공한 한 작업의 OUT, IN 내역 2건만 존재
+        assertThat(collected).isIn(0L, 2L);
+        assertThat(refunded).isEqualTo(2L - collected);
+
+        // 잔액 검증
+        assertThat(balanceOf(HOLDING_ID))
+                .isEqualByComparingTo("7000");
+
+        BigDecimal buyerBalance = balanceOf(buyerId);
+        BigDecimal revenueBalance = balanceOf(revenueId);
+
+        assertThat(buyerBalance.add(revenueBalance))
+                .isEqualByComparingTo("3000");
+    }
+
+    @Test
+    @DisplayName("배송비가 먼저 수납되면 환불은 차단되고, 잔액과 거래내역이 그대로 유지된다")
+    void rejectsRefundAfterShippingFeeCollected() {
+        Long sellerOrderId = 701L;
+        Long buyerId = 21L;
+        Long revenueId = 998L;
+        BigDecimal shippingFee = new BigDecimal("3000");
+        given(memberQuery.getRevenueMemberId()).willReturn(revenueId);
+
+        Wallet holding = walletRepository.findByMemberId(HOLDING_ID).orElseThrow();
+        holding.credit(new BigDecimal("10000")); // 이 배송비 + 다른 주문 돈
+        walletRepository.saveAndFlush(holding);
+        walletRepository.saveAndFlush(new Wallet(buyerId));
+        walletRepository.saveAndFlush(new Wallet(revenueId));
+
+        paymentUseCase.collectShippingFee(sellerOrderId, shippingFee);
+        long txCount = walletTransactionRepository.count();
+
+        assertThatThrownBy(() -> paymentUseCase.refundShippingFee(sellerOrderId, buyerId, shippingFee))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", PaymentErrorCode.SHIPPING_FEE_ALREADY_COLLECTED);
+
+        assertThat(balanceOf(HOLDING_ID)).isEqualByComparingTo("7000");
+        assertThat(balanceOf(revenueId)).isEqualByComparingTo("3000");
+        assertThat(balanceOf(buyerId)).isEqualByComparingTo("0");
+        assertThat(walletTransactionRepository.count()).isEqualTo(txCount);
+    }
+
 }

@@ -118,6 +118,7 @@ class PaymentServiceRefundTest {
         stubBuyerWallet(buyerWallet, RefType.SHIPPING_FEE_REFUND, SELLER_ORDER_ID);
         stubHoldingWallet(holdingWallet);
         stubHoldingRefundExists(RefType.SHIPPING_FEE_REFUND, SELLER_ORDER_ID, false);
+        stubShippingFeeCollected(SELLER_ORDER_ID, false);
 
         PaymentResult result = paymentService.refundShippingFee(SELLER_ORDER_ID, BUYER_ID, new BigDecimal("3000"));
 
@@ -138,6 +139,7 @@ class PaymentServiceRefundTest {
         stubBuyerWallet(buyerWallet("0"), RefType.SHIPPING_FEE_REFUND, sameId);
         stubHoldingWallet(holdingWallet("10000"));
         stubHoldingRefundExists(RefType.SHIPPING_FEE_REFUND, sameId, false);
+        stubShippingFeeCollected(sameId, false);
 
         PaymentResult result = paymentService.refundShippingFee(sameId, BUYER_ID, new BigDecimal("3000"));
 
@@ -258,6 +260,49 @@ class PaymentServiceRefundTest {
         verifyNoInteractions(walletRepository, walletTransactionRepository, memberQuery);
     }
 
+
+    @Test
+    @DisplayName("이미 수납된 배송비는 환불할 수 없다")
+    void rejectsRefundWhenShippingFeeAlreadyCollected() {
+        Wallet buyerWallet = buyerWallet("0");
+        Wallet holdingWallet = holdingWallet("10000");
+
+        stubBuyerWallet(
+                buyerWallet,
+                RefType.SHIPPING_FEE_REFUND,
+                SELLER_ORDER_ID
+        );
+        stubHoldingWallet(holdingWallet);
+
+        // 해당 판매자 주문의 배송비가 이미 수납됨
+        when(walletTransactionRepository
+                .existsByWallet_IdAndRefTypeAndRefId(
+                        HOLDING_WALLET_ID,
+                        RefType.SHIPPING_FEE,
+                        SELLER_ORDER_ID
+                )).thenReturn(true);
+
+        assertThatThrownBy(() ->
+                paymentService.refundShippingFee(
+                        SELLER_ORDER_ID,
+                        BUYER_ID,
+                        new BigDecimal("3000")
+                ))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue(
+                        "errorCode",
+                        PaymentErrorCode.SHIPPING_FEE_ALREADY_COLLECTED
+                );
+
+        // 환불이 발생하지 않았는지 확인
+        assertThat(buyerWallet.getBalance())
+                .isEqualByComparingTo("0");
+        assertThat(holdingWallet.getBalance())
+                .isEqualByComparingTo("10000");
+
+        verify(walletTransactionRepository, never()).save(any());
+    }
+
     // ===== helpers =====
 
     private void assertInvalid(org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
@@ -292,6 +337,12 @@ class PaymentServiceRefundTest {
     private void stubHoldingRefundExists(RefType refType, Long refId, boolean exists) {
         when(walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(HOLDING_WALLET_ID, refType, refId))
                 .thenReturn(exists);
+    }
+
+    private void stubShippingFeeCollected(Long sellerOrderId, boolean collected) {
+        when(walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(
+                HOLDING_WALLET_ID, RefType.SHIPPING_FEE, sellerOrderId))
+                .thenReturn(collected);
     }
 
     private List<WalletTransaction> capturedTransactions(int expectedCount) {
