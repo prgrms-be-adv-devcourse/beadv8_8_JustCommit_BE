@@ -17,6 +17,8 @@ import com.justcommit.backend.payment.infrastructure.repository.ChargeRepository
 import com.justcommit.backend.payment.infrastructure.repository.WalletRepository;
 import com.justcommit.backend.payment.infrastructure.repository.WalletTransactionRepository;
 import com.justcommit.backend.payment.presentation.dto.ChargeConfirmRequest;
+import com.justcommit.backend.payment.infrastructure.crypto.PaymentKeyCipher;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -61,7 +63,7 @@ import static org.mockito.Mockito.*;
 })
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ChargeService.class, PaymentService.class})
+@Import({JpaAuditingConfig.class, ChargeService.class, PaymentService.class, PaymentKeyCipher.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class ChargeServiceConcurrencyIntegrationTest {
@@ -86,6 +88,7 @@ class ChargeServiceConcurrencyIntegrationTest {
     @Autowired ChargeRepository chargeRepository;
     @Autowired WalletRepository walletRepository;
     @Autowired WalletTransactionRepository walletTransactionRepository;
+    @Autowired PaymentKeyCipher paymentKeyCipher;
 
     @MockitoBean TossPaymentClient tossPaymentClient;
     @MockitoBean MemberQuery memberQuery;
@@ -128,8 +131,10 @@ class ChargeServiceConcurrencyIntegrationTest {
         verify(tossPaymentClient, times(1)).confirm(any(), any(), any());
         assertThat(balanceOf(MEMBER_ID)).isEqualByComparingTo("10000");
         assertThat(walletTransactionRepository.count()).isEqualTo(1);
-        assertThat(chargeRepository.findById(charge.getId()).orElseThrow().getStatus())
-                .isEqualTo(ChargeStatus.APPROVED);
+        Charge saved = chargeRepository.findById(charge.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(ChargeStatus.APPROVED);
+        assertThat(paymentKeyCipher.decrypt(saved.getPgPaymentKeyEnc()))
+                .isEqualTo(request.getPaymentKey());
     }
 
     @Test
@@ -281,6 +286,7 @@ class ChargeServiceConcurrencyIntegrationTest {
         // 거래내역 저장되지 않음
         assertThat(walletTransactionRepository.count())
                 .isZero();
+
     }
 
 }

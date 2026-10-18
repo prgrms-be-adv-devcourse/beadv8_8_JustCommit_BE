@@ -46,7 +46,7 @@ public class Charge extends BaseTimeEntity {
     @Column(name = "status", nullable = false)
     private ChargeStatus status;
 
-    @Column(name = "pg_payment_key_enc")
+    @Column(name = "pg_payment_key_enc", length = 1024)
     private String pgPaymentKeyEnc;
 
     @Column(name = "approved_at")
@@ -68,10 +68,10 @@ public class Charge extends BaseTimeEntity {
         return new Charge(wallet, chargeType, generatePgOrderNo(), amount);
     }
 
-    public void approve(String pgPaymentKey, LocalDateTime approvedAt) {
+    public void approve(String encryptedPaymentKey, LocalDateTime approvedAt) {
         validateReady();
         this.status = ChargeStatus.APPROVED;
-        this.pgPaymentKeyEnc = pgPaymentKey;   // TODO: 암호화
+        this.pgPaymentKeyEnc = encryptedPaymentKey;
         this.approvedAt = approvedAt;
     }
 
