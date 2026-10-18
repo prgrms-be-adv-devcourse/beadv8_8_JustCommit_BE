@@ -33,6 +33,10 @@ docker compose up -d
 
 운영 서버는 Nginx(HTTPS, `replant.kro.kr`)가 요청을 받아 같은 서버의 Spring 컨테이너(`127.0.0.1:8080`)로 넘깁니다. `docker-compose.prod.yml`에 Spring(app), PostgreSQL, Redis, Kafka가 있고, 모든 포트는 `127.0.0.1`에만 열립니다.
 
+전체 배포(백엔드 develop, 프론트 develop, 모의 택배사 main)는 `scripts/deploy.sh` 하나로 합니다. 서버 홈에 복사해 `bash ~/deploy.sh`로 실행하며, 비밀값 원본은 서버의 `~/secrets/replant.env`에 둡니다. 배포 전에 `.env.example`에 있는 변수가 서버에 모두 있는지 검사하고, 끝나면 health 확인과 품종 데이터 적재까지 합니다.
+
+아래는 백엔드만 직접 띄울 때입니다.
+
 ```bash
 cp .env.example .env              # 처음 한 번. 값을 채우고 chmod 600 .env
 docker network create replant-net # 처음 한 번. 모의 택배사(404-express)와 함께 쓰는 네트워크
