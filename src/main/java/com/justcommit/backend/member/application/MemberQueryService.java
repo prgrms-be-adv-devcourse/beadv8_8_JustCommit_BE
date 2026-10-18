@@ -4,18 +4,24 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.MemberAccount;
 import com.justcommit.backend.member.MemberAddress;
 import com.justcommit.backend.member.MemberQuery;
-import com.justcommit.backend.member.domain.SystemAccount;
 import com.justcommit.backend.member.address.domain.Address;
+import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Role;
+import com.justcommit.backend.member.domain.SystemAccount;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
-import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 // MemberQuery 구현 (다른 모듈은 이 클래스를 모르고 MemberQuery 인터페이스만 사용)
 @Service
@@ -81,6 +87,21 @@ public class MemberQueryService implements MemberQuery {
             .orElseThrow(() -> new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
   }
 
+  // 장바구니용 판매자 닉제인 일괄 조회(in 조회 한 번)
+  @Override
+  public Map<Long, String> getNicknames(Collection<Long> memberIds) {
+    if (memberIds == null || memberIds.isEmpty()) {
+      return Map.of();
+    }
+
+    List<Long> ids = memberIds.stream()
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
+
+    return memberRepository.findAllById(ids).stream()
+            .collect(Collectors.toMap(Member::getId, Member::getNickname));
+  }
   // 엔티티 → 공개 DTO (다른 모듈에 Address 엔티티를 노출하지 않음)
   private MemberAddress toMemberAddress(Address address) {
     return new MemberAddress(

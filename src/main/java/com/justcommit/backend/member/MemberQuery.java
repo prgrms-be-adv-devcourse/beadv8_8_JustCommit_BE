@@ -1,5 +1,8 @@
 package com.justcommit.backend.member;
 
+import java.util.Collection;
+import java.util.Map;
+
 // 다른 모듈(결제·정산·주문 등)에 공개하는 회원 조회 API
 public interface MemberQuery {
 
@@ -21,4 +24,7 @@ public interface MemberQuery {
 
   // 판매자 닉네임. 회원이 없으면 MEMBER_NOT_FOUND(404)
   String getNickname(Long memberId);
+
+  // 여러 회원의 닉네임을 한 번에 조회 (회원 ID → 닉네임). 없는 회원은 결과에서 빠짐(예외 없음). 빈 목록이면 빈 Map
+  Map<Long, String> getNicknames(Collection<Long> memberIds);
 }

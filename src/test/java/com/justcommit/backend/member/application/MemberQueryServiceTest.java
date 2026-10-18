@@ -4,12 +4,12 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.MemberAccount;
 import com.justcommit.backend.member.MemberAddress;
 import com.justcommit.backend.member.address.domain.Address;
+import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Role;
 import com.justcommit.backend.member.domain.SystemAccount;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
-import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -20,12 +20,15 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class MemberQueryServiceTest {
@@ -225,5 +228,48 @@ class MemberQueryServiceTest {
             .isInstanceOf(BusinessException.class)
             .extracting("errorCode")
             .isEqualTo(MemberErrorCode.MEMBER_NOT_FOUND);
+  }
+
+  // 닉네임 일괄 조회
+  @Test
+  @DisplayName("여러 회원의 닉네임을 한 번에 반환하고 없는 회원은 결과에서 빠짐")
+  void getNicknames() {
+    Member seller1 = mock(Member.class);
+    given(seller1.getId()).willReturn(4L);
+    given(seller1.getNickname()).willReturn("민트초코");
+    Member seller2 = mock(Member.class);
+    given(seller2.getId()).willReturn(9L);
+    given(seller2.getNickname()).willReturn("1015테스트");
+    given(memberRepository.findAllById(List.of(4L, 9L, 99L))).willReturn(List.of(seller1, seller2));
+
+    Map<Long, String> result = memberQueryService.getNicknames(List.of(4L, 9L, 99L));
+
+    assertThat(result)
+            .hasSize(2)
+            .containsEntry(4L, "민트초코")
+            .containsEntry(9L, "1015테스트")
+            .doesNotContainKey(99L);
+  }
+
+  @Test
+  @DisplayName("같은 회원 ID가 여러 번 들어와도 한 번만 조회")
+  void getNicknames_duplicateIds() {
+    Member seller = mock(Member.class);
+    given(seller.getId()).willReturn(4L);
+    given(seller.getNickname()).willReturn("민트초코");
+    given(memberRepository.findAllById(List.of(4L))).willReturn(List.of(seller));
+
+    Map<Long, String> result = memberQueryService.getNicknames(List.of(4L, 4L, 4L));
+
+    assertThat(result).containsExactlyEntriesOf(Map.of(4L, "민트초코"));
+  }
+
+  @Test
+  @DisplayName("빈 목록이면 DB 조회 없이 빈 결과")
+  void getNicknames_empty() {
+    Map<Long, String> result = memberQueryService.getNicknames(List.of());
+
+    assertThat(result).isEmpty();
+    verifyNoInteractions(memberRepository);
   }
 }
