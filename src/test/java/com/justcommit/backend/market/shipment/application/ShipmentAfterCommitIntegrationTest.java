@@ -10,6 +10,7 @@ import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingRequest;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingResponse;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierClient;
+import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
 import com.justcommit.backend.member.MemberAddress;
 import com.justcommit.backend.member.MemberQuery;
@@ -69,6 +70,7 @@ class ShipmentAfterCommitIntegrationTest {
 
     @MockitoBean CourierClient courierClient;
     @MockitoBean MemberQuery memberQuery;
+    @MockitoBean ShipmentStatusChangedEventPublisher statusChangedEventPublisher;
 
     @Autowired ShipmentService shipmentService;
     @Autowired ShipmentRepository shipmentRepository;
@@ -93,6 +95,7 @@ class ShipmentAfterCommitIntegrationTest {
             assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.BOOKED);
             assertThat(shipment.getTrackingNo()).isEqualTo("404000000001");
         });
+        verify(statusChangedEventPublisher).publishAfterCommit(any(), any()); // 판매자에게 택배 예약 알림
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.justcommit.backend.market.shipment.application;
 import com.justcommit.backend.market.shipment.domain.Shipment;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierClient;
+import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
 import com.justcommit.backend.member.MemberQuery;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,7 @@ class ShipmentServiceTest {
     @Mock ShipmentRepository shipmentRepository;
     @Mock CourierClient courierClient;
     @Mock MemberQuery memberQuery;
+    @Mock ShipmentStatusChangedEventPublisher statusChangedEventPublisher;
     @InjectMocks ShipmentService shipmentService;
 
     @Test
@@ -76,6 +78,6 @@ class ShipmentServiceTest {
     }
 
     private Shipment newShipment(Long sellerOrderId) {
-        return new Shipment(sellerOrderId, 20L, "구매자", "01000000000", "부산", "몬스테라", new BigDecimal("3000"));
+        return new Shipment(sellerOrderId, 20L, 10L, "구매자", "01000000000", "부산", "몬스테라", new BigDecimal("3000"));
     }
 }
