@@ -41,6 +41,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class ShipmentService implements ShipmentQuery {
+    // 택배사가 보낸 +09:00 시각을 우리 기준(서울)으로 바꿀 때 쓴다. 현재 시각(now)은 서버 기본 시간대(운영: Asia/Seoul)를 따른다.
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     private final ShipmentRepository shipmentRepository;
@@ -80,7 +81,7 @@ public class ShipmentService implements ShipmentQuery {
             Shipment shipment = shipmentRepository.save(new Shipment(sellerOrder.id(), sellerOrder.sellerId(), order.buyerId(),
                     order.recipientName(), order.recipientPhone(), receiverAddress,
                     itemSummary(sellerOrder.items()), sellerOrder.shippingFee()));
-            shipment.assignCourierOrderNo(LocalDate.now(SEOUL));
+            shipment.assignCourierOrderNo(LocalDate.now());
             shipments.add(shipmentRepository.save(shipment));
         }
         runAfterCommit(() -> bookAll(shipments));
@@ -154,7 +155,7 @@ public class ShipmentService implements ShipmentQuery {
         if (shipment.isPickedUp()) {
             throw new BusinessException(OrderErrorCode.SHIPMENT_NOT_CANCELABLE);
         }
-        if (!shipment.cancel(LocalDateTime.now(SEOUL))) {
+        if (!shipment.cancel(LocalDateTime.now())) {
             return; // 이미 취소됨
         }
         shipmentRepository.save(shipment);
@@ -210,7 +211,7 @@ public class ShipmentService implements ShipmentQuery {
     }
 
     private void markCourierCancelled(Shipment shipment, String trackingNo) {
-        shipment.markCourierCancelled(trackingNo, LocalDateTime.now(SEOUL));
+        shipment.markCourierCancelled(trackingNo, LocalDateTime.now());
         shipmentRepository.save(shipment);
     }
 

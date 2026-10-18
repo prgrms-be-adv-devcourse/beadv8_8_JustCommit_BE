@@ -4,6 +4,7 @@ import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.notification.domain.NotificationType;
 import com.justcommit.backend.notification.infrastructure.repository.NotificationRepository;
+import com.justcommit.backend.notification.infrastructure.sse.NotificationSseRegistry;
 import com.justcommit.backend.notification.presentation.dto.NotificationResponse;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,6 +18,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -25,6 +27,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @DataJpaTest(properties = {"spring.flyway.enabled=false", "spring.jpa.hibernate.ddl-auto=create-drop"})
 @ActiveProfiles("test")
@@ -46,6 +52,8 @@ class NotificationServiceIntegrationTest {
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
     }
+
+    @MockitoBean NotificationSseRegistry sseRegistry;
 
     @Autowired NotificationService notificationService;
     @Autowired NotificationRepository notificationRepository;
@@ -129,6 +137,37 @@ class NotificationServiceIntegrationTest {
 
         assertThat(notificationService.unreadCount(BUYER)).isZero();
         assertThat(notificationService.unreadCount(OTHER)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("구독 중인 회원에게 알림이 저장되면 커밋 후 안 읽은 수를 보낸다")
+    void pushesUnreadCountToSubscriber() {
+        when(sseRegistry.hasConnection(BUYER)).thenReturn(true);
+
+        notificationService.create(BUYER, NotificationType.SHIPMENT_PICKED_UP, 7L, "SHIPMENT:1:PICKED_UP");
+        notificationService.create(BUYER, NotificationType.SHIPMENT_DELIVERED, 7L, "SHIPMENT:1:DELIVERED");
+
+        verify(sseRegistry).sendUnreadCount(BUYER, 1);
+        verify(sseRegistry).sendUnreadCount(BUYER, 2);
+    }
+
+    @Test
+    @DisplayName("모두 읽음 처리하면 구독 중인 다른 탭에도 0을 보낸다")
+    void pushesZeroAfterReadAll() {
+        notificationService.create(BUYER, NotificationType.SHIPMENT_PICKED_UP, 7L, "SHIPMENT:1:PICKED_UP");
+        when(sseRegistry.hasConnection(BUYER)).thenReturn(true);
+
+        notificationService.readAll(BUYER);
+
+        verify(sseRegistry).sendUnreadCount(BUYER, 0);
+    }
+
+    @Test
+    @DisplayName("구독하지 않은 회원에게는 보내지 않는다")
+    void doesNotPushWithoutSubscriber() {
+        notificationService.create(BUYER, NotificationType.SHIPMENT_PICKED_UP, 7L, "SHIPMENT:1:PICKED_UP");
+
+        verify(sseRegistry, never()).sendUnreadCount(anyLong(), anyLong());
     }
 
     private PageRequest latestFirst() {
