@@ -104,6 +104,7 @@ public class CartService {
                             item.getProductId(),
                             product.title(),
                             product.thumbnailUrl(),
+                            product.speciesName(),
                             product.sellerId(),
                             sellerNames.get(product.sellerId()),
                             item.getPrice(),

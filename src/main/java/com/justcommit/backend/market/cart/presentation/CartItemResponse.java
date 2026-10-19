@@ -8,6 +8,7 @@ public record CartItemResponse(
         Long productId,
         String title,
         String thumbnailUrl,
+        String speciesName,
         Long sellerId,
         String sellerName,
         BigDecimal price,
