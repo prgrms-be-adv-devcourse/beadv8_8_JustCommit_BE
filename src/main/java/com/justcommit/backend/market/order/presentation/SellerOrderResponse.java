@@ -14,12 +14,13 @@ public record SellerOrderResponse(
         OrderStatus status,
         String shipmentStatus,
         String representativeItemName,
+        String thumbnailUrl, // 대표 상품 사진 (없으면 null)
         LocalDateTime createdAt
 ) {
     public SellerOrderResponse(Long sellerOrderId, Long orderId, String orderNo, BigDecimal totalAmount,
                                Integer itemCount, OrderStatus status, String representativeItemName,
                                LocalDateTime createdAt) {
         this(sellerOrderId, orderId, orderNo, totalAmount, itemCount, status, null,
-                representativeItemName, createdAt);
+                representativeItemName, null, createdAt);
     }
 }

@@ -174,13 +174,14 @@ class OrderControllerTest {
     void listsOnlyAuthenticatedBuyersOrders() throws Exception {
         when(orderReadService.buyerOrders(eq(10L), any(OrderListRequest.class)))
                 .thenReturn(new PagingResponse<>(List.of(new OrderResponse(9L, "ORD-test",
-                        new BigDecimal("13000"), 1, OrderStatus.PAID, "몬스테라",
+                        new BigDecimal("13000"), 1, OrderStatus.PAID, "몬스테라", "https://img/monstera.jpg",
                         LocalDateTime.of(2026, 10, 9, 12, 0))), 0, 20, 1, 1));
 
         mockMvc.perform(get("/api/v1/orders"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].orderId").value(9))
-                .andExpect(jsonPath("$.content[0].representativeItemName").value("몬스테라"));
+                .andExpect(jsonPath("$.content[0].representativeItemName").value("몬스테라"))
+                .andExpect(jsonPath("$.content[0].thumbnailUrl").value("https://img/monstera.jpg"));
 
         verify(orderReadService).buyerOrders(eq(10L), any(OrderListRequest.class));
     }
@@ -193,7 +194,7 @@ class OrderControllerTest {
                         "01012345678", "12345", "서울시", null,
                         List.of(new OrderDetailResponse.SellerOrderDetail(7L, 20L,
                                 List.of(new OrderDetailResponse.OrderItemDetail(5L, 101L, "몬스테라",
-                                        new BigDecimal("10000"), OrderItemStatus.NORMAL, true)),
+                                        new BigDecimal("10000"), OrderItemStatus.NORMAL, true, "https://img/monstera.jpg")),
                                 new BigDecimal("10000"), null, new BigDecimal("3000"),
                                 30L, "DELIVERED", LocalDateTime.of(2026, 10, 12, 10, 0),
                                 LocalDateTime.of(2026, 10, 12, 10, 3), LocalDateTime.of(2026, 10, 12, 10, 5),

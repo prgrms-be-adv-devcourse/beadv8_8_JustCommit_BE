@@ -11,6 +11,7 @@ public record OrderResponse(
         Integer itemCount,
         OrderStatus status,
         String representativeItemName,
+        String thumbnailUrl, // 대표 상품 사진 (없으면 null)
         LocalDateTime createdAt
 ) {
 }
