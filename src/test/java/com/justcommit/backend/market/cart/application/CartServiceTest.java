@@ -98,14 +98,15 @@ class CartServiceTest {
         addItem(cart, 2L, 102L, "20000");
         when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
         when(productQuery.getProducts(List.of(101L, 102L))).thenReturn(List.of(
-                product(101L, "몬스테라", "12000", ProductStatus.ACTIVE),
-                product(102L, "품절된 식물", "20000", ProductStatus.SOLD_OUT)));
+                product(101L, "몬스테라", "12000", ProductStatus.ACTIVE, "몬스테라 델리시오사"),
+                product(102L, "품절된 식물", "20000", ProductStatus.SOLD_OUT, "필로덴드론")));
         when(memberQuery.getNicknames(List.of(20L))).thenReturn(Map.of(20L, "판매자"));
 
         CartResponse response = cartService.find(10L);
 
         assertThat(response.items()).hasSize(2);
         assertThat(response.items().get(0).title()).isEqualTo("몬스테라");
+        assertThat(response.items().get(0).speciesName()).isEqualTo("몬스테라 델리시오사");
         assertThat(response.items().get(0).price()).isEqualByComparingTo("10000");
         assertThat(response.items().get(0).nowPrice()).isEqualByComparingTo("12000");
         assertThat(response.items().get(0).isChangedPrice()).isTrue();
@@ -114,6 +115,7 @@ class CartServiceTest {
         assertThat(response.items().get(0).status()).isEqualTo("ACTIVE");
         assertThat(response.items().get(1).isChangedPrice()).isFalse();
         assertThat(response.items().get(1).isPurchasable()).isFalse();
+        assertThat(response.items().get(1).speciesName()).isEqualTo("필로덴드론");
         assertThat(response.totalAmount()).isEqualByComparingTo("30000");
         assertThat(response.nowTotalAmount()).isEqualByComparingTo("32000");
         verify(memberQuery).getNicknames(List.of(20L));
@@ -332,6 +334,10 @@ class CartServiceTest {
     }
 
     private static ProductResult product(long id, String title, String price, ProductStatus status) {
-        return new ProductResult(id, 20L, title, new BigDecimal(price), status, false, null, null);
+        return product(id, title, price, status, null);
+    }
+
+    private static ProductResult product(long id, String title, String price, ProductStatus status, String speciesName) {
+        return new ProductResult(id, 20L, title, new BigDecimal(price), status, false, null, speciesName);
     }
 }
