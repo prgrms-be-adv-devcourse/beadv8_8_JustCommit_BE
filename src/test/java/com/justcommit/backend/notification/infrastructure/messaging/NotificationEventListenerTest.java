@@ -61,7 +61,7 @@ class NotificationEventListenerTest {
     @DisplayName("구매확정 이벤트는 판매자에게 알림을 만든다")
     void notifiesSellerOnPurchaseConfirmed() {
         listener.onPurchaseConfirmed(new PurchaseConfirmedEvent(SELLER_ORDER_ID, SELLER, new BigDecimal("10000"),
-                LocalDateTime.of(2026, 10, 16, 12, 0)));
+                LocalDateTime.of(2026, 10, 16, 12, 0), "몬스테라"));
 
         verify(notificationService).create(SELLER, NotificationType.PURCHASE_CONFIRMED, SELLER_ORDER_ID,
                 "PURCHASE_CONFIRMED:7");

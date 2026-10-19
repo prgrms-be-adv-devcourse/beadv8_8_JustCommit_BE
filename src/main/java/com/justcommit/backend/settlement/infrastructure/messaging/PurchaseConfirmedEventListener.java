@@ -20,7 +20,8 @@ public class PurchaseConfirmedEventListener {
         settlementService.settle(
                 event.sellerOrderId(),
                 event.sellerId(),
-                event.saleAmount()
+                event.saleAmount(),
+                event.itemSummary()
         );
     }
 }
