@@ -86,13 +86,19 @@ echo "✅ 택배사: $(git log --oneline -1)"
 echo "===== 6. 프론트 develop 받아서 빌드 (Docker 안의 Node, 서버에 Node 설치 안 함) ====="
 git clone -q -b develop "$FE_REPO" ~/replant-fe
 cd ~/replant-fe
+# 토스 클라이언트 키는 브라우저에 노출되는 공개 키라 빌드 결과에 들어간다 (시크릿 키는 백엔드 .env에만)
+TOSS_CK=$(grep '^TOSS_CLIENT_KEY=' ~/secrets/replant.env | cut -d= -f2-)
+[ -n "$TOSS_CK" ] || echo "⚠️ TOSS_CLIENT_KEY가 없어 예치금 충전 결제창이 열리지 않아요 (~/secrets/replant.env에 test_ck_... 추가)"
 docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
-  -e VITE_API_BASE_URL= -e VITE_OAUTH_BASE_URL="https://$DOMAIN" \
+  -e VITE_API_BASE_URL= -e VITE_OAUTH_BASE_URL="https://$DOMAIN" -e VITE_TOSS_CLIENT_KEY="$TOSS_CK" \
   -v "$PWD":/app -w /app node:24-alpine \
   sh -c "npm ci --no-audit --no-fund --loglevel=error && npm run build"
 [ -f dist/index.html ] || { echo "❌ 프론트 빌드 결과(dist/index.html)가 없어요"; exit 1; }
 if grep -q "localhost:8080" dist/assets/*.js; then
   echo "❌ 프론트 빌드에 localhost:8080이 남아 있어요 (카카오 로그인 주소 설정 확인)"; exit 1
+fi
+if [ -n "$TOSS_CK" ] && ! grep -q "$TOSS_CK" dist/assets/*.js; then
+  echo "❌ 프론트 빌드에 토스 클라이언트 키가 들어가지 않았어요"; exit 1
 fi
 sudo mkdir -p /var/www/replant
 sudo rm -rf /var/www/replant/*
