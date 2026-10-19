@@ -10,6 +10,7 @@ public record NotificationResponse(
         String message,
         Long orderId,
         Long sellerOrderId,
+        String itemSummary,
         boolean isRead,
         LocalDateTime createdAt,
         LocalDateTime readAt
@@ -21,6 +22,7 @@ public record NotificationResponse(
                 notification.getMessage(),
                 notification.getOrderId(),
                 notification.getSellerOrderId(),
+                notification.getItemSummary(),
                 notification.isRead(),
                 notification.getCreatedAt(),
                 notification.getReadAt());

@@ -2,6 +2,8 @@ package com.justcommit.backend.notification.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.response.PagingResponse;
+import com.justcommit.backend.market.ShipmentQuery;
+import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.notification.domain.Notification;
 import com.justcommit.backend.notification.domain.NotificationErrorCode;
 import com.justcommit.backend.notification.domain.NotificationType;
@@ -19,6 +21,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.LocalDateTime;
+import java.util.function.Supplier;
 
 @Slf4j
 @Service
@@ -30,6 +33,7 @@ public class NotificationService {
 
     private final NotificationRepository notificationRepository;
     private final NotificationSseRegistry sseRegistry;
+    private final ShipmentQuery shipmentQuery;
 
     // 주문 id 없이 만드는 알림 (판매자 알림은 sellerOrderId로 판매 주문 상세로 이동)
     @Transactional
@@ -37,9 +41,22 @@ public class NotificationService {
         create(memberId, type, null, sellerOrderId, eventKey);
     }
 
-    // 이벤트로 알림을 만든다. 같은 이벤트가 다시 오면(Kafka 중복 전달) 새로 만들지 않는다.
+    // 상품 요약을 모르는 이벤트(주문 쪽 이벤트)는 판매자 주문의 배송에 저장된 상품 요약을 조회해 쓴다
     @Transactional
     public void create(Long memberId, NotificationType type, Long orderId, Long sellerOrderId, String eventKey) {
+        save(memberId, type, orderId, sellerOrderId, () -> itemSummaryOf(sellerOrderId), eventKey);
+    }
+
+    // 상품 요약을 이벤트로 받은 경우(배송 이벤트)는 조회하지 않는다
+    @Transactional
+    public void create(Long memberId, NotificationType type, Long orderId, Long sellerOrderId, String itemSummary,
+                       String eventKey) {
+        save(memberId, type, orderId, sellerOrderId, () -> itemSummary, eventKey);
+    }
+
+    // 이벤트로 알림을 만든다. 같은 이벤트가 다시 오면(Kafka 중복 전달) 새로 만들지 않는다.
+    private void save(Long memberId, NotificationType type, Long orderId, Long sellerOrderId,
+                        Supplier<String> itemSummary, String eventKey) {
         if (memberId == null) {
             // 받는 사람을 모르는 이벤트 (예: 구매자 id를 저장하기 전에 만든 배송). 다시 받아도 같으므로 건너뛴다.
             log.warn("받는 사람이 없어 알림을 만들지 않음: type={}, eventKey={}", type, eventKey);
@@ -49,7 +66,7 @@ public class NotificationService {
             log.info("이미 만든 알림 (중복 이벤트): eventKey={}", eventKey);
             return;
         }
-        notificationRepository.save(new Notification(memberId, type, orderId, sellerOrderId, eventKey));
+        notificationRepository.save(new Notification(memberId, type, orderId, sellerOrderId, itemSummary.get(), eventKey));
         pushUnreadCountAfterCommit(memberId);
     }
 
@@ -86,6 +103,20 @@ public class NotificationService {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
         sseRegistry.add(memberId, emitter, unreadCount(memberId));
         return emitter;
+    }
+
+    // 상품 요약은 알림의 이름표일 뿐이라, 조회에 실패해도 알림은 만든다
+    private String itemSummaryOf(Long sellerOrderId) {
+        if (sellerOrderId == null) {
+            return null;
+        }
+        try {
+            ShipmentResult shipment = shipmentQuery.findBySellerOrderId(sellerOrderId);
+            return shipment == null ? null : shipment.itemSummary();
+        } catch (RuntimeException e) {
+            log.warn("알림 상품 요약 조회 실패: sellerOrderId={}", sellerOrderId, e);
+            return null;
+        }
     }
 
     // SSE로는 "새 알림 왔음" 신호(안 읽은 수)만 보낸다. 알림 원본은 DB에 있어 연결이 끊겨도 다시 조회하면 맞춰진다.
