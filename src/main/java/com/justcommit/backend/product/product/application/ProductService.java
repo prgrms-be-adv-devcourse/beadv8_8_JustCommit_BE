@@ -126,8 +126,12 @@ public class ProductService implements ProductQuery, ProductUseCase {
     // memberId: 로그인하지 않았으면 null
     public ProductDetailResponse getProductDetail(Long productId, Long memberId) {
         Product product =  productRepository.findWithDetailById(productId)
-                .filter(p -> p.isVisibleTo(memberId))
+                .filter(p -> p.getStatus() != ProductStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
+        // 삭제와 숨김을 구분해서 프론트가 비공개 안내를 띄울 수 있게 함
+        if (!product.isVisibleTo(memberId)) {
+            throw new BusinessException(ProductErrorCode.PRODUCT_HIDDEN);
+        }
 
         return ProductDetailResponse.from(product, memberQuery.getNickname(product.getSellerId()));
     }
