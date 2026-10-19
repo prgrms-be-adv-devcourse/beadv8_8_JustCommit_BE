@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -29,7 +30,7 @@ public class SettlementService implements SettlementQuery {
     }
 
     @Transactional
-    public SettlementResult settle(Long sellerOrderId, Long sellerId, BigDecimal saleAmount) {
+    public SettlementResult settle(Long sellerOrderId, Long sellerId, BigDecimal saleAmount, String itemSummary) {
         validateRequest(sellerOrderId, sellerId);
 
         // 이미 정산된 판매자 주문이면 기존 결과 반환
@@ -39,7 +40,13 @@ public class SettlementService implements SettlementQuery {
         }
 
         Settlement settlement = settlementRepository.save(
-                Settlement.createSettlement(sellerOrderId, saleAmount, LocalDateTime.now()) //settled_at
+                Settlement.createSettlement(
+                        sellerOrderId,
+                        sellerId,
+                        saleAmount,
+                        LocalDateTime.now(),
+                        itemSummary
+                )
         );
 
         paymentUseCase.distributeSettlement(
@@ -50,6 +57,15 @@ public class SettlementService implements SettlementQuery {
         );
 
         return toResult(settlement);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SettlementResult> getSettlements(Long sellerId) {
+        return settlementRepository
+                .findBySellerIdOrderBySettledAtDesc(sellerId)
+                .stream()
+                .map(this::toResult)
+                .toList();
     }
 
     private void validateRequest(Long sellerOrderId, Long sellerId) {
@@ -65,7 +81,8 @@ public class SettlementService implements SettlementQuery {
                 settlement.getSaleAmount(),
                 settlement.getFee(),
                 settlement.getPayoutAmount(),
-                settlement.getSettledAt()
+                settlement.getSettledAt(),
+                settlement.getItemSummary()
         );
     }
 }

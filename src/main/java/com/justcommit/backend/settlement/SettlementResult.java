@@ -16,4 +16,5 @@ public class SettlementResult {
     private final BigDecimal fee;
     private final BigDecimal payoutAmount;
     private final LocalDateTime settledAt;
+    private final String itemSummary;
 }

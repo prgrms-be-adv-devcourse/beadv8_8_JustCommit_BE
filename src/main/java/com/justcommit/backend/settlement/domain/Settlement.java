@@ -41,19 +41,44 @@ public class Settlement extends BaseTimeEntity {
     @Column(name = "settled_at", nullable = false)
     private LocalDateTime settledAt;
 
-    private Settlement(Long sellerOrderId, BigDecimal saleAmount, BigDecimal fee,
-                       LocalDateTime settledAt) {
+    @Column(name = "seller_id", nullable = false)
+    private Long sellerId;
+
+    @Column(name = "item_summary")
+    private String itemSummary;
+
+
+    private Settlement(Long sellerOrderId, Long sellerId,
+                       BigDecimal saleAmount, BigDecimal fee,
+                       LocalDateTime settledAt, String itemSummary) {
         this.sellerOrderId = sellerOrderId;
+        this.sellerId = sellerId;
         this.saleAmount = saleAmount;
         this.fee = fee;
         this.payoutAmount = saleAmount.subtract(fee);
         this.settledAt = settledAt;
+        this.itemSummary = itemSummary;
     }
 
-    public static Settlement createSettlement(Long sellerOrderId, BigDecimal saleAmount, LocalDateTime settledAt) {
+    public static Settlement createSettlement(
+            Long sellerOrderId,
+            Long sellerId,
+            BigDecimal saleAmount,
+            LocalDateTime settledAt,
+            String itemSummary
+    ) {
         validateAmount(saleAmount);
+
         BigDecimal fee = SettlementPolicy.calculateFee(saleAmount);
-        return new Settlement(sellerOrderId, saleAmount, fee, settledAt);
+
+        return new Settlement(
+                sellerOrderId,
+                sellerId,
+                saleAmount,
+                fee,
+                settledAt,
+                itemSummary
+        );
     }
 
     private static void validateAmount(BigDecimal saleAmount) {
