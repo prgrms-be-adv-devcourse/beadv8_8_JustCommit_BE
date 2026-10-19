@@ -428,23 +428,23 @@ public class  ProductServiceTest {
     }
 
     @Test
-    @DisplayName("다른 회원은 숨긴 상품의 상세를 조회하면 PRODUCT_NOT_FOUND")
+    @DisplayName("다른 회원은 숨긴 상품의 상세를 조회하면 PRODUCT_HIDDEN")
     void getHiddenProductDetailByOtherMember() {
         given(productRepository.findWithDetailById(PRODUCT_ID)).willReturn(Optional.of(hiddenProduct()));
 
         assertThatThrownBy(() -> productService.getProductDetail(PRODUCT_ID, OTHER_MEMBER_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND);
+                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_HIDDEN);
     }
 
     @Test
-    @DisplayName("비회원은 숨긴 상품의 상세를 조회하면 PRODUCT_NOT_FOUND")
+    @DisplayName("비회원은 숨긴 상품의 상세를 조회하면 PRODUCT_HIDDEN")
     void getHiddenProductDetailByGuest() {
         given(productRepository.findWithDetailById(PRODUCT_ID)).willReturn(Optional.of(hiddenProduct()));
 
         assertThatThrownBy(() -> productService.getProductDetail(PRODUCT_ID, null))
                 .isInstanceOf(BusinessException.class)
-                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND);
+                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_HIDDEN);
     }
 
     // 삭제된 상품은 본인에게도 보이지 않음

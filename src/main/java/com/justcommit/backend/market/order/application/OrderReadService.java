@@ -23,20 +23,26 @@ import com.justcommit.backend.market.order.presentation.OrderListRequest;
 import com.justcommit.backend.market.order.presentation.OrderResponse;
 import com.justcommit.backend.market.order.presentation.SellerOrderDetailResponse;
 import com.justcommit.backend.market.order.presentation.SellerOrderResponse;
+import com.justcommit.backend.product.ProductQuery;
+import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.settlement.SettlementQuery;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -47,19 +53,25 @@ public class OrderReadService implements OrderQuery {
     private final OrdersItemRepository ordersItemRepository;
     private final ShipmentQuery shipmentQuery;
     private final SettlementQuery settlementQuery;
+    private final ProductQuery productQuery;
 
     public PagingResponse<OrderResponse> buyerOrders(Long buyerId, OrderListRequest request) {
         Page<Orders> page = ordersRepository.findByBuyerId(buyerId, request.toPageable());
         List<Long> orderIds = page.getContent().stream().map(Orders::getId).toList();
-        Map<Long, String> firstNames = new HashMap<>();
+        Map<Long, OrdersItem> firstItems = new HashMap<>();
         if (!orderIds.isEmpty()) {
             for (OrdersItem item : ordersItemRepository.findByOrderIds(orderIds)) {
-                firstNames.putIfAbsent(item.getSellerOrder().getOrder().getId(), item.getProductName());
+                firstItems.putIfAbsent(item.getSellerOrder().getOrder().getId(), item);
             }
         }
-        return PagingResponse.from(page.map(order -> new OrderResponse(
-                order.getId(), order.getOrderNo(), order.getTotalAmount(), order.getItemCount(),
-                order.getStatus(), firstNames.get(order.getId()), order.getCreatedAt())));
+        Map<Long, String> thumbnails = thumbnailsByProduct(
+                firstItems.values().stream().map(OrdersItem::getProductId).toList());
+        return PagingResponse.from(page.map(order -> {
+            OrdersItem firstItem = firstItems.get(order.getId());
+            return new OrderResponse(order.getId(), order.getOrderNo(), order.getTotalAmount(), order.getItemCount(),
+                    order.getStatus(), firstItem == null ? null : firstItem.getProductName(),
+                    firstItem == null ? null : thumbnails.get(firstItem.getProductId()), order.getCreatedAt());
+        }));
     }
 
     public OrderDetailResponse buyerOrder(Long buyerId, Long orderId) {
@@ -69,9 +81,11 @@ public class OrderReadService implements OrderQuery {
         List<Long> sellerOrderIds = sellerOrderEntities.stream().map(SellerOrder::getId).toList();
         Map<Long, List<OrdersItemResult>> items = itemsBySellerOrder(sellerOrderIds);
         Map<Long, ShipmentResult> shipments = shipmentsBySellerOrder(sellerOrderIds);
+        Map<Long, String> thumbnails = thumbnailsByProduct(items.values().stream()
+                .flatMap(List::stream).map(OrdersItemResult::productId).toList());
         List<OrderDetailResponse.SellerOrderDetail> sellerOrders = sellerOrderEntities.stream()
                 .map(sellerOrder -> toBuyerDetail(toResult(sellerOrder, items, shipments), order.getStatus(),
-                        shipments.get(sellerOrder.getId())))
+                        shipments.get(sellerOrder.getId()), thumbnails))
                 .toList();
         return new OrderDetailResponse(order.getId(), order.getOrderNo(), order.getTotalAmount(),
                 order.getItemCount(), order.getStatus(), order.getCreatedAt(), order.getRecipientName(),
@@ -82,23 +96,28 @@ public class OrderReadService implements OrderQuery {
     public PagingResponse<SellerOrderResponse> sellerOrders(Long sellerId, OrderListRequest request) {
         Page<SellerOrder> page = sellerOrderRepository.findBySellerId(sellerId, request.toPageable());
         List<Long> sellerOrderIds = page.getContent().stream().map(SellerOrder::getId).toList();
-        Map<Long, String> firstNames = new HashMap<>();
+        Map<Long, OrdersItem> firstItems = new HashMap<>();
         Map<Long, Integer> itemCounts = new HashMap<>();
         Map<Long, ShipmentResult> shipments = shipmentsBySellerOrder(sellerOrderIds);
         if (!sellerOrderIds.isEmpty()) {
             for (OrdersItem item : ordersItemRepository.findBySellerOrderIds(sellerOrderIds)) {
                 Long id = item.getSellerOrder().getId();
-                firstNames.putIfAbsent(id, item.getProductName());
+                firstItems.putIfAbsent(id, item);
                 itemCounts.merge(id, 1, Integer::sum);
             }
         }
+        Map<Long, String> thumbnails = thumbnailsByProduct(
+                firstItems.values().stream().map(OrdersItem::getProductId).toList());
         return PagingResponse.from(page.map(sellerOrder -> {
             Orders order = sellerOrder.getOrder();
             ShipmentResult shipment = shipments.get(sellerOrder.getId());
+            OrdersItem firstItem = firstItems.get(sellerOrder.getId());
             return new SellerOrderResponse(sellerOrder.getId(), order.getId(), order.getOrderNo(),
                     sellerOrder.getTotalAmount().add(sellerOrder.getShippingFee()),
                     itemCounts.getOrDefault(sellerOrder.getId(), 0), order.getStatus(),
-                    shipment == null ? null : shipment.status(), firstNames.get(sellerOrder.getId()),
+                    shipment == null ? null : shipment.status(),
+                    firstItem == null ? null : firstItem.getProductName(),
+                    firstItem == null ? null : thumbnails.get(firstItem.getProductId()),
                     sellerOrder.getCreatedAt());
         }));
     }
@@ -107,7 +126,12 @@ public class OrderReadService implements OrderQuery {
         SellerOrder sellerOrder = sellerOrderRepository.findByIdAndSellerId(sellerOrderId, sellerId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.SELLER_ORDER_NOT_FOUND));
         Orders order = sellerOrder.getOrder();
-        List<OrdersItemResult> items = itemsBySellerOrder(List.of(sellerOrderId)).getOrDefault(sellerOrderId, List.of());
+        List<OrdersItemResult> orderItems = itemsBySellerOrder(List.of(sellerOrderId))
+                .getOrDefault(sellerOrderId, List.of());
+        Map<Long, String> thumbnails = thumbnailsByProduct(orderItems.stream().map(OrdersItemResult::productId).toList());
+        List<SellerOrderDetailResponse.Item> items = orderItems.stream()
+                .map(item -> SellerOrderDetailResponse.Item.of(item, thumbnails.get(item.productId())))
+                .toList();
         ShipmentResult shipment = shipmentQuery.findBySellerOrderId(sellerOrderId);
         Optional<LocalDateTime> settledAt = settlementQuery.findSettledAtBySellerOrderId(sellerOrderId);
         // 정산 테이블에는 별도 상태 컬럼이 없으므로 실제 정산 행의 존재 여부만 표시한다.
@@ -170,6 +194,22 @@ public class OrderReadService implements OrderQuery {
         return sellerOrders.stream().map(sellerOrder -> toResult(sellerOrder, items, shipments)).toList();
     }
 
+    // 주문 상품의 대표 사진을 한 번에 가져온다. 사진 때문에 주문 조회가 실패하지 않게 실패하면 빈 값으로 둔다.
+    private Map<Long, String> thumbnailsByProduct(Collection<Long> productIds) {
+        List<Long> ids = productIds.stream().distinct().toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            return productQuery.getProducts(ids).stream()
+                    .filter(product -> product.thumbnailUrl() != null)
+                    .collect(Collectors.toMap(ProductResult::productId, ProductResult::thumbnailUrl, (a, b) -> a));
+        } catch (RuntimeException e) {
+            log.warn("주문 상품 사진 조회 실패: productIds={}", ids, e);
+            return Map.of();
+        }
+    }
+
     private Map<Long, List<OrdersItemResult>> itemsBySellerOrder(List<Long> sellerOrderIds) {
         if (sellerOrderIds.isEmpty()) {
             return Map.of();
@@ -202,12 +242,13 @@ public class OrderReadService implements OrderQuery {
     }
 
     private OrderDetailResponse.SellerOrderDetail toBuyerDetail(SellerOrderResult seller, OrderStatus orderStatus,
-                                                                ShipmentResult shipment) {
+                                                                ShipmentResult shipment, Map<Long, String> thumbnails) {
         boolean delivered = "DELIVERED".equals(seller.shipmentStatus());
         List<OrderDetailResponse.OrderItemDetail> items = seller.items().stream()
                 .map(item -> new OrderDetailResponse.OrderItemDetail(item.id(), item.productId(),
                         item.productName(), item.price(), item.status(),
-                        orderStatus == OrderStatus.PAID && delivered && item.status() == OrderItemStatus.NORMAL))
+                        orderStatus == OrderStatus.PAID && delivered && item.status() == OrderItemStatus.NORMAL,
+                        thumbnails.get(item.productId())))
                 .toList();
         return new OrderDetailResponse.SellerOrderDetail(seller.id(), seller.sellerId(), items,
                 seller.totalAmount(), seller.confirmedAt(), seller.shippingFee(), seller.shipmentId(),

@@ -12,6 +12,9 @@ import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.presentation.OrderListRequest;
+import com.justcommit.backend.product.ProductQuery;
+import com.justcommit.backend.product.ProductResult;
+import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.settlement.SettlementQuery;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -45,6 +48,7 @@ class OrderReadServiceTest {
     @Mock OrdersItemRepository ordersItemRepository;
     @Mock ShipmentQuery shipmentQuery;
     @Mock SettlementQuery settlementQuery;
+    @Mock ProductQuery productQuery;
     @InjectMocks OrderReadService orderReadService;
 
     @Test
@@ -54,13 +58,16 @@ class OrderReadServiceTest {
         when(ordersRepository.findByBuyerId(eq(10L), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(order), PageRequest.of(0, 20), 1));
         when(ordersItemRepository.findByOrderIds(List.of(9L))).thenReturn(List.of(item));
+        when(productQuery.getProducts(List.of(101L))).thenReturn(List.of(product(101L, "https://img/monstera.jpg")));
 
         var response = orderReadService.buyerOrders(10L, new OrderListRequest(null, null));
 
         assertThat(response.content()).singleElement().satisfies(summary -> {
             assertThat(summary.orderId()).isEqualTo(9L);
             assertThat(summary.representativeItemName()).isEqualTo("몬스테라");
+            assertThat(summary.thumbnailUrl()).isEqualTo("https://img/monstera.jpg"); // 대표 상품과 같은 상품의 사진
         });
+        verify(productQuery).getProducts(List.of(101L)); // 목록 전체에 한 번
         assertThat(response.totalElements()).isEqualTo(1);
         verify(ordersItemRepository).findByOrderIds(List.of(9L));
     }
@@ -110,9 +117,14 @@ class OrderReadServiceTest {
                         LocalDateTime.of(2026, 10, 12, 10, 5)),
                 8L, new ShipmentResult(31L, "READY", null)));
 
+        when(productQuery.getProducts(List.of(101L, 102L)))
+                .thenReturn(List.of(product(101L, "https://img/monstera.jpg"))); // 102는 사진 없음
+
         var response = orderReadService.buyerOrder(10L, 9L);
 
         assertThat(response.sellerOrders()).hasSize(2);
+        assertThat(response.sellerOrders().get(0).items().getFirst().thumbnailUrl()).isEqualTo("https://img/monstera.jpg");
+        assertThat(response.sellerOrders().get(1).items().getFirst().thumbnailUrl()).isNull();
         assertThat(response.sellerOrders().get(0).shipmentId()).isEqualTo(30L);
         assertThat(response.sellerOrders().get(0).shipmentStatus()).isEqualTo("DELIVERED");
         assertThat(response.sellerOrders().get(0).bookedAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 10, 0));
@@ -162,6 +174,7 @@ class OrderReadServiceTest {
         when(sellerOrderRepository.findBySellerId(eq(20L), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(sellerOrder), PageRequest.of(0, 20), 1));
         when(ordersItemRepository.findBySellerOrderIds(List.of(7L))).thenReturn(List.of(item));
+        when(productQuery.getProducts(List.of(101L))).thenReturn(List.of(product(101L, "https://img/monstera.jpg")));
 
         var response = orderReadService.sellerOrders(20L, new OrderListRequest(0, 20));
 
@@ -169,6 +182,7 @@ class OrderReadServiceTest {
             assertThat(summary.sellerOrderId()).isEqualTo(7L);
             assertThat(summary.itemCount()).isEqualTo(1);
             assertThat(summary.representativeItemName()).isEqualTo("몬스테라");
+            assertThat(summary.thumbnailUrl()).isEqualTo("https://img/monstera.jpg");
             assertThat(summary.totalAmount()).isEqualByComparingTo("13000");
         });
     }
@@ -192,10 +206,15 @@ class OrderReadServiceTest {
         when(ordersItemRepository.findBySellerOrderIds(List.of(7L))).thenReturn(List.of(item));
 
         when(settlementQuery.findSettledAtBySellerOrderId(7L)).thenReturn(Optional.empty());
+        when(productQuery.getProducts(List.of(101L))).thenReturn(List.of(product(101L, "https://img/monstera.jpg")));
 
         var response = orderReadService.sellerOrder(20L, 7L);
 
         assertThat(response.orderId()).isEqualTo(9L);
+        assertThat(response.items()).singleElement().satisfies(detail -> {
+            assertThat(detail.productName()).isEqualTo("몬스테라");
+            assertThat(detail.thumbnailUrl()).isEqualTo("https://img/monstera.jpg");
+        });
         assertThat(response.address1()).isEqualTo("서울시");
         assertThat(response.settlementStatus()).isEqualTo("NOT_SETTLED");
         assertThat(response.settledAt()).isNull();
@@ -240,6 +259,28 @@ class OrderReadServiceTest {
         assertThat(result.sellerOrders()).singleElement().satisfies(seller ->
                 assertThat(seller.items()).singleElement().satisfies(detail ->
                         assertThat(detail.productName()).isEqualTo("몬스테라")));
+    }
+
+    @Test
+    void ordersStillLoadWhenProductLookupFails() {
+        Orders order = order(10L);
+        OrdersItem item = item(order, 20L);
+        when(ordersRepository.findByBuyerId(eq(10L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(order), PageRequest.of(0, 20), 1));
+        when(ordersItemRepository.findByOrderIds(List.of(9L))).thenReturn(List.of(item));
+        when(productQuery.getProducts(List.of(101L))).thenThrow(new IllegalStateException("상품 조회 실패"));
+
+        var response = orderReadService.buyerOrders(10L, new OrderListRequest(null, null));
+
+        assertThat(response.content()).singleElement().satisfies(summary -> {
+            assertThat(summary.representativeItemName()).isEqualTo("몬스테라");
+            assertThat(summary.thumbnailUrl()).isNull(); // 사진만 빠지고 주문 내역은 보인다
+        });
+    }
+
+    private static ProductResult product(Long productId, String thumbnailUrl) {
+        return new ProductResult(productId, 20L, "상품", new BigDecimal("10000"), ProductStatus.SOLD_OUT, false,
+                thumbnailUrl, "품종");
     }
 
     @Test

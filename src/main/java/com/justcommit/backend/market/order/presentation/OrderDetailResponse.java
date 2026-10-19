@@ -44,7 +44,8 @@ public record OrderDetailResponse(
             String productName,
             BigDecimal price,
             OrderItemStatus status,
-            boolean purchaseConfirmable
+            boolean purchaseConfirmable,
+            String thumbnailUrl // 상품 사진 (없으면 null)
     ) {
     }
 }
