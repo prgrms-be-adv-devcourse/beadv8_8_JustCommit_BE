@@ -97,9 +97,11 @@ services:
     mem_limit: 768m
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      # 9092 포트가 열렸는지만 본다. kafka-topics.sh는 매번 JVM을 새로 띄워
+      # CPU 크레딧이 떨어진 EC2에서 10초를 넘겨 unhealthy가 되고 app 기동을 막았다 (#184)
+      test: ["CMD", "bash", "-c", "</dev/tcp/localhost/9092"]
       interval: 10s
-      timeout: 10s
+      timeout: 5s
       retries: 10
       start_period: 30s
 
