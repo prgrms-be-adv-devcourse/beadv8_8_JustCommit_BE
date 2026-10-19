@@ -158,6 +158,33 @@ class ProductReserveConcurrencyIntegrationTest {
         }
     }
 
+    @Test
+    @DisplayName("같은 주문에 결제 완료와 만료가 동시에 실행되면 둘 중 하나만 반영된다")
+    void onlyOneOfSoldOutAndReleaseAppliesConcurrently() throws Exception {
+        Long productId = saveActiveProduct();
+        Long orderId = 1L;
+        assertThat(productUseCase.reserve(orderId, List.of(productId))).isTrue();
+
+        // 짝수 스레드는 결제 완료, 홀수 스레드는 주문 만료를 같은 주문에 동시 실행
+        List<Boolean> results = runConcurrently(i -> i % 2 == 0
+                ? () -> productUseCase.markSoldOut(orderId)
+                : () -> productUseCase.release(orderId));
+
+        // 둘 다 결제 대기 상태일 때만 바꾸므로, 먼저 실행된 한 건만 성공
+        assertThat(results).filteredOn(Boolean::booleanValue).hasSize(1);
+
+        int winner = results.indexOf(true);
+        Product product = productRepository.findById(productId).orElseThrow();
+        if (winner % 2 == 0) {
+            // 결제 완료가 이기면 판매 완료, 예약 주문은 그대로
+            assertThat(product.getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+            assertThat(product.getReservedOrderId()).isEqualTo(orderId);
+        } else {
+            // 만료가 이기면 판매 중으로 복원
+            assertActive(productId);
+        }
+    }
+
     private void assertActive(Long productId) {
         Product product = productRepository.findById(productId).orElseThrow();
         assertThat(product.getStatus()).isEqualTo(ProductStatus.ACTIVE);
