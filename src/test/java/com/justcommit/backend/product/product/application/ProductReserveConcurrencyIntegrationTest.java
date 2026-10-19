@@ -1,6 +1,7 @@
 package com.justcommit.backend.product.product.application;
 
 import com.justcommit.backend.common.config.JpaAuditingConfig;
+import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.MemberQuery;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.ProductUseCase;
@@ -8,6 +9,7 @@ import com.justcommit.backend.product.image.application.ProductImageCleaner;
 import com.justcommit.backend.product.image.application.ProductImageUrlValidator;
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
+import com.justcommit.backend.product.product.presentation.dto.ProductRequest;
 import com.justcommit.backend.product.species.domain.Species;
 import com.justcommit.backend.product.species.infrastructure.SpeciesRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -57,6 +59,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProductReserveConcurrencyIntegrationTest {
 
     private static final int THREADS = 10;
+    private static final Long SELLER_ID = 1L;
 
     // 행 잠금 동작은 DB마다 달라서 운영과 같은 PostgreSQL로 검증
     @Container
@@ -70,6 +73,7 @@ class ProductReserveConcurrencyIntegrationTest {
     }
 
     @Autowired ProductUseCase productUseCase;
+    @Autowired ProductService productService;
     @Autowired ProductRepository productRepository;
     @Autowired SpeciesRepository speciesRepository;
 
@@ -209,6 +213,63 @@ class ProductReserveConcurrencyIntegrationTest {
         assertThat(product.getReservedOrderId()).isEqualTo(newOrderId);
     }
 
+    @Test
+    @DisplayName("판매자 삭제와 구매자 예약이 동시에 실행되면 한쪽만 반영된다")
+    void onlyOneOfSellerDeleteAndReserveAppliesConcurrently() throws Exception {
+        Long productId = saveActiveProduct();
+
+        // 0번 스레드는 판매자 삭제, 나머지는 구매자 예약
+        List<Boolean> results = runConcurrently(i -> i == 0
+                ? () -> succeeds(() -> productService.deleteProduct(SELLER_ID, productId))
+                : () -> productUseCase.reserve(100L + i, List.of(productId)));
+
+        // 삭제와 예약은 둘 다 판매 중일 때만 가능하므로, 먼저 잠금을 잡은 한 건만 성공
+        assertThat(results).filteredOn(Boolean::booleanValue).hasSize(1);
+
+        Product product = productRepository.findById(productId).orElseThrow();
+        if (results.get(0)) {
+            assertThat(product.getStatus()).isEqualTo(ProductStatus.DELETED);
+            assertThat(product.getReservedOrderId()).isNull();
+        } else {
+            assertReservedBy(productId, 100L + results.indexOf(true));
+        }
+    }
+
+    @Test
+    @DisplayName("판매자 수정과 구매자 예약이 동시에 실행돼도 수정이 예약 상태를 덮어쓰지 않는다")
+    void sellerUpdateDoesNotOverwriteReservationConcurrently() throws Exception {
+        Long productId = saveActiveProduct();
+        ProductRequest request = new ProductRequest(species.getId(), "수정된 제목", "설명",
+                new BigDecimal("20000"), null, null, null, List.of());
+
+        // 0번 스레드는 판매자 수정, 나머지는 구매자 예약
+        List<Boolean> results = runConcurrently(i -> i == 0
+                ? () -> succeeds(() -> productService.updateProduct(SELLER_ID, productId, request))
+                : () -> productUseCase.reserve(100L + i, List.of(productId)));
+
+        // 예약은 항상 정확히 한 주문만 성공
+        List<Boolean> reserveResults = results.subList(1, THREADS);
+        assertThat(reserveResults).filteredOn(Boolean::booleanValue).hasSize(1);
+
+        // 수정이 먼저든 나중이든, 예약 상태가 판매 중으로 되돌아가면 안 됨 (Lost Update 방지)
+        Long winnerOrderId = 101L + reserveResults.indexOf(true);
+        assertReservedBy(productId, winnerOrderId);
+
+        // 수정이 먼저 잠금을 잡았으면 반영되고, 예약이 먼저면 수정 불가로 원래 제목 유지
+        Product product = productRepository.findById(productId).orElseThrow();
+        assertThat(product.getTitle()).isEqualTo(results.get(0) ? "수정된 제목" : "몬스테라 중품");
+    }
+
+    // 판매자 API는 실패를 예외로 알리므로, 다른 결과와 비교할 수 있게 성공 여부로 바꾼다
+    private boolean succeeds(Runnable sellerAction) {
+        try {
+            sellerAction.run();
+            return true;
+        } catch (BusinessException e) {
+            return false;
+        }
+    }
+
     private void assertActive(Long productId) {
         Product product = productRepository.findById(productId).orElseThrow();
         assertThat(product.getStatus()).isEqualTo(ProductStatus.ACTIVE);
@@ -222,7 +283,7 @@ class ProductReserveConcurrencyIntegrationTest {
     }
 
     private Long saveActiveProduct() {
-        Product product = Product.create(species, 1L, "몬스테라 중품", "설명", new BigDecimal("10000"),
+        Product product = Product.create(species, SELLER_ID, "몬스테라 중품", "설명", new BigDecimal("10000"),
                 null, null, null, List.of());
         return productRepository.save(product).getId();
     }
