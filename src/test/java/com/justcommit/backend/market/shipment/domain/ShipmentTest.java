@@ -194,7 +194,7 @@ class ShipmentTest {
     }
 
     private Shipment newShipment() {
-        return new Shipment(SELLER_ORDER_ID, 20L, 10L, "구매자", "01000000000", "부산", "몬스테라", new BigDecimal("3000"));
+        return new Shipment(9L, SELLER_ORDER_ID, 20L, 10L, "구매자", "01000000000", "부산", "몬스테라", new BigDecimal("3000"));
     }
 
     private Shipment bookedShipment() {

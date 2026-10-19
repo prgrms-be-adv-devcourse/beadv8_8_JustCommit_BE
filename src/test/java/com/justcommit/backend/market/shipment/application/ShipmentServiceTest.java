@@ -62,6 +62,9 @@ class ShipmentServiceTest {
         LocalDateTime deliveredAt = LocalDateTime.of(2026, 10, 12, 13, 0);
         ReflectionTestUtils.setField(shipment, "deliveredAt", deliveredAt);
         ReflectionTestUtils.setField(shipment, "trackingNo", "TRACK-123");
+        ReflectionTestUtils.setField(shipment, "bookedAt", LocalDateTime.of(2026, 10, 12, 10, 0));
+        ReflectionTestUtils.setField(shipment, "pickedUpAt", LocalDateTime.of(2026, 10, 12, 10, 3));
+        ReflectionTestUtils.setField(shipment, "inTransitAt", LocalDateTime.of(2026, 10, 12, 10, 5));
         when(shipmentRepository.findBySellerOrderId(7L)).thenReturn(Optional.of(shipment));
 
         var result = shipmentService.findBySellerOrderId(7L);
@@ -70,6 +73,9 @@ class ShipmentServiceTest {
         assertThat(result.status()).isEqualTo("DELIVERED");
         assertThat(result.deliveredAt()).isEqualTo(deliveredAt);
         assertThat(result.trackingNo()).isEqualTo("TRACK-123");
+        assertThat(result.bookedAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 10, 0));
+        assertThat(result.pickedUpAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 10, 3));
+        assertThat(result.inTransitAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 10, 5));
     }
 
     @Test
@@ -80,6 +86,6 @@ class ShipmentServiceTest {
     }
 
     private Shipment newShipment(Long sellerOrderId) {
-        return new Shipment(sellerOrderId, 20L, 10L, "구매자", "01000000000", "부산", "몬스테라", new BigDecimal("3000"));
+        return new Shipment(9L, sellerOrderId, 20L, 10L, "구매자", "01000000000", "부산", "몬스테라", new BigDecimal("3000"));
     }
 }

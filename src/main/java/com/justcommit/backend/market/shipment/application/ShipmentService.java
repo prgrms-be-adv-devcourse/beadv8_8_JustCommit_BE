@@ -54,8 +54,7 @@ public class ShipmentService implements ShipmentQuery {
     @Transactional(readOnly = true)
     public ShipmentResult findBySellerOrderId(Long sellerOrderId) {
         return shipmentRepository.findBySellerOrderId(sellerOrderId)
-                .map(shipment -> new ShipmentResult(shipment.getId(), shipment.getStatus().name(),
-                        shipment.getDeliveredAt(), shipment.getTrackingNo()))
+                .map(this::toResult)
                 .orElse(null);
     }
 
@@ -66,9 +65,12 @@ public class ShipmentService implements ShipmentQuery {
             return Map.of();
         }
         return shipmentRepository.findBySellerOrderIdIn(sellerOrderIds).stream()
-                .collect(Collectors.toMap(Shipment::getSellerOrderId,
-                        shipment -> new ShipmentResult(shipment.getId(), shipment.getStatus().name(),
-                                shipment.getDeliveredAt(), shipment.getTrackingNo())));
+                .collect(Collectors.toMap(Shipment::getSellerOrderId, this::toResult));
+    }
+
+    private ShipmentResult toResult(Shipment shipment) {
+        return new ShipmentResult(shipment.getId(), shipment.getStatus().name(), shipment.getDeliveredAt(),
+                shipment.getTrackingNo(), shipment.getBookedAt(), shipment.getPickedUpAt(), shipment.getInTransitAt());
     }
 
 
@@ -78,7 +80,7 @@ public class ShipmentService implements ShipmentQuery {
         String receiverAddress = fullAddress(order.address1(), order.address2());
         List<Shipment> shipments = new ArrayList<>();
         for (SellerOrderResult sellerOrder : order.sellerOrders()) {
-            Shipment shipment = shipmentRepository.save(new Shipment(sellerOrder.id(), sellerOrder.sellerId(), order.buyerId(),
+            Shipment shipment = shipmentRepository.save(new Shipment(order.id(), sellerOrder.id(), sellerOrder.sellerId(), order.buyerId(),
                     order.recipientName(), order.recipientPhone(), receiverAddress,
                     itemSummary(sellerOrder.items()), sellerOrder.shippingFee()));
             shipment.assignCourierOrderNo(LocalDate.now());

@@ -25,18 +25,34 @@ public class NotificationEventListener {
 
     @KafkaListener(topics = "${custom.kafka.topics.shipment-status-changed}", groupId = GROUP_ID)
     public void onShipmentStatusChanged(ShipmentStatusChangedEvent event) {
-        String eventKey = "SHIPMENT:" + event.shipmentId() + ":" + event.status();
+        // 같은 이벤트로 구매자·판매자 알림을 각각 만들므로 중복 방지 키를 받는 사람별로 나눈다
+        String buyerKey = "SHIPMENT:" + event.shipmentId() + ":" + event.status();
+        String sellerKey = buyerKey + ":SELLER";
         switch (event.status()) {
-            case "BOOKED" -> notificationService.create(
-                    event.sellerId(), NotificationType.SHIPMENT_BOOKED, event.sellerOrderId(), eventKey);
-            case "PICKED_UP" -> notificationService.create(
-                    event.buyerId(), NotificationType.SHIPMENT_PICKED_UP, event.sellerOrderId(), eventKey);
-            case "IN_TRANSIT" -> notificationService.create(
-                    event.buyerId(), NotificationType.SHIPMENT_IN_TRANSIT, event.sellerOrderId(), eventKey);
-            case "DELIVERED" -> notificationService.create(
-                    event.buyerId(), NotificationType.SHIPMENT_DELIVERED, event.sellerOrderId(), eventKey);
+            case "BOOKED" -> notifySeller(event, NotificationType.SHIPMENT_BOOKED, buyerKey); // 기존 키 유지
+            case "PICKED_UP" -> {
+                notifyBuyer(event, NotificationType.SHIPMENT_PICKED_UP, buyerKey);
+                notifySeller(event, NotificationType.SELLER_SHIPMENT_PICKED_UP, sellerKey);
+            }
+            case "IN_TRANSIT" -> {
+                notifyBuyer(event, NotificationType.SHIPMENT_IN_TRANSIT, buyerKey);
+                notifySeller(event, NotificationType.SELLER_SHIPMENT_IN_TRANSIT, sellerKey);
+            }
+            case "DELIVERED" -> {
+                notifyBuyer(event, NotificationType.SHIPMENT_DELIVERED, buyerKey);
+                notifySeller(event, NotificationType.SELLER_SHIPMENT_DELIVERED, sellerKey);
+            }
             default -> log.info("알림 대상이 아닌 배송 상태: shipmentId={}, status={}", event.shipmentId(), event.status());
         }
+    }
+
+    // 구매자는 주문 상세(orderId)로, 판매자는 판매 주문 상세(sellerOrderId)로 이동한다
+    private void notifyBuyer(ShipmentStatusChangedEvent event, NotificationType type, String eventKey) {
+        notificationService.create(event.buyerId(), type, event.orderId(), event.sellerOrderId(), eventKey);
+    }
+
+    private void notifySeller(ShipmentStatusChangedEvent event, NotificationType type, String eventKey) {
+        notificationService.create(event.sellerId(), type, event.sellerOrderId(), eventKey);
     }
 
     @KafkaListener(topics = "${custom.kafka.topics.purchase-confirmed}", groupId = GROUP_ID)
@@ -54,7 +70,7 @@ public class NotificationEventListener {
     @KafkaListener(topics = "${custom.kafka.topics.seller-order-cancelled}", groupId = GROUP_ID)
     public void onSellerOrderCancelled(SellerOrderCancelledEvent event) {
         notificationService.create(event.buyerId(), NotificationType.SELLER_ORDER_CANCELLED_BUYER,
-                event.sellerOrderId(), "SELLER_ORDER_CANCELLED:BUYER:" + event.sellerOrderId());
+                event.orderId(), event.sellerOrderId(), "SELLER_ORDER_CANCELLED:BUYER:" + event.sellerOrderId());
         notificationService.create(event.sellerId(), NotificationType.SELLER_ORDER_CANCELLED,
                 event.sellerOrderId(), "SELLER_ORDER_CANCELLED:SELLER:" + event.sellerOrderId());
     }
@@ -62,6 +78,6 @@ public class NotificationEventListener {
     @KafkaListener(topics = "${custom.kafka.topics.order-item-auto-confirmed}", groupId = GROUP_ID)
     public void onOrderItemAutoConfirmed(OrderItemAutoConfirmedEvent event) {
         notificationService.create(event.buyerId(), NotificationType.ORDER_ITEM_AUTO_CONFIRMED,
-                event.sellerOrderId(), "ORDER_ITEM_AUTO_CONFIRMED:" + event.orderItemId());
+                event.orderId(), event.sellerOrderId(), "ORDER_ITEM_AUTO_CONFIRMED:" + event.orderItemId());
     }
 }

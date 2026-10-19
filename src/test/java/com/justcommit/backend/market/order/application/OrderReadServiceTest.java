@@ -105,8 +105,9 @@ class OrderReadServiceTest {
         when(ordersItemRepository.findBySellerOrderIds(List.of(7L, 8L)))
                 .thenReturn(List.of(deliveredItem, readyItem));
         when(shipmentQuery.findBySellerOrderIds(List.of(7L, 8L))).thenReturn(Map.of(
-                7L, new ShipmentResult(30L, "DELIVERED",
-                        LocalDateTime.of(2026, 10, 12, 13, 0)),
+                7L, new ShipmentResult(30L, "DELIVERED", LocalDateTime.of(2026, 10, 12, 13, 0), "TRACK-1",
+                        LocalDateTime.of(2026, 10, 12, 10, 0), LocalDateTime.of(2026, 10, 12, 10, 3),
+                        LocalDateTime.of(2026, 10, 12, 10, 5)),
                 8L, new ShipmentResult(31L, "READY", null)));
 
         var response = orderReadService.buyerOrder(10L, 9L);
@@ -114,8 +115,12 @@ class OrderReadServiceTest {
         assertThat(response.sellerOrders()).hasSize(2);
         assertThat(response.sellerOrders().get(0).shipmentId()).isEqualTo(30L);
         assertThat(response.sellerOrders().get(0).shipmentStatus()).isEqualTo("DELIVERED");
+        assertThat(response.sellerOrders().get(0).bookedAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 10, 0));
+        assertThat(response.sellerOrders().get(0).pickedUpAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 10, 3));
+        assertThat(response.sellerOrders().get(0).inTransitAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 10, 5));
         assertThat(response.sellerOrders().get(0).deliveredAt())
                 .isEqualTo(LocalDateTime.of(2026, 10, 12, 13, 0));
+        assertThat(response.sellerOrders().get(1).bookedAt()).isNull(); // 아직 안 된 단계는 null
         assertThat(response.sellerOrders().get(0).items().getFirst().purchaseConfirmable()).isTrue();
         assertThat(response.sellerOrders().get(1).shipmentStatus()).isEqualTo("READY");
         assertThat(response.sellerOrders().get(1).items().getFirst().purchaseConfirmable()).isFalse();
@@ -206,13 +211,17 @@ class OrderReadServiceTest {
                 .thenReturn(Optional.of(item.getSellerOrder()));
         when(ordersItemRepository.findBySellerOrderIds(List.of(7L))).thenReturn(List.of(item));
         when(shipmentQuery.findBySellerOrderId(7L))
-                .thenReturn(new ShipmentResult(30L, "BOOKED", null, "TRACK-123"));
+                .thenReturn(new ShipmentResult(30L, "BOOKED", null, "TRACK-123",
+                        LocalDateTime.of(2026, 10, 12, 10, 0), null, null));
         when(settlementQuery.findSettledAtBySellerOrderId(7L)).thenReturn(Optional.of(settledAt));
 
         var response = orderReadService.sellerOrder(20L, 7L);
 
         assertThat(response.shipmentStatus()).isEqualTo("BOOKED");
         assertThat(response.trackingNo()).isEqualTo("TRACK-123");
+        assertThat(response.bookedAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 10, 0));
+        assertThat(response.pickedUpAt()).isNull();
+        assertThat(response.deliveredAt()).isNull();
         assertThat(response.settlementStatus()).isEqualTo("COMPLETED");
         assertThat(response.settledAt()).isEqualTo(settledAt);
     }

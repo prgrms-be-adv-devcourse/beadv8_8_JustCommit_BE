@@ -44,7 +44,7 @@ class ShipmentStatusChangedEventPublisherTest {
 
         publisher().publishAfterCommit(bookedShipment(), BOOKED_AT);
 
-        verify(kafkaTemplate).send(TOPIC, "7", new ShipmentStatusChangedEvent(1L, 7L, 10L, 20L, "BOOKED", BOOKED_AT));
+        verify(kafkaTemplate).send(TOPIC, "7", new ShipmentStatusChangedEvent(1L, 9L, 7L, 10L, 20L, "BOOKED", BOOKED_AT));
     }
 
     @Test
@@ -66,7 +66,7 @@ class ShipmentStatusChangedEventPublisherTest {
     }
 
     private Shipment bookedShipment() {
-        Shipment shipment = new Shipment(7L, 20L, 10L, "구매자", "01000000000", "부산", "몬스테라", new BigDecimal("3000"));
+        Shipment shipment = new Shipment(9L, 7L, 20L, 10L, "구매자", "01000000000", "부산", "몬스테라", new BigDecimal("3000"));
         ReflectionTestUtils.setField(shipment, "id", 1L);
         shipment.book("404000000001", BOOKED_AT);
         return shipment;

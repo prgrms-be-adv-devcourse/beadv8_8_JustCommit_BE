@@ -195,7 +195,9 @@ class OrderControllerTest {
                                 List.of(new OrderDetailResponse.OrderItemDetail(5L, 101L, "몬스테라",
                                         new BigDecimal("10000"), OrderItemStatus.NORMAL, true)),
                                 new BigDecimal("10000"), null, new BigDecimal("3000"),
-                                30L, "DELIVERED", LocalDateTime.of(2026, 10, 12, 13, 0)))));
+                                30L, "DELIVERED", LocalDateTime.of(2026, 10, 12, 10, 0),
+                                LocalDateTime.of(2026, 10, 12, 10, 3), LocalDateTime.of(2026, 10, 12, 10, 5),
+                                LocalDateTime.of(2026, 10, 12, 13, 0)))));
 
         mockMvc.perform(get("/api/v1/orders/9"))
                 .andExpect(status().isOk())
