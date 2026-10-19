@@ -50,7 +50,8 @@ public class ProductController {
                 PagingResponse.from(productService.searchProducts(request)));
     }
 
-    @Operation(summary = "상품 상세 조회", description = "품종 정보와 사진 목록을 포함합니다. 숨긴 상품은 판매자 본인만 조회할 수 있습니다.")
+    @Operation(summary = "상품 상세 조회", description = "품종 정보와 사진 목록을 포함합니다. 숨긴 상품은 판매자 본인만 조회할 수 있고, 다른 사람이 조회하면 403 PRODUCT_HIDDEN입니다. "
+            + "없거나 삭제된 상품은 404 PRODUCT_NOT_FOUND입니다.")
     @GetMapping("/{productId}")
     public ApiResponse<ProductDetailResponse> getProductDetail(
             @AuthenticationPrincipal AuthMember authMember,
