@@ -71,6 +71,22 @@ class SettlementServiceTest {
     }
 
     @Test
+    void exposesOnlyActualSettlementCompletionTime() {
+        LocalDateTime settledAt = LocalDateTime.of(2026, 10, 19, 12, 0);
+        Settlement existing = Settlement.createSettlement(SELLER_ORDER_ID, new BigDecimal("30000"), settledAt);
+        when(settlementRepository.findBySellerOrderId(SELLER_ORDER_ID)).thenReturn(Optional.of(existing));
+
+        assertThat(settlementService.findSettledAtBySellerOrderId(SELLER_ORDER_ID)).contains(settledAt);
+    }
+
+    @Test
+    void returnsEmptyWhenSettlementDoesNotExist() {
+        when(settlementRepository.findBySellerOrderId(SELLER_ORDER_ID)).thenReturn(Optional.empty());
+
+        assertThat(settlementService.findSettledAtBySellerOrderId(SELLER_ORDER_ID)).isEmpty();
+    }
+
+    @Test
     void rejectsNullSellerOrderId() {
         assertThatThrownBy(() -> settlementService.settle(null, SELLER_ID, new BigDecimal("30000")))
                 .isInstanceOf(BusinessException.class);

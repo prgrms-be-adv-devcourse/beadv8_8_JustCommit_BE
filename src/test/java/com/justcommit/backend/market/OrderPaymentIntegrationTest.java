@@ -1,5 +1,7 @@
 package com.justcommit.backend.market;
 
+import com.justcommit.backend.common.event.PurchaseConfirmedEvent;
+
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.market.cart.domain.Cart;
 import com.justcommit.backend.market.cart.domain.CartItem;
@@ -16,6 +18,7 @@ import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.infrastructure.kafka.PurchaseConfirmedEventPublisher;
+import com.justcommit.backend.market.order.infrastructure.kafka.SellerOrderEventPublisher;
 import com.justcommit.backend.market.order.infrastructure.scheduler.OrderScheduler;
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
@@ -117,6 +120,7 @@ class OrderPaymentIntegrationTest {
     @MockitoBean CourierClient courierClient;
     @MockitoBean MemberQuery memberQuery;
     @MockitoBean PurchaseConfirmedEventPublisher purchaseConfirmedEventPublisher;
+    @MockitoBean SellerOrderEventPublisher sellerOrderEventPublisher;
 
     @Autowired OrderService orderService;
     @Autowired OrderItemConfirmationService orderItemConfirmationService;
@@ -162,6 +166,7 @@ class OrderPaymentIntegrationTest {
         assertThat(cartItemRepository.existsById(cartItemId)).isFalse();
         assertThat(shipmentsForOrder(response.orderId()))
                 .singleElement().satisfies(shipment -> assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.BOOKED));
+        verify(sellerOrderEventPublisher).publishAfterCommit(any(SellerOrderPaidEvent.class));
     }
 
     @Test
@@ -195,6 +200,7 @@ class OrderPaymentIntegrationTest {
         assertThat(balance(buyerId)).isEqualByComparingTo("7000");
         assertThat(paymentCount(pending.orderId())).isEqualTo(1);
         assertThat(shipmentsForOrder(pending.orderId())).hasSize(1);
+        verify(sellerOrderEventPublisher).publishAfterCommit(any(SellerOrderPaidEvent.class));
     }
 
     @Test
@@ -404,6 +410,8 @@ class OrderPaymentIntegrationTest {
 
         assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.COMPLETED);
         verify(purchaseConfirmedEventPublisher, times(1)).publishAfterCommit(any(PurchaseConfirmedEvent.class));
+        verify(sellerOrderEventPublisher, times(0))
+                .publishAfterCommit(any(OrderItemAutoConfirmedEvent.class));
     }
 
     @Test
@@ -432,9 +440,11 @@ class OrderPaymentIntegrationTest {
         assertThat(sellerOrderRepository.findById(sellerOrderId).orElseThrow().getConfirmedAt()).isNotNull();
         assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.COMPLETED);
         verify(purchaseConfirmedEventPublisher, times(1)).publishAfterCommit(any(PurchaseConfirmedEvent.class));
+        verify(sellerOrderEventPublisher, times(1)).publishAfterCommit(any(OrderItemAutoConfirmedEvent.class));
 
         orderScheduler.autoConfirmDeliveredItems();
         verify(purchaseConfirmedEventPublisher, times(1)).publishAfterCommit(any(PurchaseConfirmedEvent.class));
+        verify(sellerOrderEventPublisher, times(1)).publishAfterCommit(any(OrderItemAutoConfirmedEvent.class));
     }
 
     @Test
@@ -464,6 +474,7 @@ class OrderPaymentIntegrationTest {
         assertThat(sellerOrderRepository.findById(sellerOrderId).orElseThrow().getConfirmedAt()).isNotNull();
         assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.COMPLETED);
         verify(purchaseConfirmedEventPublisher, times(1)).publishAfterCommit(any(PurchaseConfirmedEvent.class));
+        verify(sellerOrderEventPublisher, times(1)).publishAfterCommit(any(OrderItemAutoConfirmedEvent.class));
     }
 
     @Test
@@ -523,6 +534,8 @@ class OrderPaymentIntegrationTest {
         assertThat(ordersItemRepository.findById(itemId).orElseThrow().getStatus()).isEqualTo(OrderItemStatus.CONFIRMED);
         assertThat(ordersRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.COMPLETED);
         verify(purchaseConfirmedEventPublisher, times(1)).publishAfterCommit(any(PurchaseConfirmedEvent.class));
+        verify(sellerOrderEventPublisher, org.mockito.Mockito.atMostOnce())
+                .publishAfterCommit(any(OrderItemAutoConfirmedEvent.class));
     }
 
     @Test
@@ -553,6 +566,7 @@ class OrderPaymentIntegrationTest {
         assertThat(shipmentRepository.findBySellerOrderId(sellerOrderId).orElseThrow().getStatus())
                 .isEqualTo(ShipmentStatus.BOOKED);
         verify(courierClient, times(0)).cancel(anyString());
+        verify(sellerOrderEventPublisher, times(0)).publishAfterCommit(any(SellerOrderCancelledEvent.class));
     }
 
     @Test
@@ -580,6 +594,7 @@ class OrderPaymentIntegrationTest {
         assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCELLED);
         assertThat(shipment.getCourierCancelledAt()).isNotNull();
         verify(courierClient, times(1)).cancel(shipment.getTrackingNo());
+        verify(sellerOrderEventPublisher, times(1)).publishAfterCommit(any(SellerOrderCancelledEvent.class));
     }
 
     @Test
@@ -619,6 +634,8 @@ class OrderPaymentIntegrationTest {
         assertThat(shipmentsForOrder(orderId))
                 .allSatisfy(shipment -> assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCELLED));
         verify(courierClient, times(sellerOrderIds.size())).cancel(anyString());
+        verify(sellerOrderEventPublisher, times(sellerOrderIds.size()))
+                .publishAfterCommit(any(SellerOrderCancelledEvent.class));
     }
 
     @Test

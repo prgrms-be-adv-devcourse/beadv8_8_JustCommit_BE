@@ -82,6 +82,9 @@ custom:
   kafka:
     topics:
       purchase-confirmed: ${PURCHASE_CONFIRMED_TOPIC:market.purchase-confirmed.v1}
+      seller-order-paid: ${SELLER_ORDER_PAID_TOPIC:market.seller-order-paid.v1}
+      seller-order-cancelled: ${SELLER_ORDER_CANCELLED_TOPIC:market.seller-order-cancelled.v1}
+      order-item-auto-confirmed: ${ORDER_ITEM_AUTO_CONFIRMED_TOPIC:market.order-item-auto-confirmed.v1}
       shipment-picked-up: ${SHIPMENT_PICKED_UP_TOPIC:market.shipment-picked-up.v1}
       shipment-status-changed: ${SHIPMENT_STATUS_CHANGED_TOPIC:market.shipment-status-changed.v1}
   payment:

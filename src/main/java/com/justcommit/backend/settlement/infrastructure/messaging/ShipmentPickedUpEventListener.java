@@ -1,6 +1,6 @@
 package com.justcommit.backend.settlement.infrastructure.messaging;
 
-import com.justcommit.backend.market.ShipmentPickedUpEvent;
+import com.justcommit.backend.common.event.ShipmentPickedUpEvent;
 import com.justcommit.backend.payment.PaymentUseCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.kafka.annotation.KafkaListener;

@@ -1,6 +1,9 @@
 package com.justcommit.backend.notification.infrastructure.messaging;
 
-import com.justcommit.backend.market.PurchaseConfirmedEvent;
+import com.justcommit.backend.common.event.PurchaseConfirmedEvent;
+import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
+import com.justcommit.backend.market.SellerOrderCancelledEvent;
+import com.justcommit.backend.market.SellerOrderPaidEvent;
 import com.justcommit.backend.market.ShipmentStatusChangedEvent;
 import com.justcommit.backend.notification.application.NotificationService;
 import com.justcommit.backend.notification.domain.NotificationType;
@@ -62,6 +65,34 @@ class NotificationEventListenerTest {
 
         verify(notificationService).create(SELLER, NotificationType.PURCHASE_CONFIRMED, SELLER_ORDER_ID,
                 "PURCHASE_CONFIRMED:7");
+    }
+
+    @Test
+    void notifiesSellerOnPaidOrder() {
+        listener.onSellerOrderPaid(new SellerOrderPaidEvent(SELLER_ORDER_ID, SELLER, BUYER, LocalDateTime.now()));
+
+        verify(notificationService).create(SELLER, NotificationType.SELLER_ORDER_PAID, SELLER_ORDER_ID,
+                "SELLER_ORDER_PAID:7");
+    }
+
+    @Test
+    void notifiesBuyerAndSellerWithDifferentKeysOnCancellation() {
+        listener.onSellerOrderCancelled(new SellerOrderCancelledEvent(
+                SELLER_ORDER_ID, SELLER, BUYER, LocalDateTime.now()));
+
+        verify(notificationService).create(BUYER, NotificationType.SELLER_ORDER_CANCELLED_BUYER,
+                SELLER_ORDER_ID, "SELLER_ORDER_CANCELLED:BUYER:7");
+        verify(notificationService).create(SELLER, NotificationType.SELLER_ORDER_CANCELLED,
+                SELLER_ORDER_ID, "SELLER_ORDER_CANCELLED:SELLER:7");
+    }
+
+    @Test
+    void notifiesBuyerForEachAutomaticallyConfirmedItem() {
+        listener.onOrderItemAutoConfirmed(new OrderItemAutoConfirmedEvent(11L, SELLER_ORDER_ID, BUYER,
+                LocalDateTime.now()));
+
+        verify(notificationService).create(BUYER, NotificationType.ORDER_ITEM_AUTO_CONFIRMED,
+                SELLER_ORDER_ID, "ORDER_ITEM_AUTO_CONFIRMED:11");
     }
 
     private ShipmentStatusChangedEvent shipmentEvent(String status) {

@@ -10,6 +10,7 @@ import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
 import com.justcommit.backend.market.order.infrastructure.*;
+import com.justcommit.backend.market.order.infrastructure.kafka.SellerOrderEventPublisher;
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
 import com.justcommit.backend.market.shipment.application.ShipmentService;
@@ -54,6 +55,7 @@ public class OrderService {
     private final ShipmentService shipmentService;
     private final OrderItemConfirmationService orderItemConfirmationService;
     private final ShipmentQuery shipmentQuery;
+    private final SellerOrderEventPublisher sellerOrderEventPublisher;
 
     @Transactional
     public OrderCreateResponse create(Long memberId, CartOrderCreateRequest request) {
@@ -279,6 +281,11 @@ public class OrderService {
                 throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
             }
         }
+        LocalDateTime cancelledAt = LocalDateTime.now();
+        for (SellerOrder sellerOrder : activeSellerOrders) {
+            sellerOrderEventPublisher.publishAfterCommit(new SellerOrderCancelledEvent(
+                    sellerOrder.getId(), sellerOrder.getSellerId(), memberId, cancelledAt));
+        }
     }
 
     @Transactional
@@ -329,14 +336,20 @@ public class OrderService {
             throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
         }
         sellerOrder.calculateSettlementBaseAmount();
-        finishCancellation(sellerOrder, order);
+        boolean sellerOrderCancelled = finishCancellation(sellerOrder, order);
         if (!productUseCase.releaseItem(item.getProductId())) {
             throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
         }
+        if (sellerOrderCancelled) {
+            sellerOrderEventPublisher.publishAfterCommit(new SellerOrderCancelledEvent(
+                    sellerOrderId, sellerOrder.getSellerId(), memberId, LocalDateTime.now()));
+        }
     }
 
-    private void finishCancellation(SellerOrder sellerOrder, Orders order) {
-        if (sellerOrder.getItems().stream().allMatch(item -> item.getStatus().equals(OrderItemStatus.CANCELLED))) {
+    private boolean finishCancellation(SellerOrder sellerOrder, Orders order) {
+        boolean sellerOrderCancelled = sellerOrder.getItems().stream()
+                .allMatch(item -> item.getStatus() == OrderItemStatus.CANCELLED);
+        if (sellerOrderCancelled) {
             if (sellerOrder.getShippingFee().compareTo(BigDecimal.ZERO) > 0) {
                 shipmentService.cancelShipment(sellerOrder.getId());
                 PaymentResult result = paymentUseCase.refundShippingFee(sellerOrder.getId(), order.getBuyerId(), sellerOrder.getShippingFee());
@@ -350,6 +363,7 @@ public class OrderService {
                 .allMatch(remainingItem -> remainingItem.getStatus() == OrderItemStatus.CANCELLED)) {
             order.cancel();
         }
+        return sellerOrderCancelled;
     }
 
     private Orders orderPayment(Orders order) {
@@ -361,7 +375,13 @@ public class OrderService {
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
         managed.paid();
 
-        shipmentService.createShipments(orderQuery.getOrder(managed.getId()));
+        OrderResult result = orderQuery.getOrder(managed.getId());
+        LocalDateTime paidAt = LocalDateTime.now();
+        for (SellerOrderResult sellerOrder : result.sellerOrders()) {
+            sellerOrderEventPublisher.publishAfterCommit(new SellerOrderPaidEvent(
+                    sellerOrder.id(), sellerOrder.sellerId(), result.buyerId(), paidAt));
+        }
+        shipmentService.createShipments(result);
         return managed;
     }
 

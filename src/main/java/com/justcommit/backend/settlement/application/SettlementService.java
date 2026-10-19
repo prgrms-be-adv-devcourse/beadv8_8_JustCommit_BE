@@ -1,7 +1,7 @@
 package com.justcommit.backend.settlement.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.market.OrderQuery;
+import com.justcommit.backend.settlement.SettlementQuery;
 import com.justcommit.backend.payment.PaymentUseCase;
 import com.justcommit.backend.settlement.SettlementResult;
 import com.justcommit.backend.settlement.domain.Settlement;
@@ -17,10 +17,16 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
-public class SettlementService {
+public class SettlementService implements SettlementQuery {
 
     private final SettlementRepository settlementRepository;
     private final PaymentUseCase paymentUseCase;
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<LocalDateTime> findSettledAtBySellerOrderId(Long sellerOrderId) {
+        return settlementRepository.findBySellerOrderId(sellerOrderId).map(Settlement::getSettledAt);
+    }
 
     @Transactional
     public SettlementResult settle(Long sellerOrderId, Long sellerId, BigDecimal saleAmount) {

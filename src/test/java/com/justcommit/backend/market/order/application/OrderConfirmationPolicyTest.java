@@ -2,7 +2,7 @@ package com.justcommit.backend.market.order.application;
 
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderStatus;
-import com.justcommit.backend.market.PurchaseConfirmedEvent;
+import com.justcommit.backend.common.event.PurchaseConfirmedEvent;
 import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;

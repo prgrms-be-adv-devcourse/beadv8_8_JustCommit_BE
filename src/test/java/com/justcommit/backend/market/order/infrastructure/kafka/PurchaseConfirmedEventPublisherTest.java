@@ -1,6 +1,6 @@
 package com.justcommit.backend.market.order.infrastructure.kafka;
 
-import com.justcommit.backend.market.PurchaseConfirmedEvent;
+import com.justcommit.backend.common.event.PurchaseConfirmedEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

@@ -7,6 +7,8 @@ import com.justcommit.backend.market.cart.domain.CartItem;
 import com.justcommit.backend.market.cart.infrastructure.CartItemRepository;
 import com.justcommit.backend.market.cart.infrastructure.CartRepository;
 import com.justcommit.backend.market.cart.presentation.CartResponse;
+import com.justcommit.backend.market.order.domain.OrderErrorCode;
+import com.justcommit.backend.member.MemberQuery;
 import com.justcommit.backend.product.ProductQuery;
 import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.product.ProductStatus;
@@ -20,6 +22,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,6 +40,7 @@ class CartServiceTest {
     @Mock CartRepository cartRepository;
     @Mock CartItemRepository cartItemRepository;
     @Mock ProductQuery productQuery;
+    @Mock MemberQuery memberQuery;
     @InjectMocks CartService cartService;
 
     @Test
@@ -96,6 +100,7 @@ class CartServiceTest {
         when(productQuery.getProducts(List.of(101L, 102L))).thenReturn(List.of(
                 product(101L, "몬스테라", "12000", ProductStatus.ACTIVE),
                 product(102L, "품절된 식물", "20000", ProductStatus.SOLD_OUT)));
+        when(memberQuery.getNicknames(List.of(20L))).thenReturn(Map.of(20L, "판매자"));
 
         CartResponse response = cartService.find(10L);
 
@@ -105,10 +110,46 @@ class CartServiceTest {
         assertThat(response.items().get(0).nowPrice()).isEqualByComparingTo("12000");
         assertThat(response.items().get(0).isChangedPrice()).isTrue();
         assertThat(response.items().get(0).isPurchasable()).isTrue();
+        assertThat(response.items().get(0).sellerName()).isEqualTo("판매자");
+        assertThat(response.items().get(0).status()).isEqualTo("ACTIVE");
         assertThat(response.items().get(1).isChangedPrice()).isFalse();
         assertThat(response.items().get(1).isPurchasable()).isFalse();
         assertThat(response.totalAmount()).isEqualByComparingTo("30000");
         assertThat(response.nowTotalAmount()).isEqualByComparingTo("32000");
+        verify(memberQuery).getNicknames(List.of(20L));
+    }
+
+    @Test
+    void missingSellerNameDoesNotBlockCartAndOwnProductCannotBePurchased() {
+        Cart cart = new Cart(10L);
+        addItem(cart, 1L, 101L, "10000");
+        when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
+        when(productQuery.getProducts(List.of(101L))).thenReturn(List.of(
+                new ProductResult(101L, 10L, "내 상품", new BigDecimal("10000"),
+                        ProductStatus.ACTIVE, false, "thumbnail")));
+        when(memberQuery.getNicknames(List.of(10L))).thenReturn(Map.of());
+
+        CartResponse response = cartService.find(10L);
+
+        assertThat(response.items()).singleElement().satisfies(item -> {
+            assertThat(item.sellerName()).isNull();
+            assertThat(item.thumbnailUrl()).isEqualTo("thumbnail");
+            assertThat(item.sellerId()).isEqualTo(10L);
+            assertThat(item.isPurchasable()).isFalse();
+        });
+    }
+
+    @Test
+    void rejectsOwnProductWhenAddingToCart() {
+        Cart cart = new Cart(10L);
+        when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
+        when(productQuery.getProduct(101L)).thenReturn(new ProductResult(101L, 10L, "내 상품",
+                new BigDecimal("10000"), ProductStatus.ACTIVE, false, null));
+
+        assertThatThrownBy(() -> cartService.addItemToCart(10L, 101L))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.OWN_PRODUCT));
+        verify(cartItemRepository, never()).save(any());
     }
 
     @Test

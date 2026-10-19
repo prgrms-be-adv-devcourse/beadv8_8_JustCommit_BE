@@ -9,6 +9,8 @@ import com.justcommit.backend.market.cart.infrastructure.CartItemRepository;
 import com.justcommit.backend.market.cart.infrastructure.CartRepository;
 import com.justcommit.backend.market.cart.presentation.CartItemResponse;
 import com.justcommit.backend.market.cart.presentation.CartResponse;
+import com.justcommit.backend.market.order.domain.OrderErrorCode;
+import com.justcommit.backend.member.MemberQuery;
 import com.justcommit.backend.product.ProductQuery;
 import com.justcommit.backend.product.ProductResult;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,7 @@ public class CartService {
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
     private final ProductQuery productQuery;
+    private final MemberQuery memberQuery;
 
     private Cart findByMemberId(long memberId) {
         Cart cart = cartRepository.findByMemberId(memberId).orElse(null);
@@ -83,6 +86,9 @@ public class CartService {
         List<ProductResult> products = productQuery.getProducts(cart.getItems().stream().map(CartItem::getProductId).toList());
         Map<Long, ProductResult> productMap = products.stream()
                 .collect(Collectors.toMap(ProductResult::productId, Function.identity()));
+        List<Long> sellerIds = products.stream().map(ProductResult::sellerId)
+                .filter(id -> id != null).distinct().toList();
+        Map<Long, String> sellerNames = sellerIds.isEmpty() ? Map.of() : memberQuery.getNicknames(sellerIds);
 
         List<CartItemResponse> items = cart.getItems().stream()
                 .map(item -> {
@@ -97,10 +103,16 @@ public class CartService {
                             item.getId(),
                             item.getProductId(),
                             product.title(),
+                            product.thumbnailUrl(),
+                            product.sellerId(),
+                            sellerNames.get(product.sellerId()),
                             item.getPrice(),
                             product.price(),
                             item.getPrice().compareTo(product.price()) != 0,
-                            product.isPurchasable(),
+                            product.isPurchasable() && product.sellerId() != null
+                                    && !product.sellerId().equals(memberId),
+                            product.status().name(),
+                            product.hidden(),
                             item.getCreatedAt());
                 })
                 .toList();
@@ -121,6 +133,9 @@ public class CartService {
 
         ProductResult product = productQuery.getProduct(productId);
 
+        if (product.sellerId() != null && product.sellerId().equals(memberId)) {
+            throw new BusinessException(OrderErrorCode.OWN_PRODUCT);
+        }
         if (!product.isPurchasable()) {
             throw new BusinessException(CommonErrorCode.BAD_REQUEST_DATA, "구매가 불가능한 상품입니다.");
         }
