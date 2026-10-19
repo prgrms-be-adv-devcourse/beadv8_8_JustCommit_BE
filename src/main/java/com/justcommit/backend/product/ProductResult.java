@@ -12,6 +12,7 @@ import java.math.BigDecimal;
  * @param status       판매 상태
  * @param hidden       판매자가 숨김 처리했는지 여부
  * @param thumbnailUrl 대표 사진 URL (없으면 null)
+ * @param speciesName  품종 이름 (장바구니 등 화면 표시용)
  */
 public record ProductResult(
         Long productId,
@@ -20,7 +21,8 @@ public record ProductResult(
         BigDecimal price,
         ProductStatus status,
         boolean hidden,
-        String thumbnailUrl
+        String thumbnailUrl,
+        String speciesName
 ) {
 
     /**

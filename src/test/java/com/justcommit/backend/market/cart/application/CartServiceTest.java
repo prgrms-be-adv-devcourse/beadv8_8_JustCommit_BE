@@ -126,7 +126,7 @@ class CartServiceTest {
         when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
         when(productQuery.getProducts(List.of(101L))).thenReturn(List.of(
                 new ProductResult(101L, 10L, "내 상품", new BigDecimal("10000"),
-                        ProductStatus.ACTIVE, false, "thumbnail")));
+                        ProductStatus.ACTIVE, false, "thumbnail", null)));
         when(memberQuery.getNicknames(List.of(10L))).thenReturn(Map.of());
 
         CartResponse response = cartService.find(10L);
@@ -144,7 +144,7 @@ class CartServiceTest {
         Cart cart = new Cart(10L);
         when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
         when(productQuery.getProduct(101L)).thenReturn(new ProductResult(101L, 10L, "내 상품",
-                new BigDecimal("10000"), ProductStatus.ACTIVE, false, null));
+                new BigDecimal("10000"), ProductStatus.ACTIVE, false, null, null));
 
         assertThatThrownBy(() -> cartService.addItemToCart(10L, 101L))
                 .isInstanceOfSatisfying(BusinessException.class,
@@ -332,6 +332,6 @@ class CartServiceTest {
     }
 
     private static ProductResult product(long id, String title, String price, ProductStatus status) {
-        return new ProductResult(id, 20L, title, new BigDecimal(price), status, false, null);
+        return new ProductResult(id, 20L, title, new BigDecimal(price), status, false, null, null);
     }
 }
