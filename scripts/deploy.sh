@@ -8,6 +8,8 @@
 #       DB 값은 PostgreSQL 볼륨을 처음 만들 때만 적용되고, 암호화 키를 바꾸면 저장된 값을 복호화할 수 없다.
 set -e
 trap 'echo; echo "❌ 실패한 줄: $LINENO  (명령: $BASH_COMMAND)"' ERR
+# 2단계에서 ~/replant 등을 지우므로, 그 안에서 실행해도 git clone이 실패하지 않게 홈에서 시작한다
+cd ~
 
 BE_REPO=https://github.com/prgrms-be-adv-devcourse/beadv8_8_JustCommit_BE.git
 FE_REPO=https://github.com/prgrms-be-adv-devcourse/beadv8_8_JustCommit_FE.git
