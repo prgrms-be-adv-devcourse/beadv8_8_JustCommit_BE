@@ -185,6 +185,30 @@ class ProductReserveConcurrencyIntegrationTest {
         }
     }
 
+    @Test
+    @DisplayName("만료 후 다른 주문이 재예약한 상품에 이전 주문의 결제 완료·만료가 늦게 와도 새 예약은 유지된다")
+    void ignoresLateRequestsOfExpiredOrderAfterReReservation() {
+        Long productId = saveActiveProduct();
+        Long expiredOrderId = 10L;
+        Long newOrderId = 11L;
+
+        // 주문 10 예약 → 만료로 해제 → 주문 11이 같은 상품을 다시 예약
+        assertThat(productUseCase.reserve(expiredOrderId, List.of(productId))).isTrue();
+        assertThat(productUseCase.release(expiredOrderId)).isTrue();
+        assertThat(productUseCase.reserve(newOrderId, List.of(productId))).isTrue();
+
+        // 주문 10의 결제 완료·만료 요청이 뒤늦게 도착 → 예약 주인이 아니므로 0건 처리
+        assertThat(productUseCase.markSoldOut(expiredOrderId)).isFalse();
+        assertThat(productUseCase.release(expiredOrderId)).isFalse();
+        assertReservedBy(productId, newOrderId);
+
+        // 새 주문의 결제 완료는 정상 반영
+        assertThat(productUseCase.markSoldOut(newOrderId)).isTrue();
+        Product product = productRepository.findById(productId).orElseThrow();
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+        assertThat(product.getReservedOrderId()).isEqualTo(newOrderId);
+    }
+
     private void assertActive(Long productId) {
         Product product = productRepository.findById(productId).orElseThrow();
         assertThat(product.getStatus()).isEqualTo(ProductStatus.ACTIVE);
