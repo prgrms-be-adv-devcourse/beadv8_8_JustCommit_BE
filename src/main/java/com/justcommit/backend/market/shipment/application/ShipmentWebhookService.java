@@ -1,6 +1,8 @@
 package com.justcommit.backend.market.shipment.application;
 
 import com.justcommit.backend.common.event.ShipmentPickedUpEvent;
+import com.justcommit.backend.market.OrderQuery;
+import com.justcommit.backend.market.OrderShippingInfo;
 import com.justcommit.backend.market.shipment.domain.Shipment;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentPickedUpEventPublisher;
@@ -26,6 +28,7 @@ public class ShipmentWebhookService {
     private final ShipmentRepository shipmentRepository;
     private final ShipmentPickedUpEventPublisher pickedUpEventPublisher;
     private final ShipmentStatusChangedEventPublisher statusChangedEventPublisher;
+    private final OrderQuery orderQuery;
 
     // 택배사 웹훅을 배송 상태에 반영한다. 다시 보내도 결과가 같은 경우는 예외 없이 끝내서 택배사가 재시도하지 않게 한다.
     @Transactional
@@ -51,13 +54,14 @@ public class ShipmentWebhookService {
                     request.eventId(), request.courierOrderNo(), shipment.getStatus(), newStatus);
             return;
         }
-        statusChangedEventPublisher.publishAfterCommit(shipment, occurredAt);
+        OrderShippingInfo orderInfo = orderQuery.getShippingInfo(shipment.getSellerOrderId());
+        statusChangedEventPublisher.publishAfterCommit(shipment, orderInfo, occurredAt);
 
         // 처음으로 수거 이후가 됐을 때 한 번만 보낸다. PICKED_UP 웹훅을 놓치고 IN_TRANSIT이 먼저 와도 여기서 보낸다.
         if (!wasPickedUp && shipment.isPickedUp()) {
             LocalDateTime pickedUpAt = shipment.getPickedUpAt() != null ? shipment.getPickedUpAt() : occurredAt;
             pickedUpEventPublisher.publishAfterCommit(new ShipmentPickedUpEvent(
-                    shipment.getSellerOrderId(), shipment.getSellerId(), shipment.getShippingFee(), pickedUpAt));
+                    shipment.getSellerOrderId(), orderInfo.sellerId(), orderInfo.shippingFee(), pickedUpAt));
         }
     }
 

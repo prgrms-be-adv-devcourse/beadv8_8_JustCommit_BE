@@ -2,6 +2,7 @@ package com.justcommit.backend.market.shipment.infrastructure.kafka;
 
 import com.justcommit.backend.market.ShipmentStatusChangedEvent;
 import com.justcommit.backend.market.shipment.domain.Shipment;
+import com.justcommit.backend.market.OrderShippingInfo;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,6 +27,7 @@ import static org.mockito.Mockito.when;
 class ShipmentStatusChangedEventPublisherTest {
 
     private static final String TOPIC = "market.shipment-status-changed.v1";
+    private static final OrderShippingInfo ORDER_INFO = new OrderShippingInfo(9L, 10L, 20L, new BigDecimal("3000"), "구매자", "01000000000", "부산", null);
     private static final LocalDateTime BOOKED_AT = LocalDateTime.of(2026, 10, 16, 10, 0);
 
     @Mock KafkaTemplate<String, ShipmentStatusChangedEvent> kafkaTemplate;
@@ -42,7 +44,7 @@ class ShipmentStatusChangedEventPublisherTest {
     void sendsRightAwayOutsideTransaction() {
         when(kafkaTemplate.send(anyString(), anyString(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
-        publisher().publishAfterCommit(bookedShipment(), BOOKED_AT);
+        publisher().publishAfterCommit(bookedShipment(), ORDER_INFO, BOOKED_AT);
 
         verify(kafkaTemplate).send(TOPIC, "7", new ShipmentStatusChangedEvent(1L, 9L, 7L, 10L, 20L, "BOOKED", BOOKED_AT, "몬스테라"));
     }
@@ -53,7 +55,7 @@ class ShipmentStatusChangedEventPublisherTest {
         TransactionSynchronizationManager.setActualTransactionActive(true);
         when(kafkaTemplate.send(anyString(), anyString(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
-        publisher().publishAfterCommit(bookedShipment(), BOOKED_AT);
+        publisher().publishAfterCommit(bookedShipment(), ORDER_INFO, BOOKED_AT);
         verifyNoInteractions(kafkaTemplate);
 
         TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
@@ -66,7 +68,7 @@ class ShipmentStatusChangedEventPublisherTest {
     }
 
     private Shipment bookedShipment() {
-        Shipment shipment = new Shipment(9L, 7L, 20L, 10L, "구매자", "01000000000", "부산", "몬스테라", new BigDecimal("3000"));
+        Shipment shipment = new Shipment(7L, "몬스테라");
         ReflectionTestUtils.setField(shipment, "id", 1L);
         shipment.book("404000000001", BOOKED_AT);
         return shipment;

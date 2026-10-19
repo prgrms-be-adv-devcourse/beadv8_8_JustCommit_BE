@@ -16,10 +16,13 @@ import com.justcommit.backend.market.shipment.infrastructure.courier.CourierCanc
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierCancelResult;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierClient;
 import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
+import com.justcommit.backend.market.OrderQuery;
+import com.justcommit.backend.market.OrderShippingInfo;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
 import com.justcommit.backend.member.MemberAddress;
 import com.justcommit.backend.member.MemberQuery;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -78,10 +81,16 @@ class ShipmentCancelIntegrationTest {
     @MockitoBean CourierClient courierClient;
     @MockitoBean MemberQuery memberQuery;
     @MockitoBean ShipmentStatusChangedEventPublisher statusChangedEventPublisher;
+    @MockitoBean OrderQuery orderQuery;
 
     @Autowired ShipmentService shipmentService;
     @Autowired ShipmentRepository shipmentRepository;
     @Autowired PlatformTransactionManager transactionManager;
+
+    @BeforeEach
+    void stubOrderInfo() {
+        when(orderQuery.getShippingInfo(7L)).thenReturn(new OrderShippingInfo(9L, 10L, 20L, new BigDecimal("3000"), "구매자", "01000000000", "부산", null));
+    }
 
     @AfterEach
     void cleanUp() {

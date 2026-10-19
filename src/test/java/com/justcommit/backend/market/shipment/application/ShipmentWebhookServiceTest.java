@@ -5,6 +5,8 @@ import com.justcommit.backend.market.shipment.domain.Shipment;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentPickedUpEventPublisher;
 import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
+import com.justcommit.backend.market.OrderQuery;
+import com.justcommit.backend.market.OrderShippingInfo;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
 import com.justcommit.backend.market.shipment.presentation.CourierWebhookRequest;
 import org.junit.jupiter.api.DisplayName;
@@ -20,6 +22,7 @@ import java.time.OffsetDateTime;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -29,10 +32,12 @@ class ShipmentWebhookServiceTest {
 
     private static final String COURIER_ORDER_NO = "shipment-20261015-000001";
     private static final String TRACKING_NO = "404000000001";
+    private static final OrderShippingInfo ORDER_INFO = new OrderShippingInfo(9L, 10L, 20L, new BigDecimal("3000"), "구매자", "01000000000", "부산", null);
 
     @Mock ShipmentRepository shipmentRepository;
     @Mock ShipmentPickedUpEventPublisher pickedUpEventPublisher;
     @Mock ShipmentStatusChangedEventPublisher statusChangedEventPublisher;
+    @Mock OrderQuery orderQuery;
     @InjectMocks ShipmentWebhookService shipmentWebhookService;
 
     @Test
@@ -88,13 +93,14 @@ class ShipmentWebhookServiceTest {
         shipmentWebhookService.receive(webhook("PICKED_UP", "2026-10-15T10:03:00+09:00"));
         shipmentWebhookService.receive(webhook("PICKED_UP", "2026-10-15T10:03:00+09:00")); // 중복
 
-        verify(statusChangedEventPublisher).publishAfterCommit(shipment, LocalDateTime.of(2026, 10, 15, 10, 3));
+        verify(statusChangedEventPublisher).publishAfterCommit(shipment, ORDER_INFO, LocalDateTime.of(2026, 10, 15, 10, 3));
     }
 
     private Shipment bookedShipment() {
-        Shipment shipment = new Shipment(9L, 7L, 20L, 10L, "구매자", "01000000000", "부산", "몬스테라", new BigDecimal("3000"));
+        Shipment shipment = new Shipment(7L, "몬스테라");
         shipment.book(TRACKING_NO, LocalDateTime.of(2026, 10, 15, 10, 0));
         when(shipmentRepository.findByCourierOrderNo(COURIER_ORDER_NO)).thenReturn(Optional.of(shipment));
+        lenient().when(orderQuery.getShippingInfo(7L)).thenReturn(ORDER_INFO); // 판매자 주문에서 읽은 판매자·택배비
         return shipment;
     }
 

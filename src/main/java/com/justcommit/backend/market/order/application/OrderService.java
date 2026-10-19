@@ -320,7 +320,7 @@ public class OrderService {
         }
 
         //배송상태 체크
-        ShipmentResult shipmentResult = shipmentService.findBySellerOrderId(sellerOrderId);
+        ShipmentResult shipmentResult = shipmentQuery.findBySellerOrderId(sellerOrderId);
 
         if (shipmentResult == null) {
             throw new BusinessException(OrderErrorCode.SHIPMENT_NOT_FOUND);

@@ -4,6 +4,7 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.response.PagingResponse;
 import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.OrderResult;
+import com.justcommit.backend.market.OrderShippingInfo;
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.OrdersItemResult;
@@ -138,6 +139,16 @@ public class OrderReadService implements OrderQuery {
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.SELLER_ORDER_NOT_FOUND));
         return toResult(sellerOrder, itemsBySellerOrder(List.of(sellerOrderId)),
                 shipmentsBySellerOrder(List.of(sellerOrderId)));
+    }
+
+    @Override
+    public OrderShippingInfo getShippingInfo(Long sellerOrderId) {
+        SellerOrder sellerOrder = sellerOrderRepository.findById(sellerOrderId)
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.SELLER_ORDER_NOT_FOUND));
+        Orders order = sellerOrder.getOrder();
+        return new OrderShippingInfo(order.getId(), order.getBuyerId(), sellerOrder.getSellerId(),
+                sellerOrder.getShippingFee(), order.getRecipientName(), order.getRecipientPhone(),
+                order.getShipAddress1(), order.getShipAddress2());
     }
 
     @Override

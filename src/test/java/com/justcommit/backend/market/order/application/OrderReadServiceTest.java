@@ -242,6 +242,31 @@ class OrderReadServiceTest {
                         assertThat(detail.productName()).isEqualTo("몬스테라")));
     }
 
+    @Test
+    void shippingInfoMapsOrderAndSellerOrderForShipment() {
+        OrdersItem item = item(order(10L), 20L);
+        when(sellerOrderRepository.findById(7L)).thenReturn(Optional.of(item.getSellerOrder()));
+
+        var info = orderReadService.getShippingInfo(7L);
+
+        assertThat(info.orderId()).isEqualTo(9L);
+        assertThat(info.buyerId()).isEqualTo(10L);
+        assertThat(info.sellerId()).isEqualTo(20L);
+        assertThat(info.shippingFee()).isEqualByComparingTo("3000");
+        assertThat(info.recipientName()).isEqualTo("구매자");
+        assertThat(info.recipientPhone()).isEqualTo("010");
+        assertThat(info.address1()).isEqualTo("서울시");
+        assertThat(info.address2()).isNull();
+    }
+
+    @Test
+    void shippingInfoFailsWhenSellerOrderDoesNotExist() {
+        when(sellerOrderRepository.findById(7L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> orderReadService.getShippingInfo(7L))
+                .isInstanceOf(BusinessException.class);
+    }
+
     private static Orders order(Long buyerId) {
         Orders order = new Orders("ORD-test", buyerId, "구매자", "010", "12345", "서울시", null, 1);
         ReflectionTestUtils.setField(order, "id", 9L);
