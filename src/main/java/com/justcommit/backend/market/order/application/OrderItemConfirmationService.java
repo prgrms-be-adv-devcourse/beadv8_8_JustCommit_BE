@@ -5,6 +5,7 @@ import com.justcommit.backend.common.event.PurchaseConfirmedEvent;
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
 import com.justcommit.backend.market.OrderStatus;
+import com.justcommit.backend.market.ShipmentQuery;
 import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.domain.Orders;
@@ -15,7 +16,6 @@ import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.infrastructure.kafka.PurchaseConfirmedEventPublisher;
 import com.justcommit.backend.market.order.infrastructure.kafka.SellerOrderEventPublisher;
-import com.justcommit.backend.market.shipment.application.ShipmentService;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -32,7 +32,7 @@ public class OrderItemConfirmationService {
     private final OrdersRepository ordersRepository;
     private final OrdersItemRepository ordersItemRepository;
     private final SellerOrderRepository sellerOrderRepository;
-    private final ShipmentService shipmentService;
+    private final ShipmentQuery shipmentQuery;
     private final PurchaseConfirmedEventPublisher purchaseConfirmedEventPublisher;
     private final SellerOrderEventPublisher sellerOrderEventPublisher;
 
@@ -80,7 +80,7 @@ public class OrderItemConfirmationService {
             throw new BusinessException(OrderErrorCode.ORDER_NOT_PAID);
         }
 
-        ShipmentResult shipmentResult = shipmentService.findBySellerOrderId(sellerOrder.getId());
+        ShipmentResult shipmentResult = shipmentQuery.findBySellerOrderId(sellerOrder.getId());
         if (shipmentResult == null) {
             if (automatic) {
                 return;

@@ -11,10 +11,13 @@ import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBook
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingResponse;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierClient;
 import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
+import com.justcommit.backend.market.OrderQuery;
+import com.justcommit.backend.market.OrderShippingInfo;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
 import com.justcommit.backend.member.MemberAddress;
 import com.justcommit.backend.member.MemberQuery;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -71,10 +74,16 @@ class ShipmentAfterCommitIntegrationTest {
     @MockitoBean CourierClient courierClient;
     @MockitoBean MemberQuery memberQuery;
     @MockitoBean ShipmentStatusChangedEventPublisher statusChangedEventPublisher;
+    @MockitoBean OrderQuery orderQuery;
 
     @Autowired ShipmentService shipmentService;
     @Autowired ShipmentRepository shipmentRepository;
     @Autowired PlatformTransactionManager transactionManager;
+
+    @BeforeEach
+    void stubOrderInfo() {
+        when(orderQuery.getShippingInfo(7L)).thenReturn(new OrderShippingInfo(9L, 10L, 20L, new BigDecimal("3000"), "구매자", "01000000000", "부산", null));
+    }
 
     @AfterEach
     void cleanUp() {
@@ -95,7 +104,7 @@ class ShipmentAfterCommitIntegrationTest {
             assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.BOOKED);
             assertThat(shipment.getTrackingNo()).isEqualTo("404000000001");
         });
-        verify(statusChangedEventPublisher).publishAfterCommit(any(), any()); // 판매자에게 택배 예약 알림
+        verify(statusChangedEventPublisher).publishAfterCommit(any(), any(), any()); // 판매자에게 택배 예약 알림
     }
 
     @Test

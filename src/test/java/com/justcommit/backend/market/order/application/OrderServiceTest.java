@@ -7,6 +7,7 @@ import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.OrderResult;
 import com.justcommit.backend.common.event.PurchaseConfirmedEvent;
+import com.justcommit.backend.market.ShipmentQuery;
 import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.cart.application.CartService;
 import com.justcommit.backend.market.cart.domain.Cart;
@@ -76,6 +77,7 @@ class OrderServiceTest {
     @Mock OrderQuery orderQuery;
     @Mock OrderResult orderResult;
     @Mock ShipmentService shipmentService;
+    @Mock ShipmentQuery shipmentQuery;
     @Mock PurchaseConfirmedEventPublisher purchaseConfirmedEventPublisher;
     @Mock SellerOrderEventPublisher sellerOrderEventPublisher;
     @Mock OrderItemConfirmationService orderItemConfirmationService;
@@ -86,7 +88,7 @@ class OrderServiceTest {
     @BeforeEach
     void setUpConfirmationService() {
         confirmationServiceUnderTest = new OrderItemConfirmationService(ordersRepository, ordersItemRepository,
-                sellerOrderRepository, shipmentService, purchaseConfirmedEventPublisher, sellerOrderEventPublisher);
+                sellerOrderRepository, shipmentQuery, purchaseConfirmedEventPublisher, sellerOrderEventPublisher);
     }
 
     @Test
@@ -405,7 +407,7 @@ class OrderServiceTest {
         when(ordersItemRepository.findSellerOrderIdByItemId(11L)).thenReturn(Optional.of(7L));
         when(sellerOrderRepository.findLockedById(7L)).thenReturn(Optional.of(sellerOrder));
         when(ordersItemRepository.findById(11L)).thenReturn(Optional.of(item));
-        when(shipmentService.findBySellerOrderId(7L))
+        when(shipmentQuery.findBySellerOrderId(7L))
                 .thenReturn(new ShipmentResult(8L, "DELIVERED", LocalDateTime.now()));
 
         confirmationServiceUnderTest.confirm(10L, 11L);
@@ -447,7 +449,7 @@ class OrderServiceTest {
         when(sellerOrderRepository.findLockedById(7L)).thenReturn(Optional.of(sellerOrder));
         when(ordersItemRepository.findById(11L)).thenReturn(Optional.of(first));
         when(ordersItemRepository.findById(12L)).thenReturn(Optional.of(second));
-        when(shipmentService.findBySellerOrderId(7L))
+        when(shipmentQuery.findBySellerOrderId(7L))
                 .thenReturn(new ShipmentResult(8L, "DELIVERED", LocalDateTime.now()));
 
         confirmationServiceUnderTest.confirm(10L, 11L);
@@ -475,7 +477,7 @@ class OrderServiceTest {
     @Test
     void rejectsConfirmationBeforeDelivery() {
         OrdersItem item = stubConfirmableItem();
-        when(shipmentService.findBySellerOrderId(7L))
+        when(shipmentQuery.findBySellerOrderId(7L))
                 .thenReturn(new ShipmentResult(8L, "BOOKED", null));
 
         assertThatThrownBy(() -> confirmationServiceUnderTest.confirm(10L, item.getId()))
@@ -492,7 +494,7 @@ class OrderServiceTest {
         assertThatThrownBy(() -> confirmationServiceUnderTest.confirm(20L, item.getId()))
                 .isInstanceOfSatisfying(BusinessException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
-        verify(shipmentService, never()).findBySellerOrderId(any());
+        verify(shipmentQuery, never()).findBySellerOrderId(any());
     }
 
     @Test
@@ -503,20 +505,20 @@ class OrderServiceTest {
         assertThatThrownBy(() -> confirmationServiceUnderTest.confirm(10L, item.getId()))
                 .isInstanceOfSatisfying(BusinessException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_NOT_PAID));
-        verify(shipmentService, never()).findBySellerOrderId(any());
+        verify(shipmentQuery, never()).findBySellerOrderId(any());
     }
 
     @Test
     void repeatedItemConfirmationIsIdempotentEvenAfterOrderCompletes() {
         OrdersItem item = stubConfirmableItem();
-        when(shipmentService.findBySellerOrderId(7L))
+        when(shipmentQuery.findBySellerOrderId(7L))
                 .thenReturn(new ShipmentResult(8L, "DELIVERED", LocalDateTime.now()));
 
         confirmationServiceUnderTest.confirm(10L, item.getId());
         confirmationServiceUnderTest.confirm(10L, item.getId());
 
         assertThat(item.getSellerOrder().getOrder().getStatus()).isEqualTo(OrderStatus.COMPLETED);
-        verify(shipmentService).findBySellerOrderId(7L);
+        verify(shipmentQuery).findBySellerOrderId(7L);
         verify(purchaseConfirmedEventPublisher).publishAfterCommit(any(PurchaseConfirmedEvent.class));
     }
 
@@ -528,7 +530,7 @@ class OrderServiceTest {
         confirmationServiceUnderTest.autoConfirmOrderItem(item.getId());
 
         assertThat(item.getStatus()).isEqualTo(OrderItemStatus.REFUND_REQUESTED);
-        verify(shipmentService, never()).findBySellerOrderId(any());
+        verify(shipmentQuery, never()).findBySellerOrderId(any());
         verify(purchaseConfirmedEventPublisher, never()).publishAfterCommit(any());
     }
 
@@ -540,13 +542,13 @@ class OrderServiceTest {
         confirmationServiceUnderTest.autoConfirmOrderItem(item.getId());
 
         assertThat(item.getStatus()).isEqualTo(OrderItemStatus.NORMAL);
-        verify(shipmentService, never()).findBySellerOrderId(any());
+        verify(shipmentQuery, never()).findBySellerOrderId(any());
     }
 
     @Test
     void autoConfirmationSkipsDeliveryWithoutCompletionTime() {
         OrdersItem item = stubConfirmableItem();
-        when(shipmentService.findBySellerOrderId(7L))
+        when(shipmentQuery.findBySellerOrderId(7L))
                 .thenReturn(new ShipmentResult(8L, "DELIVERED", null));
 
         confirmationServiceUnderTest.autoConfirmOrderItem(item.getId());
@@ -559,7 +561,7 @@ class OrderServiceTest {
     void doesNotPublishSettlementEventForZeroSaleAmount() {
         OrdersItem item = stubConfirmableItem();
         ReflectionTestUtils.setField(item.getSellerOrder(), "settlementBaseAmount", BigDecimal.ZERO);
-        when(shipmentService.findBySellerOrderId(7L))
+        when(shipmentQuery.findBySellerOrderId(7L))
                 .thenReturn(new ShipmentResult(8L, "DELIVERED", LocalDateTime.now()));
 
         confirmationServiceUnderTest.confirm(10L, item.getId());

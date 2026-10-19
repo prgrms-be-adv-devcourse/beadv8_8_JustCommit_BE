@@ -5,7 +5,6 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -15,9 +14,6 @@ import java.time.format.DateTimeFormatter;
 @NoArgsConstructor
 @Getter
 public class Shipment extends BaseTimeEntity {
-    // 알림을 눌렀을 때 구매자 주문 상세로 이동하려고 결제 시점에 함께 저장한다
-    private Long orderId;
-
     @Column(unique = true, nullable = false)
     private Long sellerOrderId;
 
@@ -48,35 +44,13 @@ public class Shipment extends BaseTimeEntity {
     @Version
     private Long version;
 
-    // 재예약 때 처음과 같은 요청을 보내려고 결제 시점의 예약 정보를 저장한다.
-    private Long sellerId;
-
-    // 배송 상태 알림을 받을 구매자
-    private Long buyerId;
-
-    private String receiverName;
-
-    private String receiverPhone;
-
-    private String receiverAddress;
-
+    // 결제 시점의 상품 요약 (예: "몬스테라 외 1건"). 택배 요청 문구와 알림 이름표로 처음 값 그대로 쓴다.
+    // 그 밖의 주문 정보(구매자·판매자·받는 사람·택배비)는 결제 후 바뀌지 않아 복사하지 않고 seller_order_id로 조회한다.
     private String itemSummary;
 
-    // 수거되면 정산에 매출로 넘기는 택배비
-    @Column(precision = 19)
-    private BigDecimal shippingFee;
-
-    public Shipment(Long orderId, Long sellerOrderId, Long sellerId, Long buyerId, String receiverName, String receiverPhone,
-                    String receiverAddress, String itemSummary, BigDecimal shippingFee) {
-        this.orderId = orderId;
+    public Shipment(Long sellerOrderId, String itemSummary) {
         this.sellerOrderId = sellerOrderId;
-        this.sellerId = sellerId;
-        this.buyerId = buyerId;
-        this.receiverName = receiverName;
-        this.receiverPhone = receiverPhone;
-        this.receiverAddress = receiverAddress;
         this.itemSummary = itemSummary;
-        this.shippingFee = shippingFee;
         this.status = ShipmentStatus.READY;
     }
 

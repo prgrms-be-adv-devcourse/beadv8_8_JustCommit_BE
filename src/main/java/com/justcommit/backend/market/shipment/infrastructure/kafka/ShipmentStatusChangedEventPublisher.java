@@ -1,6 +1,7 @@
 package com.justcommit.backend.market.shipment.infrastructure.kafka;
 
 import com.justcommit.backend.market.ShipmentStatusChangedEvent;
+import com.justcommit.backend.market.OrderShippingInfo;
 import com.justcommit.backend.market.shipment.domain.Shipment;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,12 +25,12 @@ public class ShipmentStatusChangedEventPublisher {
         this.topic = topic;
     }
 
-    // 배송의 현재 상태로 이벤트를 만들어 보낸다.
+    // 배송의 현재 상태와 판매자 주문에서 읽은 주문 정보로 이벤트를 만들어 보낸다.
     // 트랜잭션 안이면 커밋 후에 보낸다(웹훅). 밖이면 이미 저장이 끝난 것이므로 바로 보낸다(커밋 후 예약).
-    public void publishAfterCommit(Shipment shipment, LocalDateTime occurredAt) {
-        ShipmentStatusChangedEvent event = new ShipmentStatusChangedEvent(shipment.getId(), shipment.getOrderId(), shipment.getSellerOrderId(),
-                shipment.getBuyerId(), shipment.getSellerId(), shipment.getStatus().name(), occurredAt,
-                shipment.getItemSummary());
+    public void publishAfterCommit(Shipment shipment, OrderShippingInfo orderInfo, LocalDateTime occurredAt) {
+        ShipmentStatusChangedEvent event = new ShipmentStatusChangedEvent(shipment.getId(), orderInfo.orderId(),
+                shipment.getSellerOrderId(), orderInfo.buyerId(), orderInfo.sellerId(), shipment.getStatus().name(),
+                occurredAt, shipment.getItemSummary());
 
         if (!TransactionSynchronizationManager.isSynchronizationActive()
                 || !TransactionSynchronizationManager.isActualTransactionActive()) {

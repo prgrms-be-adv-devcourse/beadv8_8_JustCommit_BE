@@ -11,6 +11,8 @@ import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBook
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingRequest;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierClient;
 import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
+import com.justcommit.backend.market.OrderQuery;
+import com.justcommit.backend.market.OrderShippingInfo;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
 import com.justcommit.backend.member.MemberAddress;
 import com.justcommit.backend.member.MemberQuery;
@@ -40,6 +42,7 @@ class ShipmentBookingFailureTest {
     @Mock CourierClient courierClient;
     @Mock MemberQuery memberQuery;
     @Mock ShipmentStatusChangedEventPublisher statusChangedEventPublisher;
+    @Mock OrderQuery orderQuery;
     @InjectMocks ShipmentService shipmentService;
 
     @Test
@@ -58,6 +61,7 @@ class ShipmentBookingFailureTest {
             ReflectionTestUtils.setField(shipment, "id", 30L);
             return shipment;
         });
+        when(orderQuery.getShippingInfo(7L)).thenReturn(new OrderShippingInfo(9L, 10L, 20L, new BigDecimal("3000"), "구매자", "01000000000", "부산", null));
         when(memberQuery.getDefaultAddress(20L))
                 .thenReturn(new MemberAddress(1L, "판매자", "01012345678", "12345", "서울", null));
         when(courierClient.book(anyString(), any(CourierBookingRequest.class)))
@@ -72,13 +76,8 @@ class ShipmentBookingFailureTest {
         assertThat(saved.getSellerOrderId()).isEqualTo(7L);
         assertThat(saved.getStatus()).isEqualTo(ShipmentStatus.READY);
         assertThat(saved.getCourierOrderNo()).isNotBlank();
-        // 재예약 때 같은 요청을 보낼 수 있게 예약 정보가 저장된다
-        assertThat(saved.getOrderId()).isEqualTo(9L); // 알림에서 구매자 주문 상세로 이동할 때 쓴다
-        assertThat(saved.getSellerId()).isEqualTo(20L);
-        assertThat(saved.getReceiverName()).isEqualTo("구매자");
-        assertThat(saved.getReceiverAddress()).isEqualTo("부산");
+        // 주문 정보는 복사하지 않고 상품 요약만 결제 시점 값으로 저장한다
         assertThat(saved.getItemSummary()).isEqualTo("몬스테라");
-        assertThat(saved.getShippingFee()).isEqualByComparingTo("3000");
     }
 
     private OrderResult order() {

@@ -3,6 +3,7 @@ package com.justcommit.backend.market.order.application;
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.common.event.PurchaseConfirmedEvent;
+import com.justcommit.backend.market.ShipmentQuery;
 import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
@@ -11,7 +12,6 @@ import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.infrastructure.kafka.PurchaseConfirmedEventPublisher;
-import com.justcommit.backend.market.shipment.application.ShipmentService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -38,7 +38,7 @@ class OrderConfirmationPolicyTest {
     @Mock OrdersItemRepository ordersItemRepository;
     @Mock OrdersRepository ordersRepository;
     @Mock SellerOrderRepository sellerOrderRepository;
-    @Mock ShipmentService shipmentService;
+    @Mock ShipmentQuery shipmentQuery;
     @Mock PurchaseConfirmedEventPublisher eventPublisher;
     @InjectMocks OrderItemConfirmationService confirmationService;
 
@@ -94,9 +94,9 @@ class OrderConfirmationPolicyTest {
         when(sellerOrderRepository.findLockedById(8L)).thenReturn(Optional.of(secondSeller));
         when(ordersItemRepository.findById(11L)).thenReturn(Optional.of(first));
         when(ordersItemRepository.findById(12L)).thenReturn(Optional.of(second));
-        when(shipmentService.findBySellerOrderId(7L))
+        when(shipmentQuery.findBySellerOrderId(7L))
                 .thenReturn(new ShipmentResult(31L, "DELIVERED", LocalDateTime.now()));
-        when(shipmentService.findBySellerOrderId(8L))
+        when(shipmentQuery.findBySellerOrderId(8L))
                 .thenReturn(new ShipmentResult(32L, "DELIVERED", LocalDateTime.now()));
 
         confirmationService.confirm(10L, 11L);
@@ -149,7 +149,7 @@ class OrderConfirmationPolicyTest {
         when(ordersItemRepository.findSellerOrderIdByItemId(item.getId())).thenReturn(Optional.of(7L));
         when(sellerOrderRepository.findLockedById(7L)).thenReturn(Optional.of(fixture.sellerOrder()));
         when(ordersItemRepository.findById(item.getId())).thenReturn(Optional.of(item));
-        when(shipmentService.findBySellerOrderId(7L))
+        when(shipmentQuery.findBySellerOrderId(7L))
                 .thenReturn(new ShipmentResult(8L, "DELIVERED", LocalDateTime.now()));
     }
 
