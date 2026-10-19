@@ -71,6 +71,10 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     @EntityGraph(attributePaths = {"species", "pictures"})
     Optional<Product> findWithDetailById(Long id);
 
+    // 다른 모듈용 다건 조회: 품종을 함께 조회해 N+1 방지
+    @EntityGraph(attributePaths = "species")
+    List<Product> findWithSpeciesByIdIn(List<Long> ids);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE) // 커밋 전까지 이 상품 행을 잠가 주문 예약(reserve)과 동시에 실행돼도 덮어쓰지 않게 함
     Optional<Product> findWithLockById(@Param("id") Long id);
 

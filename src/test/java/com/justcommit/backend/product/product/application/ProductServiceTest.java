@@ -2,6 +2,7 @@ package com.justcommit.backend.product.product.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.MemberQuery;
+import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.exception.ProductErrorCode;
 import com.justcommit.backend.product.image.application.ProductImageCleaner;
@@ -389,6 +390,30 @@ public class  ProductServiceTest {
 
         //then : 응답확인 - sellerName 이 일치하는지
         assertThat(response.sellerName()).isEqualTo("판매자1");
+    }
+
+    // ── 다른 모듈용 조회 (ProductQuery) ─────────────────
+
+    @Test
+    @DisplayName("다른 모듈용 단건 조회 결과에 품종 이름을 담아 반환")
+    void getProductWithSpeciesName() {
+        given(productRepository.findById(PRODUCT_ID)).willReturn(Optional.of(product(ProductStatus.ACTIVE)));
+
+        ProductResult result = productService.getProduct(PRODUCT_ID);
+
+        assertThat(result.speciesName()).isEqualTo("몬스테라");
+    }
+
+    @Test
+    @DisplayName("다른 모듈용 다건 조회는 품종을 함께 조회하고 결과에 품종 이름을 담아 반환")
+    void getProductsWithSpeciesName() {
+        given(productRepository.findWithSpeciesByIdIn(List.of(PRODUCT_ID)))
+                .willReturn(List.of(product(ProductStatus.ACTIVE)));
+
+        List<ProductResult> results = productService.getProducts(List.of(PRODUCT_ID));
+
+        assertThat(results).singleElement()
+                .satisfies(result -> assertThat(result.speciesName()).isEqualTo("몬스테라"));
     }
 
     @Test

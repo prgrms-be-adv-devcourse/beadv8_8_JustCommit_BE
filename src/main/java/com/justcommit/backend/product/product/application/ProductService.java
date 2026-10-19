@@ -49,7 +49,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
         if (productIds == null || productIds.isEmpty()) {
             return List.of();
         }
-        return productRepository.findAllById(productIds).stream()
+        return productRepository.findWithSpeciesByIdIn(productIds).stream()
                 .map(this::toResult)
                 .toList();
     }
@@ -97,7 +97,8 @@ public class ProductService implements ProductQuery, ProductUseCase {
                 product.getPrice(),
                 product.getStatus(),
                 product.isHidden(),
-                product.getThumbnailUrl());
+                product.getThumbnailUrl(),
+                product.getSpecies().getName());
     }
 
     // ── 상품 API ───────────────────────────────

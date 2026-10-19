@@ -663,7 +663,7 @@ class OrderServiceTest {
 
     private static ProductResult product(long id, long sellerId, String name, String price, boolean purchasable) {
         return new ProductResult(id, sellerId, name, money(price),
-                purchasable ? ProductStatus.ACTIVE : ProductStatus.SOLD_OUT, false, null);
+                purchasable ? ProductStatus.ACTIVE : ProductStatus.SOLD_OUT, false, null, null);
     }
 
     private static BigDecimal money(String value) {
