@@ -92,7 +92,7 @@ class ShipmentWebhookServiceTest {
     }
 
     private Shipment bookedShipment() {
-        Shipment shipment = new Shipment(7L, 20L, 10L, "구매자", "01000000000", "부산", "몬스테라", new BigDecimal("3000"));
+        Shipment shipment = new Shipment(9L, 7L, 20L, 10L, "구매자", "01000000000", "부산", "몬스테라", new BigDecimal("3000"));
         shipment.book(TRACKING_NO, LocalDateTime.of(2026, 10, 15, 10, 0));
         when(shipmentRepository.findByCourierOrderNo(COURIER_ORDER_NO)).thenReturn(Optional.of(shipment));
         return shipment;

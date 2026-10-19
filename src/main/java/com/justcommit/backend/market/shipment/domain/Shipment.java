@@ -15,6 +15,9 @@ import java.time.format.DateTimeFormatter;
 @NoArgsConstructor
 @Getter
 public class Shipment extends BaseTimeEntity {
+    // 알림을 눌렀을 때 구매자 주문 상세로 이동하려고 결제 시점에 함께 저장한다
+    private Long orderId;
+
     @Column(unique = true, nullable = false)
     private Long sellerOrderId;
 
@@ -63,8 +66,9 @@ public class Shipment extends BaseTimeEntity {
     @Column(precision = 19)
     private BigDecimal shippingFee;
 
-    public Shipment(Long sellerOrderId, Long sellerId, Long buyerId, String receiverName, String receiverPhone,
+    public Shipment(Long orderId, Long sellerOrderId, Long sellerId, Long buyerId, String receiverName, String receiverPhone,
                     String receiverAddress, String itemSummary, BigDecimal shippingFee) {
+        this.orderId = orderId;
         this.sellerOrderId = sellerOrderId;
         this.sellerId = sellerId;
         this.buyerId = buyerId;

@@ -64,8 +64,13 @@ public class OrderReadService implements OrderQuery {
     public OrderDetailResponse buyerOrder(Long buyerId, Long orderId) {
         Orders order = ordersRepository.findByIdAndBuyerId(orderId, buyerId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
-        List<OrderDetailResponse.SellerOrderDetail> sellerOrders = sellerResults(order.getId()).stream()
-                .map(seller -> toBuyerDetail(seller, order.getStatus()))
+        List<SellerOrder> sellerOrderEntities = sellerOrderRepository.findByOrder_Id(order.getId());
+        List<Long> sellerOrderIds = sellerOrderEntities.stream().map(SellerOrder::getId).toList();
+        Map<Long, List<OrdersItemResult>> items = itemsBySellerOrder(sellerOrderIds);
+        Map<Long, ShipmentResult> shipments = shipmentsBySellerOrder(sellerOrderIds);
+        List<OrderDetailResponse.SellerOrderDetail> sellerOrders = sellerOrderEntities.stream()
+                .map(sellerOrder -> toBuyerDetail(toResult(sellerOrder, items, shipments), order.getStatus(),
+                        shipments.get(sellerOrder.getId())))
                 .toList();
         return new OrderDetailResponse(order.getId(), order.getOrderNo(), order.getTotalAmount(),
                 order.getItemCount(), order.getStatus(), order.getCreatedAt(), order.getRecipientName(),
@@ -109,6 +114,10 @@ public class OrderReadService implements OrderQuery {
                 sellerOrder.getTotalAmount().add(sellerOrder.getShippingFee()), sellerOrder.getShippingFee(),
                 order.getStatus(), shipment == null ? null : shipment.status(),
                 shipment == null ? null : shipment.trackingNo(),
+                shipment == null ? null : shipment.bookedAt(),
+                shipment == null ? null : shipment.pickedUpAt(),
+                shipment == null ? null : shipment.inTransitAt(),
+                shipment == null ? null : shipment.deliveredAt(),
                 settledAt.isPresent() ? "COMPLETED" : "NOT_SETTLED", settledAt.orElse(null), sellerOrder.getCreatedAt(),
                 order.getRecipientName(), order.getRecipientPhone(),
                 order.getZipcode(), order.getShipAddress1(), order.getShipAddress2(), items);
@@ -181,7 +190,8 @@ public class OrderReadService implements OrderQuery {
                 shipment == null ? null : shipment.deliveredAt());
     }
 
-    private OrderDetailResponse.SellerOrderDetail toBuyerDetail(SellerOrderResult seller, OrderStatus orderStatus) {
+    private OrderDetailResponse.SellerOrderDetail toBuyerDetail(SellerOrderResult seller, OrderStatus orderStatus,
+                                                                ShipmentResult shipment) {
         boolean delivered = "DELIVERED".equals(seller.shipmentStatus());
         List<OrderDetailResponse.OrderItemDetail> items = seller.items().stream()
                 .map(item -> new OrderDetailResponse.OrderItemDetail(item.id(), item.productId(),
@@ -190,6 +200,10 @@ public class OrderReadService implements OrderQuery {
                 .toList();
         return new OrderDetailResponse.SellerOrderDetail(seller.id(), seller.sellerId(), items,
                 seller.totalAmount(), seller.confirmedAt(), seller.shippingFee(), seller.shipmentId(),
-                seller.shipmentStatus(), seller.deliveredAt());
+                seller.shipmentStatus(),
+                shipment == null ? null : shipment.bookedAt(),
+                shipment == null ? null : shipment.pickedUpAt(),
+                shipment == null ? null : shipment.inTransitAt(),
+                seller.deliveredAt());
     }
 }

@@ -284,7 +284,7 @@ public class OrderService {
         LocalDateTime cancelledAt = LocalDateTime.now();
         for (SellerOrder sellerOrder : activeSellerOrders) {
             sellerOrderEventPublisher.publishAfterCommit(new SellerOrderCancelledEvent(
-                    sellerOrder.getId(), sellerOrder.getSellerId(), memberId, cancelledAt));
+                    orderId, sellerOrder.getId(), sellerOrder.getSellerId(), memberId, cancelledAt));
         }
     }
 
@@ -342,7 +342,7 @@ public class OrderService {
         }
         if (sellerOrderCancelled) {
             sellerOrderEventPublisher.publishAfterCommit(new SellerOrderCancelledEvent(
-                    sellerOrderId, sellerOrder.getSellerId(), memberId, LocalDateTime.now()));
+                    orderId, sellerOrderId, sellerOrder.getSellerId(), memberId, LocalDateTime.now()));
         }
     }
 

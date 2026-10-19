@@ -28,6 +28,7 @@ import static org.mockito.Mockito.verify;
 @ExtendWith(MockitoExtension.class)
 class NotificationEventListenerTest {
 
+    private static final Long ORDER_ID = 9L;
     private static final Long SELLER_ORDER_ID = 7L;
     private static final Long BUYER = 10L;
     private static final Long SELLER = 20L;
@@ -35,18 +36,27 @@ class NotificationEventListenerTest {
     @Mock NotificationService notificationService;
     @InjectMocks NotificationEventListener listener;
 
-    @ParameterizedTest(name = "{0} → {1}")
+    @Test
+    @DisplayName("택배 예약은 판매자에게만 알린다")
+    void notifiesSellerOnBooked() {
+        listener.onShipmentStatusChanged(shipmentEvent("BOOKED"));
+
+        verify(notificationService).create(SELLER, NotificationType.SHIPMENT_BOOKED, SELLER_ORDER_ID, "SHIPMENT:1:BOOKED");
+        verify(notificationService, never()).create(any(), any(), any(), any(), anyString());
+    }
+
+    @ParameterizedTest(name = "{0} → 구매자 {1}, 판매자 {2}")
     @CsvSource({
-            "BOOKED, SHIPMENT_BOOKED, 20",      // 판매자
-            "PICKED_UP, SHIPMENT_PICKED_UP, 10", // 구매자
-            "IN_TRANSIT, SHIPMENT_IN_TRANSIT, 10",
-            "DELIVERED, SHIPMENT_DELIVERED, 10"
+            "PICKED_UP, SHIPMENT_PICKED_UP, SELLER_SHIPMENT_PICKED_UP",
+            "IN_TRANSIT, SHIPMENT_IN_TRANSIT, SELLER_SHIPMENT_IN_TRANSIT",
+            "DELIVERED, SHIPMENT_DELIVERED, SELLER_SHIPMENT_DELIVERED"
     })
-    @DisplayName("배송 상태별로 받는 사람과 알림 종류를 정한다")
-    void mapsShipmentStatus(String status, NotificationType type, Long recipient) {
+    @DisplayName("수거·배송 중·배송 완료는 구매자(주문 id 포함)와 판매자에게 각각 다른 키로 알린다")
+    void notifiesBuyerAndSeller(String status, NotificationType buyerType, NotificationType sellerType) {
         listener.onShipmentStatusChanged(shipmentEvent(status));
 
-        verify(notificationService).create(recipient, type, SELLER_ORDER_ID, "SHIPMENT:1:" + status);
+        verify(notificationService).create(BUYER, buyerType, ORDER_ID, SELLER_ORDER_ID, "SHIPMENT:1:" + status);
+        verify(notificationService).create(SELLER, sellerType, SELLER_ORDER_ID, "SHIPMENT:1:" + status + ":SELLER");
     }
 
     @Test
@@ -54,7 +64,8 @@ class NotificationEventListenerTest {
     void ignoresOtherStatus() {
         listener.onShipmentStatusChanged(shipmentEvent("CANCELLED"));
 
-        verify(notificationService, never()).create(anyLong(), any(), anyLong(), anyString());
+        verify(notificationService, never()).create(any(), any(), any(), anyString());
+        verify(notificationService, never()).create(any(), any(), any(), any(), anyString());
     }
 
     @Test
@@ -78,25 +89,25 @@ class NotificationEventListenerTest {
     @Test
     void notifiesBuyerAndSellerWithDifferentKeysOnCancellation() {
         listener.onSellerOrderCancelled(new SellerOrderCancelledEvent(
-                SELLER_ORDER_ID, SELLER, BUYER, LocalDateTime.now()));
+                ORDER_ID, SELLER_ORDER_ID, SELLER, BUYER, LocalDateTime.now()));
 
         verify(notificationService).create(BUYER, NotificationType.SELLER_ORDER_CANCELLED_BUYER,
-                SELLER_ORDER_ID, "SELLER_ORDER_CANCELLED:BUYER:7");
+                ORDER_ID, SELLER_ORDER_ID, "SELLER_ORDER_CANCELLED:BUYER:7");
         verify(notificationService).create(SELLER, NotificationType.SELLER_ORDER_CANCELLED,
                 SELLER_ORDER_ID, "SELLER_ORDER_CANCELLED:SELLER:7");
     }
 
     @Test
     void notifiesBuyerForEachAutomaticallyConfirmedItem() {
-        listener.onOrderItemAutoConfirmed(new OrderItemAutoConfirmedEvent(11L, SELLER_ORDER_ID, BUYER,
+        listener.onOrderItemAutoConfirmed(new OrderItemAutoConfirmedEvent(11L, ORDER_ID, SELLER_ORDER_ID, BUYER,
                 LocalDateTime.now()));
 
         verify(notificationService).create(BUYER, NotificationType.ORDER_ITEM_AUTO_CONFIRMED,
-                SELLER_ORDER_ID, "ORDER_ITEM_AUTO_CONFIRMED:11");
+                ORDER_ID, SELLER_ORDER_ID, "ORDER_ITEM_AUTO_CONFIRMED:11");
     }
 
     private ShipmentStatusChangedEvent shipmentEvent(String status) {
-        return new ShipmentStatusChangedEvent(1L, SELLER_ORDER_ID, BUYER, SELLER, status,
+        return new ShipmentStatusChangedEvent(1L, ORDER_ID, SELLER_ORDER_ID, BUYER, SELLER, status,
                 LocalDateTime.of(2026, 10, 16, 10, 0));
     }
 }

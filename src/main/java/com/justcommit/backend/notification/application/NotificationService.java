@@ -31,9 +31,15 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
     private final NotificationSseRegistry sseRegistry;
 
-    // 이벤트로 알림을 만든다. 같은 이벤트가 다시 오면(Kafka 중복 전달) 새로 만들지 않는다.
+    // 주문 id 없이 만드는 알림 (판매자 알림은 sellerOrderId로 판매 주문 상세로 이동)
     @Transactional
     public void create(Long memberId, NotificationType type, Long sellerOrderId, String eventKey) {
+        create(memberId, type, null, sellerOrderId, eventKey);
+    }
+
+    // 이벤트로 알림을 만든다. 같은 이벤트가 다시 오면(Kafka 중복 전달) 새로 만들지 않는다.
+    @Transactional
+    public void create(Long memberId, NotificationType type, Long orderId, Long sellerOrderId, String eventKey) {
         if (memberId == null) {
             // 받는 사람을 모르는 이벤트 (예: 구매자 id를 저장하기 전에 만든 배송). 다시 받아도 같으므로 건너뛴다.
             log.warn("받는 사람이 없어 알림을 만들지 않음: type={}, eventKey={}", type, eventKey);
@@ -43,7 +49,7 @@ public class NotificationService {
             log.info("이미 만든 알림 (중복 이벤트): eventKey={}", eventKey);
             return;
         }
-        notificationRepository.save(new Notification(memberId, type, sellerOrderId, eventKey));
+        notificationRepository.save(new Notification(memberId, type, orderId, sellerOrderId, eventKey));
         pushUnreadCountAfterCommit(memberId);
     }
 

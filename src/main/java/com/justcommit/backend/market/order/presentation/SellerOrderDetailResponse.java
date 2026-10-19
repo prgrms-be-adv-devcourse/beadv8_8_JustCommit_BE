@@ -16,6 +16,11 @@ public record SellerOrderDetailResponse(
         OrderStatus status,
         String shipmentStatus,
         String trackingNo,
+        // 배송 단계별 시각 (아직 안 된 단계는 null)
+        LocalDateTime bookedAt,
+        LocalDateTime pickedUpAt,
+        LocalDateTime inTransitAt,
+        LocalDateTime deliveredAt,
         String settlementStatus,
         LocalDateTime settledAt,
         LocalDateTime createdAt,
@@ -31,7 +36,7 @@ public record SellerOrderDetailResponse(
                                      String recipientName, String recipientPhone, String zipcode, String address1,
                                      String address2, List<OrdersItemResult> items) {
         this(sellerOrderId, orderId, orderNo, totalAmount, shippingFee, status, null, null,
-                "NOT_SETTLED", null, createdAt,
+                null, null, null, null, "NOT_SETTLED", null, createdAt,
                 recipientName, recipientPhone, zipcode, address1, address2, items);
     }
 }

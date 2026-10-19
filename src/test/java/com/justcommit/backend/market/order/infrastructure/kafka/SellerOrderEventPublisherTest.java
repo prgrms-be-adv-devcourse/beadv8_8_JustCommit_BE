@@ -41,8 +41,8 @@ class SellerOrderEventPublisherTest {
     void sendsEachEventOnlyAfterCommit() {
         var publisher = new SellerOrderEventPublisher(kafkaTemplate, "paid", "cancelled", "auto");
         var paid = new SellerOrderPaidEvent(7L, 20L, 10L, LocalDateTime.now());
-        var cancelled = new SellerOrderCancelledEvent(8L, 21L, 10L, LocalDateTime.now());
-        var auto = new OrderItemAutoConfirmedEvent(11L, 7L, 10L, LocalDateTime.now());
+        var cancelled = new SellerOrderCancelledEvent(9L, 8L, 21L, 10L, LocalDateTime.now());
+        var auto = new OrderItemAutoConfirmedEvent(11L, 9L, 7L, 10L, LocalDateTime.now());
         when(kafkaTemplate.send("paid", "7", paid)).thenReturn(CompletableFuture.completedFuture(null));
         when(kafkaTemplate.send("cancelled", "8", cancelled)).thenReturn(CompletableFuture.completedFuture(null));
         when(kafkaTemplate.send("auto", "7", auto)).thenReturn(CompletableFuture.completedFuture(null));

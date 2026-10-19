@@ -30,6 +30,10 @@ public record OrderDetailResponse(
             BigDecimal shippingFee,
             Long shipmentId,
             String shipmentStatus,
+            // 배송 단계별 시각 (아직 안 된 단계는 null)
+            LocalDateTime bookedAt,
+            LocalDateTime pickedUpAt,
+            LocalDateTime inTransitAt,
             LocalDateTime deliveredAt
     ) {
     }

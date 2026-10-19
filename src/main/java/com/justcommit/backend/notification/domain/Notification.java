@@ -24,7 +24,9 @@ public class Notification extends BaseTimeEntity {
     @Column(nullable = false)
     private String message;
 
-    // 알림을 눌렀을 때 이동할 판매자 주문
+    // 알림을 눌렀을 때 이동할 주문 (구매자는 주문 상세, 판매자는 판매 주문 상세). 없는 알림은 null
+    private Long orderId;
+
     private Long sellerOrderId;
 
     @Column(nullable = false)
@@ -36,10 +38,11 @@ public class Notification extends BaseTimeEntity {
     @Column(unique = true, nullable = false, length = 100)
     private String eventKey;
 
-    public Notification(Long memberId, NotificationType type, Long sellerOrderId, String eventKey) {
+    public Notification(Long memberId, NotificationType type, Long orderId, Long sellerOrderId, String eventKey) {
         this.memberId = memberId;
         this.type = type;
         this.message = type.getMessage();
+        this.orderId = orderId;
         this.sellerOrderId = sellerOrderId;
         this.eventKey = eventKey;
         this.isRead = false;

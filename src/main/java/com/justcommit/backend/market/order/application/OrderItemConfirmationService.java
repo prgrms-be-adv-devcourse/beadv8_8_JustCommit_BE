@@ -103,7 +103,7 @@ public class OrderItemConfirmationService {
         updateOrderStatus(order);
         if (automatic) {
             sellerOrderEventPublisher.publishAfterCommit(new OrderItemAutoConfirmedEvent(
-                    item.getId(), sellerOrder.getId(), order.getBuyerId(), LocalDateTime.now()));
+                    item.getId(), order.getId(), sellerOrder.getId(), order.getBuyerId(), LocalDateTime.now()));
         }
     }
 

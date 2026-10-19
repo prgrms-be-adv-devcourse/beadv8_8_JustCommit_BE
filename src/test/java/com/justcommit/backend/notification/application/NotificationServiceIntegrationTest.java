@@ -170,6 +170,17 @@ class NotificationServiceIntegrationTest {
         verify(sseRegistry, never()).sendUnreadCount(anyLong(), anyLong());
     }
 
+    @Test
+    @DisplayName("구매자 알림은 주문 id를 함께 저장해 응답에 내려준다")
+    void returnsOrderId() {
+        notificationService.create(BUYER, NotificationType.SHIPMENT_DELIVERED, 9L, 7L, "SHIPMENT:1:DELIVERED");
+
+        var list = notificationService.list(BUYER, null, latestFirst());
+
+        assertThat(list.content().getFirst().orderId()).isEqualTo(9L);
+        assertThat(list.content().getFirst().sellerOrderId()).isEqualTo(7L);
+    }
+
     private PageRequest latestFirst() {
         return PageRequest.of(0, 20, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
     }
