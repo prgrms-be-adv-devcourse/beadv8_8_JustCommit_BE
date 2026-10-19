@@ -115,6 +115,61 @@ class ProductReserveConcurrencyIntegrationTest {
         assertThat(product.getReservedOrderId()).isEqualTo(winnerOrderId);
     }
 
+    @Test
+    @DisplayName("여러 상품 중 하나라도 이미 예약돼 있으면 아무것도 예약하지 않는다")
+    void reservesNothingWhenAnyProductIsAlreadyReserved() {
+        Long taken = saveActiveProduct();
+        Long free1 = saveActiveProduct();
+        Long free2 = saveActiveProduct();
+        assertThat(productUseCase.reserve(1L, List.of(taken))).isTrue();
+
+        boolean reserved = productUseCase.reserve(2L, List.of(free1, taken, free2));
+
+        assertThat(reserved).isFalse();
+        // 주문 2가 잠깐 잡았던 상품은 다시 판매 중으로 돌아와야 함
+        assertActive(free1);
+        assertActive(free2);
+        // 이미 예약된 상품은 원래 주문 그대로
+        assertReservedBy(taken, 1L);
+    }
+
+    @Test
+    @DisplayName("상품이 겹치는 주문들이 동시에 예약해도, 진 주문이 잡았던 상품은 모두 해제된다")
+    void releasesPartiallyReservedProductsOfLosingOrdersConcurrently() throws Exception {
+        // 모든 주문이 같은 인기 상품 1개 + 각자 다른 상품 1개를 함께 예약
+        Long shared = saveActiveProduct();
+        List<Long> own = IntStream.range(0, THREADS).mapToObj(i -> saveActiveProduct()).toList();
+
+        List<Boolean> results = runConcurrently(
+                i -> () -> productUseCase.reserve(100L + i, List.of(shared, own.get(i))));
+
+        assertThat(results).filteredOn(Boolean::booleanValue).hasSize(1);
+
+        for (int i = 0; i < THREADS; i++) {
+            Long orderId = 100L + i;
+            if (results.get(i)) {
+                // 이긴 주문은 두 상품 모두 자기 것
+                assertReservedBy(shared, orderId);
+                assertReservedBy(own.get(i), orderId);
+            } else {
+                // 진 주문이 자기 상품만 잡고 남아 있으면 안 됨
+                assertActive(own.get(i));
+            }
+        }
+    }
+
+    private void assertActive(Long productId) {
+        Product product = productRepository.findById(productId).orElseThrow();
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.ACTIVE);
+        assertThat(product.getReservedOrderId()).isNull();
+    }
+
+    private void assertReservedBy(Long productId, Long orderId) {
+        Product product = productRepository.findById(productId).orElseThrow();
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.PAYMENT_PENDING);
+        assertThat(product.getReservedOrderId()).isEqualTo(orderId);
+    }
+
     private Long saveActiveProduct() {
         Product product = Product.create(species, 1L, "몬스테라 중품", "설명", new BigDecimal("10000"),
                 null, null, null, List.of());
