@@ -1,6 +1,9 @@
 package com.justcommit.backend.notification.infrastructure.messaging;
 
-import com.justcommit.backend.market.PurchaseConfirmedEvent;
+import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
+import com.justcommit.backend.common.event.PurchaseConfirmedEvent;
+import com.justcommit.backend.market.SellerOrderCancelledEvent;
+import com.justcommit.backend.market.SellerOrderPaidEvent;
 import com.justcommit.backend.market.ShipmentStatusChangedEvent;
 import com.justcommit.backend.notification.application.NotificationService;
 import com.justcommit.backend.notification.domain.NotificationType;
@@ -40,5 +43,25 @@ public class NotificationEventListener {
     public void onPurchaseConfirmed(PurchaseConfirmedEvent event) {
         notificationService.create(event.sellerId(), NotificationType.PURCHASE_CONFIRMED, event.sellerOrderId(),
                 "PURCHASE_CONFIRMED:" + event.sellerOrderId());
+    }
+
+    @KafkaListener(topics = "${custom.kafka.topics.seller-order-paid}", groupId = GROUP_ID)
+    public void onSellerOrderPaid(SellerOrderPaidEvent event) {
+        notificationService.create(event.sellerId(), NotificationType.SELLER_ORDER_PAID, event.sellerOrderId(),
+                "SELLER_ORDER_PAID:" + event.sellerOrderId());
+    }
+
+    @KafkaListener(topics = "${custom.kafka.topics.seller-order-cancelled}", groupId = GROUP_ID)
+    public void onSellerOrderCancelled(SellerOrderCancelledEvent event) {
+        notificationService.create(event.buyerId(), NotificationType.SELLER_ORDER_CANCELLED_BUYER,
+                event.sellerOrderId(), "SELLER_ORDER_CANCELLED:BUYER:" + event.sellerOrderId());
+        notificationService.create(event.sellerId(), NotificationType.SELLER_ORDER_CANCELLED,
+                event.sellerOrderId(), "SELLER_ORDER_CANCELLED:SELLER:" + event.sellerOrderId());
+    }
+
+    @KafkaListener(topics = "${custom.kafka.topics.order-item-auto-confirmed}", groupId = GROUP_ID)
+    public void onOrderItemAutoConfirmed(OrderItemAutoConfirmedEvent event) {
+        notificationService.create(event.buyerId(), NotificationType.ORDER_ITEM_AUTO_CONFIRMED,
+                event.sellerOrderId(), "ORDER_ITEM_AUTO_CONFIRMED:" + event.orderItemId());
     }
 }

@@ -22,16 +22,19 @@ import com.justcommit.backend.market.order.presentation.OrderListRequest;
 import com.justcommit.backend.market.order.presentation.OrderResponse;
 import com.justcommit.backend.market.order.presentation.SellerOrderDetailResponse;
 import com.justcommit.backend.market.order.presentation.SellerOrderResponse;
+import com.justcommit.backend.settlement.SettlementQuery;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashMap;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -42,6 +45,7 @@ public class OrderReadService implements OrderQuery {
     private final SellerOrderRepository sellerOrderRepository;
     private final OrdersItemRepository ordersItemRepository;
     private final ShipmentQuery shipmentQuery;
+    private final SettlementQuery settlementQuery;
 
     public PagingResponse<OrderResponse> buyerOrders(Long buyerId, OrderListRequest request) {
         Page<Orders> page = ordersRepository.findByBuyerId(buyerId, request.toPageable());
@@ -74,6 +78,7 @@ public class OrderReadService implements OrderQuery {
         List<Long> sellerOrderIds = page.getContent().stream().map(SellerOrder::getId).toList();
         Map<Long, String> firstNames = new HashMap<>();
         Map<Long, Integer> itemCounts = new HashMap<>();
+        Map<Long, ShipmentResult> shipments = shipmentsBySellerOrder(sellerOrderIds);
         if (!sellerOrderIds.isEmpty()) {
             for (OrdersItem item : ordersItemRepository.findBySellerOrderIds(sellerOrderIds)) {
                 Long id = item.getSellerOrder().getId();
@@ -83,9 +88,11 @@ public class OrderReadService implements OrderQuery {
         }
         return PagingResponse.from(page.map(sellerOrder -> {
             Orders order = sellerOrder.getOrder();
+            ShipmentResult shipment = shipments.get(sellerOrder.getId());
             return new SellerOrderResponse(sellerOrder.getId(), order.getId(), order.getOrderNo(),
                     sellerOrder.getTotalAmount().add(sellerOrder.getShippingFee()),
-                    itemCounts.getOrDefault(sellerOrder.getId(), 0), order.getStatus(), firstNames.get(sellerOrder.getId()),
+                    itemCounts.getOrDefault(sellerOrder.getId(), 0), order.getStatus(),
+                    shipment == null ? null : shipment.status(), firstNames.get(sellerOrder.getId()),
                     sellerOrder.getCreatedAt());
         }));
     }
@@ -95,9 +102,15 @@ public class OrderReadService implements OrderQuery {
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.SELLER_ORDER_NOT_FOUND));
         Orders order = sellerOrder.getOrder();
         List<OrdersItemResult> items = itemsBySellerOrder(List.of(sellerOrderId)).getOrDefault(sellerOrderId, List.of());
+        ShipmentResult shipment = shipmentQuery.findBySellerOrderId(sellerOrderId);
+        Optional<LocalDateTime> settledAt = settlementQuery.findSettledAtBySellerOrderId(sellerOrderId);
+        // 정산 테이블에는 별도 상태 컬럼이 없으므로 실제 정산 행의 존재 여부만 표시한다.
         return new SellerOrderDetailResponse(sellerOrderId, order.getId(), order.getOrderNo(),
                 sellerOrder.getTotalAmount().add(sellerOrder.getShippingFee()), sellerOrder.getShippingFee(),
-                order.getStatus(), sellerOrder.getCreatedAt(), order.getRecipientName(), order.getRecipientPhone(),
+                order.getStatus(), shipment == null ? null : shipment.status(),
+                shipment == null ? null : shipment.trackingNo(),
+                settledAt.isPresent() ? "COMPLETED" : "NOT_SETTLED", settledAt.orElse(null), sellerOrder.getCreatedAt(),
+                order.getRecipientName(), order.getRecipientPhone(),
                 order.getZipcode(), order.getShipAddress1(), order.getShipAddress2(), items);
     }
 

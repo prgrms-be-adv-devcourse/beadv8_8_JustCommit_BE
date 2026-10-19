@@ -61,6 +61,7 @@ class ShipmentServiceTest {
         ReflectionTestUtils.setField(shipment, "status", ShipmentStatus.DELIVERED);
         LocalDateTime deliveredAt = LocalDateTime.of(2026, 10, 12, 13, 0);
         ReflectionTestUtils.setField(shipment, "deliveredAt", deliveredAt);
+        ReflectionTestUtils.setField(shipment, "trackingNo", "TRACK-123");
         when(shipmentRepository.findBySellerOrderId(7L)).thenReturn(Optional.of(shipment));
 
         var result = shipmentService.findBySellerOrderId(7L);
@@ -68,6 +69,7 @@ class ShipmentServiceTest {
         assertThat(result.shipmentId()).isEqualTo(30L);
         assertThat(result.status()).isEqualTo("DELIVERED");
         assertThat(result.deliveredAt()).isEqualTo(deliveredAt);
+        assertThat(result.trackingNo()).isEqualTo("TRACK-123");
     }
 
     @Test

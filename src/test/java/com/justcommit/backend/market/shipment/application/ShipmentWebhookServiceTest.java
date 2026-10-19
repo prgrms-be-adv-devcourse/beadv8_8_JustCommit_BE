@@ -1,6 +1,6 @@
 package com.justcommit.backend.market.shipment.application;
 
-import com.justcommit.backend.market.ShipmentPickedUpEvent;
+import com.justcommit.backend.common.event.ShipmentPickedUpEvent;
 import com.justcommit.backend.market.shipment.domain.Shipment;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentPickedUpEventPublisher;

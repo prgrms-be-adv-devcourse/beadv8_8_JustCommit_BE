@@ -12,6 +12,7 @@ import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.presentation.OrderListRequest;
+import com.justcommit.backend.settlement.SettlementQuery;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -43,6 +44,7 @@ class OrderReadServiceTest {
     @Mock SellerOrderRepository sellerOrderRepository;
     @Mock OrdersItemRepository ordersItemRepository;
     @Mock ShipmentQuery shipmentQuery;
+    @Mock SettlementQuery settlementQuery;
     @InjectMocks OrderReadService orderReadService;
 
     @Test
@@ -184,12 +186,35 @@ class OrderReadServiceTest {
                 .thenReturn(Optional.of(item.getSellerOrder()));
         when(ordersItemRepository.findBySellerOrderIds(List.of(7L))).thenReturn(List.of(item));
 
+        when(settlementQuery.findSettledAtBySellerOrderId(7L)).thenReturn(Optional.empty());
+
         var response = orderReadService.sellerOrder(20L, 7L);
 
         assertThat(response.orderId()).isEqualTo(9L);
         assertThat(response.address1()).isEqualTo("서울시");
+        assertThat(response.settlementStatus()).isEqualTo("NOT_SETTLED");
+        assertThat(response.settledAt()).isNull();
         assertThat(response.items()).singleElement().satisfies(detail ->
                 assertThat(detail.productId()).isEqualTo(101L));
+    }
+
+    @Test
+    void sellerDetailUsesActualShipmentAndSettlementData() {
+        OrdersItem item = item(order(10L), 20L);
+        LocalDateTime settledAt = LocalDateTime.of(2026, 10, 19, 12, 0);
+        when(sellerOrderRepository.findByIdAndSellerId(7L, 20L))
+                .thenReturn(Optional.of(item.getSellerOrder()));
+        when(ordersItemRepository.findBySellerOrderIds(List.of(7L))).thenReturn(List.of(item));
+        when(shipmentQuery.findBySellerOrderId(7L))
+                .thenReturn(new ShipmentResult(30L, "BOOKED", null, "TRACK-123"));
+        when(settlementQuery.findSettledAtBySellerOrderId(7L)).thenReturn(Optional.of(settledAt));
+
+        var response = orderReadService.sellerOrder(20L, 7L);
+
+        assertThat(response.shipmentStatus()).isEqualTo("BOOKED");
+        assertThat(response.trackingNo()).isEqualTo("TRACK-123");
+        assertThat(response.settlementStatus()).isEqualTo("COMPLETED");
+        assertThat(response.settledAt()).isEqualTo(settledAt);
     }
 
     @Test

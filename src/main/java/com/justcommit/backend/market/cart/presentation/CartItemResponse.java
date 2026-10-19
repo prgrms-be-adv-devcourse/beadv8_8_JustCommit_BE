@@ -7,10 +7,15 @@ public record CartItemResponse(
         Long cartItemId,
         Long productId,
         String title,
+        String thumbnailUrl,
+        Long sellerId,
+        String sellerName,
         BigDecimal price,
         BigDecimal nowPrice,
         boolean isChangedPrice,
         boolean isPurchasable,
+        String status,
+        boolean hidden,
         LocalDateTime createdAt
 ) {
 }

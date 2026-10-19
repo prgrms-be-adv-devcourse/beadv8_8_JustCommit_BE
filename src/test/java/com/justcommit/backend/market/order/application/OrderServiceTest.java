@@ -6,7 +6,7 @@ import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.OrderResult;
-import com.justcommit.backend.market.PurchaseConfirmedEvent;
+import com.justcommit.backend.common.event.PurchaseConfirmedEvent;
 import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.cart.application.CartService;
 import com.justcommit.backend.market.cart.domain.Cart;
@@ -21,6 +21,7 @@ import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.infrastructure.kafka.PurchaseConfirmedEventPublisher;
+import com.justcommit.backend.market.order.infrastructure.kafka.SellerOrderEventPublisher;
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
 import com.justcommit.backend.market.shipment.application.ShipmentService;
@@ -76,6 +77,7 @@ class OrderServiceTest {
     @Mock OrderResult orderResult;
     @Mock ShipmentService shipmentService;
     @Mock PurchaseConfirmedEventPublisher purchaseConfirmedEventPublisher;
+    @Mock SellerOrderEventPublisher sellerOrderEventPublisher;
     @Mock OrderItemConfirmationService orderItemConfirmationService;
     @InjectMocks OrderService orderService;
     private OrderItemConfirmationService confirmationServiceUnderTest;
@@ -84,7 +86,7 @@ class OrderServiceTest {
     @BeforeEach
     void setUpConfirmationService() {
         confirmationServiceUnderTest = new OrderItemConfirmationService(ordersRepository, ordersItemRepository,
-                sellerOrderRepository, shipmentService, purchaseConfirmedEventPublisher);
+                sellerOrderRepository, shipmentService, purchaseConfirmedEventPublisher, sellerOrderEventPublisher);
     }
 
     @Test

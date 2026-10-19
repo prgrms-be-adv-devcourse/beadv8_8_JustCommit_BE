@@ -1,6 +1,6 @@
 package com.justcommit.backend.market.shipment.infrastructure.kafka;
 
-import com.justcommit.backend.market.ShipmentPickedUpEvent;
+import com.justcommit.backend.common.event.ShipmentPickedUpEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

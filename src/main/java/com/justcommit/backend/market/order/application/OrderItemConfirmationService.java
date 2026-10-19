@@ -1,9 +1,10 @@
 package com.justcommit.backend.market.order.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.common.event.PurchaseConfirmedEvent;
 import com.justcommit.backend.market.OrderItemStatus;
+import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
 import com.justcommit.backend.market.OrderStatus;
-import com.justcommit.backend.market.PurchaseConfirmedEvent;
 import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.domain.Orders;
@@ -13,6 +14,7 @@ import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.infrastructure.kafka.PurchaseConfirmedEventPublisher;
+import com.justcommit.backend.market.order.infrastructure.kafka.SellerOrderEventPublisher;
 import com.justcommit.backend.market.shipment.application.ShipmentService;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +33,7 @@ public class OrderItemConfirmationService {
     private final SellerOrderRepository sellerOrderRepository;
     private final ShipmentService shipmentService;
     private final PurchaseConfirmedEventPublisher purchaseConfirmedEventPublisher;
+    private final SellerOrderEventPublisher sellerOrderEventPublisher;
 
     @Transactional
     public void confirm(Long memberId, Long orderItemId) {
@@ -97,6 +100,10 @@ public class OrderItemConfirmationService {
         item.confirm();
         checkAndRequestSettlement(sellerOrder);
         updateOrderStatus(order);
+        if (automatic) {
+            sellerOrderEventPublisher.publishAfterCommit(new OrderItemAutoConfirmedEvent(
+                    item.getId(), sellerOrder.getId(), order.getBuyerId(), LocalDateTime.now()));
+        }
     }
 
     private void checkAndRequestSettlement(SellerOrder sellerOrder) {

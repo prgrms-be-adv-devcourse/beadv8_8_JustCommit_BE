@@ -11,7 +11,7 @@
         displayName = "Market",
         allowedDependencies = {
                 "common::entity", "common::exception", "common::response", "common::request", "common::security",
-                "product", "payment",
+                "common::event", "product", "payment", "settlement",
                 "member"
         }
 )

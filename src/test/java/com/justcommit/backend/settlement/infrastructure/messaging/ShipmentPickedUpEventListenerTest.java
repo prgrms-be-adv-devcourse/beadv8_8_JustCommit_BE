@@ -1,6 +1,6 @@
 package com.justcommit.backend.settlement.infrastructure.messaging;
 
-import com.justcommit.backend.market.ShipmentPickedUpEvent;
+import com.justcommit.backend.common.event.ShipmentPickedUpEvent;
 import com.justcommit.backend.payment.PaymentUseCase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

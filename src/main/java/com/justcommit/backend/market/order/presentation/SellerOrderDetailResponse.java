@@ -14,6 +14,10 @@ public record SellerOrderDetailResponse(
         BigDecimal totalAmount,
         BigDecimal shippingFee,
         OrderStatus status,
+        String shipmentStatus,
+        String trackingNo,
+        String settlementStatus,
+        LocalDateTime settledAt,
         LocalDateTime createdAt,
         String recipientName,
         String recipientPhone,
@@ -22,4 +26,12 @@ public record SellerOrderDetailResponse(
         String address2,
         List<OrdersItemResult> items
 ) {
+    public SellerOrderDetailResponse(Long sellerOrderId, Long orderId, String orderNo, BigDecimal totalAmount,
+                                     BigDecimal shippingFee, OrderStatus status, LocalDateTime createdAt,
+                                     String recipientName, String recipientPhone, String zipcode, String address1,
+                                     String address2, List<OrdersItemResult> items) {
+        this(sellerOrderId, orderId, orderNo, totalAmount, shippingFee, status, null, null,
+                "NOT_SETTLED", null, createdAt,
+                recipientName, recipientPhone, zipcode, address1, address2, items);
+    }
 }

@@ -12,7 +12,14 @@ public record SellerOrderResponse(
         BigDecimal totalAmount,
         Integer itemCount,
         OrderStatus status,
+        String shipmentStatus,
         String representativeItemName,
         LocalDateTime createdAt
 ) {
+    public SellerOrderResponse(Long sellerOrderId, Long orderId, String orderNo, BigDecimal totalAmount,
+                               Integer itemCount, OrderStatus status, String representativeItemName,
+                               LocalDateTime createdAt) {
+        this(sellerOrderId, orderId, orderNo, totalAmount, itemCount, status, null,
+                representativeItemName, createdAt);
+    }
 }

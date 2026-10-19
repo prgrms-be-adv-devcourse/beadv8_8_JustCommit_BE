@@ -55,7 +55,7 @@ public class ShipmentService implements ShipmentQuery {
     public ShipmentResult findBySellerOrderId(Long sellerOrderId) {
         return shipmentRepository.findBySellerOrderId(sellerOrderId)
                 .map(shipment -> new ShipmentResult(shipment.getId(), shipment.getStatus().name(),
-                        shipment.getDeliveredAt()))
+                        shipment.getDeliveredAt(), shipment.getTrackingNo()))
                 .orElse(null);
     }
 
@@ -68,7 +68,7 @@ public class ShipmentService implements ShipmentQuery {
         return shipmentRepository.findBySellerOrderIdIn(sellerOrderIds).stream()
                 .collect(Collectors.toMap(Shipment::getSellerOrderId,
                         shipment -> new ShipmentResult(shipment.getId(), shipment.getStatus().name(),
-                                shipment.getDeliveredAt())));
+                                shipment.getDeliveredAt(), shipment.getTrackingNo())));
     }
 
 
