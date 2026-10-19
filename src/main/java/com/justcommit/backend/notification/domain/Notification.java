@@ -29,6 +29,9 @@ public class Notification extends BaseTimeEntity {
 
     private Long sellerOrderId;
 
+    // 어떤 주문의 알림인지 구분하는 상품 요약 (예: "몬스테라 외 1건"). 만들 때의 값을 보존하고, 모르면 null
+    private String itemSummary;
+
     @Column(nullable = false)
     private boolean isRead;
 
@@ -38,12 +41,14 @@ public class Notification extends BaseTimeEntity {
     @Column(unique = true, nullable = false, length = 100)
     private String eventKey;
 
-    public Notification(Long memberId, NotificationType type, Long orderId, Long sellerOrderId, String eventKey) {
+    public Notification(Long memberId, NotificationType type, Long orderId, Long sellerOrderId, String itemSummary,
+                        String eventKey) {
         this.memberId = memberId;
         this.type = type;
         this.message = type.getMessage();
         this.orderId = orderId;
         this.sellerOrderId = sellerOrderId;
+        this.itemSummary = itemSummary;
         this.eventKey = eventKey;
         this.isRead = false;
     }

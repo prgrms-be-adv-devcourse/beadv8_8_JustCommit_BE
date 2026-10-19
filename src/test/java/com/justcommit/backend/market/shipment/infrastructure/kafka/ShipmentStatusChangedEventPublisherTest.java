@@ -44,7 +44,7 @@ class ShipmentStatusChangedEventPublisherTest {
 
         publisher().publishAfterCommit(bookedShipment(), BOOKED_AT);
 
-        verify(kafkaTemplate).send(TOPIC, "7", new ShipmentStatusChangedEvent(1L, 9L, 7L, 10L, 20L, "BOOKED", BOOKED_AT));
+        verify(kafkaTemplate).send(TOPIC, "7", new ShipmentStatusChangedEvent(1L, 9L, 7L, 10L, 20L, "BOOKED", BOOKED_AT, "몬스테라"));
     }
 
     @Test

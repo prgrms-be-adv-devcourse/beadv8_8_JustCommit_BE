@@ -22,6 +22,7 @@ import java.time.LocalDateTime;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -29,6 +30,7 @@ import static org.mockito.Mockito.verify;
 class NotificationEventListenerTest {
 
     private static final Long ORDER_ID = 9L;
+    private static final String ITEM_SUMMARY = "몬스테라 외 1건";
     private static final Long SELLER_ORDER_ID = 7L;
     private static final Long BUYER = 10L;
     private static final Long SELLER = 20L;
@@ -41,8 +43,9 @@ class NotificationEventListenerTest {
     void notifiesSellerOnBooked() {
         listener.onShipmentStatusChanged(shipmentEvent("BOOKED"));
 
-        verify(notificationService).create(SELLER, NotificationType.SHIPMENT_BOOKED, SELLER_ORDER_ID, "SHIPMENT:1:BOOKED");
-        verify(notificationService, never()).create(any(), any(), any(), any(), anyString());
+        verify(notificationService).create(SELLER, NotificationType.SHIPMENT_BOOKED, null, SELLER_ORDER_ID, ITEM_SUMMARY,
+                "SHIPMENT:1:BOOKED");
+        verify(notificationService, never()).create(eq(BUYER), any(), any(), any(), any(), anyString());
     }
 
     @ParameterizedTest(name = "{0} → 구매자 {1}, 판매자 {2}")
@@ -55,8 +58,10 @@ class NotificationEventListenerTest {
     void notifiesBuyerAndSeller(String status, NotificationType buyerType, NotificationType sellerType) {
         listener.onShipmentStatusChanged(shipmentEvent(status));
 
-        verify(notificationService).create(BUYER, buyerType, ORDER_ID, SELLER_ORDER_ID, "SHIPMENT:1:" + status);
-        verify(notificationService).create(SELLER, sellerType, SELLER_ORDER_ID, "SHIPMENT:1:" + status + ":SELLER");
+        // 배송 알림은 이벤트의 상품 요약을 그대로 쓴다 (조회 없음)
+        verify(notificationService).create(BUYER, buyerType, ORDER_ID, SELLER_ORDER_ID, ITEM_SUMMARY, "SHIPMENT:1:" + status);
+        verify(notificationService).create(SELLER, sellerType, null, SELLER_ORDER_ID, ITEM_SUMMARY,
+                "SHIPMENT:1:" + status + ":SELLER");
     }
 
     @Test
@@ -66,6 +71,7 @@ class NotificationEventListenerTest {
 
         verify(notificationService, never()).create(any(), any(), any(), anyString());
         verify(notificationService, never()).create(any(), any(), any(), any(), anyString());
+        verify(notificationService, never()).create(any(), any(), any(), any(), any(), anyString());
     }
 
     @Test
@@ -108,6 +114,6 @@ class NotificationEventListenerTest {
 
     private ShipmentStatusChangedEvent shipmentEvent(String status) {
         return new ShipmentStatusChangedEvent(1L, ORDER_ID, SELLER_ORDER_ID, BUYER, SELLER, status,
-                LocalDateTime.of(2026, 10, 16, 10, 0));
+                LocalDateTime.of(2026, 10, 16, 10, 0), ITEM_SUMMARY);
     }
 }

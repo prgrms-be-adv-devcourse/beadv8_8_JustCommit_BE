@@ -28,7 +28,8 @@ public class ShipmentStatusChangedEventPublisher {
     // 트랜잭션 안이면 커밋 후에 보낸다(웹훅). 밖이면 이미 저장이 끝난 것이므로 바로 보낸다(커밋 후 예약).
     public void publishAfterCommit(Shipment shipment, LocalDateTime occurredAt) {
         ShipmentStatusChangedEvent event = new ShipmentStatusChangedEvent(shipment.getId(), shipment.getOrderId(), shipment.getSellerOrderId(),
-                shipment.getBuyerId(), shipment.getSellerId(), shipment.getStatus().name(), occurredAt);
+                shipment.getBuyerId(), shipment.getSellerId(), shipment.getStatus().name(), occurredAt,
+                shipment.getItemSummary());
 
         if (!TransactionSynchronizationManager.isSynchronizationActive()
                 || !TransactionSynchronizationManager.isActualTransactionActive()) {

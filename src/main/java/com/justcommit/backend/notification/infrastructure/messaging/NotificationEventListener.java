@@ -48,11 +48,12 @@ public class NotificationEventListener {
 
     // 구매자는 주문 상세(orderId)로, 판매자는 판매 주문 상세(sellerOrderId)로 이동한다
     private void notifyBuyer(ShipmentStatusChangedEvent event, NotificationType type, String eventKey) {
-        notificationService.create(event.buyerId(), type, event.orderId(), event.sellerOrderId(), eventKey);
+        notificationService.create(event.buyerId(), type, event.orderId(), event.sellerOrderId(), event.itemSummary(),
+                eventKey);
     }
 
     private void notifySeller(ShipmentStatusChangedEvent event, NotificationType type, String eventKey) {
-        notificationService.create(event.sellerId(), type, event.sellerOrderId(), eventKey);
+        notificationService.create(event.sellerId(), type, null, event.sellerOrderId(), event.itemSummary(), eventKey);
     }
 
     @KafkaListener(topics = "${custom.kafka.topics.purchase-confirmed}", groupId = GROUP_ID)

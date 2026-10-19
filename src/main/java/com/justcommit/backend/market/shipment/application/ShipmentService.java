@@ -70,7 +70,8 @@ public class ShipmentService implements ShipmentQuery {
 
     private ShipmentResult toResult(Shipment shipment) {
         return new ShipmentResult(shipment.getId(), shipment.getStatus().name(), shipment.getDeliveredAt(),
-                shipment.getTrackingNo(), shipment.getBookedAt(), shipment.getPickedUpAt(), shipment.getInTransitAt());
+                shipment.getTrackingNo(), shipment.getBookedAt(), shipment.getPickedUpAt(), shipment.getInTransitAt(),
+                shipment.getItemSummary());
     }
 
 

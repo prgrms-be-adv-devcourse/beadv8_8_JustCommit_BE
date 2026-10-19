@@ -2,6 +2,8 @@ package com.justcommit.backend.notification.application;
 
 import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.market.ShipmentQuery;
+import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.notification.domain.NotificationType;
 import com.justcommit.backend.notification.infrastructure.repository.NotificationRepository;
 import com.justcommit.backend.notification.infrastructure.sse.NotificationSseRegistry;
@@ -26,6 +28,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.times;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
@@ -42,6 +45,7 @@ class NotificationServiceIntegrationTest {
 
     private static final Long BUYER = 10L;
     private static final Long OTHER = 99L;
+    private static final Long SELLER = 20L;
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
@@ -54,6 +58,7 @@ class NotificationServiceIntegrationTest {
     }
 
     @MockitoBean NotificationSseRegistry sseRegistry;
+    @MockitoBean ShipmentQuery shipmentQuery;
 
     @Autowired NotificationService notificationService;
     @Autowired NotificationRepository notificationRepository;
@@ -179,6 +184,49 @@ class NotificationServiceIntegrationTest {
 
         assertThat(list.content().getFirst().orderId()).isEqualTo(9L);
         assertThat(list.content().getFirst().sellerOrderId()).isEqualTo(7L);
+    }
+
+    @Test
+    @DisplayName("배송 이벤트로 받은 상품 요약은 조회 없이 그대로 저장한다")
+    void storesGivenItemSummary() {
+        notificationService.create(BUYER, NotificationType.SHIPMENT_DELIVERED, 9L, 7L, "몬스테라 외 1건",
+                "SHIPMENT:1:DELIVERED");
+
+        assertThat(notificationService.list(BUYER, null, latestFirst()).content().getFirst().itemSummary())
+                .isEqualTo("몬스테라 외 1건");
+        verify(shipmentQuery, never()).findBySellerOrderId(anyLong());
+    }
+
+    @Test
+    @DisplayName("주문 이벤트 알림은 판매자 주문의 배송에서 상품 요약을 가져온다")
+    void looksUpItemSummaryFromShipment() {
+        when(shipmentQuery.findBySellerOrderId(7L)).thenReturn(new ShipmentResult(30L, "READY", null, null,
+                null, null, null, "해바라기 외 1건"));
+
+        notificationService.create(SELLER, NotificationType.SELLER_ORDER_PAID, 7L, "SELLER_ORDER_PAID:7");
+
+        assertThat(notificationService.list(SELLER, null, latestFirst()).content().getFirst().itemSummary())
+                .isEqualTo("해바라기 외 1건");
+    }
+
+    @Test
+    @DisplayName("상품 요약을 못 가져와도 알림은 만들고 상품 요약은 비워 둔다")
+    void createsWithoutItemSummaryWhenLookupFails() {
+        when(shipmentQuery.findBySellerOrderId(7L)).thenThrow(new IllegalStateException("조회 실패"));
+
+        notificationService.create(SELLER, NotificationType.SELLER_ORDER_PAID, 7L, "SELLER_ORDER_PAID:7");
+
+        assertThat(notificationService.list(SELLER, null, latestFirst()).content())
+                .singleElement().satisfies(n -> assertThat(n.itemSummary()).isNull());
+    }
+
+    @Test
+    @DisplayName("중복 이벤트면 상품 요약도 조회하지 않는다")
+    void skipsLookupForDuplicate() {
+        notificationService.create(SELLER, NotificationType.SELLER_ORDER_PAID, 7L, "SELLER_ORDER_PAID:7");
+        notificationService.create(SELLER, NotificationType.SELLER_ORDER_PAID, 7L, "SELLER_ORDER_PAID:7");
+
+        verify(shipmentQuery, times(1)).findBySellerOrderId(7L);
     }
 
     private PageRequest latestFirst() {
