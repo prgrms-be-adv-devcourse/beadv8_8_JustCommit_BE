@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -120,8 +121,17 @@ public class OrderItemConfirmationService {
             sellerOrder.confirmed();
             purchaseConfirmedEventPublisher.publishAfterCommit(new PurchaseConfirmedEvent(
                     sellerOrder.getId(), sellerOrder.getSellerId(), sellerOrder.getSettlementBaseAmount(),
-                    sellerOrder.getConfirmedAt()));
+                    sellerOrder.getConfirmedAt(), itemSummary(sellerOrder)));
         }
+    }
+
+    private String itemSummary(SellerOrder sellerOrder) {
+        List<String> names = sellerOrder.getItems().stream()
+                .filter(i -> i.getStatus() == OrderItemStatus.CONFIRMED)
+                .map(OrdersItem::getProductName)
+                .toList();
+        if (names.isEmpty()) return "";
+        return names.size() == 1 ? names.get(0) : names.get(0) + " 외 " + (names.size() - 1) + "건";
     }
 
     private void updateOrderStatus(Orders orders) {

@@ -67,6 +67,6 @@ class PurchaseConfirmedEventPublisherTest {
 
     private PurchaseConfirmedEvent event() {
         return new PurchaseConfirmedEvent(7L, 20L, new BigDecimal("10000"),
-                LocalDateTime.of(2026, 10, 14, 12, 0));
+                LocalDateTime.of(2026, 10, 14, 12, 0), "몬스테라");
     }
 }

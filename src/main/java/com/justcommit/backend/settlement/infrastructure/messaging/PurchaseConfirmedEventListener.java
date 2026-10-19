@@ -21,7 +21,7 @@ public class PurchaseConfirmedEventListener {
                 event.sellerOrderId(),
                 event.sellerId(),
                 event.saleAmount(),
-                null
+                event.itemSummary()
         );
     }
 }
