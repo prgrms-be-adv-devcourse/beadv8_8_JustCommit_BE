@@ -82,8 +82,14 @@ for k in COURIER_API_KEY WEBHOOK_API_KEY; do
 done
 sed -i 's|^WEBHOOK_URL=.*|WEBHOOK_URL=http://replant-app:8080/api/v1/webhooks/courier|' .env
 sed -i "s|^ADMIN_API_KEY=.*|ADMIN_API_KEY=$(openssl rand -hex 32)|" .env
+# 시연용 배송 진행 시간(초). ~/secrets/replant.env에 COURIER_PICKUP_DELAY_SEC 등이 있으면 넣고, 없으면 택배사 기본값(180·120·120)
+for k in PICKUP_DELAY_SEC IN_TRANSIT_DELAY_SEC DELIVERY_DELAY_SEC; do
+  v=$(grep "^COURIER_$k=" ~/secrets/replant.env | cut -d= -f2- || true)
+  if [ -n "$v" ]; then sed -i "s|^$k=.*|$k=$v|" .env; fi
+done
 chmod 600 .env
 echo "✅ 택배사: $(git log --oneline -1)"
+grep -E '^(PICKUP|IN_TRANSIT|DELIVERY)_DELAY_SEC=' .env | sed 's/^/   진행 시간(빈 값은 기본값) /'
 
 echo "===== 6. 프론트 develop 받아서 빌드 (Docker 안의 Node, 서버에 Node 설치 안 함) ====="
 git clone -q -b develop "$FE_REPO" ~/replant-fe
