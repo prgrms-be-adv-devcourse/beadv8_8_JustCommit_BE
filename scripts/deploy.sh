@@ -8,6 +8,8 @@
 #       DB 값은 PostgreSQL 볼륨을 처음 만들 때만 적용되고, 암호화 키를 바꾸면 저장된 값을 복호화할 수 없다.
 set -e
 trap 'echo; echo "❌ 실패한 줄: $LINENO  (명령: $BASH_COMMAND)"' ERR
+# 2단계에서 ~/replant 등을 지우므로, 그 안에서 실행해도 git clone이 실패하지 않게 홈에서 시작한다
+cd ~
 
 BE_REPO=https://github.com/prgrms-be-adv-devcourse/beadv8_8_JustCommit_BE.git
 FE_REPO=https://github.com/prgrms-be-adv-devcourse/beadv8_8_JustCommit_FE.git
@@ -127,6 +129,23 @@ server {
     index index.html;
     location / { try_files $uri $uri/ /index.html; }
     location /assets/ { expires 30d; add_header Cache-Control "public, immutable"; }
+
+    # 알림 SSE: 연결을 오래 열어 두고 받은 즉시 넘긴다 (서버는 30초마다 ping). = 매칭이 아래 정규식보다 먼저 적용된다
+    location = /api/v1/notifications/subscribe {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_cache off;
+        gzip off;
+        proxy_read_timeout 1h;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header X-Forwarded-Port  $server_port;
+    }
 
     location ~ ^/(api|oauth2|login/oauth2|actuator|swagger-ui|v3/api-docs)(/|$) {
         proxy_pass http://127.0.0.1:8080;
