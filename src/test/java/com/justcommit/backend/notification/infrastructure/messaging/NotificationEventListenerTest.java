@@ -25,6 +25,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class NotificationEventListenerTest {
@@ -93,14 +94,13 @@ class NotificationEventListenerTest {
     }
 
     @Test
-    void notifiesBuyerAndSellerWithDifferentKeysOnCancellation() {
+    void notifiesOnlySellerOnCancellationByBuyer() {
         listener.onSellerOrderCancelled(new SellerOrderCancelledEvent(
                 ORDER_ID, SELLER_ORDER_ID, SELLER, BUYER, LocalDateTime.now()));
 
-        verify(notificationService).create(BUYER, NotificationType.SELLER_ORDER_CANCELLED_BUYER,
-                ORDER_ID, SELLER_ORDER_ID, "SELLER_ORDER_CANCELLED:BUYER:7");
         verify(notificationService).create(SELLER, NotificationType.SELLER_ORDER_CANCELLED,
                 SELLER_ORDER_ID, "SELLER_ORDER_CANCELLED:SELLER:7");
+        verifyNoMoreInteractions(notificationService); // 취소한 구매자 본인에게는 알리지 않음
     }
 
     @Test
