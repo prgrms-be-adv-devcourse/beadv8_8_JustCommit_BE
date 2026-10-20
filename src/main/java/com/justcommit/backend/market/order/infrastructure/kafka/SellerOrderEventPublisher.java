@@ -1,6 +1,7 @@
 package com.justcommit.backend.market.order.infrastructure.kafka;
 
 import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
+import com.justcommit.backend.market.OrderItemCancelledEvent;
 import com.justcommit.backend.market.SellerOrderCancelledEvent;
 import com.justcommit.backend.market.SellerOrderPaidEvent;
 import lombok.extern.slf4j.Slf4j;
@@ -17,15 +18,18 @@ public class SellerOrderEventPublisher {
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final String paidTopic;
     private final String cancelledTopic;
+    private final String itemCancelledTopic;
     private final String autoConfirmedTopic;
 
     public SellerOrderEventPublisher(KafkaTemplate<String, Object> kafkaTemplate,
                                      @Value("${custom.kafka.topics.seller-order-paid}") String paidTopic,
                                      @Value("${custom.kafka.topics.seller-order-cancelled}") String cancelledTopic,
+                                     @Value("${custom.kafka.topics.order-item-cancelled}") String itemCancelledTopic,
                                      @Value("${custom.kafka.topics.order-item-auto-confirmed}") String autoConfirmedTopic) {
         this.kafkaTemplate = kafkaTemplate;
         this.paidTopic = paidTopic;
         this.cancelledTopic = cancelledTopic;
+        this.itemCancelledTopic = itemCancelledTopic;
         this.autoConfirmedTopic = autoConfirmedTopic;
     }
 
@@ -35,6 +39,10 @@ public class SellerOrderEventPublisher {
 
     public void publishAfterCommit(SellerOrderCancelledEvent event) {
         register(cancelledTopic, event.sellerOrderId(), event);
+    }
+
+    public void publishAfterCommit(OrderItemCancelledEvent event) {
+        register(itemCancelledTopic, event.sellerOrderId(), event);
     }
 
     public void publishAfterCommit(OrderItemAutoConfirmedEvent event) {

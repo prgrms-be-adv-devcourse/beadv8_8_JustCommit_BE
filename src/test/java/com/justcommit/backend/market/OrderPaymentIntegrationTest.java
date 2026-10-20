@@ -1,6 +1,7 @@
 package com.justcommit.backend.market;
 
 import com.justcommit.backend.common.event.PurchaseConfirmedEvent;
+import com.justcommit.backend.market.OrderItemCancelledEvent;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.market.cart.domain.Cart;
@@ -567,6 +568,12 @@ class OrderPaymentIntegrationTest {
                 .isEqualTo(ShipmentStatus.BOOKED);
         verify(courierClient, times(0)).cancel(anyString());
         verify(sellerOrderEventPublisher, times(0)).publishAfterCommit(any(SellerOrderCancelledEvent.class));
+        ArgumentCaptor<OrderItemCancelledEvent> itemEvent = ArgumentCaptor.forClass(OrderItemCancelledEvent.class);
+        verify(sellerOrderEventPublisher, times(1)).publishAfterCommit(itemEvent.capture());
+        assertThat(itemEvent.getValue().orderItemId()).isEqualTo(firstItemId);
+        assertThat(itemEvent.getValue().sellerOrderId()).isEqualTo(sellerOrderId);
+        assertThat(itemEvent.getValue().sellerId()).isEqualTo(401L);
+        assertThat(itemEvent.getValue().productName()).isEqualTo("몬스테라");
     }
 
     @Test
@@ -595,6 +602,7 @@ class OrderPaymentIntegrationTest {
         assertThat(shipment.getCourierCancelledAt()).isNotNull();
         verify(courierClient, times(1)).cancel(shipment.getTrackingNo());
         verify(sellerOrderEventPublisher, times(1)).publishAfterCommit(any(SellerOrderCancelledEvent.class));
+        verify(sellerOrderEventPublisher, times(0)).publishAfterCommit(any(OrderItemCancelledEvent.class));
     }
 
     @Test
@@ -636,6 +644,7 @@ class OrderPaymentIntegrationTest {
         verify(courierClient, times(sellerOrderIds.size())).cancel(anyString());
         verify(sellerOrderEventPublisher, times(sellerOrderIds.size()))
                 .publishAfterCommit(any(SellerOrderCancelledEvent.class));
+        verify(sellerOrderEventPublisher, times(1)).publishAfterCommit(any(OrderItemCancelledEvent.class));
     }
 
     @Test
@@ -664,6 +673,7 @@ class OrderPaymentIntegrationTest {
         assertThat(refundCount(RefType.SHIPPING_FEE_REFUND, firstSellerOrderId)).isEqualTo(2);
         assertThat(productRepository.findById(second.getId()).orElseThrow().getStatus()).isEqualTo(ProductStatus.ACTIVE);
         verify(courierClient, times(2)).cancel(anyString());
+        verify(sellerOrderEventPublisher, times(0)).publishAfterCommit(any(OrderItemCancelledEvent.class));
     }
 
     @Test

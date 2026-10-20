@@ -10,6 +10,7 @@ public record SellerOrderResponse(
         Long orderId,
         String orderNo,
         BigDecimal totalAmount,
+        LocalDateTime confirmedAt,
         Integer itemCount,
         OrderStatus status,
         String shipmentStatus,
@@ -17,10 +18,10 @@ public record SellerOrderResponse(
         String thumbnailUrl, // 대표 상품 사진 (없으면 null)
         LocalDateTime createdAt
 ) {
-    public SellerOrderResponse(Long sellerOrderId, Long orderId, String orderNo, BigDecimal totalAmount,
+    public SellerOrderResponse(Long sellerOrderId, Long orderId, String orderNo, BigDecimal totalAmount, LocalDateTime confirmedAt,
                                Integer itemCount, OrderStatus status, String representativeItemName,
                                LocalDateTime createdAt) {
-        this(sellerOrderId, orderId, orderNo, totalAmount, itemCount, status, null,
+        this(sellerOrderId, orderId, orderNo, totalAmount, confirmedAt, itemCount, status, null,
                 representativeItemName, null, createdAt);
     }
 }

@@ -113,7 +113,7 @@ public class OrderReadService implements OrderQuery {
             ShipmentResult shipment = shipments.get(sellerOrder.getId());
             OrdersItem firstItem = firstItems.get(sellerOrder.getId());
             return new SellerOrderResponse(sellerOrder.getId(), order.getId(), order.getOrderNo(),
-                    sellerOrder.getTotalAmount().add(sellerOrder.getShippingFee()),
+                    sellerOrder.getTotalAmount(), sellerOrder.getConfirmedAt(),
                     itemCounts.getOrDefault(sellerOrder.getId(), 0), order.getStatus(),
                     shipment == null ? null : shipment.status(),
                     firstItem == null ? null : firstItem.getProductName(),
@@ -136,7 +136,7 @@ public class OrderReadService implements OrderQuery {
         Optional<LocalDateTime> settledAt = settlementQuery.findSettledAtBySellerOrderId(sellerOrderId);
         // 정산 테이블에는 별도 상태 컬럼이 없으므로 실제 정산 행의 존재 여부만 표시한다.
         return new SellerOrderDetailResponse(sellerOrderId, order.getId(), order.getOrderNo(),
-                sellerOrder.getTotalAmount().add(sellerOrder.getShippingFee()), sellerOrder.getShippingFee(),
+                sellerOrder.getTotalAmount(), sellerOrder.getShippingFee(),
                 order.getStatus(), shipment == null ? null : shipment.status(),
                 shipment == null ? null : shipment.trackingNo(),
                 shipment == null ? null : shipment.bookedAt(),

@@ -337,12 +337,16 @@ public class OrderService {
         }
         sellerOrder.calculateSettlementBaseAmount();
         boolean sellerOrderCancelled = finishCancellation(sellerOrder, order);
+        String productName = item.getProductName();
         if (!productUseCase.releaseItem(item.getProductId())) {
             throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
         }
         if (sellerOrderCancelled) {
             sellerOrderEventPublisher.publishAfterCommit(new SellerOrderCancelledEvent(
                     orderId, sellerOrderId, sellerOrder.getSellerId(), memberId, LocalDateTime.now()));
+        } else {
+            sellerOrderEventPublisher.publishAfterCommit(new OrderItemCancelledEvent(
+                    item.getId(), orderId, sellerOrderId, sellerOrder.getSellerId(), productName, LocalDateTime.now()));
         }
     }
 

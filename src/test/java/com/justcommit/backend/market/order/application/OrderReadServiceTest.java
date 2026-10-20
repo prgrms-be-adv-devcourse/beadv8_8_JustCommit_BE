@@ -171,6 +171,8 @@ class OrderReadServiceTest {
         Orders order = order(10L);
         OrdersItem item = item(order, 20L);
         SellerOrder sellerOrder = item.getSellerOrder();
+        LocalDateTime confirmedAt = LocalDateTime.of(2026, 10, 20, 12, 0);
+        ReflectionTestUtils.setField(sellerOrder, "confirmedAt", confirmedAt);
         when(sellerOrderRepository.findBySellerId(eq(20L), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(sellerOrder), PageRequest.of(0, 20), 1));
         when(ordersItemRepository.findBySellerOrderIds(List.of(7L))).thenReturn(List.of(item));
@@ -183,7 +185,8 @@ class OrderReadServiceTest {
             assertThat(summary.itemCount()).isEqualTo(1);
             assertThat(summary.representativeItemName()).isEqualTo("몬스테라");
             assertThat(summary.thumbnailUrl()).isEqualTo("https://img/monstera.jpg");
-            assertThat(summary.totalAmount()).isEqualByComparingTo("13000");
+            assertThat(summary.totalAmount()).isEqualByComparingTo("10000");
+            assertThat(summary.confirmedAt()).isEqualTo(confirmedAt);
         });
     }
 
@@ -211,6 +214,8 @@ class OrderReadServiceTest {
         var response = orderReadService.sellerOrder(20L, 7L);
 
         assertThat(response.orderId()).isEqualTo(9L);
+        assertThat(response.totalAmount()).isEqualByComparingTo("10000");
+        assertThat(response.shippingFee()).isEqualByComparingTo("3000");
         assertThat(response.items()).singleElement().satisfies(detail -> {
             assertThat(detail.productName()).isEqualTo("몬스테라");
             assertThat(detail.thumbnailUrl()).isEqualTo("https://img/monstera.jpg");
