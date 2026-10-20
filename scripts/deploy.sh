@@ -130,6 +130,23 @@ server {
     location / { try_files $uri $uri/ /index.html; }
     location /assets/ { expires 30d; add_header Cache-Control "public, immutable"; }
 
+    # 알림 SSE: 연결을 오래 열어 두고 받은 즉시 넘긴다 (서버는 30초마다 ping). = 매칭이 아래 정규식보다 먼저 적용된다
+    location = /api/v1/notifications/subscribe {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_cache off;
+        gzip off;
+        proxy_read_timeout 1h;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header X-Forwarded-Port  $server_port;
+    }
+
     location ~ ^/(api|oauth2|login/oauth2|actuator|swagger-ui|v3/api-docs)(/|$) {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host              $host;
