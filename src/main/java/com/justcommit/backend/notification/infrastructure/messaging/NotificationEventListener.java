@@ -70,8 +70,8 @@ public class NotificationEventListener {
 
     @KafkaListener(topics = "${custom.kafka.topics.seller-order-cancelled}", groupId = GROUP_ID)
     public void onSellerOrderCancelled(SellerOrderCancelledEvent event) {
-        notificationService.create(event.buyerId(), NotificationType.SELLER_ORDER_CANCELLED_BUYER,
-                event.orderId(), event.sellerOrderId(), "SELLER_ORDER_CANCELLED:BUYER:" + event.sellerOrderId());
+        // 취소는 지금 구매자 본인만 할 수 있어 구매자에게는 알리지 않는다(본인이 한 일은 알리지 않음).
+        // 판매자·시스템 취소가 생기면 SELLER_ORDER_CANCELLED_BUYER로 구매자 알림을 다시 보낸다.
         notificationService.create(event.sellerId(), NotificationType.SELLER_ORDER_CANCELLED,
                 event.sellerOrderId(), "SELLER_ORDER_CANCELLED:SELLER:" + event.sellerOrderId());
     }
