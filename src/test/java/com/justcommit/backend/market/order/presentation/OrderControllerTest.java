@@ -213,12 +213,14 @@ class OrderControllerTest {
     void listsSellerOrdersWithAuthenticatedId() throws Exception {
         when(orderReadService.sellerOrders(eq(10L), any(OrderListRequest.class)))
                 .thenReturn(new PagingResponse<>(List.of(new SellerOrderResponse(7L, 9L, "ORD-test",
-                        new BigDecimal("13000"), 1, OrderStatus.PAID, "몬스테라",
+                        new BigDecimal("13000"), LocalDateTime.of(2026, 10, 20, 12, 0),
+                        1, OrderStatus.PAID, "몬스테라",
                         LocalDateTime.of(2026, 10, 9, 12, 0))), 0, 20, 1, 1));
 
         mockMvc.perform(get("/api/v1/orders/seller"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].sellerOrderId").value(7));
+                .andExpect(jsonPath("$.content[0].sellerOrderId").value(7))
+                .andExpect(jsonPath("$.content[0].confirmedAt").value("2026-10-20T12:00:00"));
     }
 
     @Test

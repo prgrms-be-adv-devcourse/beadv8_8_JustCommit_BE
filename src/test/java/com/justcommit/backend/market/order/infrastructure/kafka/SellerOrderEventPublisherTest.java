@@ -1,6 +1,7 @@
 package com.justcommit.backend.market.order.infrastructure.kafka;
 
 import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
+import com.justcommit.backend.market.OrderItemCancelledEvent;
 import com.justcommit.backend.market.SellerOrderCancelledEvent;
 import com.justcommit.backend.market.SellerOrderPaidEvent;
 import org.junit.jupiter.api.AfterEach;
@@ -39,16 +40,19 @@ class SellerOrderEventPublisherTest {
 
     @Test
     void sendsEachEventOnlyAfterCommit() {
-        var publisher = new SellerOrderEventPublisher(kafkaTemplate, "paid", "cancelled", "auto");
+        var publisher = new SellerOrderEventPublisher(kafkaTemplate, "paid", "cancelled", "item-cancelled", "auto");
         var paid = new SellerOrderPaidEvent(7L, 20L, 10L, LocalDateTime.now());
         var cancelled = new SellerOrderCancelledEvent(9L, 8L, 21L, 10L, LocalDateTime.now());
+        var itemCancelled = new OrderItemCancelledEvent(11L, 9L, 8L, 21L, "몬스테라", LocalDateTime.now());
         var auto = new OrderItemAutoConfirmedEvent(11L, 9L, 7L, 10L, LocalDateTime.now());
         when(kafkaTemplate.send("paid", "7", paid)).thenReturn(CompletableFuture.completedFuture(null));
         when(kafkaTemplate.send("cancelled", "8", cancelled)).thenReturn(CompletableFuture.completedFuture(null));
+        when(kafkaTemplate.send("item-cancelled", "8", itemCancelled)).thenReturn(CompletableFuture.completedFuture(null));
         when(kafkaTemplate.send("auto", "7", auto)).thenReturn(CompletableFuture.completedFuture(null));
 
         publisher.publishAfterCommit(paid);
         publisher.publishAfterCommit(cancelled);
+        publisher.publishAfterCommit(itemCancelled);
         publisher.publishAfterCommit(auto);
         verifyNoInteractions(kafkaTemplate);
 
@@ -56,13 +60,14 @@ class SellerOrderEventPublisherTest {
 
         verify(kafkaTemplate).send("paid", "7", paid);
         verify(kafkaTemplate).send("cancelled", "8", cancelled);
+        verify(kafkaTemplate).send("item-cancelled", "8", itemCancelled);
         verify(kafkaTemplate).send("auto", "7", auto);
     }
 
     @Test
     void sendsNothingAfterRollback() {
-        var publisher = new SellerOrderEventPublisher(kafkaTemplate, "paid", "cancelled", "auto");
-        publisher.publishAfterCommit(new SellerOrderPaidEvent(7L, 20L, 10L, LocalDateTime.now()));
+        var publisher = new SellerOrderEventPublisher(kafkaTemplate, "paid", "cancelled", "item-cancelled", "auto");
+        publisher.publishAfterCommit(new OrderItemCancelledEvent(11L, 9L, 8L, 21L, "몬스테라", LocalDateTime.now()));
 
         TransactionSynchronizationManager.getSynchronizations().forEach(
                 synchronization -> synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
