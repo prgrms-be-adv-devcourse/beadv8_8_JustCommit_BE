@@ -18,4 +18,20 @@ public class SpeciesSearchRequestTest {
 
         assertThat(pageable.getSort().getOrderFor("name").getDirection()).isEqualTo(Sort.Direction.ASC);
     }
+
+    @Test
+    @DisplayName("size를 보내지 않으면 품종을 500개까지 조회")
+    void defaultSizeIs500() {
+        Pageable pageable = new SpeciesSearchRequest(null, null, null, null).toPageable();
+
+        assertThat(pageable.getPageSize()).isEqualTo(500);
+    }
+
+    @Test
+    @DisplayName("size가 500을 넘으면 500으로 제한")
+    void sizeIsLimitedTo500() {
+        Pageable pageable = new SpeciesSearchRequest(null, null, null, 1000).toPageable();
+
+        assertThat(pageable.getPageSize()).isEqualTo(500);
+    }
 }
