@@ -62,7 +62,7 @@ com.justcommit.backend
 
 
 ## 팀 구성 및 담당
-
+**Team JustCommit (일단커밋)**
 | 김윤관(PO) | 김환희 | 박성수 | 박지원 | 장세미 |
 |:---:|:---:|:---:|:---:|:---:|
 | <img src="https://github.com/gasic37200.png" width="100" height="100"> | <img src="https://github.com/rlaksl.png" width="100" height="100"> | <img src="https://github.com/projectsy1105-source.png" width="100" height="100"> | <img src="https://github.com/jjuny-won.png" width="100" height="100"> | <img src="https://github.com/ssem-i.png" width="100" height="100"> |
