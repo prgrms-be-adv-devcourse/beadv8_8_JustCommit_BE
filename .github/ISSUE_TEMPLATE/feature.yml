@@ -1,0 +1,49 @@
+name: Feature
+description: 여러 Task로 나뉘는 기능 단위 작업 (스프린트 계획 단위)
+title: "[도메인] "
+type: Feature
+projects: ["prgrms-be-adv-devcourse/79"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        제목 예: `[member] 회원 서비스 분리`
+        이슈를 만든 뒤 프로젝트에서 **Sprint**를 지정하고, 아래쪽 **Create sub-issue**로 Task를 만드세요.
+        Task의 Sprint는 이 Feature의 Sprint로 자동으로 채워집니다.
+  - type: textarea
+    id: goal
+    attributes:
+      label: 📌 목표
+      description: 무엇을, 왜 하는지 적어 주세요.
+      placeholder: 회원 모듈을 독립 서비스로 분리해 다른 서비스와 배포·DB를 나눈다.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 🧭 범위
+      description: 이번 Feature에 포함하는 것과 하지 않는 것
+      value: |
+        - 포함:
+        - 제외:
+  - type: textarea
+    id: tasks
+    attributes:
+      label: 📝 Task 목록
+      description: 나눌 Task를 적어 두고, 만든 뒤에는 하위 이슈로 연결하세요.
+      value: |
+        - [ ]
+        - [ ]
+  - type: textarea
+    id: done
+    attributes:
+      label: ✅ 완료 기준
+      description: 무엇이 되면 끝난 것인지 확인할 수 있게 적어 주세요.
+      placeholder: 기존 회원 API가 같은 경로·응답 형식으로 Gateway를 통해 동작한다.
+    validations:
+      required: true
+  - type: input
+    id: requirement
+    attributes:
+      label: 🔗 관련 요구사항
+      description: "요구사항 ID나 문서 링크 (예: REQ-01, 노션·Miro 링크)"

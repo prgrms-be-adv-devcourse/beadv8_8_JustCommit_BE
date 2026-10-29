@@ -1,0 +1,39 @@
+name: Sync Sprint
+
+# 하위 이슈(Task)의 Sprint가 비어 있으면 상위 이슈(Feature)의 Sprint를 채운다 (조직 프로젝트 79번)
+# 이미 Sprint가 있는 하위 이슈는 바꾸지 않는다. 스크립트: .github/scripts/sync-sprint.mjs
+# 인증: 레포 시크릿 PROJECT_TOKEN (조직 프로젝트 쓰기 권한이 있는 토큰. GITHUB_TOKEN으로는 조직 프로젝트를 고칠 수 없음)
+on:
+  # 하위 이슈를 새로 만들면 바로 채운다. 부모 연결·프로젝트 자동 추가가 끝나도록 잠시 기다린 뒤 실행
+  issues:
+    types: [opened, reopened]
+  # 기존 이슈를 하위로 연결하는 것은 Actions 이벤트가 없어서 주기적으로 맞춘다 (기본 브랜치에서만 돈다)
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+# 한 번에 하나만 돈다. 겹친 실행은 기다렸다가 이어서 돈다
+concurrency:
+  group: sync-sprint
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: 부모 연결·프로젝트 추가 대기
+        if: github.event_name == 'issues'
+        run: sleep 30
+
+      - name: 하위 이슈 Sprint 채우기
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+        run: node .github/scripts/sync-sprint.mjs
