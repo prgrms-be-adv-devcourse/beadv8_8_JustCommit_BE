@@ -1,0 +1,54 @@
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          kakao:
+            client-id: ${KAKAO_CLIENT_ID:local-dummy-client-id}
+            client-secret: ${KAKAO_CLIENT_SECRET:local-dummy-client-secret}
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:justcommit}
+    username: ${DB_USERNAME:justcommit}
+    password: ${DB_PASSWORD:justcommit}
+    driver-class-name: org.postgresql.Driver
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    defer-datasource-initialization: true #SQL 실행을 테이블 생성 뒤로 미룸
+    properties:
+      hibernate:
+        format_sql: true
+  sql:
+    init:
+      mode: ${SQL_INIT_MODE:always}            # 로컬 실행 시 초기 데이터 적재 (SQL_INIT_MODE=never로 끌 수 있음)
+      data-locations: classpath:db/data/*.sql  # db/data 폴더의 SQL 파일 실행
+
+
+logging:
+  level:
+    org.hibernate.SQL: debug
+    org.hibernate.orm.jdbc.bind: trace
+
+jwt:
+  secret: ${JWT_SECRET:local-dev-only-jwt-secret-key-change-me-0123456789}
+
+# 로컬 개발 전용 키 (운영 사용 금지)
+account:
+  encryption-key: ${ACCOUNT_ENCRYPTION_KEY:D9RKon3RSo0PthLJcaInlxu9yunudk2/5kvlBmOppgc=}
+
+# 로컬 S3 호환 저장소(RustFS, docker compose). 로컬 전용 더미 계정
+custom:
+  s3:
+    endpoint: http://localhost:9000
+    access-key: replantlocal
+    secret-key: replantlocal123
+  payment:
+    toss:
+      key-encryption-key: ${PAYMENT_KEY_ENCRYPTION_KEY:ioS+/EE8gO4Wm0h9V9RsOB0L/S3pTG8UUIB+CC2rvK0=}

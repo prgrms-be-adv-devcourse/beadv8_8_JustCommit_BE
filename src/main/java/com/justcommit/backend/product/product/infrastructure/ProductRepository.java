@@ -1,0 +1,97 @@
+package com.justcommit.backend.product.product.infrastructure;
+
+import com.justcommit.backend.product.ProductStatus;
+import com.justcommit.backend.product.product.domain.Product;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.*;
+import org.springframework.data.repository.query.Param;
+
+import java.util.List;
+import java.util.Optional;
+
+public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpecificationExecutor<Product> {
+
+    // 판매 중이고 숨김이 아닌 상품만 이 주문으로 예약
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            UPDATE Product p
+            SET p.status = com.justcommit.backend.product.ProductStatus.PAYMENT_PENDING,
+                p.reservedOrderId = :orderId,
+                p.updatedAt = CURRENT_TIMESTAMP
+            WHERE p.id IN :productIds
+              AND p.status = com.justcommit.backend.product.ProductStatus.ACTIVE
+              AND p.hidden = false
+            """)
+    int reserve(@Param("orderId") Long orderId, @Param("productIds") List<Long> productIds);
+
+    // 이 주문이 예약한 상품만 판매 중으로 되돌림
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            UPDATE Product p
+            SET p.status = com.justcommit.backend.product.ProductStatus.ACTIVE,
+                p.reservedOrderId = null,
+                p.updatedAt = CURRENT_TIMESTAMP
+            WHERE p.reservedOrderId = :orderId
+              AND p.status = com.justcommit.backend.product.ProductStatus.PAYMENT_PENDING
+            """)
+    int release(@Param("orderId") Long orderId);
+
+    // 이 주문이 예약한 상품만 판매 완료로
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            UPDATE Product p
+            SET p.status = com.justcommit.backend.product.ProductStatus.SOLD_OUT,
+                p.updatedAt = CURRENT_TIMESTAMP
+            WHERE p.reservedOrderId = :orderId
+              AND p.status = com.justcommit.backend.product.ProductStatus.PAYMENT_PENDING
+            """)
+    int markSoldOut(@Param("orderId") Long orderId);
+
+    // 이 주문으로 판매 완료된 상품 한 건만 판매중으로 되돌림 (결제 후 단건 취소)
+    @Modifying(flushAutomatically = true,clearAutomatically = true)
+    @Query("""
+        UPDATE Product p
+        SET p.status = com.justcommit.backend.product.ProductStatus.ACTIVE,
+            p.reservedOrderId = null,
+            p.updatedAt = CURRENT_TIMESTAMP
+        WHERE p.id = :productId
+          AND p.status = com.justcommit.backend.product.ProductStatus.SOLD_OUT
+        """)
+    int releaseItem( @Param("productId") Long productId);
+
+    // 목록: 품종을 함께 조회해 N+1 방지 (사진은 Product의 @BatchSize로 처리)
+    @Override
+    @EntityGraph(attributePaths = "species") //상품 조회시 품종을 함께 Join 으로 가져옴
+    Page<Product> findAll(Specification<Product> spec, Pageable pageable);
+
+    // 상세: 품종과 사진을 함께 조회
+    @EntityGraph(attributePaths = {"species", "pictures"})
+    Optional<Product> findWithDetailById(Long id);
+
+    // 다른 모듈용 다건 조회: 품종을 함께 조회해 N+1 방지
+    @EntityGraph(attributePaths = "species")
+    List<Product> findWithSpeciesByIdIn(List<Long> ids);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE) // 커밋 전까지 이 상품 행을 잠가 주문 예약(reserve)과 동시에 실행돼도 덮어쓰지 않게 함
+    Optional<Product> findWithLockById(@Param("id") Long id);
+
+    //상태별 개수 조회 결과
+    interface StatusCount{
+        ProductStatus getStatus();
+        Long getCount();
+    }
+
+    // 판매자의 상품 상태별로 count ( 삭제 제외, hidden=null 로 들어오면 숨김 여부로 필터링 하지 않음)
+    @Query("""
+            SELECT p.status AS status, COUNT(p) AS count
+            FROM Product p
+            WHERE p.sellerId = :sellerId
+              AND p.status <> com.justcommit.backend.product.ProductStatus.DELETED
+              AND (:hidden IS NULL OR p.hidden = :hidden)
+            GROUP BY p.status
+            """)
+    List<StatusCount> countByStatus(@Param("sellerId") Long sellerId, @Param("hidden") Boolean hidden);
+}

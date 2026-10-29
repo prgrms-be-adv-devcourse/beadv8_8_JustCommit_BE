@@ -1,0 +1,37 @@
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          kakao:
+            client-id: test-kakao-client-id
+            client-secret: test-kakao-client-secret
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:justcommit_test}
+    username: ${DB_USERNAME:justcommit}
+    password: ${DB_PASSWORD:justcommit}
+    driver-class-name: org.postgresql.Driver
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      properties:
+        max.block.ms: 3000  # 테스트 환경에 카프카가 없어도 3초만 기다리고 넘어감
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+
+jwt:
+  secret: test-only-jwt-secret-key-for-automated-tests-01234
+
+# 테스트 전용 키 (운영 사용 금지)
+account:
+  encryption-key: fpbj/8EvmkgpWJBkWKQz4wXmSqMNixbOXY7pZb92ZR4=
+
+custom:
+  payment:
+    toss:
+      key-encryption-key: ${PAYMENT_KEY_ENCRYPTION_KEY:ioS+/EE8gO4Wm0h9V9RsOB0L/S3pTG8UUIB+CC2rvK0=}
