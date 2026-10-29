@@ -36,6 +36,16 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      # 수동 실행은 포크 PR을 막지 못하므로 여기서 거른다 (시크릿이 있는 잡에서 외부 코드를 읽지 않게)
+      - name: 수동 실행 대상 확인 (포크 PR 제외)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(gh pr view ${{ inputs.pr_number }} -R ${{ github.repository }} --json isCrossRepository -q .isCrossRepository)" = "true" ]; then
+            echo "포크 PR은 AI 리뷰를 하지 않습니다"; exit 1
+          fi
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
@@ -55,6 +65,7 @@ jobs:
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+            PR HEAD SHA: ${{ github.event.pull_request.head.sha || '(수동 실행: gh pr view --json headRefOid로 확인)' }}
 
             이 PR을 리뷰해 주세요. PR의 마지막 커밋이 이미 체크아웃되어 있습니다.
             인라인 코멘트 도구를 쓸 수 없으면(수동 실행 등) 🔴 항목도 요약 코멘트에 설명까지 적으세요.
@@ -84,7 +95,7 @@ jobs:
 
               요약은 읽기 쉽게 아래 형식을 그대로 따르세요. 지적은 표에 한 줄씩만 쓰고, 이유는 접힌 곳에 씁니다.
 
-              🤖 AI 리뷰 (Claude) · 기준 커밋 `<리뷰한 커밋 SHA 7자리>`
+              🤖 AI 리뷰 (Claude) · 기준 커밋 `<PR HEAD SHA 앞 7자리>`
 
               > **한 줄 요약:** <이 PR을 한 문장으로>. 🔴 <개수> · 🟡 <개수> · 🟢 <개수>
 
