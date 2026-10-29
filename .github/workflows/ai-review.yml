@@ -7,16 +7,16 @@ on:
   pull_request:
     types: [labeled]
 
-# 같은 PR에 라벨을 다시 붙이면 이전 리뷰는 취소
+# 같은 PR에 ai-review 라벨을 다시 붙이면 이전 리뷰는 취소.
+# 그룹에 라벨 이름을 넣어, 리뷰 중 다른 라벨(chore 등)을 붙여도 진행 중인 리뷰가 취소되지 않게 한다
 concurrency:
-  group: ai-review-${{ github.event.pull_request.number }}
+  group: ai-review-${{ github.event.pull_request.number }}-${{ github.event.label.name }}
   cancel-in-progress: true
 
 permissions:
   contents: read
   pull-requests: write
   issues: write
-  id-token: write
 
 jobs:
   review:
