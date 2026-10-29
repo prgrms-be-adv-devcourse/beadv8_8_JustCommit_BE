@@ -1,0 +1,37 @@
+name: Task
+description: 한 사람이 맡아 PR 하나로 끝내는 작업
+title: "[도메인] "
+type: Task
+projects: ["prgrms-be-adv-devcourse/79"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        제목 예: `[member] 회원 DB 분리·Flyway`
+        가능하면 상위 Feature 이슈의 **Create sub-issue**로 만드세요. 그러면 상위 연결과 Sprint가 자동으로 붙습니다.
+        여기서 따로 만들었다면 Feature 이슈의 Sub-issues에서 이 이슈를 추가해 주세요.
+  - type: input
+    id: parent
+    attributes:
+      label: 🧩 상위 Feature
+      description: 상위 Feature 이슈 번호
+      placeholder: "#224"
+  - type: textarea
+    id: summary
+    attributes:
+      label: 📌 할 일
+      description: 무엇을 하는지 적어 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: todo
+    attributes:
+      label: 📝 To-do
+      value: |
+        - [ ]
+        - [ ]
+  - type: textarea
+    id: done
+    attributes:
+      label: ✅ 완료 기준
+      description: 리뷰어가 확인할 수 있는 기준 (테스트, 동작 확인 방법 등)
