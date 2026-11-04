@@ -1,39 +1,62 @@
 # settlement 서비스
 
 > 언제 읽나: settlement 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ⬜ 작성 전 · 마지막 수정 2026-11-04 · 관련: Miro 5, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-04 · 관련: Miro 5, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
-<!-- 채울 내용: 맡는 기능 목록 -->
+| 기능 | 내용 |
+|---|---|
+| 정산 | 구매 확정된 판매액에서 수수료(5%)를 떼고 정산 생성 → [구매 확정 → 정산 흐름](../flows/confirm-settlement.md) |
+| 정산금 지급 | payment 내부 REST로 판매자 지갑에 지급 |
+| 조회 | 판매자 정산 내역, 정산 완료 시각(market용) |
 
 ## 소유 테이블
 
-<!-- 채울 내용: 테이블 이름과 한 줄 설명. MEMBER_REPLICA 등 복제본 포함 -->
+| 테이블 | 설명 |
+|---|---|
+| `SETTLEMENT` | 정산 (sellerOrderId UK) |
+| `MEMBER_REPLICA` | 회원 복제본 |
+| `OUTBOX` | 발행 대기 이벤트 |
 
 ## 외부 API
 
-<!-- 채울 내용: 이름만 나열하고 상세는 ../reference/external-apis.md 링크 -->
+`settlements` → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 
-<!-- 채울 내용: 이름만, 상세는 ../reference/internal-apis.md -->
+| API | 부르는 서비스 | 상태 |
+|---|---|---|
+| `GET /internal/v1/settlements/seller-orders/{sellerOrderId}` | market | 🟨 제안 |
+
+상세 → [내부 API 목록](../reference/internal-apis.md)
 
 ## 호출하는 내부 API
 
-<!-- 채울 내용: 대상 서비스 · 용도 · 멱등 키 -->
+| 대상 | 용도 | 멱등 키 |
+|---|---|---|
+| payment | 정산금 지급 (`POST /internal/v1/settlement-payouts`) | settlementId |
 
 ## 발행 이벤트
 
-<!-- 채울 내용: 이벤트 이름만, 상세는 ../reference/kafka-topics.md -->
+| 토픽 | 이벤트 |
+|---|---|
+| `settlement.events.v1` | `SettlementCompleted` |
+
+상세 → [Kafka 토픽 표](../reference/kafka-topics.md)
 
 ## 구독 이벤트
 
-<!-- 채울 내용: 이벤트 이름 · 받아서 하는 일 · 멱등 처리 키 -->
+| 이벤트 | 받아서 하는 일 | 멱등 처리 |
+|---|---|---|
+| `order.events.v1` `PurchaseConfirmed` · `OrderItemAutoConfirmed` | 정산 생성 → 지급 요청 | 정산 UK |
+| `member.events.v1` | `MEMBER_REPLICA` 저장 · 갱신 | memberId upsert |
+
+배송비(`ShipmentPickedUp`)는 settlement가 아니라 payment가 직접 받음
 
 ## 스케줄러
 
-<!-- 채울 내용: 작업 · 주기, 상세는 ../reference/schedulers.md -->
+Outbox 재전송 → [스케줄러 표](../reference/schedulers.md)
 
 ## 정책
 
@@ -47,4 +70,4 @@
 
 ## 테스트 시나리오
 
-<!-- 채울 내용: 관련 시나리오 ID (예: S-D01), 상세는 ../testing/scenarios.md -->
+S-G01 · S-G04 → [테스트 시나리오](../testing/scenarios.md)

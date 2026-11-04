@@ -1,39 +1,77 @@
 # product 서비스
 
 > 언제 읽나: product 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ⬜ 작성 전 · 마지막 수정 2026-11-04 · 관련: Miro 5 · 13-1 · 17, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-04 · 관련: Miro 5 · 13-1 · 17, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
-<!-- 채울 내용: 맡는 기능 목록 -->
+| 기능 | 내용 |
+|---|---|
+| 상품 | 등록 · 수정 · 삭제 · 숨김, 판매 상태(판매중 · 결제중 · 판매완료) |
+| 예약 · 판매완료 | market의 내부 REST 호출로 예약 · 해제 · 판매완료 · 재판매 처리 |
+| 품종 | 농사로 217종 품종 정보, 학명 · 별칭 |
+| 검색 | OpenSearch 검색 · 필터 · 정렬, `product.events.v1`을 받는 색인 리스너 → [검색 · 추천 흐름](../flows/search-recommend.md) |
+| 사진 검수 | Rekognition(유해 사진) + Plant.id(품종) + 금칙어 → [사진 검수 흐름](../flows/image-review.md) |
 
 ## 소유 테이블
 
-<!-- 채울 내용: 테이블 이름과 한 줄 설명. MEMBER_REPLICA 등 복제본 포함 -->
+| 테이블 | 설명 |
+|---|---|
+| `PRODUCT` | 상품 |
+| `PRODUCT_IMAGE` | 상품 사진 |
+| `SPECIES` | 품종 (학명 `scientific_name` 포함) |
+| `SPECIES_IMAGE` | 품종 기준 사진 |
+| `SPECIES_ALIAS` | 품종 별칭 |
+| `IMAGE_REVIEW` | 사진 검수 기록 |
+| `BANNED_KEYWORD` | 금칙어 |
+| `MEMBER_REPLICA` | 회원 복제본 (닉네임 · 판매자 여부) |
+| `OUTBOX` | 발행 대기 이벤트 |
 
 ## 외부 API
 
-<!-- 채울 내용: 이름만 나열하고 상세는 ../reference/external-apis.md 링크 -->
+`products` (목록 · 등록 · 상세 · 수정 · 삭제) · `products/{id}/hidden` · `products/me` · `products/me/counts` · `products/images/upload-urls` · `species` · `species/{id}` · `admin/imageReviews` → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 
-<!-- 채울 내용: 이름만, 상세는 ../reference/internal-apis.md -->
+| API | 부르는 서비스 | 멱등 키 |
+|---|---|---|
+| `GET /internal/v1/products?ids=` | market · ai | – |
+| `POST /internal/v1/products/reservations` | market | orderId |
+| `DELETE /internal/v1/products/reservations/{orderId}` | market | orderId |
+| `POST /internal/v1/products/reservations/{orderId}/sold-out` | market | orderId |
+| `POST /internal/v1/products/{productId}/release` | market | productId |
+
+상세 → [내부 API 목록](../reference/internal-apis.md)
 
 ## 호출하는 내부 API
 
-<!-- 채울 내용: 대상 서비스 · 용도 · 멱등 키 -->
+| 대상 | 용도 | 상태 |
+|---|---|---|
+| ai-service | 검색할 때 의미 검색 결과(상품 ID · 점수) 조회, 실패하면 키워드 결과만 | 🟨 제안 |
 
 ## 발행 이벤트
 
-<!-- 채울 내용: 이벤트 이름만, 상세는 ../reference/kafka-topics.md -->
+| 토픽 | 이벤트 |
+|---|---|
+| `product.events.v1` | `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged` · `ProductApproved` · `ProductRejected` |
+| `product.review.v1` | `ProductReviewRequested` |
+| `species.events.v1` | `SpeciesProfileUpdated` |
+
+상세 → [Kafka 토픽 표](../reference/kafka-topics.md)
 
 ## 구독 이벤트
 
-<!-- 채울 내용: 이벤트 이름 · 받아서 하는 일 · 멱등 처리 키 -->
+| 이벤트 | 받아서 하는 일 | 멱등 처리 |
+|---|---|---|
+| 회원 토픽 (`member.events.v1`) | `MEMBER_REPLICA` 저장 · 갱신 · 탈퇴 처리 (없으면 JWT memberId로 get-or-create) | memberId upsert |
+| `product.events.v1` (자기 토픽) | OpenSearch 색인 | productId upsert |
+| `product.review.v1` (자기 토픽) | 사진 검수 실행 | 검수 상태 확인 |
+
+주문 · 상품 판매 이벤트는 구독하지 않음 (판매완료는 market → product 내부 REST)
 
 ## 스케줄러
 
-<!-- 채울 내용: 작업 · 주기, 상세는 ../reference/schedulers.md -->
+없음
 
 ## 정책
 
@@ -69,4 +107,4 @@
 
 ## 테스트 시나리오
 
-<!-- 채울 내용: 관련 시나리오 ID (예: S-D01), 상세는 ../testing/scenarios.md -->
+S-C01 ~ S-C05 → [테스트 시나리오](../testing/scenarios.md)

@@ -1,39 +1,55 @@
 # member 서비스
 
 > 언제 읽나: member 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ⬜ 작성 전 · 마지막 수정 2026-11-04 · 관련: Miro 5 · 6, A1, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-04 · 관련: Miro 5 · 6, A1, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
-<!-- 채울 내용: 맡는 기능 목록 -->
+| 기능 | 내용 |
+|---|---|
+| 회원 | 이메일 인증 가입, 카카오 로그인, 회원 정보 · 배송지 · 계좌 관리, 판매자 등록, 탈퇴(소프트 삭제) |
+| 토큰 발급 | RS256 개인키로 Access · Refresh 발급 (개인키는 member만 가짐), 재발급 · 로그아웃 |
+| 토큰 폐기 | 로그아웃 블랙리스트, 탈퇴 · 비밀번호 변경 시 회원 단위 폐기 → [인증 규칙](../conventions/auth.md) |
+| 회원 정보 전파 | 회원 · 주소 · 계좌 변경을 이벤트로 발행 → 다른 서비스의 회원 복제본 |
 
 ## 소유 테이블
 
-<!-- 채울 내용: 테이블 이름과 한 줄 설명. MEMBER_REPLICA 등 복제본 포함 -->
+| 테이블 | 설명 |
+|---|---|
+| `MEMBER` | 회원 |
+| `ADDRESS` | 배송지 (기본 배송지 1개) |
+| `SELLER` | 판매자 등록 정보 |
+| `OUTBOX` | 발행 대기 이벤트 |
 
 ## 외부 API
 
-<!-- 채울 내용: 이름만 나열하고 상세는 ../reference/external-apis.md 링크 -->
+`auth/email/send` · `auth/email/verify` · `auth/login` · `auth/logout` · `auth/reissue` · `users` · `users/social` · `users/checkNickname` · `users/checkPhone` · `users/me` · `users/me/addresses` · `users/me/addresses/{id}/default` · `sellers` + 카카오 로그인 2개 → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 
-<!-- 채울 내용: 이름만, 상세는 ../reference/internal-apis.md -->
+없음 (다른 서비스는 회원 복제본을 씀)
 
 ## 호출하는 내부 API
 
-<!-- 채울 내용: 대상 서비스 · 용도 · 멱등 키 -->
+없음
 
 ## 발행 이벤트
 
-<!-- 채울 내용: 이벤트 이름만, 상세는 ../reference/kafka-topics.md -->
+| 토픽 | 이벤트 |
+|---|---|
+| `member.events.v1` | `MemberCreated` · `MemberUpdated` · `MemberWithdrawn` |
+| `member.address.events.v1` | `MemberAddressChanged` |
+| `member.account.events.v1` | `MemberAccountChanged` |
+
+상세 → [Kafka 토픽 표](../reference/kafka-topics.md)
 
 ## 구독 이벤트
 
-<!-- 채울 내용: 이벤트 이름 · 받아서 하는 일 · 멱등 처리 키 -->
+없음
 
 ## 스케줄러
 
-<!-- 채울 내용: 작업 · 주기, 상세는 ../reference/schedulers.md -->
+없음
 
 ## 정책
 
@@ -89,4 +105,4 @@
 
 ## 테스트 시나리오
 
-<!-- 채울 내용: 관련 시나리오 ID (예: S-D01), 상세는 ../testing/scenarios.md -->
+S-A01 · S-A04 · S-A08 · S-B01 ~ S-B03 → [테스트 시나리오](../testing/scenarios.md)
