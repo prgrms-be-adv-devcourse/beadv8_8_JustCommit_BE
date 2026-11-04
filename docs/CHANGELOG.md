@@ -7,5 +7,6 @@
 
 ## 기록
 
+- 2026-11-04 · 나머지 문서 전부 · conventions · reference · flows · infra · testing · overview · glossary · open-questions 채움, ADR 0001~0010 추가 (노션 기획안 · Miro · 코드 기준). 시퀀스 다이어그램은 경로를 `/api/v1`로, 추천 흐름을 품종 단위로 맞춤
 - 2026-11-04 · services/ 8개 · 하는 일 · 소유 테이블 · API · 이벤트 · 스케줄러 · 테스트 ID 채움 (노션 「MSA 분리 지점」 · 「DB 분리」 · 「Kafka 이벤트」, Miro 5 · 22, API 명세서 기준). gateway · notification · ai 정책 추가
 - 2026-11-04 · 전체 · docs 구조 새로 만듦. 세미 문서는 `legacy/`로 이동, `policy.md`는 `services/*.md`의 「정책」으로 나눔 (탈퇴 · 환불 상품 재판매 · Refresh 1일 · 로그아웃 블랙리스트는 11/2 · 11/3 결정으로 바꿈)
