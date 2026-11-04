@@ -1,5 +1,6 @@
-// 프로젝트에서 Sprint가 비어 있는 하위 이슈에 상위 이슈의 Sprint를 채운다.
-// 이미 Sprint가 있는 하위 이슈는 건드리지 않는다 (다음 스프린트로 옮긴 Task를 되돌리지 않기 위해).
+// 프로젝트에서 하위 이슈의 Sprint를 상위 이슈의 Sprint와 같게 맞춘다.
+// 하위 Sprint가 비었거나 상위와 다르면 상위 값으로 덮어쓴다 (상위 Sprint를 옮기면 하위도 같이 옮겨진다).
+// 상위 Sprint가 비어 있으면 하위는 그대로 둔다.
 // 사용: GH_TOKEN=... node .github/scripts/sync-sprint.mjs [--dry-run]
 const ORG = process.env.PROJECT_OWNER ?? 'prgrms-be-adv-devcourse';
 const PROJECT_NUMBER = Number(process.env.PROJECT_NUMBER ?? 79);
@@ -91,17 +92,28 @@ for (const item of items) {
   }
 }
 
+// 하위의 하위(Task 아래 Task)도 한 번에 맞도록, 바뀐 값이 없을 때까지 여러 번 훑는다
+const MAX_PASSES = 5;
 let updated = 0;
-for (const item of items) {
-  const issue = item.content;
-  if (!issue?.parent || item.fieldValueByName) continue;
-  const parentSprint = sprintByIssue.get(issue.parent.id);
-  if (!parentSprint) continue;
+for (let pass = 0; pass < MAX_PASSES; pass++) {
+  let changed = 0;
+  for (const item of items) {
+    const issue = item.content;
+    if (!issue?.parent) continue;
+    const parentSprint = sprintByIssue.get(issue.parent.id);
+    if (!parentSprint) continue;
+    const current = sprintByIssue.get(issue.id);
+    if (current?.iterationId === parentSprint.iterationId) continue;
 
-  console.log(`#${issue.number} ← 상위 #${issue.parent.number}의 ${parentSprint.title}${DRY_RUN ? ' (dry-run)' : ''}`);
-  if (!DRY_RUN) {
-    await graphql(UPDATE, { project: projectId, item: item.id, field: fieldId, iteration: parentSprint.iterationId });
+    const from = current ? current.title : '비어 있음';
+    console.log(`#${issue.number}: ${from} → ${parentSprint.title} (상위 #${issue.parent.number})${DRY_RUN ? ' (dry-run)' : ''}`);
+    if (!DRY_RUN) {
+      await graphql(UPDATE, { project: projectId, item: item.id, field: fieldId, iteration: parentSprint.iterationId });
+    }
+    sprintByIssue.set(issue.id, parentSprint);
+    changed++;
   }
-  updated++;
+  updated += changed;
+  if (changed === 0) break;
 }
-console.log(`항목 ${items.length}개 확인, ${updated}개 ${DRY_RUN ? '채울 예정' : '채움'}`);
+console.log(`항목 ${items.length}개 확인, ${updated}개 ${DRY_RUN ? '맞출 예정' : '맞춤'}`);
