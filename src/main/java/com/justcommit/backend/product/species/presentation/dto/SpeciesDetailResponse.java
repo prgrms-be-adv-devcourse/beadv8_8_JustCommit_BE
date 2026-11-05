@@ -8,6 +8,7 @@ import com.justcommit.backend.product.species.domain.SpeciesPicture;
 public record SpeciesDetailResponse(
         Long speciesId,
         String name,
+        String scientificName,
         String category,
         String light,
         String watering,
@@ -20,6 +21,7 @@ public record SpeciesDetailResponse(
         return new SpeciesDetailResponse(
                 species.getId(),
                 species.getName(),
+                species.getScientificName(),
                 nameOf(species.getCategory()),
                 nameOf(species.getLight()),
                 nameOf(species.getWatering()),
