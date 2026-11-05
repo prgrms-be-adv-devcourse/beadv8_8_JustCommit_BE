@@ -29,4 +29,5 @@ final class AuthorizationForwardingInterceptor implements ClientHttpRequestInter
       return attributes.getRequest().getHeader(HttpHeaders.AUTHORIZATION);
     }
     return null;
-  }}
+  }
+}

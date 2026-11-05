@@ -1,6 +1,7 @@
 package com.justcommit.backend.common.client;
 
 import java.util.List;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties("internal-api")
