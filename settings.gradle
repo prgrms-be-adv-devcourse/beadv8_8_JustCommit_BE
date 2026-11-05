@@ -12,3 +12,4 @@ plugins {
 rootProject.name = 'beadv8_8_JustCommit_BE'
 include 'common:common-core'
 include 'common:common-web'
+include 'services:member'
