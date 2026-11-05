@@ -7,6 +7,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.http.client.autoconfigure.HttpClientAutoConfiguration;
@@ -68,7 +69,8 @@ class InternalApiFailureTest {
   }
 
   @Test
-  void 에러_응답은_상대가_보낸_code와_함께_예외로_바꾼다() {
+  @DisplayName("에러 응답은 상대가 보낸 code와 함께 예외로 바꾼다")
+  void convertsErrorResponseWithCode() {
     runner.withPropertyValues("spring.http.serviceclient.payment.base-url=" + serverUrl())
         .run(context -> assertThatThrownBy(() -> context.getBean(PaymentClient.class).conflict())
             .isInstanceOfSatisfying(InternalApiErrorException.class, e -> {
@@ -80,7 +82,8 @@ class InternalApiFailureTest {
   }
 
   @Test
-  void 본문이_없는_에러_응답도_예외로_바꾼다() {
+  @DisplayName("본문이 없는 에러 응답도 예외로 바꾼다")
+  void convertsErrorResponseWithoutBody() {
     runner.withPropertyValues("spring.http.serviceclient.payment.base-url=" + serverUrl())
         .run(context -> assertThatThrownBy(() -> context.getBean(PaymentClient.class).unavailable())
             .isInstanceOfSatisfying(InternalApiErrorException.class, e -> {
@@ -90,14 +93,16 @@ class InternalApiFailureTest {
   }
 
   @Test
-  void 서버에_연결하지_못하면_연결_실패_예외() throws IOException {
+  @DisplayName("서버에 연결하지 못하면 연결 실패 예외")
+  void throwsUnavailableWhenConnectionFails() throws IOException {
     runner.withPropertyValues("spring.http.serviceclient.payment.base-url=http://localhost:" + closedPort())
         .run(context -> assertThatThrownBy(() -> context.getBean(PaymentClient.class).conflict())
             .isInstanceOf(InternalApiUnavailableException.class));
   }
 
   @Test
-  void 응답_시간이_초과되면_결과_불명_예외() {
+  @DisplayName("응답 시간이 초과되면 결과 불명 예외")
+  void throwsResultUnknownOnReadTimeout() {
     runner.withPropertyValues(
             "spring.http.serviceclient.payment.base-url=" + serverUrl(),
             "spring.http.serviceclient.payment.read-timeout=500ms")
@@ -106,7 +111,8 @@ class InternalApiFailureTest {
   }
 
   @Test
-  void 외부_그룹_에러는_바꾸지_않는다() {
+  @DisplayName("외부 그룹 에러는 바꾸지 않는다")
+  void keepsExternalGroupError() {
     runner.withPropertyValues("spring.http.serviceclient.toss.base-url=" + serverUrl())
         .run(context -> assertThatThrownBy(() -> context.getBean(TossClient.class).conflict())
             .isInstanceOf(RestClientResponseException.class));

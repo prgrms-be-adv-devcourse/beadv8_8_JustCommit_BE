@@ -1,10 +1,7 @@
 package com.justcommit.backend.common.client;
 
 import com.sun.net.httpserver.HttpServer;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.http.client.autoconfigure.HttpClientAutoConfiguration;
 import org.springframework.boot.http.client.autoconfigure.imperative.ImperativeHttpClientAutoConfiguration;
@@ -59,13 +56,14 @@ class InternalApiClientAutoConfigurationTest {
   }
 
   @BeforeEach
-  void resetReceivedKey() {
+  void resetReceivedHeaders() {
     receivedKey.set(null);
     receivedAuthorization.set(null);
   }
 
   @Test
-  void 내부_그룹_호출에는_내부_키를_붙인다() {
+  @DisplayName("내부 그룹 호출에는 내부 키를 붙인다")
+  void addsInternalKeyToInternalGroup() {
     runner.withPropertyValues(baseUrls("internal-api.key=test-key", "internal-api.groups=payment"))
         .run(context -> {
           context.getBean(PaymentPingClient.class).ping();
@@ -75,7 +73,8 @@ class InternalApiClientAutoConfigurationTest {
   }
 
   @Test
-  void 내부_그룹이_아니면_내부_키를_붙이지_않는다() {
+  @DisplayName("내부 그룹이 아니면 내부 키를 붙이지 않는다")
+  void skipsInternalKeyForExternalGroup() {
     runner.withPropertyValues(baseUrls("internal-api.key=test-key", "internal-api.groups=payment"))
         .run(context -> {
           context.getBean(TossPingClient.class).ping();
@@ -85,13 +84,15 @@ class InternalApiClientAutoConfigurationTest {
   }
 
   @Test
-  void 내부_그룹이_있는데_키가_없으면_시작하지_않는다() {
+  @DisplayName("내부 그룹이 있는데 키가 없으면 시작하지 않는다")
+  void failsToStartWithoutKey() {
     runner.withPropertyValues(baseUrls("internal-api.groups=payment"))
         .run(context -> assertThat(context).hasFailed());
   }
 
   @Test
-  void 사용자_요청_중에는_Authorization을_내부_그룹에_전달한다() {
+  @DisplayName("사용자 요청 중에는 Authorization을 내부 그룹에 전달한다")
+  void forwardsAuthorizationToInternalGroup() {
     runWithUserToken("Bearer user-token", () ->
         runner.withPropertyValues(baseUrls("internal-api.key=test-key", "internal-api.groups=payment"))
             .run(context -> {
@@ -102,7 +103,8 @@ class InternalApiClientAutoConfigurationTest {
   }
 
   @Test
-  void 외부_그룹에는_사용자_Authorization을_전달하지_않는다() {
+  @DisplayName("외부 그룹에는 사용자 Authorization을 전달하지 않는다")
+  void skipsAuthorizationForExternalGroup() {
     runWithUserToken("Bearer user-token", () ->
         runner.withPropertyValues(baseUrls("internal-api.key=test-key", "internal-api.groups=payment"))
             .run(context -> {

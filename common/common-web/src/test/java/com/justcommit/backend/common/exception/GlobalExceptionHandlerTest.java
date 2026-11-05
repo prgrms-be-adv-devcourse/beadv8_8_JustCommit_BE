@@ -4,6 +4,7 @@ import com.justcommit.backend.common.client.exception.InternalApiErrorException;
 import com.justcommit.backend.common.client.exception.InternalApiResultUnknownException;
 import com.justcommit.backend.common.client.exception.InternalApiUnavailableException;
 import com.justcommit.backend.common.response.ApiResponse;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 
@@ -13,10 +14,12 @@ import java.net.http.HttpTimeoutException;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class GlobalExceptionHandlerTest {
+
   private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
 
   @Test
-  void 연결_실패는_503() {
+  @DisplayName("연결 실패는 503")
+  void returns503OnUnavailable() {
     ResponseEntity<ApiResponse<Void>> response = handler.handleInternalApiUnavailable(
         new InternalApiUnavailableException("payment", new ConnectException()));
 
@@ -25,7 +28,8 @@ class GlobalExceptionHandlerTest {
   }
 
   @Test
-  void 응답_시간_초과는_504() {
+  @DisplayName("응답 시간 초과는 504")
+  void returns504OnResultUnknown() {
     ResponseEntity<ApiResponse<Void>> response = handler.handleInternalApiResultUnknown(
         new InternalApiResultUnknownException("payment", new HttpTimeoutException("timeout")));
 
@@ -34,7 +38,8 @@ class GlobalExceptionHandlerTest {
   }
 
   @Test
-  void 상대가_503이면_503() {
+  @DisplayName("상대가 503이면 503")
+  void returns503WhenUpstream503() {
     ResponseEntity<ApiResponse<Void>> response = handler.handleInternalApiError(
         new InternalApiErrorException("payment", 503, null, "payment 서비스가 503 응답을 보냈습니다."));
 
@@ -43,7 +48,8 @@ class GlobalExceptionHandlerTest {
   }
 
   @Test
-  void 처리_안_된_그_밖의_에러_응답은_500이고_상대_코드를_노출하지_않는다() {
+  @DisplayName("처리 안 된 그 밖의 에러 응답은 500이고 상대 코드를 노출하지 않는다")
+  void returns500WithoutUpstreamCode() {
     ResponseEntity<ApiResponse<Void>> response = handler.handleInternalApiError(
         new InternalApiErrorException("payment", 409, "INSUFFICIENT_BALANCE", "잔액이 부족합니다."));
 

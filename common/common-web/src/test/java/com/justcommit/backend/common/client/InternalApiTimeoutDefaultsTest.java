@@ -1,5 +1,6 @@
 package com.justcommit.backend.common.client;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringApplication;
 import org.springframework.mock.env.MockEnvironment;
@@ -11,7 +12,8 @@ class InternalApiTimeoutDefaultsTest {
   private final InternalApiTimeoutDefaults defaults = new InternalApiTimeoutDefaults();
 
   @Test
-  void 내부_그룹에_타임아웃_기본값을_넣는다() {
+  @DisplayName("내부 그룹에 타임아웃 기본값을 넣는다")
+  void addsDefaultTimeoutsToInternalGroup() {
     MockEnvironment environment = new MockEnvironment()
         .withProperty("internal-api.groups", "payment");
 
@@ -22,7 +24,8 @@ class InternalApiTimeoutDefaultsTest {
   }
 
   @Test
-  void 서비스가_정한_타임아웃은_덮어쓰지_않는다() {
+  @DisplayName("서비스가 정한 타임아웃은 덮어쓰지 않는다")
+  void keepsServiceTimeout() {
     MockEnvironment environment = new MockEnvironment()
         .withProperty("internal-api.groups", "payment")
         .withProperty("spring.http.serviceclient.payment.read-timeout", "10s");
@@ -33,7 +36,8 @@ class InternalApiTimeoutDefaultsTest {
   }
 
   @Test
-  void 내부_그룹이_아니면_기본값을_넣지_않는다() {
+  @DisplayName("내부 그룹이 아니면 기본값을 넣지 않는다")
+  void skipsExternalGroup() {
     MockEnvironment environment = new MockEnvironment()
         .withProperty("internal-api.groups", "payment");
 
