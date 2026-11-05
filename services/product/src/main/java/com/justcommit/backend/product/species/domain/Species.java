@@ -25,6 +25,10 @@ public class Species extends BaseTimeEntity {
     @Column(nullable = false, unique = true)
     private String name;
 
+    // 농사로 학명(plntbneNm). 외부 식물 인식 결과를 품종에 연결할 때 쓴다
+    @Column(name = "scientific_name")
+    private String scientificName;
+
     @Enumerated(EnumType.STRING)
     @Column(length = 20)
     private Light light;
