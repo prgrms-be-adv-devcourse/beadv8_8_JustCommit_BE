@@ -18,6 +18,8 @@ FROM (VALUES
   ('금전수', '돈나무', 'NONGSARO'),
   ('기누라', '뿔우단풀', 'NONGSARO'),
   ('나도풍란', '대엽풍란', 'NONGSARO'),
+  ('나도풍란', 'Phalaenopsis japonica', 'MANUAL'),
+  ('나도풍란', 'Sedirea japonica', 'MANUAL'),
   ('네마탄투스', '복어꽃', 'NONGSARO'),
   ('네마탄투스', '네마탄서스', 'NONGSARO'),
   ('녹영', '콩선인장', 'NONGSARO'),
