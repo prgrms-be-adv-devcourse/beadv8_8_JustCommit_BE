@@ -1,6 +1,13 @@
 spring:
   application:
     name: member-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/member_db}
+    username: ${DB_USERNAME:member_app}
+    password: ${DB_PASSWORD:member_app}
+  jpa:
+    hibernate:
+      ddl-auto: validate
 
 server:
   port: 8081
