@@ -22,7 +22,8 @@ public class InternalApiClientAutoConfiguration {
           .forEachClient((group, builder) -> builder.requestInterceptor((request, body, execution) -> {
             request.getHeaders().set(InternalApiHeaders.INTERNAL_KEY, properties.key());
             return execution.execute(request, body);
-          }));
+          })
+                  .requestInterceptor(new AuthorizationForwardingInterceptor()));
     };
   }
 }
