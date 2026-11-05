@@ -5,6 +5,10 @@ WORKDIR /app
 # 의존성 다운로드를 소스보다 먼저 해서, 소스만 바뀌면 이 층은 캐시를 재사용한다
 COPY gradlew settings.gradle build.gradle ./
 COPY gradle gradle
+
+# settings.gradle에 등록한 공통 모듈(common/*)이 있어야 Gradle이 프로젝트 구조를 읽을 수 있다
+COPY common common
+
 # Windows에서 받은 gradlew가 CRLF여도 리눅스에서 실행되도록 줄바꿈을 정리한다
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew && ./gradlew --no-daemon dependencies > /dev/null
 
