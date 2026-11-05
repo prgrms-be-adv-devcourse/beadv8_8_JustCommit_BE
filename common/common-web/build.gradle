@@ -25,6 +25,7 @@ dependencies {
     api 'org.springframework.data:spring-data-commons'
     api 'org.springframework.boot:spring-boot-starter-restclient'
 
+    implementation 'io.github.resilience4j:resilience4j-spring-boot4:2.4.0'
     implementation 'org.slf4j:slf4j-api'
     compileOnly 'jakarta.servlet:jakarta.servlet-api'
     compileOnly 'org.projectlombok:lombok'
