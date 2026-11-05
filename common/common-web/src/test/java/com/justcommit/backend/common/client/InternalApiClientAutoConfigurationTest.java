@@ -13,6 +13,9 @@ import org.springframework.boot.restclient.autoconfigure.RestClientAutoConfigura
 import org.springframework.boot.restclient.autoconfigure.service.HttpServiceClientAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.service.annotation.GetExchange;
 import org.springframework.web.service.registry.ImportHttpServices;
 
@@ -26,6 +29,7 @@ class InternalApiClientAutoConfigurationTest {
 
   private static HttpServer server;
   private static final AtomicReference<String> receivedKey = new AtomicReference<>();
+  private static final AtomicReference<String> receivedAuthorization = new AtomicReference<>();
 
   private final ApplicationContextRunner runner = new ApplicationContextRunner()
       .withConfiguration(AutoConfigurations.of(
@@ -42,6 +46,7 @@ class InternalApiClientAutoConfigurationTest {
     server = HttpServer.create(new InetSocketAddress(0), 0);
     server.createContext("/ping", exchange -> {
       receivedKey.set(exchange.getRequestHeaders().getFirst(InternalApiHeaders.INTERNAL_KEY));
+      receivedAuthorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
       exchange.sendResponseHeaders(200, -1);
       exchange.close();
     });
@@ -56,6 +61,7 @@ class InternalApiClientAutoConfigurationTest {
   @BeforeEach
   void resetReceivedKey() {
     receivedKey.set(null);
+    receivedAuthorization.set(null);
   }
 
   @Test
@@ -82,6 +88,39 @@ class InternalApiClientAutoConfigurationTest {
   void 내부_그룹이_있는데_키가_없으면_시작하지_않는다() {
     runner.withPropertyValues(baseUrls("internal-api.groups=payment"))
         .run(context -> assertThat(context).hasFailed());
+  }
+
+  @Test
+  void 사용자_요청_중에는_Authorization을_내부_그룹에_전달한다() {
+    runWithUserToken("Bearer user-token", () ->
+        runner.withPropertyValues(baseUrls("internal-api.key=test-key", "internal-api.groups=payment"))
+            .run(context -> {
+              context.getBean(PaymentPingClient.class).ping();
+
+              assertThat(receivedAuthorization.get()).isEqualTo("Bearer user-token");
+            }));
+  }
+
+  @Test
+  void 외부_그룹에는_사용자_Authorization을_전달하지_않는다() {
+    runWithUserToken("Bearer user-token", () ->
+        runner.withPropertyValues(baseUrls("internal-api.key=test-key", "internal-api.groups=payment"))
+            .run(context -> {
+              context.getBean(TossPingClient.class).ping();
+
+              assertThat(receivedAuthorization.get()).isNull();
+            }));
+  }
+
+  private static void runWithUserToken(String authorization, Runnable action) {
+    MockHttpServletRequest userRequest = new MockHttpServletRequest();
+    userRequest.addHeader("Authorization", authorization);
+    RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(userRequest));
+    try {
+      action.run();
+    } finally {
+      RequestContextHolder.resetRequestAttributes();
+    }
   }
 
   private static String[] baseUrls(String... extra) {
