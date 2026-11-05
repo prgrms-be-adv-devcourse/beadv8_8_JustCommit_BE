@@ -23,8 +23,19 @@ dependencies {
     api project(':common:common-core')
     api 'org.springframework:spring-webmvc'
     api 'org.springframework.data:spring-data-commons'
+    api 'org.springframework.boot:spring-boot-starter-restclient'
+
+    implementation 'io.github.resilience4j:resilience4j-spring-boot4:2.4.0'
     implementation 'org.slf4j:slf4j-api'
     compileOnly 'jakarta.servlet:jakarta.servlet-api'
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'jakarta.servlet:jakarta.servlet-api'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
 }

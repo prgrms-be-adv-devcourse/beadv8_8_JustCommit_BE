@@ -1,5 +1,8 @@
 package com.justcommit.backend.common.exception;
 
+import com.justcommit.backend.common.client.exception.InternalApiErrorException;
+import com.justcommit.backend.common.client.exception.InternalApiResultUnknownException;
+import com.justcommit.backend.common.client.exception.InternalApiUnavailableException;
 import com.justcommit.backend.common.response.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -64,6 +67,31 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<ApiResponse<Void>> handleMethodNotAllowed(HttpRequestMethodNotSupportedException e) {
         return toResponse(CommonErrorCode.METHOD_NOT_ALLOWED);
+    }
+
+    // 다른 서비스에 연결하지 못함 (재시도해도 안전)
+    @ExceptionHandler(InternalApiUnavailableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleInternalApiUnavailable(InternalApiUnavailableException e) {
+        log.warn("Internal API unavailable: group={}", e.group(), e);
+        return toResponse(CommonErrorCode.INTERNAL_API_UNAVAILABLE);
+    }
+
+    // 다른 서비스 응답 시간 초과 (처리됐을 수도 있음)
+    @ExceptionHandler(InternalApiResultUnknownException.class)
+    public ResponseEntity<ApiResponse<Void>> handleInternalApiResultUnknown(InternalApiResultUnknownException e) {
+        log.warn("Internal API result unknown: group={}", e.group(), e);
+        return toResponse(CommonErrorCode.INTERNAL_API_TIMEOUT);
+    }
+
+    // 다른 서비스의 에러 응답을 호출한 쪽이 처리하지 않음
+    @ExceptionHandler(InternalApiErrorException.class)
+    public ResponseEntity<ApiResponse<Void>> handleInternalApiError(InternalApiErrorException e) {
+        if (e.status() == 503) {
+            log.warn("Internal API returned 503: group={}", e.group(), e);
+            return toResponse(CommonErrorCode.INTERNAL_API_UNAVAILABLE);
+        }
+        log.error("Unhandled internal API error: group={}, status={}, code={}", e.group(), e.status(), e.code(), e);
+        return toResponse(CommonErrorCode.INTERNAL_ERROR);
     }
 
     // 그 외 예상하지 못한 예외
