@@ -1,7 +1,7 @@
 package com.justcommit.backend.common.security.jwt;
 
 import com.justcommit.backend.common.security.AuthMember;
-import com.justcommit.backend.common.security.JwtProvider;
+import com.justcommit.backend.common.security.JwtVerifier;
 import com.justcommit.backend.common.security.TokenException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -22,10 +22,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
   public static final String TOKEN_ERROR_ATTRIBUTE = "jwt.error";
   private static final String BEARER_PREFIX = "Bearer ";
-  private final JwtProvider jwtProvider;
+  private final JwtVerifier jwtVerifier;
 
-  public JwtAuthenticationFilter(JwtProvider jwtProvider) {
-    this.jwtProvider = jwtProvider;
+  public JwtAuthenticationFilter(JwtVerifier jwtVerifier) {
+    this.jwtVerifier = jwtVerifier;
   }
 
   @Override
@@ -36,7 +36,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     if (token != null) {
       try {
-        AuthMember authMember = jwtProvider.parseAccessToken(token);
+        AuthMember authMember = jwtVerifier.parseAccessToken(token);
 
         // 권한은 "ROLE_" 접두사를 붙여야 hasRole("SELLER")가 인식함
         UsernamePasswordAuthenticationToken authentication =

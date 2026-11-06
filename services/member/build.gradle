@@ -17,6 +17,7 @@ repositories {
 dependencies {
     implementation project(':common:common-core')
     implementation project(':common:common-web')
+    implementation project(':common:common-security-servlet')
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
