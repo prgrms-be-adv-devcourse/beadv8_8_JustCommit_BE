@@ -20,7 +20,6 @@
 | 요청 수 제한 값 | 카카오 로그인 · 중복 확인 · 초과 응답 | Gateway | 시간이 남으면 |
 | 탈퇴 재확인 · 소셜 연결 해제 회원 재로그인 | – | member | – |
 | 메모리 실측 · 모니터링 위치 | 약 7GB / 8GB, 넘치면 데이터 서버로 | 인프라 | Sprint 1 |
-| DB 분리 순서 · Flyway 규칙 | – | rlaksl (#253) | Sprint 1 |
 | JWT 키 교체 절차 | `kid` + 옛 키를 Access 수명만큼 유지 (제안) | 인프라 | – |
 | 회원별 Refresh Set · 인증 메일 키 이름 | 🟨 `auth:email:daily` · `auth:email:attempts` | member | Sprint 1 |
 | DLT 재처리 도구 | 🟨 `failed_event` 표 + 재처리 내부 API | 공통 (messaging) | Sprint 2 |

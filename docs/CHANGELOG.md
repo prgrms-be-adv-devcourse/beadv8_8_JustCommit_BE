@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-06 · infra/database.md · #253 팀 확인 규칙 반영 (`{service}_db` · `{service}_app`, PUBLIC CONNECT 회수, 분리 순서, 초기 데이터, Flyway 파일 · 번호 충돌 규칙), 상태 ✅
 - 2026-11-06 · AGENTS.md · 「이슈 · 진행 상황」 절 추가 (Feature · Task 읽는 순서, To-do 체크와 근거 줄, 이슈 수정 전 확인). Task 템플릿 To-do에 근거 줄 안내
 - 2026-11-06 · reference/schedulers.md · 업무 기한은 market 정책 링크로, 표준 용어(주문상품 · 판매 완료 · 택배사), 재시도 간격 · 종류 칸 뜻 명시, Outbox 대상 서비스 명시, Gateway 스케줄러 없음, 하루 1번 실행 시각 ⬜
 - 2026-11-06 · glossary · kafka-topics · market · notification · open-questions · 환불(돈)과 반품(물건 · 택배)을 나눔. 반품 이벤트 이름을 🟨 `ReturnRequested` · `ReturnApproved` · `ReturnRejected`로 제안, 돈 이벤트 `OrderItemRefunded`는 그대로
