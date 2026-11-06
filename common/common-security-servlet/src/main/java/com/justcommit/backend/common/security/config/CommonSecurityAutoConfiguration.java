@@ -13,11 +13,11 @@ import org.springframework.context.annotation.Bean;
 @AutoConfiguration
 public class CommonSecurityAutoConfiguration {
 
-  // jwt.secret이 없으면 앱이 시작되지 않음 (서명 키 없이 뜨는 것을 막음)
+  // jwt.public-key가 없거나 형식이 틀리면 앱이 시작되지 않음 (공개키 없이 뜨는 것을 막음)
   @Bean
   @ConditionalOnMissingBean
-  JwtVerifier jwtVerifier(@Value("${jwt.secret}") String secret) {
-    return new JwtVerifier(secret);
+  JwtVerifier jwtVerifier(@Value("${jwt.public-key}") String publicKey) {
+    return new JwtVerifier(publicKey);
   }
 
   @Bean
