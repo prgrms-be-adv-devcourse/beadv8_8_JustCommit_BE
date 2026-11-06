@@ -6,8 +6,39 @@ spring:
     username: ${DB_USERNAME:market_app}
     password: ${DB_PASSWORD:market_app}
   jpa:
+    open-in-view: false
     hibernate:
-      ddl-auto: validate
+      # TODO(#274): Flyway V1 마이그레이션을 추가하면 validate로 되돌린다 (지금은 테이블이 없어 validate면 앱이 뜨지 않음)
+      ddl-auto: none
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    admin:
+      fail-fast: false
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
 
 server:
   port: 8083
+jwt:
+  public-key: ${JWT_PUBLIC_KEY}
+
+custom:
+  kafka:
+    topics:
+      purchase-confirmed: ${PURCHASE_CONFIRMED_TOPIC:market.purchase-confirmed.v1}
+      seller-order-paid: ${SELLER_ORDER_PAID_TOPIC:market.seller-order-paid.v1}
+      seller-order-cancelled: ${SELLER_ORDER_CANCELLED_TOPIC:market.seller-order-cancelled.v1}
+      order-item-cancelled: ${ORDER_ITEM_CANCELLED_TOPIC:market.order-item-cancelled.v1}
+      order-item-auto-confirmed: ${ORDER_ITEM_AUTO_CONFIRMED_TOPIC:market.order-item-auto-confirmed.v1}
+      shipment-picked-up: ${SHIPMENT_PICKED_UP_TOPIC:market.shipment-picked-up.v1}
+      shipment-status-changed: ${SHIPMENT_STATUS_CHANGED_TOPIC:market.shipment-status-changed.v1}
+  courier:
+    api-key: ${COURIER_API_KEY:}
+    base-url: ${COURIER_BASE_URL:http://localhost:3000}
+    webhook-api-key: ${WEBHOOK_API_KEY:}
