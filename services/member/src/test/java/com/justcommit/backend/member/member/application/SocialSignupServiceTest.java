@@ -1,8 +1,8 @@
 package com.justcommit.backend.member.member.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.common.security.JwtProvider;
-import com.justcommit.backend.common.security.SignupClaims;
+import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
+import com.justcommit.backend.member.auth.infrastructure.jwt.SignupClaims;
 import com.justcommit.backend.common.security.TokenException;
 import com.justcommit.backend.member.auth.application.LoginResult;
 import com.justcommit.backend.member.auth.application.RefreshTokenIssuer;

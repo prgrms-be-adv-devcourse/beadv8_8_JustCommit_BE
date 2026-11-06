@@ -1,6 +1,8 @@
-package com.justcommit.backend.common.security;
+package com.justcommit.backend.member.auth.infrastructure.jwt;
 
-import com.justcommit.backend.common.security.jwt.JwtProperties;
+import com.justcommit.backend.common.security.AuthMember;
+import com.justcommit.backend.common.security.TokenException;
+import com.justcommit.backend.common.security.TokenType;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Component;
