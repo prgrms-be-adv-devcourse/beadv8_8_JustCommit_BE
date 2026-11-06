@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-06 · reference/schedulers.md · 업무 기한은 market 정책 링크로, 표준 용어(주문상품 · 판매 완료 · 택배사), 재시도 간격 · 종류 칸 뜻 명시, Outbox 대상 서비스 명시, Gateway 스케줄러 없음, 하루 1번 실행 시각 ⬜
 - 2026-11-06 · glossary · kafka-topics · market · notification · open-questions · 환불(돈)과 반품(물건 · 택배)을 나눔. 반품 이벤트 이름을 🟨 `ReturnRequested` · `ReturnApproved` · `ReturnRejected`로 제안, 돈 이벤트 `OrderItemRefunded`는 그대로
 - 2026-11-06 · glossary.md · 유비쿼터스 언어 사전으로 개편 (표준 용어 · 코드 이름 · 별칭 · 원본, 이름 통일 기준 8건 🟨). AGENTS.md에 「표준 용어만 쓴다」 규칙 추가
 - 2026-11-06 · services/market.md · 조각마다 서비스 이름 명시, 시간 값 기준 시점(결제 대기 = 주문 생성 시각부터 10분 등), 표준 용어로 통일(수락 · 주문상품 · 판매 완료 · 판매 재개), 「하지 않는 것」 행 추가, 스케줄러 주기는 스케줄러 표로 링크
