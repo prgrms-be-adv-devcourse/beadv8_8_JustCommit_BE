@@ -70,7 +70,7 @@ market 서비스가 발행하는 Kafka 이벤트입니다 (모두 Outbox).
 
 | 토픽 | 이벤트 |
 |---|---|
-| `order.events.v1` | `SellerOrderPaid` · ⬜ 판매자 수락 · 거절 · 자동 거절 · `SellerOrderCancelled` · `OrderItemCancelled` · `PurchaseConfirmed` · `OrderItemAutoConfirmed` · `RefundRequested` · `RefundRejected` · `OrderItemRefunded` |
+| `order.events.v1` | `SellerOrderPaid` · ⬜ 판매자 수락 · 거절 · 자동 거절 · `SellerOrderCancelled` · `OrderItemCancelled` · `PurchaseConfirmed` · `OrderItemAutoConfirmed` · 🟨 `ReturnRequested` · `ReturnApproved` · `ReturnRejected` · `OrderItemRefunded` |
 | `shipment.events.v1` | `ShipmentStatusChanged` · `ShipmentPickedUp`(⬜ 구독자 없음) |
 
 상세 → [Kafka 토픽 표](../reference/kafka-topics.md)

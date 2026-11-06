@@ -14,7 +14,7 @@
 | 사진 최대 장수 | 노션 3.2는 10장 (11/5 회의에서는 5장) | 상품 | – |
 | Gateway 실패 응답 코드 | 🟨 503 / 504 / 502 / 500 | 공통 (김환희) | 회신 대기 |
 | Saga 결제 보상 목록 | 결제 흐름만 정리 | 성수 | Sprint 1 |
-| 이벤트별 payload 필드 · 수락 관련 이벤트 이름 | – | 각 발행 서비스 (#227) | Sprint 1 |
+| 이벤트별 payload 필드 · 수락 관련 이벤트 이름 · 반품 이벤트 `Return*` 이름 | 🟨 `ReturnRequested` · `ReturnApproved` · `ReturnRejected` (환불 = 돈, 반품 = 택배로 나눔) | 각 발행 서비스 (#227) | Sprint 1 |
 | `ShipmentPickedUp` 유지 여부 | 구독자 없음 | market | Sprint 1 |
 | 내부 API 경로 | 계좌 조회 · 탈퇴 확인 3개, 🟨 제안 행 | 각 담당 | 서비스 분리 때 |
 | 요청 수 제한 값 | 카카오 로그인 · 중복 확인 · 초과 응답 | Gateway | 시간이 남으면 |

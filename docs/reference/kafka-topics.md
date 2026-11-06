@@ -28,7 +28,7 @@
 | `order.events.v1` | ⬜ 판매자 승인 · 거절 · 자동 거절 이벤트 (이름 미정) | notification | 구매자 · 판매자 알림 (거절과 자동 취소는 구분) |
 | `order.events.v1` | `SellerOrderCancelled` · `OrderItemCancelled` | notification | 판매자 취소 알림 (구매자 본인 취소는 구매자에게 안 보냄) |
 | `order.events.v1` | `PurchaseConfirmed` · `OrderItemAutoConfirmed` | settlement · notification | 판매자 주문이 끝나면 정산 생성, 구매 확정 알림 |
-| `order.events.v1` | `RefundRequested` · `RefundRejected` · `OrderItemRefunded` (+ ⬜ 자동 승인) | notification | 반품 신청 · 거절 · 환불 완료 알림 |
+| `order.events.v1` | 🟨 `ReturnRequested` · `ReturnApproved`(자동 승인 포함) · `ReturnRejected` · `OrderItemRefunded`(환불) | notification | 반품 신청 · 거절 · 환불 완료 알림 |
 | `shipment.events.v1` | `ShipmentStatusChanged` | notification | 배송 상태 · 반품 수거 알림 |
 | `shipment.events.v1` | `ShipmentPickedUp` | – | ⬜ 구독자 없음 (배송비 이동이 정산 지급 때로 바뀜). 유지 여부 미정 |
 | `product.events.v1` | 상품 변경 (상품 ID) — `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged` | product(색인 리스너) | DB에서 최신 상품을 읽어 OpenSearch 문서를 덮어씀 |
