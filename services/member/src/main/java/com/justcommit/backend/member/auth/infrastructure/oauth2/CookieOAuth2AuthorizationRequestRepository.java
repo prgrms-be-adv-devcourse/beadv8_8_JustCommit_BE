@@ -1,6 +1,5 @@
-package com.justcommit.backend.common.security.oauth2;
+package com.justcommit.backend.member.auth.infrastructure.oauth2;
 
-import com.justcommit.backend.common.security.jwt.JwtProperties;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -39,9 +38,9 @@ public class CookieOAuth2AuthorizationRequestRepository
   private final boolean secure;
 
   public CookieOAuth2AuthorizationRequestRepository(
-          JwtProperties jwtProperties,
+          @Value("${custom.oauth2.cookie-secret}") String cookieSecret,
           @Value("${custom.cookie.secure}") boolean secure) {
-    this.signingKey = deriveKey(jwtProperties.secret());
+    this.signingKey = deriveKey(cookieSecret);
     this.secure = secure;
   }
 
@@ -111,7 +110,7 @@ public class CookieOAuth2AuthorizationRequestRepository
     }
   }
 
-  // jwt.secret에서 쿠키 서명 전용 키를 파생 (JWT 서명 키와 분리)
+  // custom.oauth2.cookie-secret에서 쿠키 서명 전용 키를 파생
   private static SecretKeySpec deriveKey(String secret) {
     try {
       Mac mac = Mac.getInstance(HMAC_ALGORITHM);

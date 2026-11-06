@@ -1,6 +1,5 @@
-package com.justcommit.backend.common.security.oauth2;
+package com.justcommit.backend.member.auth.infrastructure.oauth2;
 
-import com.justcommit.backend.common.security.jwt.JwtProperties;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -10,10 +9,9 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 
-import java.time.Duration;
 import java.util.Set;
 
-import static com.justcommit.backend.common.security.oauth2.CookieOAuth2AuthorizationRequestRepository.COOKIE_NAME;
+import static com.justcommit.backend.member.auth.infrastructure.oauth2.CookieOAuth2AuthorizationRequestRepository.COOKIE_NAME;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class CookieOAuth2AuthorizationRequestRepositoryTest {
@@ -24,8 +22,7 @@ class CookieOAuth2AuthorizationRequestRepositoryTest {
   private final CookieOAuth2AuthorizationRequestRepository repository = createRepository(SECRET, false);
 
   private static CookieOAuth2AuthorizationRequestRepository createRepository(String secret, boolean secure) {
-    JwtProperties properties = new JwtProperties(secret, Duration.ofMinutes(30), Duration.ofMinutes(10));
-    return new CookieOAuth2AuthorizationRequestRepository(properties, secure);
+    return new CookieOAuth2AuthorizationRequestRepository(secret, secure);
   }
 
   private static OAuth2AuthorizationRequest authorizationRequest() {
