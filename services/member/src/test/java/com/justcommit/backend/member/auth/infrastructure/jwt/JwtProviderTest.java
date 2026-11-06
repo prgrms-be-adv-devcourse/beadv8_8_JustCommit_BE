@@ -1,6 +1,7 @@
-package com.justcommit.backend.common.security;
+package com.justcommit.backend.member.auth.infrastructure.jwt;
 
-import com.justcommit.backend.common.security.jwt.JwtProperties;
+import com.justcommit.backend.common.security.AuthMember;
+import com.justcommit.backend.common.security.TokenException;
 import io.jsonwebtoken.security.WeakKeyException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
