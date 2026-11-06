@@ -4,19 +4,17 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.security.JwtProvider;
 import com.justcommit.backend.common.security.SignupClaims;
 import com.justcommit.backend.common.security.TokenException;
-import com.justcommit.backend.member.MemberRegisteredEvent;
+import com.justcommit.backend.member.address.domain.Address;
+import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.auth.application.LoginResult;
 import com.justcommit.backend.member.auth.application.RefreshTokenIssuer;
-import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
-import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,7 +32,6 @@ public class SocialSignupService {
   private final AccountCipher accountCipher;
   private final JwtProvider jwtProvider;
   private final RefreshTokenIssuer refreshTokenIssuer;
-  private final ApplicationEventPublisher eventPublisher;
 
   @Value("${jwt.access-token-expiration}")
   private Duration accessTokenExpiration;
@@ -86,8 +83,7 @@ public class SocialSignupService {
             command.addressName()
     ));
 
-    // 회원 생성 이벤트 (커밋된 뒤 구독 쪽에서 장바구니·지갑 생성)
-    eventPublisher.publishEvent(new MemberRegisteredEvent(member.getId(), false));
+    // TODO: common-messaging 이후 Outbox로 member.events.v1에 가입 이벤트 발행
 
     // 가입 후 바로 로그인
     return issueTokens(member);

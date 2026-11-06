@@ -1,16 +1,14 @@
 package com.justcommit.backend.member.member.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.member.MemberRegisteredEvent;
 import com.justcommit.backend.member.address.domain.Address;
+import com.justcommit.backend.member.address.infrastructure.AddressRepository;
+import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
-import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
-import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -27,7 +25,6 @@ public class SignupService {
   private final EmailVerificationRedisStore verificationStore;
   private final PasswordEncoder passwordEncoder;
   private final AccountCipher accountCipher;
-  private final ApplicationEventPublisher eventPublisher;
 
   // 회원가입: 이메일 인증 확인 → 중복 검사 → 회원 저장 → 기본 배송지 저장 → 인증 완료 상태 삭제
   @Transactional
@@ -78,8 +75,7 @@ public class SignupService {
             command.addressName()
     ));
 
-    // 회원 생성 이벤트(커밋된 뒤 구독 쪽에서 장바구니·지갑 생성)
-    eventPublisher.publishEvent(new MemberRegisteredEvent(member.getId(), false));
+    // TODO: common-messaging 이후 Outbox로 member.events.v1에 가입 이벤트 발행
 
     verificationStore.deleteVerified(email);  // 같은 인증으로 다시 가입x
     return new SignupResult(member.getId(), member.getNickname());

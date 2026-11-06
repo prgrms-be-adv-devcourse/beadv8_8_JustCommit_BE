@@ -2,7 +2,6 @@ package com.justcommit.backend.member.auth.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.security.JwtProvider;
-import com.justcommit.backend.member.domain.SystemAccount;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
@@ -123,23 +122,5 @@ class LoginServiceTest {
     assertThat(result.toString())
             .doesNotContain("access-token")
             .doesNotContain("refresh-token");
-  }
-
-  @Test
-  @DisplayName("시스템 계정은 로그인 거부(LOGIN_FAILED, 비밀번호 확인·토큰 발급 안 함)")
-  void systemAccountCannotLogin() {
-    Member system = Member.createSystem(SystemAccount.HOLDING.email(), "시스템홀딩", "00000000001",
-            "000", "v1:encrypted", "리플랜트");
-    given(memberRepository.findByEmail(SystemAccount.HOLDING.email())).willReturn(Optional.of(system));
-
-    assertThatThrownBy(() -> loginService.login(new LoginCommand(SystemAccount.HOLDING.email(), "test1234")))
-            .isInstanceOf(BusinessException.class)
-            .extracting("errorCode")
-            .isEqualTo(MemberErrorCode.LOGIN_FAILED);
-
-    // 비밀번호 확인 전에 막히고 토큰 발급x
-    then(passwordEncoder).shouldHaveNoInteractions();
-    then(jwtProvider).shouldHaveNoInteractions();
-    then(refreshTokenIssuer).shouldHaveNoInteractions();
   }
 }

@@ -15,10 +15,6 @@ public interface MemberQuery {
   // 주문용 기본 배송지. 없으면 ADDRESS_NOT_FOUND(404)
   MemberAddress getDefaultAddress(Long memberId);
 
-  // 결제·정산용 시스템 계정 ID. 앱 시작 시 자동 생성되므로 없으면 서버 설정 문제
-  Long getHoldingMemberId();
-  Long getRevenueMemberId();
-
   // 판매자로 등록된 회원인지 (회원이 없으면 false)
   boolean isSeller(Long memberId);
 
