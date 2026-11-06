@@ -1,7 +1,7 @@
 # 가입과 회원 복제본
 
 > 언제 읽나: 가입 · 회원 정보 변경이 다른 서비스에 퍼지는 흐름을 볼 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-04 · 관련: Miro 5 · 9
+> 상태: ✅ 확정 · 마지막 수정 2026-11-06 · 관련: Miro 5 · 9
 
 ## 흐름
 
@@ -23,7 +23,9 @@ sequenceDiagram
     K->>S: 복제본
 ```
 
-주소는 `member.address.events.v1` → market만, 계좌는 `member.account.events.v1` → payment만 받습니다 → [ADR 0004](../decisions/0004-member-replica-three-topics.md)
+- 복제본은 닉네임 · 권한 · 판매자 여부입니다.
+- **판매자 기본 배송지**는 `member.address.events.v1`로 market만 받습니다 (암호화).
+- **계좌는 복제하지 않습니다.** payment가 인출할 때 member 내부 API로 조회합니다 → [ADR 0015](../decisions/0015-member-topics-two-account-api.md)
 
 ## 복제본이 아직 없을 때
 
@@ -31,9 +33,15 @@ sequenceDiagram
 
 ## 탈퇴
 
-1. member가 탈퇴 가능 여부를 확인합니다 (진행 중 주문 · 환불, 정산 대기금이 있으면 막음, Fail-closed).
-2. 소프트 삭제하고 닉네임을 "탈퇴한 회원"으로 바꿉니다.
-3. `auth:revoked-member:{memberId}`를 기록해 모든 기기 토큰을 끊고 Refresh를 일괄 삭제합니다.
-4. `MemberWithdrawn`을 발행해 각 서비스 복제본을 탈퇴 상태로 바꿉니다.
+| 단계 | 내용 |
+|---|---|
+| 막는 조건 | 진행 중 주문(구매 · 판매, 결제 대기 포함), 예치금 잔액, 진행 중 충전 · 충전 취소 · 인출, 미지급 정산, 미수금 |
+| 확인 | market · payment · settlement 내부 API 3개를 **병렬** 호출. 실패하면 막음 (Fail-closed), 사유를 팝업으로 |
+| 잔액 | 회원이 탈퇴 전에 직접 정리 (토스 취소 기한 안은 충전 취소, 나머지는 계좌 인출). 정리를 시작하면 지갑이 잠김 |
+| 소셜 회원 | 카카오 연결 해제 API를 먼저 호출, 실패하면 탈퇴 막음 |
+| 처리 | 소프트 삭제 · 개인정보 익명화 · `auth:revoked-member` · Refresh 삭제 → `MemberWithdrawn` |
+| 다른 서비스 | 복제본은 지우지 않고 탈퇴 상태로 ("탈퇴한 회원"). product는 판매 중 · 검수 중 · 반려 상품을 `DELETED` |
+| 재가입 | 이메일 · 휴대폰 HMAC + 탈퇴 시각만 남겨 30일 동안 재가입 불가, 30일 뒤 삭제 |
+| 한계 | 확인 후 저장까지 수 초 사이 본인이 직접 충전하면 잔액이 남을 수 있음 → 운영자가 처리 |
 
-⬜ 1번 확인에 쓸 내부 API(payment · market · settlement)는 아직 목록에 없습니다.
+카카오 쪽에서 연결을 끊으면(연결 해제 웹훅) 탈퇴 조건을 확인해 통과하면 자동 탈퇴, 아니면 "소셜 연결 해제됨"으로 두고 이메일로 안내합니다.

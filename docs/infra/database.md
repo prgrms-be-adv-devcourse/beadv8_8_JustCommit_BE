@@ -1,23 +1,23 @@
 # DB · Flyway
 
 > 언제 읽나: 테이블을 추가 · 변경하거나 Flyway 마이그레이션을 작성할 때, 서비스별 DB 구성을 확인할 때
-> 상태: 🟨 제안 · 마지막 수정 2026-11-04 · 관련: Miro 5, 노션 기획안 「DB 분리」
+> 상태: 🟨 제안 · 마지막 수정 2026-11-06 · 관련: Miro 5, 노션 기획안 「DB 분리」
 
 ## 서비스별 DB
 
-같은 PostgreSQL(데이터 서버) 안에 서비스마다 DB를 따로 둡니다. 다른 서비스 DB에 접속하지 않습니다.
+PostgreSQL **인스턴스 1개** 안에서 서비스마다 DB와 계정을 나눕니다. 다른 서비스 DB는 읽지 않습니다.
 
 | DB | 소유 서비스 | 테이블 |
 |---|---|---|
 | member | member | → [member 카드](../services/member.md#소유-테이블) |
 | product | product | → [product 카드](../services/product.md#소유-테이블) |
-| market | market | → [market 카드](../services/market.md#소유-테이블) |
+| market | market (파드 2개가 같은 DB) | → [market 카드](../services/market.md#소유-테이블) |
 | payment | payment | → [payment 카드](../services/payment.md#소유-테이블) |
 | settlement | settlement | → [settlement 카드](../services/settlement.md#소유-테이블) |
 | notification | notification | → [notification 카드](../services/notification.md#소유-테이블) |
 | ai | ai-service | pgvector (Sprint 2) |
 
-⬜ DB 이름 · 접속 계정 규칙 미정
+⬜ DB 이름 · 계정 이름 규칙 미정
 
 ## 분리 순서
 

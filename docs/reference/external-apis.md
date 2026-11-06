@@ -1,7 +1,7 @@
 # 외부 API 목록
 
 > 언제 읽나: 외부 API의 경로 · 담당 서비스를 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-04 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-06 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
 
 ## 서비스별 목록
 
@@ -75,14 +75,19 @@
 
 ## 추가 예정
 
-| 메서드 | 경로 | 설명 | 상태 |
-|---|---|---|---|
-| POST | `orders/items/{orderItemId}/refund` | 환불 요청 (구매자) | 🟨 경로는 담당 확정 |
-| POST | `orders/seller/items/{orderItemId}/refund/approve` | 환불 승인 (판매자) | 🟨 |
-| POST | `orders/seller/items/{orderItemId}/refund/reject` | 환불 반려 (판매자) | 🟨 |
-| POST | `orders/items/{orderItemId}/reviews` | 리뷰 작성 | 🟨 |
-| GET | `reviews?sellerId=` | 판매자 리뷰 목록 (태그 집계) | 🟨 |
-| – | ai 챗봇 | 식물 상담 | ⬜ 경로 미정 |
+⬜ 경로는 담당이 확정합니다 ([API 작성 규칙](../conventions/api-style.md)을 따름).
+
+| 서비스 | 기능 | 설명 |
+|---|---|---|
+| member | 아이디 찾기 · 비밀번호 재설정 · 비밀번호 변경 · 닉네임 변경 · 계좌 변경 · 배송지 수정 · 탈퇴 | 노션 2.1 ~ 2.5 |
+| member | 판매자 상점 정보 · 소개글 수정 | 공개 조회 경로는 Gateway · member 양쪽에 등록 |
+| product | 자동 반려 이의 신청 (메모 필수, 200자) | 노션 3.16 |
+| market | 판매자 수락 · 거절 (판매자 주문 › 상품 트리 체크) | 판매 기록 화면 |
+| market | 반품 신청 (사유) · 판매자 승인 · 거절 | 노션 7절 |
+| market | 리뷰 작성 · 삭제 · 판매자 리뷰 목록 (태그 집계) | 노션 6절 |
+| payment | 충전 취소 · 인출 · 탈퇴 잔액 정리 | 노션 4.3 · 4.6 · 4.7 |
+| notification | `GET notifications?read=` (커서 페이지네이션) | 삭제 API 없음 |
+| ai | 챗봇 | ⬜ 범위 보류 |
 
 ## 경로 개선안
 

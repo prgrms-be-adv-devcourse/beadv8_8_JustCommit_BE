@@ -1,78 +1,62 @@
 # 취소 · 환불
 
 > 언제 읽나: 주문 취소, 반품 환불 코드를 고칠 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-04 · 관련: 노션 기획안 「주문 취소 → 환불」 「반품 → 환불」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-06 · 관련: 노션 기획안 「주문 취소 → 환불」 「반품 → 환불」
 
 ## 수거 전 취소
 
-배송이 `READY` · `BOOKED`일 때만 취소할 수 있습니다 (`PICKED_UP` 이후에는 반품 환불).
+| 배송 상태 | 처리 |
+|---|---|
+| 배송 없음 (`ACCEPT_PENDING`) | 택배사 호출 없이 바로 취소 · 환불 |
+| `READY` | 행을 잠그고 바로 `CANCELLED` · 환불 |
+| `BOOKED` (화면 "픽업 대기") | **택배사 취소 API를 먼저 호출**하고 응답으로 판단 (아래) |
+| `PICKED_UP` 이후 | 취소 불가 → 배송 완료 후 반품 |
 
 ```mermaid
 sequenceDiagram
     participant U as 구매자
     participant M as market
-    participant P as payment
     participant C as 모의 택배사
+    participant P as payment
     participant PR as product
-    participant K as Kafka
-    participant N as notification
-    U->>M: 주문 상품 취소
-    M->>M: 수거 전인지 확인 · 취소중 저장
-    M->>P: 상품 금액 환불 (REST, Idempotency-Key orderItemId)
-    alt 환불 성공
-        M->>M: 취소됨 · Outbox 저장 (한 트랜잭션)
-        opt 판매자 주문의 모든 상품이 취소됨
-            M->>P: 배송비 환불 (REST, Idempotency-Key sellerOrderId)
-            M->>C: 택배 예약 취소 (커밋 후, 실패 시 스케줄러)
+    U->>M: 주문 상품 취소 (BOOKED)
+    M->>C: 택배 예약 취소
+    alt 취소됨
+        M->>M: CANCELLED · Outbox
+        M->>P: 상품 금액 환불 (orderItemId) · 전부 취소면 배송비 환불 (sellerOrderId)
+        M->>PR: 해제 (hidden=false)
+    else 이미 수거됨 (409)
+        alt 수거 시각이 취소 요청보다 늦음
+            M->>M: 취소 인정 · 환불 · 판매자에게 반품 자동 접수 (왕복비 플랫폼)
+        else 수거가 먼저
+            M->>M: 취소 거절 · 배송 PICKED_UP으로 맞춤
         end
-        M->>PR: 상품 다시 판매 (REST, 실패 시 스케줄러)
-        M->>K: OrderItemCancelled / SellerOrderCancelled
-        K->>N: 판매자 알림 (구매자 본인 취소는 구매자에게 알리지 않음)
-        M-->>U: 취소 완료
-    else 응답 타임아웃
-        M->>M: 취소중 유지 (결과 불명)
-        M-->>U: 취소 처리 중
+    else 응답 없음 (타임아웃 · 5xx)
+        M->>M: CANCEL_PENDING · 취소 요청 시각 저장 (환불 안 함)
+        Note over M,C: 취소 큐가 10초마다 다시 보냄 · 택배사 CANCELLED 웹훅으로도 확정
     end
 ```
+
+상품 하나만 취소하면 그 상품 금액만 환불하고 배송은 유지합니다. 구매자 본인 취소는 구매자에게 알리지 않고, 상품은 숨기지 않습니다.
 
 ## 반품 환불
 
-택배 수거 이후 ~ 구매 확정 전. 환불된 상품은 **다시 판매하지 않고 판매 종료**합니다.
-
-```mermaid
-sequenceDiagram
-    participant U as 구매자
-    participant SL as 판매자
-    participant M as market
-    participant C as 모의 택배사
-    participant P as payment
-    participant K as Kafka
-    participant N as notification
-    U->>M: 환불 요청 (사유)
-    M->>M: 환불 요청됨 · 자동 구매 확정 멈춤 · Outbox
-    M->>K: RefundRequested
-    K->>N: 판매자에게 알림
-    alt 판매자 승인
-        SL->>M: 환불 승인 (중복 승인은 멱등)
-        M->>C: 반품 수거 접수 (커밋 후)
-        C-->>M: 웹훅: 반품 수거 · 판매자 도착
-        M->>P: 상품 금액 환불 (REST, Idempotency-Key orderItemId)
-        M->>M: 환불됨 · Outbox
-        M->>K: OrderItemRefunded
-        K->>N: 구매자에게 환불 완료 알림
-    else 판매자 반려
-        SL->>M: 환불 반려 (사유)
-        M->>M: 원래 상태 · 자동 구매 확정 다시 진행
-        M->>K: RefundRejected
-        K->>N: 구매자에게 반려 알림
-    end
-```
+| 단계 | 규칙 |
+|---|---|
+| 신청 | 배송 완료 후 72시간 안, 주문상품 하나씩. **판매자 귀책만** (상품 파손 · 설명과 다름 · 기타). 구매 확정된 상품은 불가. 신청하면 자동 구매 확정에서 빠짐 |
+| 판매자 응답 | 48시간 안에 승인 · 거절. 무응답이면 **자동 승인** |
+| 거절 | 반품을 진행하지 않고 그 주문상품을 **바로 구매 확정** |
+| 반품 배송 | 새 배송 행(방향 = 반품), 보내는 사람 구매자 · 받는 사람 판매자. 반품 배송비는 판매자 부담 |
+| 도착 | 판매자에게 배송 완료되면 반품 완료 (판매자 검수 없음) |
+| 환불 | `HOLDING` → 구매자 지갑. 결제 때 쓴 잔액대로 충전금부터 돌려주고 넘는 금액은 정산금으로. 판매자 주문의 상품이 **모두** 반품되면 배송비도 환불 |
+| 상품 | `ACTIVE` + 숨김 (`hidden=true`) |
+| 판매자 부담금 | 반품 배송비 (전부 반품이면 원래 배송비 포함). 정산을 만들 때 정산금에서 차감 → [구매 확정 → 정산](confirm-settlement.md) |
 
 ## 실패와 재시도
 
 | 실패 | 처리 |
 |---|---|
-| 환불 응답 타임아웃 | 취소중 유지 → 스케줄러가 같은 멱등 키로 다시 요청해 확정 |
-| 택배 예약 취소 실패 | 5분 스케줄러가 재시도 (S-E05) |
-| 상품 다시 판매 실패 | 스케줄러가 재시도, 주문 취소는 그대로 완료 |
-| 같은 취소 두 번 | 환불 1번 · 택배 취소 1번 (S-E04) |
+| 환불 응답 타임아웃 | 결과 불명 → 스케줄러가 같은 멱등 키로 확인 |
+| 택배 취소 응답 없음 | `CANCEL_PENDING` → 취소 큐 10초, 포기 없음 |
+| 상품 해제 실패 | 스케줄러가 끝까지 재시도, 취소 · 환불은 그대로 완료 |
+| 같은 취소 두 번 | 환불 1번 · 택배 취소 1번 |

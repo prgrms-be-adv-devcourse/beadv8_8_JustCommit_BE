@@ -1,7 +1,7 @@
 # 서비스 간 REST 규칙
 
 > 언제 읽나: 다른 서비스를 REST로 부르거나 내부 API를 만들 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-04 · 관련: Miro 7 · 22, 노션 기획안 「REST 호출」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-06 · 관련: Miro 7 · 22, 노션 기획안 「REST 호출」
 
 ## 언제 REST, 언제 이벤트
 
@@ -17,34 +17,44 @@
 
 | 규칙 | 내용 |
 |---|---|
-| 경로 | `/internal/v1/...` (외부 API 규칙과 같은 명명) |
+| 경로 | `/internal/v1/...` |
 | Gateway | 라우팅하지 않음 (외부에서 부르면 404) |
 | 포트 | 서비스 포트는 외부에 열지 않음 → [포트](../reference/ports.md) |
-| 인증 | `X-Internal-Key` 헤더 필수. 사용자 요청에서 이어진 호출이면 사용자 토큰도 그대로 전달 |
+| 인증 | `X-Internal-Key` 헤더 필수. 사용자 `Authorization`도 그대로 전달 (그룹 설정기가 자동으로 붙임) |
 
 ## 클라이언트
 
-`RestClient` + HTTP Interface(`@HttpExchange`). OpenFeign · 디스커버리 서버는 쓰지 않습니다. 주소는 Docker 서비스 이름(`http://payment-service:8080`), 서버가 다르면 사설 IP 환경변수입니다. 공통 설정(타임아웃, `Idempotency-Key` · `X-Internal-Key` 자동 추가)은 `common-web`에 있습니다.
+**HTTP Service Client 그룹**(`@HttpExchange` 인터페이스)으로 만듭니다 (#262 · PR #266 완료). OpenFeign · 디스커버리 서버는 쓰지 않습니다.
+
+| 항목 | 내용 |
+|---|---|
+| 주소 · 타임아웃 | 그룹(대상 서비스)마다 설정 파일로. 주소는 Docker · K3s 서비스 이름, 서버가 다르면 사설 IP |
+| 내부 그룹 (`internal-*`) | `common-web` 그룹 설정기가 `X-Internal-Key` · 사용자 `Authorization` · 연결 실패 1회 재시도를 자동으로 붙임 |
+| 외부 그룹 (토스 · 택배사) | 위 헤더 · 재시도를 붙이지 않음 |
+| 금지 | `RestClient.builder()`로 직접 만들지 않음 (traceId · 타임아웃 · 내부 키가 빠짐) |
+| 병렬 호출 | 서로 결과가 필요 없는 호출은 동시에 보냄 — 탈퇴 확인(market · payment · settlement) |
+
+사용법은 노션 「모노레포 문서」 5절에 있습니다.
 
 ## 멱등 키
 
-돈 · 상태를 바꾸는 내부 API는 `Idempotency-Key` 헤더에 **업무 ID**를 넣습니다. 같은 키로 다시 오면 처음 결과를 그대로 돌려줍니다.
+돈 · 상태를 바꾸는 내부 API는 `Idempotency-Key` 헤더에 **업무 ID**를 넣습니다. **자동으로 붙지 않으므로 호출하는 쪽이 넘깁니다.** 같은 키로 다시 오면 처음 결과를 그대로 돌려줍니다.
 
 | 호출 | 멱등 키 |
 |---|---|
 | 결제 · 상품 예약 · 해제 · 판매완료 | `orderId` |
-| 상품 환불 | `orderItemId` |
+| 상품 환불 (취소 · 반품) | `orderItemId` |
 | 배송비 환불 | `sellerOrderId` |
-| 정산금 지급 | `settlementId` |
-| 재판매 | `productId` |
+| 정산 지급 | `settlementId` |
+| 상품 해제 (거절 · 취소) | `productId` |
 
 ## 에러와 재시도
 
 | 상황 | 처리 |
 |---|---|
 | 에러 응답 | 내부 API도 `ApiResponse` 형식 |
-| 4xx | 재시도하지 않음 |
-| 연결 실패 · 503 | 최대 3회 재시도 (0.2 → 0.4초) |
-| 응답 타임아웃 | 요청 안에서 재시도하지 않음 → 결과 불명으로 두고 스케줄러가 같은 멱등 키로 확인 |
+| 4xx · 503 | 재시도하지 않음 |
+| 연결 실패 | 0.2초 쉬고 1번 재시도 |
+| 응답 타임아웃 | 재시도하지 않음 → 결과 불명, 스케줄러가 같은 멱등 키로 확인 |
 
 타임아웃 값 → [장애 처리 값](../conventions/resilience.md)

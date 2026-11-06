@@ -1,44 +1,88 @@
 # 사진 검수
 
 > 언제 읽나: 상품 사진 검수 코드를 고칠 때
-> 상태: 🟨 제안 · 마지막 수정 2026-11-04 · 관련: Miro 13-1
+> 상태: ✅ 확정 · 마지막 수정 2026-11-06 · 관련: Miro 13-1
 
 ## 흐름
+
+등록과 따로 **비동기**로 검수합니다 → [ADR 0012](../decisions/0012-review-moderation-haiku.md)
 
 ```mermaid
 sequenceDiagram
     participant SL as 판매자
     participant PR as product
     participant K as Kafka
-    participant RK as Rekognition
-    participant PI as Plant.id
-    SL->>PR: 상품 등록 · 사진 변경
-    PR->>PR: REVIEW_PENDING · Outbox
+    participant OM as OpenAI Moderation
+    participant HK as Claude Haiku
+    SL->>PR: 상품 등록 · 사진 수정
+    PR->>PR: REVIEW_PENDING · review_version · Outbox
     PR->>K: ProductReviewRequested (product.review.v1)
-    K->>PR: 검수 리스너
-    PR->>RK: 유해 사진 검사
-    PR->>PI: 품종 판별
-    PR->>PR: BANNED_KEYWORD(금칙어) · 품종 일치 확인 · IMAGE_REVIEW 저장
+    K->>PR: 검수 리스너 (REVIEW_PENDING이고 버전이 같을 때만)
+    PR->>OM: 사진마다 · 제목 · 설명 유해 검사
+    PR->>HK: 사진 → 식물 여부 · 판매 형태 · 품종 후보 3개 (학명 · 확신도)
+    PR->>PR: 금지 품종 · 금지어 · 품종 대조 → 판정 · IMAGE_REVIEW 저장
 ```
 
-외부 호출 값 → [장애 처리 값](../conventions/resilience.md)
+| 단계 | 내용 |
+|---|---|
+| 유해 검사 | OpenAI Moderation(`omni-moderation-latest`), `flagged`면 반려하고 끝 |
+| 식물 식별 | Claude Haiku(`claude-haiku-5-5`), 프롬프트에 금지 품종 목록 포함 |
+| 금지 품종 대조 | 후보 학명을 `banned_species` 학명 · 학명 별칭과 비교 (속 · 종 · 변종 단위) |
+| 금지어 대조 | 제목 · 설명을 정규화해 `banned_species` 한글 이름 · 별칭과 `banned_keyword`를 찾음 (예외 단어는 넘어감) |
+| 품종 대조 | 1순위 후보 학명 → `species.scientific_name` → `species_alias` 순, 판매자가 고른 품종과 **속까지** 같으면 일치 |
+
+글만 수정하면 사진 검수는 다시 하지 않고 글 Moderation과 금지어 대조만 합니다 (판매 중 상품도 걸리면 `REJECTED`).
 
 ## 결과별 처리
 
-| 결과 | 상품 상태 | 이벤트 | 다음 |
-|---|---|---|---|
-| 통과 | `ACTIVE` | `ProductApproved` | 검색 색인 · ai 추천 후보 |
-| 거절 (유해 사진 · 금칙어 · 판매 금지 품종) | `REJECTED` | `ProductRejected` | 판매자 알림 |
-| 애매함 · 외부 API 계속 실패 | `REVIEW_PENDING` 유지 (`MANUAL`) | – | 관리자 수동 검수 |
+위에서부터 처음 해당하는 줄에서 정해집니다. 기준값 0.3 · 0.7은 3차 실험 결과이고 Sprint 1에 실제 판매 사진으로 다시 확인합니다.
+
+| 상황 | 결과 |
+|---|---|
+| 사진이 유해 | 반려 `HARMFUL_IMAGE` |
+| 제목 · 설명이 유해 | 반려 `INAPPROPRIATE_TEXT` |
+| 식물이 아님 | 반려 `NOT_PLANT` |
+| 씨앗 · 삽수 · 구근 | 반려 `PROHIBITED_FORM` |
+| 1순위가 금지 품종, 확신도 0.7 이상 | 반려 `BANNED_SPECIES` |
+| 제목 · 설명에 금지어 | 반려 `BANNED_SPECIES` |
+| 1순위 금지 품종인데 0.7 미만, 2 · 3순위가 금지(0.3 이상), 변종 금지에 종까지만 일치 | 관리자 확인 |
+| 판매자가 "기타" 품종 선택 | 관리자 확인 |
+| 후보 없음 또는 1순위 0.3 미만 | 관리자 확인 |
+| 품종 일치 | 통과 → `ACTIVE` · `ProductApproved` |
+| 품종 불일치 | 관리자 확인 |
+| 외부 API 오류 (재시도 후에도) · 응답 해석 불가 | 관리자 확인 |
+
+- 결과는 "`REVIEW_PENDING`이고 검수 버전이 같을 때만" 조건을 건 UPDATE로 반영합니다. 외부 API 장애로 자동 통과도 자동 반려도 하지 않습니다.
+- 반려되면 `ProductRejected` → 판매자에게 사유와 함께 알립니다. 재검수(수정 후 다시 제출)는 1회까지입니다.
+- 자동 반려가 틀렸다면 판매자는 수정하지 않고 **이의 신청**을 합니다 (메모 필수 200자, 같은 검수 버전으로 1번, 관리자가 반려하면 최종, 재검수 횟수를 쓰지 않음).
 
 ## 관리자 수동 검수
 
-`GET /api/v1/admin/imageReviews?status=MANUAL`로 대기 목록을 보고, `PATCH /api/v1/admin/imageReviews/{id}`로 통과 · 거절을 정합니다 (ADMIN). 결과는 자동 검수와 같은 이벤트를 냅니다.
+관리자 확인 목록은 오래된 순으로 봅니다. 관리자는 사진 · 엔진 결과(후보 · 확신도 · 판매 형태 · 금지 의심 사유) · 판매자 품종 · 이의 신청 메모를 보고 통과나 반려를 고릅니다. 판매자가 고른 품종은 고치지 않습니다.
+
+| 반려 사유 코드 | 판매자 문구 | 자동 반려 |
+|---|---|---|
+| `NOT_PLANT` | 식물 사진이 아니에요 | ✅ |
+| `HARMFUL_IMAGE` | 부적절한 사진이 포함돼 있어요 | ✅ |
+| `BANNED_SPECIES` | 판매 금지 품종이에요 | ✅ |
+| `PROHIBITED_FORM` | 씨앗 · 삽수 · 구근은 팔 수 없어요 | ✅ |
+| `REVIEW_EXPIRED` | 확인이 늦어져 반려됐어요. 다시 등록할 수 있어요 | ✅ (기한 초과) |
+| `SPECIES_MISMATCH` | 선택한 품종과 사진 속 식물이 달라요 |  |
+| `UNCLEAR_IMAGE` | 사진으로 상품을 확인하기 어려워요 |  |
+| `INAPPROPRIATE_TEXT` | 제목이나 설명에 부적절한 내용이 있어요 | ✅ |
+| `OTHER` | 관리자가 입력한 내용 (필수, 200자) |  |
+
+- 두 관리자가 동시에 처리하거나 그사이 판매자가 수정 · 삭제하면 늦은 쪽은 409입니다.
+- 처리자 · 결과 · 사유 · 시각을 `IMAGE_REVIEW`에 남깁니다.
+- **기한**: 관리자 확인으로 간 지 12시간이 지나면 관리자에게 대기 건수를 묶어 알리고 판매자 화면에 "확인에 시간이 걸리고 있어요"를 보여줍니다. 그 뒤 4시간이 지나면 `REVIEW_EXPIRED`로 자동 반려합니다 (자동 승인 없음). `REVIEW_EXPIRED`는 재검수 · 등록 제한에 세지 않습니다. ⬜ 노션 안에 "24시간" 표기도 있어 기한 확인 필요
+
+관리자 API: `GET /api/v1/admin/imageReviews?status=MANUAL`, `PATCH /api/v1/admin/imageReviews/{id}` (ADMIN)
 
 ## 외부 서비스 설정
 
 | 항목 | 내용 | 상태 |
 |---|---|---|
-| Rekognition | AWS 허용 목록 밖 → aws 채널에 근거와 함께 사용 승인 요청 | ⬜ |
-| 권한 | EC2 역할에 Rekognition · S3 읽기 권한, 컨테이너에서 쓰려면 IMDSv2 hop limit 2 | ⬜ |
-| Plant.id | `PLANT_ID_API_KEY` (product) | ✅ |
+| OpenAI Moderation | 사진 · 글 유해 검사 (API 키) | ✅ |
+| Claude Haiku | 식물 식별 (API 키) | ✅ |
+| 약관 | 사진 · 글이 Anthropic · OpenAI로 전송됨을 판매자 등록 때 개인정보처리방침에서 안내. 각 사 학습 사용 여부 확인 | ⬜ 담당 확인 |
+| 비용 보호 | 판매자당 검수 중 5개 · 하루 등록 20건 · 하루 사진 검수 30회, 최근 7일 반려 5건 이상이면 자동 검수 없이 관리자 확인 → [product 정책](../services/product.md#정책) | ✅ |
