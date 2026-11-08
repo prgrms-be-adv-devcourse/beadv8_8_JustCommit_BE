@@ -7,6 +7,11 @@
 
 ## 기록
 
+- 2026-11-08 · services/member.md · conventions/auth.md · flows/signup-and-replica.md · 계좌 변경 때 다른 서비스 확인 없음 확정, 아이디 찾기(이메일) · 판매자 상점 소개글, JWT 키 교체는 범위 밖(전원 재로그인), 탈퇴 막는 조건에 수락 대기 주문 (#259)
+- 2026-11-08 · services/payment.md · 충전 취소를 여러 번 부분 취소로(남은 취소 가능 금액 · 진행 중 1건 · 결과 불명 조회 3회), `ALREADY_PAID` · `ALREADY_REFUNDED`, 대사에서 잔액 줄이는 불일치 처리는 ⬜ (노션에서 문장 삭제) (#259)
+- 2026-11-08 · flows/image-review.md · 관리자 확인 기한 12시간 알림 + 12시간 뒤 `REVIEW_EXPIRED`(24시간), 이의 신청 409 코드 (#259)
+- 2026-11-08 · reference/ports.md · infra/observability.md · infra/aws.md · Gateway NodePort 30080 · market 30083 · ai NodePort 없음, Grafana SSH 터널, 로그 금지 항목 · 메시지 규칙, S3 업로드 · 경로 · 수명 주기 (#259)
+- 2026-11-08 · open-questions.md · 정해진 8건 삭제(소비 실패 방식 · 계좌 변경 확인 · 관리자 확인 기한 · 사진 장수 · `ShipmentPickedUp` · JWT 키 교체 · NodePort · Grafana), 새 미정 5건 추가 (#259)
 - 2026-11-08 · decisions/0016 · 0017 · 상품 판매 완료 · 예약 해제 · 판매 재개를 market 이벤트로(0003 대체), 소비 실패는 제자리 재시도 후 `원래토픽.DLT` (#259)
 - 2026-11-08 · reference/internal-apis.md · product REST는 예약 하나만 남김 (`expectedPrice`, 409 `PRICE_CHANGED`, `RELEASED` orderId 409), 결제 `ALREADY_PAID` · 환불 `ALREADY_REFUNDED` (#259)
 - 2026-11-08 · reference/kafka-topics.md · `market.order-paid` · `order-expired` · `order-failed` · `order-item-cancelled` · `order-item-returned` (`.v1`, 키 orderId) 추가해 토픽 13개, `ShipmentPickedUp` 만들지 않음 (#259)
