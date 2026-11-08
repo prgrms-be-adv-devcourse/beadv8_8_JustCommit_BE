@@ -1,7 +1,7 @@
 # 용어집 (유비쿼터스 언어)
 
 > 언제 읽나: 같은 대상을 부르는 표준 이름을 찾을 때, 별칭(다른 이름 · 일상어 · 영문)으로 검색할 때, 코드 이름과 문서 이름을 맞출 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-06 · 관련: 노션 「유비쿼터스 언어 정리」, 전체
+> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: 노션 「유비쿼터스 언어 정리」, 전체
 
 문서 · 코드 · PR · 회의에서는 「표준 용어」만 씁니다. 「별칭」은 검색용이며 본문에 쓰지 않습니다. 시간 · 금액 · 횟수 같은 값은 여기 적지 않고 「원본」 문서를 봅니다.
 
@@ -15,6 +15,7 @@
 | 판매자 주문 | `SellerOrder` | 판매 주문, 셀러 주문 | 주문을 판매자별로 나눈 단위. 배송 · 배송비 · 정산 · 리뷰 · Kafka Key의 기준 | [market](services/market.md) |
 | 주문상품 | `OrdersItem` | 주문 상품, 주문 아이템 | 주문 안의 상품 하나. 취소 · 반품 · 구매 확정의 단위 | [market](services/market.md) |
 | 결제 대기 | `PAYMENT_PENDING` (주문) | 결제중, 미결제 | 잔액이 부족해 결제를 기다리는 주문 | [market 정책](services/market.md#정책) |
+| 결제 기한 만료 | `PAYMENT_WINDOW_EXPIRED` | 결제 시간 초과 | 결제 대기 기한이 지나 결제를 거절하는 것. 결제할 때 market이 직접 확인 | [market 정책](services/market.md#정책) |
 | 수락 · 거절 | `ACCEPT_PENDING` | 주문 확인, 주문 승인 | 결제 후 판매자가 주문을 받을지 정하는 단계. 수락해야 배송이 생김 | [market 정책](services/market.md#정책) |
 | 자동 거절 | – | 자동 취소 (구매자 알림 문구) | 판매자가 기한 안에 응답하지 않아 거절된 주문 | [market 정책](services/market.md#정책) |
 | 배송 | `Shipment` | 택배, 배송 건 | 판매자 주문 하나의 택배. 반품은 방향이 다른 새 배송 | [market](services/market.md) |
@@ -27,6 +28,7 @@
 | 배송비 요금표 | ⬜ 테이블 이름 미정 | 운임표 | 지역 구분(기본 + 제주 · 도서산간) 배송비 표. market이 버전과 함께 보관 | [market 정책](services/market.md#정책) |
 | 구매 확정 | `PurchaseConfirmed` · `OrderItemAutoConfirmed` | 구매 완료, 거래 완료 | 구매자가 받았다고 확정 (직접 또는 자동). 정산의 시작점 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 취소 | `OrderItemCancelled` · `SellerOrderCancelled` | 주문 취소 | 수거 전에 구매자가 주문상품을 취소하는 것 | [취소 · 환불](flows/cancel-refund.md) |
+| 취소 중 | ⬜ 상태 이름 미정 (주문상품) | 환불 확인 중 | 환불 결과를 모르는 주문상품. 환불이 확정되면 취소 완료 | [취소 · 환불](flows/cancel-refund.md#실패와-재시도) |
 | 환불 | `refunds/*` (payment) · `OrderItemRefunded` | 돈 돌려주기, 결제 취소 | **돈**이 주체. 결제한 돈을 구매자에게 돌려주는 것. 원인은 수거 전 취소 · 판매자 거절 · 자동 거절 · 반품 완료 | [payment](services/payment.md#정책) |
 | 반품 | `Return*` (🟨 이벤트 이름) | 환불 요청, 반품 요청, 교환 | **물건(택배)**이 주체. 받은 상품을 판매자에게 택배로 돌려보내는 절차. 끝나면 그 결과로 환불 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 반품 신청 | `ReturnRequested` (🟨) | 환불 요청 | 배송 완료 후 판매자 귀책으로 상품을 돌려보내겠다는 요청 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
@@ -61,10 +63,10 @@
 |---|---|---|---|---|
 | 판매 중 | `ACTIVE` | 판매중, 활성 | 구매할 수 있는 상품 (숨김이 아닐 때) | [product 정책](services/product.md#정책) |
 | 거래 중 | `PAYMENT_PENDING` (상품) | 결제중, 예약됨 | 주문에 예약된 상품. 화면에 「거래 중」으로 표시 | [product 정책](services/product.md#정책) |
-| 판매 완료 | `SOLD_OUT` | 판매완료, 품절 | 결제가 끝난 상품 | [product 정책](services/product.md#정책) |
+| 판매 완료 | `SOLD_OUT` · `market.order-paid.v1` | 판매완료, 품절 | 결제가 끝난 상품 | [product 정책](services/product.md#정책) |
 | 숨김 | `hidden` | 비공개 | 상태와 별개로, 판매자 본인만 보게 하는 표시 | [product 정책](services/product.md#정책) |
-| 예약 · 예약 해제 | `products/reservations` | 상품 잡기, 상품 풀기 | 주문할 때 상품을 그 주문에 묶는 것 · 결제 실패 · 만료 · 취소 때 푸는 것 | [내부 API](reference/internal-apis.md) |
-| 판매 재개 | `release` (`hidden`) | 해제, 재판매 | 판매 완료 상품을 다시 판매 중으로 돌리는 것 (거절 · 반품이면 숨김) | [product 정책](services/product.md#정책) |
+| 예약 · 예약 해제 | `products/reservations` · `PRODUCT_RESERVATION` · `market.order-expired.v1` · `market.order-failed.v1` | 상품 잡기, 상품 풀기 | 주문할 때 상품을 그 주문에 묶는 것 · 결제 전에 만료 · 결제 확정 실패로 푸는 것 | [내부 API](reference/internal-apis.md) |
+| 판매 재개 | `releaseItem` (`hidden`) · `market.order-item-cancelled.v1` · `market.order-item-returned.v1` | 해제, 재판매 | 판매 완료 상품을 다시 판매 중으로 돌리는 것 (거절 · 반품이면 숨김) | [product 정책](services/product.md#정책) |
 | 검수 | `REVIEW_PENDING` · `IMAGE_REVIEW` | 심사, 이미지 리뷰 | 등록 · 수정한 상품의 사진 · 글을 자동으로 확인하는 것 | [사진 검수](flows/image-review.md) |
 | 반려 | `REJECTED` | 검수 실패, 거절 (상품) | 검수에서 떨어진 상품. 사유 코드가 붙음 | [사진 검수](flows/image-review.md) |
 | 관리자 확인 | – | 수동 검수, 사람 확인 (검수) | 자동 판정이 애매해 관리자가 통과 · 반려를 정하는 것 | [사진 검수](flows/image-review.md#관리자-수동-검수) |
@@ -100,7 +102,7 @@
 | 업무 키 | – | 비즈니스 키 | 받는 쪽이 중복 반영을 막는 유일 값 (예: 정산의 판매자 주문 ID) | [이벤트 규칙](conventions/events.md#소비와-멱등) |
 | 이벤트 봉투 | `EventEnvelope` | 메시지 형식, 봉투 | 모든 이벤트가 쓰는 공통 형식 (`eventId` · `eventType` · `payload` 등) | [이벤트 규칙](conventions/events.md#메시지-형식) |
 | Outbox | `outbox_event` | 아웃박스 | 업무 데이터와 같은 트랜잭션에 저장한 뒤 발행하는 이벤트 표 | [이벤트 규칙](conventions/events.md#outbox) |
-| DLT | `.DLT` · `-dlt` (⬜ 하나로 통일 예정) | DLQ, 데드레터 | 재시도해도 실패한 메시지가 가는 토픽 | [이벤트 규칙](conventions/events.md#실패-처리) |
+| DLT | `원래토픽.DLT` | DLQ, 데드레터 | 재시도해도 실패한 메시지가 가는 토픽 | [이벤트 규칙](conventions/events.md#실패-처리) |
 | Saga | – | 사가 | 여러 서비스에 걸친 작업을 단계별로 하고, 실패하면 앞 단계를 되돌리는 방식 | [주문 · 결제](flows/order-payment.md) |
 
 ## 인프라

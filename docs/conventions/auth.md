@@ -1,7 +1,7 @@
 # 인증 · 인가 규칙
 
 > 언제 읽나: 토큰 · 권한 · 공개 경로 · 로그아웃을 다룰 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-06 · 관련: Miro 6, A1, 노션 기획안 「인증 · 인가」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: Miro 6, A1, 노션 기획안 「인증 · 인가」
 
 ## 토큰 발급과 검증
 
@@ -12,6 +12,7 @@
 | 1차 검증 (Gateway) | 서명 · 만료 · 토큰 type + `auth:blacklist` · `auth:revoked-member` 확인 |
 | 2차 검증 (각 서비스) | 공개키로 서명 · 만료만. 회원 정보는 토큰에서 꺼냄 (`AuthMember`) |
 | 전달 | Gateway는 토큰을 그대로 넘김. `X-User-*` · `X-Member-*` 헤더는 쓰지 않음 |
+| 키 교체 | 이번 범위 밖. 키를 바꾸면 모든 회원이 다시 로그인 (한계, 노션 2절 11/6 결정) |
 | 왜 이중 검증인가 | 포트가 실수로 열려도 위조 토큰이 통과하지 않게 (심층 방어) → [ADR 0001](../decisions/0001-scg-rs256-double-validation.md) |
 
 코드 위치: 검증 로직 · `AuthMember` → `common-security`, 서비스 필터 → `common-security`(서블릿), Gateway 필터 → `common-security`(WebFlux), 발급 → member → [공통 모듈](../conventions/common-modules.md)

@@ -1,12 +1,20 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-04 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-08 · decisions/0016 · 0017 · 상품 판매 완료 · 예약 해제 · 판매 재개를 market 이벤트로(0003 대체), 소비 실패는 제자리 재시도 후 `원래토픽.DLT` (#259)
+- 2026-11-08 · reference/internal-apis.md · product REST는 예약 하나만 남김 (`expectedPrice`, 409 `PRICE_CHANGED`, `RELEASED` orderId 409), 결제 `ALREADY_PAID` · 환불 `ALREADY_REFUNDED` (#259)
+- 2026-11-08 · reference/kafka-topics.md · `market.order-paid` · `order-expired` · `order-failed` · `order-item-cancelled` · `order-item-returned` (`.v1`, 키 orderId) 추가해 토픽 13개, `ShipmentPickedUp` 만들지 않음 (#259)
+- 2026-11-08 · services/market.md · services/product.md · 판매 완료 · 해제 이벤트, `PRODUCT_RESERVATION`, `PAYMENT_WINDOW_EXPIRED`, 결과 불명 복구, 택배 웹훅 · 모의 택배사 상세, 범위 밖 항목 (#259)
+- 2026-11-08 · flows/order-payment.md · flows/cancel-refund.md · 예약 타임아웃은 주문 실패 + `order-failed`, 결제 기한 직접 확인, 결과 불명 결제 · 환불은 Saga 복구(5회 → `REVIEW_REQUIRED`), 판매 재개는 환불 성공 뒤 이벤트 (#259)
+- 2026-11-08 · reference/schedulers.md · 상품 해제 · 판매 완료 재시도 작업 삭제, 결제 대기 만료는 뒷정리만, 관리자 확인 기한 12 + 12시간, 요금표 대사 09:30 (#259)
+- 2026-11-08 · conventions/events.md · internal-api.md · resilience.md · common-modules.md · `market.<이름>.v1` 토픽 규칙, 소비 실패 방식 확정, 멱등 키 표 정리, 예약 · 환불 타임아웃 처리 (#259)
+- 2026-11-08 · glossary.md · reference/env-vars.md · 결제 기한 만료 · 취소 중 용어 추가, 예약 해제 · 판매 재개 코드 이름, DLT 이름 통일, 토픽 환경변수 13개 (#259)
 - 2026-11-06 · infra/database.md · #253 팀 확인 규칙 반영 (`{service}_db` · `{service}_app`, PUBLIC CONNECT 회수, 분리 순서, 초기 데이터, Flyway 파일 · 번호 충돌 규칙), 상태 ✅
 - 2026-11-06 · AGENTS.md · 「이슈 · 진행 상황」 절 추가 (Feature · Task 읽는 순서, To-do 체크와 근거 줄, 이슈 수정 전 확인). Task 템플릿 To-do에 근거 줄 안내
 - 2026-11-06 · reference/schedulers.md · 업무 기한은 market 정책 링크로, 표준 용어(주문상품 · 판매 완료 · 택배사), 재시도 간격 · 종류 칸 뜻 명시, Outbox 대상 서비스 명시, Gateway 스케줄러 없음, 하루 1번 실행 시각 ⬜

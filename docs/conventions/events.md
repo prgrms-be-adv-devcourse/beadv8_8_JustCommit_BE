@@ -1,16 +1,16 @@
 # 이벤트 규칙
 
 > 언제 읽나: Kafka 이벤트를 발행하거나 구독할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-06 · 관련: Miro 8 · 11-1 · 11-2, 노션 기획안 「이벤트 규칙」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: Miro 8 · 11-1 · 11-2, 노션 기획안 「이벤트 규칙」
 
 ## 이름과 토픽
 
 | 규칙 | 내용 |
 |---|---|
-| 이벤트 이름 | 과거형 (`PurchaseConfirmed`, `ShipmentPickedUp`) |
-| 토픽 | 도메인 기준 `{도메인}.events.v1` (예외: `member.address.events.v1` · `product.review.v1` · `species.events.v1`) |
-| Kafka Key | `aggregateId` — member: `memberId` · order/shipment: `sellerOrderId` · product: `productId` · species: `speciesId` · settlement: `sellerId` |
-| 토픽 수 | 도메인 토픽 **8개** → [Kafka 토픽 표](../reference/kafka-topics.md) |
+| 이벤트 이름 | 과거형 (`PurchaseConfirmed`, `ShipmentStatusChanged`) |
+| 토픽 | 도메인 기준 `{도메인}.events.v1` (예외: `member.address.events.v1` · `product.review.v1` · `species.events.v1`). market → product는 이벤트마다 하나 `market.<이름>.v1` → [ADR 0016](../decisions/0016-product-sale-events-from-market.md) |
+| Kafka Key | `aggregateId` — member: `memberId` · order/shipment: `sellerOrderId` · `market.*`: `orderId` · product: `productId` · species: `speciesId` · settlement: `sellerId` |
+| 토픽 수 | 도메인 토픽 8개 + market → product 토픽 5개 = **13개** → [Kafka 토픽 표](../reference/kafka-topics.md) |
 
 ## 메시지 형식
 
@@ -74,20 +74,11 @@ afterCommit(() -> relay.publish(e.getId()));
 
 ## 실패 처리
 
+모든 리스너가 같은 방식(제자리 재시도)을 씁니다 → [ADR 0017](../decisions/0017-blocking-retry-dlt.md)
+
 | 단계 | 내용 |
 |---|---|
-| 형식이 깨진 메시지 | `ErrorHandlingDeserializer` — 재시도 없이 바로 DLT |
-| 처리 실패 재시도 | ⬜ 방식 미정 (아래 표) |
-| 최종 실패 | DLT로 보내고 Slack 알림 (payload는 알림에 넣지 않음) |
+| 형식이 깨진 메시지 | `ErrorHandlingDeserializer` — 재시도 없이 바로 `원래토픽.DLT` |
+| 처리 실패 재시도 | `DefaultErrorHandler` + BackOff 1 · 2 · 4초, 제자리(블로킹). 재시도 중 같은 파티션의 뒤 메시지는 기다림(최대 약 7초), 순서는 지켜짐. `@RetryableTopic`은 쓰지 않음 |
+| 최종 실패 | `원래토픽.DLT`로 보내고 Slack 알림 (payload는 알림에 넣지 않음) |
 | 재처리 | 수동 |
-
-⬜ 재시도 방식 — 두 방식 모두 Spring Kafka가 처리하므로 스케줄러는 필요 없습니다.
-
-|  | 블로킹 (제자리) | 논블로킹 (재시도 토픽) |
-|---|---|---|
-| Spring Kafka | `DefaultErrorHandler` + BackOff 1 · 2 · 4초 | `@RetryableTopic` 1 · 2 · 4초 |
-| 재시도 중 같은 파티션의 뒤 메시지 | 기다림 (최대 약 7초) | 안 기다림 |
-| 순서 | 지켜짐 | 바뀔 수 있음 (`occurredAt` 비교 필요) |
-| DLT 이름 (기본값) | `원래토픽.DLT` | `원래토픽-dlt` |
-
-🟨 제안: 순서가 중요한 회원 복제본(`member.events.v1` · `member.address.events.v1`)만 블로킹, 나머지(정산 · 알림 · 색인 · 검수 · 임베딩)는 논블로킹. DLT 이름은 하나로 통일. 노션 본문은 지금 「1 · 2 · 4초 → `원래토픽.DLT`」입니다.

@@ -1,7 +1,7 @@
 # 환경변수
 
 > 언제 읽나: 환경변수 · 비밀값을 추가하거나 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-06 · 관련: Miro A3
+> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: Miro A3
 
 ## 변수 표
 
@@ -11,7 +11,7 @@
 |---|---|---|
 | `DB_HOST` · `DB_PORT` · `DB_NAME` · `DB_USERNAME` · `DB_PASSWORD` | 모든 서비스 | 서비스마다 다른 DB · 계정 |
 | `KAFKA_BOOTSTRAP_SERVERS` · `SPRING_APPLICATION_NAME` | 모든 서비스 | – |
-| `*_TOPIC` (8개) | 각 서비스 | 도메인 토픽 이름 (`common-messaging` 상수 기본값) |
+| `*_TOPIC` (13개) | 각 서비스 | 도메인 토픽 이름 (`common-messaging` 상수 기본값) |
 | `JWT_PRIVATE_KEY` | member | RS256 개인키 |
 | `JWT_PUBLIC_KEY` | Gateway · 모든 서비스 | 이중 검증용 공개키 |
 | `OAUTH2_STATE_SECRET` | member | 카카오 state 서명 |
