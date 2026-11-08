@@ -1,7 +1,7 @@
 # Gateway (Spring Cloud Gateway)
 
 > 언제 읽나: Gateway (Spring Cloud Gateway) 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-06 · 관련: Miro 4 · 6 · 14, A2, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: Miro 4 · 6 · 14, A2, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -55,4 +55,4 @@ K3s에 파드 2개, 롤링 배포. 필터 순서는 접근 로그 → 인증 →
 
 ## 테스트 시나리오
 
-S-A02 · S-A03 · S-A04 · S-A05 · S-A08 · S-I03 · S-J01 · S-J02 → [테스트 시나리오](../testing/scenarios.md)
+S-A01 · S-A02 · S-A03 · S-A04 · S-A05 · S-A08 · S-I03 · S-J01 · S-J02 → [테스트 시나리오](../testing/scenarios.md)

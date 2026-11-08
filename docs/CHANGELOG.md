@@ -7,6 +7,9 @@
 
 ## 기록
 
+- 2026-11-08 · testing/scenarios.md · 노션 「테스트 시나리오」 4절에 맞춤: S-C03 · D01 · D03 · D07 · E05 · F01 · H03 문장 수정, S-C08 · C09 · D10 추가, P 그룹 분리, 상세 칸은 노션 링크 (#259)
+- 2026-11-08 · testing/strategy.md · WireMock 규칙(스텁 위치 · 주소 바꿔 끼우기 · 응답 흉내 7가지 · verify) 추가, ID 그룹에 P (#259)
+- 2026-11-08 · services/gateway · notification · settlement · 테스트 시나리오 ID 목록을 노션 서비스 칸에 맞춤 (#259)
 - 2026-11-08 · services/member.md · conventions/auth.md · flows/signup-and-replica.md · 계좌 변경 때 다른 서비스 확인 없음 확정, 아이디 찾기(이메일) · 판매자 상점 소개글, JWT 키 교체는 범위 밖(전원 재로그인), 탈퇴 막는 조건에 수락 대기 주문 (#259)
 - 2026-11-08 · services/payment.md · 충전 취소를 여러 번 부분 취소로(남은 취소 가능 금액 · 진행 중 1건 · 결과 불명 조회 3회), `ALREADY_PAID` · `ALREADY_REFUNDED`, 대사에서 잔액 줄이는 불일치 처리는 ⬜ (노션에서 문장 삭제) (#259)
 - 2026-11-08 · flows/image-review.md · 관리자 확인 기한 12시간 알림 + 12시간 뒤 `REVIEW_EXPIRED`(24시간), 이의 신청 409 코드 (#259)
