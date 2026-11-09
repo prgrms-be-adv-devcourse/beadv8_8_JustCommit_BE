@@ -116,12 +116,13 @@ class ProductInternalControllerTest {
     }
 
     @Test
-    @DisplayName("Idempotency-Key가 없으면 400, 예약하지 않는다")
+    @DisplayName("Idempotency-Key가 없으면 400 MISSING_HEADER, 예약하지 않는다")
     void reserveWithoutKey() throws Exception {
         mockMvc.perform(post("/internal/v1/products/reservations")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(RESERVE_BODY))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MISSING_HEADER"));
 
         verify(productUseCase, never()).reserve(anyLong(), any());
     }
