@@ -8,11 +8,32 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    admin:
+      fail-fast: false
+    consumer:
+      # 이벤트 클래스가 서비스마다 달라 문자열로 받고, KafkaConfig의 메시지 변환기가 리스너 파라미터 타입으로 변환한다
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+  http:
+    serviceclient:
+      internal-payment:
+        base-url: ${PAYMENT_SERVICE_URL:http://localhost:8084}
 
 server:
   port: 8085
 
 jwt:
   public-key: ${JWT_PUBLIC_KEY}
+
+internal-api:
+  key: ${INTERNAL_API_KEY}
   groups:
     - internal-payment
+
+custom:
+  kafka:
+    topics:
+      purchase-confirmed: ${PURCHASE_CONFIRMED_TOPIC:market.purchase-confirmed.v1}
+      shipment-picked-up: ${SHIPMENT_PICKED_UP_TOPIC:market.shipment-picked-up.v1}
