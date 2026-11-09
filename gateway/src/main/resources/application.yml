@@ -1,6 +1,37 @@
 spring:
   application:
     name: gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # 외부 경로 → 담당 서비스 (경로 목록: docs/reference/external-apis.md)
+          # /internal/** 은 일부러 등록하지 않음 → Gateway에서 404
+          routes:
+            - id: member
+              uri: ${MEMBER_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/v1/auth/**,/api/v1/users/**,/api/v1/sellers/**,/oauth2/**,/login/oauth2/**
+            - id: product
+              uri: ${PRODUCT_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/api/v1/products/**,/api/v1/species/**,/api/v1/admin/imageReviews/**
+            - id: market
+              uri: ${MARKET_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/v1/cart/**,/api/v1/orders/**,/api/v1/webhooks/**
+            - id: payment
+              uri: ${PAYMENT_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/api/v1/wallet/**
+            - id: settlement
+              uri: ${SETTLEMENT_SERVICE_URL:http://localhost:8085}
+              predicates:
+                - Path=/api/v1/settlements/**
+            - id: notification
+              uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
+              predicates:
+                - Path=/api/v1/notifications/**
 
 server:
   port: 8080
