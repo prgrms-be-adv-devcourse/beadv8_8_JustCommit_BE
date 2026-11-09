@@ -21,6 +21,9 @@ public class SecurityConfig {
                         // 상품 · 품종 조회는 비회원도 가능 (상품 상세는 토큰이 있으면 숨긴 내 상품도 보임)
                         .requestMatchers(HttpMethod.GET, "/api/v1/products", "/api/v1/products/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/species", "/api/v1/species/**").permitAll()
+
+                        // Swagger (운영 노출 여부는 미정)
+                        .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                         .anyRequest().authenticated())
                 .build();
     }
