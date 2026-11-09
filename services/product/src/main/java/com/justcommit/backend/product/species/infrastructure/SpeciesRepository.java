@@ -9,6 +9,6 @@ import com.justcommit.backend.product.species.domain.Species;
 
 public interface SpeciesRepository extends JpaRepository<Species,Long> , JpaSpecificationExecutor<Species> {
 
-    @EntityGraph(attributePaths = "pictures")
-    Optional<Species> findWithPicturesById(Long id);
+    @EntityGraph(attributePaths = "images")
+    Optional<Species> findWithImagesById(Long id);
 }

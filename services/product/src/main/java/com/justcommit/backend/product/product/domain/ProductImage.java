@@ -14,10 +14,10 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "product_picture")
+@Table(name = "product_image")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class ProductPicture {
+public class ProductImage {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -33,7 +33,7 @@ public class ProductPicture {
     @Column(nullable = false)
     private int sortOrder;
 
-    ProductPicture(Product product, String s3Url, int sortOrder) {
+    ProductImage(Product product, String s3Url, int sortOrder) {
         this.product = product;
         this.s3Url = s3Url;
         this.sortOrder = sortOrder;

@@ -8,7 +8,7 @@ import com.justcommit.backend.product.exception.ProductErrorCode;
 import com.justcommit.backend.product.image.application.ProductImageCleaner;
 import com.justcommit.backend.product.image.application.ProductImageUrlValidator;
 import com.justcommit.backend.product.product.domain.Product;
-import com.justcommit.backend.product.product.domain.ProductPicture;
+import com.justcommit.backend.product.product.domain.ProductImage;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import com.justcommit.backend.product.product.presentation.dto.*;
 import com.justcommit.backend.product.species.domain.Species;
@@ -154,9 +154,9 @@ public class  ProductServiceTest {
                 new BigDecimal("25000"), 30, "소형", null, pictureUrls);
     }
 
-    //ProductPicture 객체 목록을 URL 문자열 목록으로 변경
+    //ProductImage 객체 목록을 URL 문자열 목록으로 변경
     private List<String> pictureUrlsOf(Product product) {
-        return product.getPictures().stream().map(ProductPicture::getS3Url).toList();
+        return product.getImages().stream().map(ProductImage::getS3Url).toList();
     }
 
     @Test

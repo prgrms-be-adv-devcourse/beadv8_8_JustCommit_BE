@@ -222,7 +222,7 @@ VALUES
   ('히포에스테스', 'MEDIUM', 'KEEP_MOIST', 'EASY', 'MIXED', 'FOLIAGE', false, now(), now())
 ON CONFLICT (name) DO NOTHING;
 
-INSERT INTO species_picture (species_id, s3_url, sort_order)
+INSERT INTO species_image (species_id, s3_url, sort_order)
 SELECT s.id, v.url, v.ord
 FROM (VALUES
   ('가울테리아', 'https://team06-replant-images.s3.ap-northeast-2.amazonaws.com/species/12938/MF_REPR_ATTACH_01.jpg', 0),
@@ -1116,6 +1116,6 @@ FROM (VALUES
 ) AS v(name, url, ord)
 JOIN species s ON s.name = v.name
 WHERE NOT EXISTS (
-  SELECT 1 FROM species_picture p WHERE p.species_id = s.id AND p.s3_url = v.url
+  SELECT 1 FROM species_image p WHERE p.species_id = s.id AND p.s3_url = v.url
 );
 

@@ -68,7 +68,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     Page<Product> findAll(Specification<Product> spec, Pageable pageable);
 
     // 상세: 품종과 사진을 함께 조회
-    @EntityGraph(attributePaths = {"species", "pictures"})
+    @EntityGraph(attributePaths = {"species", "images"})
     Optional<Product> findWithDetailById(Long id);
 
     // 다른 모듈용 다건 조회: 품종을 함께 조회해 N+1 방지

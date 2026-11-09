@@ -51,9 +51,9 @@ public class Species extends BaseTimeEntity {
     @OneToMany(mappedBy = "species")
     @OrderBy("sortOrder ASC")
     @BatchSize(size = 100)
-    private List<SpeciesPicture> pictures = new ArrayList<>();
+    private List<SpeciesImage> images = new ArrayList<>();
 
     public String getThumbnailUrl() {
-        return pictures.isEmpty() ? null : pictures.get(0).getS3Url();
+        return images.isEmpty() ? null : images.get(0).getS3Url();
     }
 }

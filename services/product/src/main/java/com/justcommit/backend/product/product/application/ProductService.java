@@ -10,7 +10,7 @@ import com.justcommit.backend.product.exception.ProductErrorCode;
 import com.justcommit.backend.product.image.application.ProductImageCleaner;
 import com.justcommit.backend.product.image.application.ProductImageUrlValidator;
 import com.justcommit.backend.product.product.domain.Product;
-import com.justcommit.backend.product.product.domain.ProductPicture;
+import com.justcommit.backend.product.product.domain.ProductImage;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import com.justcommit.backend.product.product.infrastructure.ProductSpecifications;
 import com.justcommit.backend.product.product.presentation.dto.*;
@@ -156,7 +156,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
         Species species = speciesRepository.findById(request.speciesId())
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.SPECIES_NOT_FOUND));
 
-        List<String> oldPictureUrls = pictureUrlsOf(product);   // update 전에 꺼내 둠
+        List<String> oldPictureUrls = imageUrlsOf(product);   // update 전에 꺼내 둠
 
         product.update(species, request.title(), request.description(), request.price(),
                 request.heightCm(), request.potSize(), request.growNote(), pictureUrls);
@@ -173,11 +173,11 @@ public class ProductService implements ProductQuery, ProductUseCase {
     public void deleteProduct(Long memberId, Long productId) {
         Product product = getOwnedProductForUpdate(memberId, productId);
         product.delete();
-        imageCleaner.deleteAfterCommit(pictureUrlsOf(product));
+        imageCleaner.deleteAfterCommit(imageUrlsOf(product));
     }
 
-    private List<String> pictureUrlsOf(Product product) {
-        return product.getPictures().stream().map(ProductPicture::getS3Url).toList();
+    private List<String> imageUrlsOf(Product product) {
+        return product.getImages().stream().map(ProductImage::getS3Url).toList();
     }
 
     private Product getOwnedProductForUpdate(Long memberId, Long productId){

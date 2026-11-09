@@ -27,7 +27,7 @@ public class SpeciesService {
     }
 
     public SpeciesDetailResponse getSpeciesDetail(Long speciesId) {
-        return speciesRepository.findWithPicturesById(speciesId)
+        return speciesRepository.findWithImagesById(speciesId)
                 .map(SpeciesDetailResponse::from)
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.SPECIES_NOT_FOUND));
     }
