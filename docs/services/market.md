@@ -1,7 +1,7 @@
 # market 서비스
 
 > 언제 읽나: market 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -70,8 +70,7 @@ market 서비스가 발행하는 Kafka 이벤트입니다 (모두 Outbox).
 
 | 토픽 | 이벤트 |
 |---|---|
-| `order.events.v1` | `SellerOrderPaid` · ⬜ 판매자 수락 · 거절 · 자동 거절 · `SellerOrderCancelled` · `OrderItemCancelled` · `PurchaseConfirmed` · `OrderItemAutoConfirmed` · 🟨 `ReturnRequested` · `ReturnApproved` · `ReturnRejected` · `OrderItemRefunded` |
-| `shipment.events.v1` | `ShipmentStatusChanged` |
+| `market.events.v1` | `SellerOrderPaid` · `SellerOrderAccepted` · `SellerOrderRejected` · `SellerOrderCancelled` · `OrderItemCancelled` · `PurchaseConfirmed` · `OrderItemAutoConfirmed` · `ShipmentStatusChanged` · `ReturnRequested` · `ReturnApproved` · `ReturnRejected` · `OrderItemReturned` |
 | `market.order-paid.v1` · `market.order-expired.v1` · `market.order-failed.v1` · `market.order-item-cancelled.v1` · `market.order-item-returned.v1` | product에 판매 완료 · 결제 전 예약 해제 · 판매 재개 (키 `orderId`) |
 
 상세 → [Kafka 토픽 표](../reference/kafka-topics.md)

@@ -1,10 +1,13 @@
 package com.justcommit.backend.notification.infrastructure.messaging;
 
-import com.justcommit.backend.common.event.PurchaseConfirmedEvent;
-import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
-import com.justcommit.backend.market.SellerOrderCancelledEvent;
-import com.justcommit.backend.market.SellerOrderPaidEvent;
-import com.justcommit.backend.market.ShipmentStatusChangedEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.PurchaseConfirmedEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.OrderItemAutoConfirmedEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderAcceptedEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderCancelledEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderPaidEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderRejectReason;
+import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderRejectedEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.ShipmentStatusChangedEvent;
 import com.justcommit.backend.notification.application.NotificationService;
 import com.justcommit.backend.notification.domain.NotificationType;
 import org.junit.jupiter.api.DisplayName;
@@ -12,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.NullSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -94,6 +99,7 @@ class NotificationEventListenerTest {
     }
 
     @Test
+    @DisplayName("구매자 취소는 판매자에게만 알린다")
     void notifiesOnlySellerOnCancellationByBuyer() {
         listener.onSellerOrderCancelled(new SellerOrderCancelledEvent(
                 ORDER_ID, SELLER_ORDER_ID, SELLER, BUYER, LocalDateTime.now()));
@@ -103,6 +109,44 @@ class NotificationEventListenerTest {
         verifyNoMoreInteractions(notificationService); // 취소한 구매자 본인에게는 알리지 않음
     }
 
+    @ParameterizedTest(name = "reason={0}")
+    @NullSource
+    @EnumSource(value = SellerOrderRejectReason.class, names = "SELLER")
+    @DisplayName("판매자 직접 거절(reason 없음 포함)은 구매자에게만 판매자 거절 알림을 보낸다")
+    void notifiesOnlyBuyerOnRejectionBySeller(SellerOrderRejectReason reason) {
+        listener.onSellerOrderRejected(rejectedEvent(reason));
+
+        verify(notificationService).create(BUYER, NotificationType.SELLER_ORDER_REJECTED,
+                ORDER_ID, SELLER_ORDER_ID, "SELLER_ORDER_REJECTED:BUYER:7");
+        verifyNoMoreInteractions(notificationService);
+    }
+
+    @Test
+    @DisplayName("24시간 자동 거절은 구매자(자동 취소)와 판매자(자동 거절)에게 각각 다른 키로 알린다")
+    void notifiesBuyerAndSellerOnAutoRejection() {
+        listener.onSellerOrderRejected(rejectedEvent(SellerOrderRejectReason.AUTO));
+
+        verify(notificationService).create(BUYER, NotificationType.SELLER_ORDER_AUTO_CANCELLED,
+                ORDER_ID, SELLER_ORDER_ID, "SELLER_ORDER_REJECTED:BUYER:7");
+        verify(notificationService).create(SELLER, NotificationType.SELLER_ORDER_AUTO_REJECTED,
+                SELLER_ORDER_ID, "SELLER_ORDER_REJECTED:SELLER:7");
+        verifyNoMoreInteractions(notificationService);
+    }
+
+    @ParameterizedTest(name = "거절 {0}건 → {1}")
+    @CsvSource({
+            "0, SELLER_ORDER_ACCEPTED",
+            "2, SELLER_ORDER_PARTLY_ACCEPTED"
+    })
+    @DisplayName("수락은 구매자에게 1건만 알리고, 일부 거절이면 일부 거절 알림으로 보낸다")
+    void notifiesBuyerOnAcceptance(int rejectedItemCount, NotificationType type) {
+        listener.onSellerOrderAccepted(new SellerOrderAcceptedEvent(ORDER_ID, SELLER_ORDER_ID, SELLER, BUYER,
+                rejectedItemCount, LocalDateTime.now()));
+
+        verify(notificationService).create(BUYER, type, ORDER_ID, SELLER_ORDER_ID, "SELLER_ORDER_ACCEPTED:7");
+        verifyNoMoreInteractions(notificationService);
+    }
+
     @Test
     void notifiesBuyerForEachAutomaticallyConfirmedItem() {
         listener.onOrderItemAutoConfirmed(new OrderItemAutoConfirmedEvent(11L, ORDER_ID, SELLER_ORDER_ID, BUYER,
@@ -110,6 +154,10 @@ class NotificationEventListenerTest {
 
         verify(notificationService).create(BUYER, NotificationType.ORDER_ITEM_AUTO_CONFIRMED,
                 ORDER_ID, SELLER_ORDER_ID, "ORDER_ITEM_AUTO_CONFIRMED:11");
+    }
+
+    private SellerOrderRejectedEvent rejectedEvent(SellerOrderRejectReason reason) {
+        return new SellerOrderRejectedEvent(ORDER_ID, SELLER_ORDER_ID, SELLER, BUYER, reason, LocalDateTime.now());
     }
 
     private ShipmentStatusChangedEvent shipmentEvent(String status) {
