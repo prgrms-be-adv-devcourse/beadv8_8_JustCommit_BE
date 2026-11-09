@@ -1,11 +1,16 @@
 package com.justcommit.backend;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
+import com.justcommit.backend.payment.domain.WalletType;
+import com.justcommit.backend.payment.infrastructure.repository.WalletRepository;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationInfo;
+import org.flywaydb.core.api.MigrationState;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,10 +39,15 @@ class PaymentApplicationTests {
     }
 
     @Test
-    @DisplayName("payment 서비스가 DB에 연결되고 Flyway가 실행된다")
-    void contextLoads(@Autowired Flyway flyway) {
-        // TODO(결제 DB·Flyway 이슈): V1을 추가하면 V1 적용 여부를 확인하도록 바꾼다
-        assertThat(flyway.info().all()).isEmpty();
+    @DisplayName("빈 DB에서 Flyway V1이 적용되고 ddl-auto validate로 payment 서비스가 뜬다")
+    void contextLoads(@Autowired Flyway flyway, @Autowired WalletRepository walletRepository) {
+        assertThat(flyway.info().applied())
+                .extracting(info -> info.getVersion().getVersion(), MigrationInfo::getState)
+                .contains(tuple("1", MigrationState.SUCCESS));
+
+        // 시스템 지갑은 V1이 종류별로 하나씩 만든다
+        assertThat(walletRepository.findByWalletType(WalletType.HOLDING)).isPresent();
+        assertThat(walletRepository.findByWalletType(WalletType.REVENUE)).isPresent();
     }
 
     private static String newPublicKey() {
