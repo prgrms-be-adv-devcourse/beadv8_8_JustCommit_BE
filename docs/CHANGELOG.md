@@ -1,12 +1,13 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-09 · conventions/auth.md · reference/external-apis.md · services/gateway.md · 로그아웃을 Gateway 토큰 검사에서 제외(공개 경로), 만료된 Access여도 Refresh 쿠키로 로그아웃 (#229)
 - 2026-11-08 · testing/scenarios.md · 노션 「테스트 시나리오」 4절에 맞춤: S-C03 · D01 · D03 · D07 · E05 · F01 · H03 문장 수정, S-C08 · C09 · D10 추가, P 그룹 분리, 상세 칸은 노션 링크 (#259)
 - 2026-11-08 · testing/strategy.md · WireMock 규칙(스텁 위치 · 주소 바꿔 끼우기 · 응답 흉내 7가지 · verify) 추가, ID 그룹에 P (#259)
 - 2026-11-08 · services/gateway · notification · settlement · 테스트 시나리오 ID 목록을 노션 서비스 칸에 맞춤 (#259)
