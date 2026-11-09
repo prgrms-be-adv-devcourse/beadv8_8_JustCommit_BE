@@ -21,11 +21,24 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+  # 내부 API 그룹 주소. 연결 1초 · 응답 3초는 common-web 기본값
+  http:
+    serviceclient:
+      product:
+        base-url: ${PRODUCT_SERVICE_URL:http://localhost:8082}
+      payment:
+        base-url: ${PAYMENT_SERVICE_URL:http://localhost:8084}
+      settlement:
+        base-url: ${SETTLEMENT_SERVICE_URL:http://localhost:8085}
 
 server:
   port: 8083
 jwt:
   public-key: ${JWT_PUBLIC_KEY}
+internal-api:
+  # 빈 기본값: 환경변수가 없으면 common-web이 기동을 막는다 (기본값이 없으면 "${...}" 문자열이 키로 들어감)
+  key: ${INTERNAL_API_KEY:}
+  groups: [product, payment, settlement]
 
 custom:
   kafka:

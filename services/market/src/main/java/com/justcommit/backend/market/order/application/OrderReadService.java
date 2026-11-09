@@ -25,6 +25,7 @@ import com.justcommit.backend.market.order.presentation.SellerOrderDetailRespons
 import com.justcommit.backend.market.order.presentation.SellerOrderResponse;
 import com.justcommit.backend.market.client.product.ProductQuery;
 import com.justcommit.backend.market.client.product.ProductResult;
+import com.justcommit.backend.market.client.settlement.SellerOrderSettlement;
 import com.justcommit.backend.market.client.settlement.SettlementQuery;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,14 +33,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -133,8 +132,7 @@ public class OrderReadService implements OrderQuery {
                 .map(item -> SellerOrderDetailResponse.Item.of(item, thumbnails.get(item.productId())))
                 .toList();
         ShipmentResult shipment = shipmentQuery.findBySellerOrderId(sellerOrderId);
-        Optional<LocalDateTime> settledAt = settlementQuery.findSettledAtBySellerOrderId(sellerOrderId);
-        // 정산 테이블에는 별도 상태 컬럼이 없으므로 실제 정산 행의 존재 여부만 표시한다.
+        SellerOrderSettlement settlement = settlementQuery.getSettlement(sellerOrderId);
         return new SellerOrderDetailResponse(sellerOrderId, order.getId(), order.getOrderNo(),
                 sellerOrder.getTotalAmount(), sellerOrder.getShippingFee(),
                 order.getStatus(), shipment == null ? null : shipment.status(),
@@ -143,7 +141,7 @@ public class OrderReadService implements OrderQuery {
                 shipment == null ? null : shipment.pickedUpAt(),
                 shipment == null ? null : shipment.inTransitAt(),
                 shipment == null ? null : shipment.deliveredAt(),
-                settledAt.isPresent() ? "COMPLETED" : "NOT_SETTLED", settledAt.orElse(null), sellerOrder.getCreatedAt(),
+                settlement.status(), settlement.settledAt(), sellerOrder.getCreatedAt(),
                 order.getRecipientName(), order.getRecipientPhone(),
                 order.getZipcode(), order.getShipAddress1(), order.getShipAddress2(), items);
     }

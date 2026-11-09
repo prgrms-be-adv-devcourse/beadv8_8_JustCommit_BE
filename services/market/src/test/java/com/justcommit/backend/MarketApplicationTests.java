@@ -32,6 +32,7 @@ class MarketApplicationTests {
     @DynamicPropertySource
     static void jwtPublicKey(DynamicPropertyRegistry registry) {
         registry.add("jwt.public-key", MarketApplicationTests::newPublicKey);
+        registry.add("internal-api.key", () -> "test-internal-key");
     }
 
     @Test

@@ -1,0 +1,1 @@
+{ "status": 200, "message": "환불 성공", "data": { "status": "REFUNDED", "balanceAfter": 17000 } }

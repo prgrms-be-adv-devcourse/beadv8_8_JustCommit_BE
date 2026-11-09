@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum OrderErrorCode implements ErrorCode {
     AUTH_REQUIRED(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다."),
+    PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND, "상품을 찾을 수 없습니다."),
     PRODUCT_UNAVAILABLE(HttpStatus.CONFLICT, "구매할 수 없는 상품이 포함되어 있습니다."),
     OWN_PRODUCT(HttpStatus.BAD_REQUEST, "본인이 판매하는 상품은 구매할 수 없습니다."),
     PRICE_CHANGED(HttpStatus.CONFLICT, "장바구니에 담은 후 상품 가격이 변경되었습니다."),

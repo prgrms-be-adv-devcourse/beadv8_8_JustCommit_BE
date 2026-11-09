@@ -1,0 +1,1 @@
+{ "status": 409, "code": "REFUND_NOT_ALLOWED", "message": "환불할 수 없는 주문상품입니다." }
