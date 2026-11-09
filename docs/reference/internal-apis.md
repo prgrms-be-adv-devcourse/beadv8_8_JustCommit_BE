@@ -1,7 +1,7 @@
 # 내부 API 목록
 
 > 언제 읽나: 서비스 간 내부 API의 경로 · 멱등 키를 찾을 때
-> 상태: 🟨 제안 · 마지막 수정 2026-11-08 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
+> 상태: 🟨 제안 · 마지막 수정 2026-11-09 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
 
 ## 목록
 
@@ -29,11 +29,11 @@
 
 | 항목 | 내용 |
 |---|---|
-| 요청 | `orderId`, `productIds`, 상품마다 주문서 가격 `expectedPrice` |
+| 요청 | 본문 `orderId`, `items[{productId, expectedPrice}]` (상품마다 주문서 가격, 같은 상품 두 번은 400). 헤더 `Idempotency-Key` = orderId (없거나 다르면 400) |
 | 성공 | 모든 상품이 구매 가능하고 가격이 모두 같을 때만 `PAYMENT_PENDING`으로 바꾸고 orderId 기록 (전부 아니면 전무) |
 | 가격 다름 | 하나라도 다르면 아무것도 예약하지 않고 409 `PRICE_CHANGED` |
-| 구매 불가 | 하나라도 예약할 수 없으면 아무것도 예약하지 않고 409 |
+| 구매 불가 | 하나라도 예약할 수 없으면 아무것도 예약하지 않고 409 `PRODUCT_NOT_RESERVABLE` |
 | 같은 orderId로 다시 | 이미 이 주문이 잡은 상품이면 성공 (상태 그대로) |
-| 다른 orderId가 잡은 상품 | 409. "구매 가능" 조건을 건 UPDATE 한 번이라 동시에 잡아도 한 주문만 성공 |
-| 해제된 orderId | `product_reservation`(orderId 기본키)이 `RELEASED`면 409. 예약 · 해제 모두 이 행을 잠그고 처리 |
+| 다른 orderId가 잡은 상품 | 409 `PRODUCT_NOT_RESERVABLE`. "구매 가능" 조건을 건 UPDATE 한 번이라 동시에 잡아도 한 주문만 성공 |
+| 해제된 orderId | `product_reservation`(orderId 기본키)이 `RELEASED`면 409 `RESERVATION_RELEASED`. 예약 · 해제 모두 이 행을 잠그고 처리 |
 | 응답 타임아웃 | market은 다시 호출하지 않고 주문을 실패로 끝냄 (`market.order-failed.v1`) |
