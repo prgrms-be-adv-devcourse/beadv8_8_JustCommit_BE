@@ -27,8 +27,8 @@ public class InternalApiClientAutoConfiguration {
       if (properties.groups().isEmpty()) {
         return;
       }
-      if (properties.key() == null || properties.key().isBlank()) {
-        throw new IllegalStateException("internal-api.groups가 있으면 internal-api.key가 필요합니다.");
+      if (!isUsableKey(properties.key())) {
+        throw new IllegalStateException("internal-api.groups가 있으면 internal-api.key가 필요합니다. (환경변수 INTERNAL_API_KEY 확인)");
       }
       groups.filterByName(properties.groups().toArray(String[]::new))
           .forEachClient((group, builder) -> builder
@@ -41,5 +41,11 @@ public class InternalApiClientAutoConfiguration {
               .requestInterceptor(new AuthorizationForwardingInterceptor())
               .defaultStatusHandler(HttpStatusCode::isError, new InternalApiErrorHandler(group.name())));
     };
+  }
+
+  // 빈 값 · 공백 · 풀리지 않은 자리 표시자("${INTERNAL_API_KEY}")는 키 없음으로 취급
+  // (받는 쪽 InternalKeyFilter와 같은 규칙)
+  private static boolean isUsableKey(String key) {
+    return key != null && !key.isBlank() && !key.startsWith("${");
   }
 }
