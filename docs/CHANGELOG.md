@@ -11,6 +11,7 @@
 - 2026-11-09 · reference/kafka-topics.md · glossary.md · services/market.md · 판매자 전부 거절을 `SellerOrderRejected`(`reason`: `SELLER` · `AUTO`)로 분리, `SellerOrderCancelled`는 구매자 취소만 (#242)
 - 2026-11-09 · reference/kafka-topics.md · conventions/events.md · services/market · notification · settlement · `order.events.v1` · `shipment.events.v1`을 `market.events.v1` 하나로 합침(토픽 13→12개, ADR 0018), 판매자 수락 `SellerOrderAccepted`(`rejectedItemCount`) · `SellerOrderCancelled` `reason`(`BUYER` · `SELLER` · `AUTO`)별 알림 확정 (#242)
 - 2026-11-09 · glossary.md · 「수락 · 거절」 코드에 `SellerOrderAccepted` 추가 (#242)
+- 2026-11-09 · reference/internal-apis.md · 상품 예약 요청 형식(`items[{productId, expectedPrice}]`, `Idempotency-Key` 확인)과 409 코드 `PRODUCT_NOT_RESERVABLE` · `RESERVATION_RELEASED` 명시 (#236)
 - 2026-11-08 · testing/scenarios.md · 노션 「테스트 시나리오」 4절에 맞춤: S-C03 · D01 · D03 · D07 · E05 · F01 · H03 문장 수정, S-C08 · C09 · D10 추가, P 그룹 분리, 상세 칸은 노션 링크 (#259)
 - 2026-11-08 · testing/strategy.md · WireMock 규칙(스텁 위치 · 주소 바꿔 끼우기 · 응답 흉내 7가지 · verify) 추가, ID 그룹에 P (#259)
 - 2026-11-08 · services/gateway · notification · settlement · 테스트 시나리오 ID 목록을 노션 서비스 칸에 맞춤 (#259)

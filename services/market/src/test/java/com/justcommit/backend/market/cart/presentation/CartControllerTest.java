@@ -5,8 +5,11 @@ import com.justcommit.backend.common.security.AuthMember;
 import com.justcommit.backend.market.cart.application.CartService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -19,9 +22,11 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -90,6 +95,42 @@ class CartControllerTest {
                         .content("{\"productId\":0}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_FIELD_ERROR"));
+    }
+
+    @Test
+    @DisplayName("가격 동의는 인증 회원으로 처리하고 갱신된 장바구니를 ApiResponse로 감싸 돌려준다")
+    void updatesPricesForAuthenticatedMember() throws Exception {
+        when(cartService.updatePrices(10L, List.of(new CartItemPriceUpdateRequest.Item(1L, new BigDecimal("12000")))))
+                .thenReturn(new CartResponse(1L, List.of(), new BigDecimal("12000"), new BigDecimal("12000")));
+
+        mockMvc.perform(patch("/api/v1/cart/items/prices")
+                        .contentType("application/json")
+                        .content("{\"items\":[{\"cartItemId\":1,\"expectedPrice\":12000}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value(200))
+                .andExpect(jsonPath("$.message").value("장바구니 가격을 갱신했습니다."))
+                .andExpect(jsonPath("$.data.cartId").value(1))
+                .andExpect(jsonPath("$.data.nowTotalAmount").value(12000));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{}",
+            "{\"items\":[]}",
+            "{\"items\":[null]}",
+            "{\"items\":[{\"expectedPrice\":12000}]}",
+            "{\"items\":[{\"cartItemId\":1}]}",
+            "{\"items\":[{\"cartItemId\":0,\"expectedPrice\":12000}]}",
+            "{\"items\":[{\"cartItemId\":1,\"expectedPrice\":-1}]}"})
+    @DisplayName("가격 동의 요청의 목록 · ID · 가격이 비었거나 잘못되면 400 INVALID_FIELD_ERROR")
+    void rejectsInvalidPriceUpdateRequest(String body) throws Exception {
+        mockMvc.perform(patch("/api/v1/cart/items/prices")
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_FIELD_ERROR"));
+
+        verifyNoInteractions(cartService);
     }
 
     @Test

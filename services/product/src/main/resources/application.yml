@@ -6,8 +6,27 @@ spring:
     username: ${DB_USERNAME:product_app}
     password: ${DB_PASSWORD:product_app}
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: validate
 
 server:
   port: 8082
+
+jwt:
+  public-key: ${JWT_PUBLIC_KEY}
+
+# /internal/** 요청의 X-Internal-Key 확인용 (common-security). 비어 있으면 앱은 뜨고 내부 요청만 401
+internal-api:
+  key: ${INTERNAL_API_KEY:}
+
+custom:
+  image:
+    base-url: ${S3_PUBLIC_BASE_URL:http://localhost:9000/team06-replant-images}
+  s3:
+    bucket: ${S3_BUCKET_NAME:team06-replant-images}
+    region: ${AWS_REGION:ap-northeast-2}
+    endpoint: ${S3_ENDPOINT:}
+    access-key: ${S3_ACCESS_KEY:}
+    secret-key: ${S3_SECRET_KEY:}
+    upload-url-duration: 10m

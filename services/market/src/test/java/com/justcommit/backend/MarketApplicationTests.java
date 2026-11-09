@@ -1,11 +1,14 @@
 package com.justcommit.backend;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationInfo;
+import org.flywaydb.core.api.MigrationState;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,12 +32,15 @@ class MarketApplicationTests {
     @DynamicPropertySource
     static void jwtPublicKey(DynamicPropertyRegistry registry) {
         registry.add("jwt.public-key", MarketApplicationTests::newPublicKey);
+        registry.add("internal-api.key", () -> "test-internal-key");
     }
 
     @Test
-    @DisplayName("market 서비스가 DB에 연결되고 Flyway가 실행된다")
+    @DisplayName("빈 DB에서 Flyway V1이 적용되고 ddl-auto validate로 market 서비스가 뜬다")
     void contextLoads(@Autowired Flyway flyway) {
-        assertThat(flyway.info().all()).isEmpty();
+        assertThat(flyway.info().applied())
+                .extracting(info -> info.getVersion().getVersion(), MigrationInfo::getState)
+                .contains(tuple("1", MigrationState.SUCCESS));
     }
 
     private static String newPublicKey() {

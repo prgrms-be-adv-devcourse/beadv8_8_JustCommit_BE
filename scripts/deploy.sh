@@ -178,7 +178,7 @@ echo " → HTTP $s"
 if [ "$s" = 200 ]; then
   # 품종 데이터는 운영에서 자동 적재되지 않는다. 이미 있는 행은 건너뛰므로 매번 실행해도 된다
   cd ~/replant
-  docker compose -f docker-compose.prod.yml exec -T postgres sh -c 'psql -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < src/main/resources/db/data/species.sql
+  docker compose -f docker-compose.prod.yml exec -T postgres sh -c 'psql -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < services/product/src/main/resources/db/data/species.sql
   echo -n "품종 수: "
   docker compose -f docker-compose.prod.yml exec -T postgres sh -c 'psql -tA -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select count(*) from species"'
 else

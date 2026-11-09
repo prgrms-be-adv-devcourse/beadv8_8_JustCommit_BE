@@ -45,6 +45,16 @@ class CommonSecurityAutoConfigurationTest {
   }
 
   @Test
+  @DisplayName("internal-api.key가 풀리지 않는 자리 표시자여도 시작은 성공한다 (내부 요청만 거부)")
+  void startsWithUnresolvedInternalKey() {
+    runner.withPropertyValues("jwt.public-key=" + PUBLIC_KEY, "internal-api.key=${INTERNAL_API_KEY}")
+            .run(context -> {
+              assertThat(context).hasNotFailed();
+              assertThat(context).hasSingleBean(CommonSecurityConfigurer.class);
+            });
+  }
+
+  @Test
   @DisplayName("jwt.public-key 설정이 없으면 시작에 실패한다")
   void failsWithoutKey() {
     runner.run(context -> assertThat(context).hasFailed());

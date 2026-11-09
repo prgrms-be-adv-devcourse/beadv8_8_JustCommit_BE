@@ -7,6 +7,7 @@ import com.justcommit.backend.market.cart.domain.Cart;
 import com.justcommit.backend.market.cart.domain.CartItem;
 import com.justcommit.backend.market.cart.infrastructure.CartItemRepository;
 import com.justcommit.backend.market.cart.infrastructure.CartRepository;
+import com.justcommit.backend.market.cart.presentation.CartItemPriceUpdateRequest;
 import com.justcommit.backend.market.cart.presentation.CartItemResponse;
 import com.justcommit.backend.market.cart.presentation.CartResponse;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
@@ -76,14 +77,50 @@ public class CartService {
     private void validateCartItemIds(List<Long> cartItemIds) {
         if (cartItemIds == null || cartItemIds.isEmpty() || cartItemIds.stream().anyMatch(id -> id == null || id <= 0)
                 || cartItemIds.size() != cartItemIds.stream().distinct().count()) {
-            throw new BusinessException(CommonErrorCode.BAD_REQUEST_DATA, "주문할 장바구니 항목 ID를 확인해 주세요.");
+            throw new BusinessException(CommonErrorCode.BAD_REQUEST_DATA, "장바구니 항목 ID를 확인해 주세요.");
         }
     }
 
     @Transactional
     public CartResponse find(Long memberId) {
         Cart cart = findByMemberId(memberId);
-        List<ProductResult> products = productQuery.getProducts(cart.getItems().stream().map(CartItem::getProductId).toList());
+        return toResponse(cart, productQuery.getProducts(productIds(cart)), memberId);
+    }
+
+    // 고른 항목이 모두 구매 가능하고 현재 가격이 동의한 가격과 모두 같을 때만 저장 가격을 바꾼다. 하나라도 아니면 아무것도 안 바꾼다
+    @Transactional
+    public CartResponse updatePrices(long memberId, List<CartItemPriceUpdateRequest.Item> priceItems) {
+        List<CartItem> selected = getSelectCartItems(memberId,
+                priceItems.stream().map(CartItemPriceUpdateRequest.Item::cartItemId).toList());
+        Cart cart = selected.getFirst().getCart();
+        List<ProductResult> products = productQuery.getProducts(productIds(cart));
+        Map<Long, ProductResult> productMap = products.stream()
+                .collect(Collectors.toMap(ProductResult::productId, Function.identity()));
+
+        if (selected.stream().anyMatch(item -> !isPurchasable(productMap.get(item.getProductId()), memberId))) {
+            throw new BusinessException(OrderErrorCode.PRODUCT_UNAVAILABLE);
+        }
+        Map<Long, BigDecimal> expectedPrices = priceItems.stream().collect(Collectors.toMap(
+                CartItemPriceUpdateRequest.Item::cartItemId, CartItemPriceUpdateRequest.Item::expectedPrice));
+        if (selected.stream().anyMatch(item ->
+                productMap.get(item.getProductId()).price().compareTo(expectedPrices.get(item.getId())) != 0)) {
+            throw new BusinessException(OrderErrorCode.PRICE_CHANGED, "상품 가격이 다시 변경되었습니다. 장바구니를 다시 조회해 주세요.");
+        }
+
+        selected.forEach(item -> item.changePrice(productMap.get(item.getProductId()).price()));
+        return toResponse(cart, products, memberId);
+    }
+
+    private static List<Long> productIds(Cart cart) {
+        return cart.getItems().stream().map(CartItem::getProductId).toList();
+    }
+
+    private static boolean isPurchasable(ProductResult product, long memberId) {
+        return product != null && product.isPurchasable() && product.sellerId() != null
+                && !product.sellerId().equals(memberId);
+    }
+
+    private CartResponse toResponse(Cart cart, List<ProductResult> products, long memberId) {
         Map<Long, ProductResult> productMap = products.stream()
                 .collect(Collectors.toMap(ProductResult::productId, Function.identity()));
         List<Long> sellerIds = products.stream().map(ProductResult::sellerId)
@@ -110,8 +147,7 @@ public class CartService {
                             item.getPrice(),
                             product.price(),
                             item.getPrice().compareTo(product.price()) != 0,
-                            product.isPurchasable() && product.sellerId() != null
-                                    && !product.sellerId().equals(memberId),
+                            isPurchasable(product, memberId),
                             product.status().name(),
                             product.hidden(),
                             item.getCreatedAt());

@@ -4,8 +4,10 @@ import com.justcommit.backend.common.security.JwtVerifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.env.Environment;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
@@ -24,10 +26,16 @@ public class CommonSecurityAutoConfiguration {
     return new JwtVerifier(publicKey);
   }
 
+  // internal-api.key가 없어도 앱은 뜨고, 내부 키 필터가 /internal/** 요청을 모두 거부함
+  // @Value는 yml의 ${INTERNAL_API_KEY}를 풀지 못하면 시작에 실패해서 Binder로 읽음
+  // (풀지 못한 값은 "${...}" 글자 그대로 넘어오고, 필터가 키 없음으로 처리)
   @Bean
   @ConditionalOnMissingBean
-  CommonSecurityConfigurer commonSecurityConfigurer(JwtVerifier jwtVerifier) {
-    return new CommonSecurityConfigurer(jwtVerifier);
+  CommonSecurityConfigurer commonSecurityConfigurer(JwtVerifier jwtVerifier, Environment environment) {
+    String internalApiKey = Binder.get(environment)
+        .bind("internal-api.key", String.class)
+        .orElse(null);
+    return new CommonSecurityConfigurer(jwtVerifier, internalApiKey);
   }
 
   // 인증은 JWT로만 한다. 이 빈이 없으면 Boot가 아이디 user + 무작위 비밀번호인 기본 사용자를 만들고

@@ -1,0 +1,26 @@
+{
+  "status": 200,
+  "message": "상품 조회 성공",
+  "data": [
+    {
+      "productId": 101,
+      "sellerId": 20,
+      "title": "몬스테라",
+      "price": 10000,
+      "status": "ACTIVE",
+      "hidden": false,
+      "thumbnailUrl": "https://img/101.jpg",
+      "speciesName": "몬스테라 델리시오사"
+    },
+    {
+      "productId": 102,
+      "sellerId": 30,
+      "title": "필로덴드론",
+      "price": 20000,
+      "status": "REVIEW_PENDING",
+      "hidden": true,
+      "thumbnailUrl": null,
+      "speciesName": "필로덴드론"
+    }
+  ]
+}

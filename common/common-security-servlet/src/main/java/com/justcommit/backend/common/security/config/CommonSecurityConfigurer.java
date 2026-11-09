@@ -3,6 +3,7 @@ package com.justcommit.backend.common.security.config;
 import com.justcommit.backend.common.security.JwtVerifier;
 import com.justcommit.backend.common.security.handler.JwtAccessDeniedHandler;
 import com.justcommit.backend.common.security.handler.JwtAuthenticationEntryPoint;
+import com.justcommit.backend.common.security.internal.InternalKeyFilter;
 import com.justcommit.backend.common.security.jwt.JwtAuthenticationFilter;
 import jakarta.servlet.DispatcherType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -17,9 +18,11 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class CommonSecurityConfigurer {
 
   private final JwtVerifier jwtVerifier;
+  private final String internalApiKey;
 
-  public CommonSecurityConfigurer(JwtVerifier jwtVerifier) {
+  public CommonSecurityConfigurer(JwtVerifier jwtVerifier, String internalApiKey) {
     this.jwtVerifier = jwtVerifier;
+    this.internalApiKey = internalApiKey;
   }
 
   public void apply(HttpSecurity http) throws Exception {
@@ -48,6 +51,9 @@ public class CommonSecurityConfigurer {
 
         // 아이디 · 비밀번호 필터보다 먼저 JWT 필터 실행
         .addFilterBefore(new JwtAuthenticationFilter(jwtVerifier),
-            UsernamePasswordAuthenticationFilter.class);
+            UsernamePasswordAuthenticationFilter.class)
+
+        // JWT 필터 다음에 내부 키 필터 실행 (/internal/**만, 유효한 회원 토큰이면 AuthMember 유지)
+        .addFilterAfter(new InternalKeyFilter(internalApiKey), JwtAuthenticationFilter.class);
   }
 }

@@ -1,0 +1,1 @@
+{ "status": 200, "message": "이미 결제된 주문", "data": { "status": "ALREADY_PAID", "balanceAfter": 7000 } }

@@ -152,7 +152,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 - 세미 프로젝트에서는 Flyway를 끄고 `ddl-auto: update`로 테이블을 만듭니다. 품종 데이터는 첫 배포 후 한 번 넣습니다 (이미 있는 행은 건너뜀).
 
 ```bash
-docker compose -f docker-compose.prod.yml exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < src/main/resources/db/data/species.sql
+docker compose -f docker-compose.prod.yml exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < services/product/src/main/resources/db/data/species.sql
 ```
 
 - 확인: `curl https://replant.kro.kr/actuator/health` 가 `UP`이면 정상입니다.

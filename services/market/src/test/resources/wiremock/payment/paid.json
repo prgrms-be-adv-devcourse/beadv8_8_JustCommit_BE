@@ -1,0 +1,1 @@
+{ "status": 200, "message": "결제 성공", "data": { "status": "PAID", "balanceAfter": 7000 } }

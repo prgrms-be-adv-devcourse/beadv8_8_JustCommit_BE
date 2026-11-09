@@ -1,0 +1,1 @@
+{ "status": 200, "message": "이미 환불됨", "data": { "status": "ALREADY_REFUNDED", "balanceAfter": 17000 } }
