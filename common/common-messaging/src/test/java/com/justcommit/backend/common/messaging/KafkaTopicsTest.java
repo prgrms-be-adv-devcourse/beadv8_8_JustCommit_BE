@@ -13,13 +13,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class KafkaTopicsTest {
 
   @Test
-  @DisplayName("토픽 상수는 docs/reference/kafka-topics.md의 13개와 같다")
+  @DisplayName("토픽 상수는 docs/reference/kafka-topics.md의 12개와 같다")
   void matchesTopicDocument() {
     assertThat(topicConstants()).containsExactlyInAnyOrder(
             "member.events.v1",
             "member.address.events.v1",
-            "order.events.v1",
-            "shipment.events.v1",
+            "market.events.v1",
             "market.order-paid.v1",
             "market.order-expired.v1",
             "market.order-failed.v1",

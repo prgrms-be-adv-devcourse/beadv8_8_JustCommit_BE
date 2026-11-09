@@ -8,7 +8,7 @@ package com.justcommit.backend.common.messaging;
  * 예:
  * public record PurchaseConfirmed(Long sellerOrderId, Long sellerId, long amount)
  *     implements IntegrationEvent {
- *   public String topic() { return KafkaTopics.ORDER_EVENTS; }
+ *   public String topic() { return KafkaTopics.MARKET_EVENTS; }
  *   public String eventType() { return "PurchaseConfirmed"; }
  *   public String aggregateId() { return String.valueOf(sellerOrderId); }
  * }

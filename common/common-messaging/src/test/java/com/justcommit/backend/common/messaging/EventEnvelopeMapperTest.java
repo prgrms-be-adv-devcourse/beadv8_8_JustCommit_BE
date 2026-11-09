@@ -111,7 +111,7 @@ class EventEnvelopeMapperTest {
   record PurchaseConfirmed(Long sellerOrderId, Long sellerId, long amount) implements IntegrationEvent {
     @Override
     public String topic() {
-      return KafkaTopics.ORDER_EVENTS;
+      return KafkaTopics.MARKET_EVENTS;
     }
 
     @Override
