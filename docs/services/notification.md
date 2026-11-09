@@ -15,7 +15,7 @@
 
 | 테이블 | 설명 |
 |---|---|
-| `NOTIFICATION` | 알림 (`event_key` UK, `(member_id, read, created_at)` 인덱스, 지우지 않고 보관) |
+| `NOTIFICATION` | 알림 (`event_key` UK, `(member_id, is_read, created_at)` 인덱스, 지우지 않고 보관, Flyway `V1__create_notification.sql`) |
 
 ## 외부 API
 
