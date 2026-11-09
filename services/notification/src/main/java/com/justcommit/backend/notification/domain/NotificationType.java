@@ -24,6 +24,8 @@ public enum NotificationType {
     SELLER_ORDER_PARTLY_ACCEPTED("판매자가 주문을 수락했어요. 일부 상품은 판매가 거절돼 환불돼요."),
     SELLER_ORDER_REJECTED("판매자가 상품 판매를 거절했어요."),
     SELLER_ORDER_AUTO_CANCELLED("판매자가 24시간 안에 응답하지 않아 주문이 자동 취소됐어요."),
+    // 새로 만들지 않음. 세미 DB에 저장된 알림을 읽기 위해서만 남김 (#287에서 데이터 이전 여부를 정한 뒤 삭제)
+    SELLER_ORDER_CANCELLED_BUYER("주문이 취소됐어요."),
     ORDER_ITEM_AUTO_CONFIRMED("배송 완료 후 3일이 지나 구매가 자동 확정됐어요.");
 
     private final String message;

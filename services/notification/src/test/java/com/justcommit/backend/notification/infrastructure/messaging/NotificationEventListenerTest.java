@@ -3,9 +3,10 @@ package com.justcommit.backend.notification.infrastructure.messaging;
 import com.justcommit.backend.notification.infrastructure.messaging.event.PurchaseConfirmedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.OrderItemAutoConfirmedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderAcceptedEvent;
-import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderCancelReason;
 import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderCancelledEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderPaidEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderRejectReason;
+import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderRejectedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.ShipmentStatusChangedEvent;
 import com.justcommit.backend.notification.application.NotificationService;
 import com.justcommit.backend.notification.domain.NotificationType;
@@ -97,37 +98,38 @@ class NotificationEventListenerTest {
                 "SELLER_ORDER_PAID:7");
     }
 
-    @ParameterizedTest(name = "reason={0}")
-    @NullSource
-    @EnumSource(value = SellerOrderCancelReason.class, names = "BUYER")
-    @DisplayName("구매자 취소(reason 없음 포함)는 판매자에게만 알린다")
-    void notifiesOnlySellerOnCancellationByBuyer(SellerOrderCancelReason reason) {
-        listener.onSellerOrderCancelled(cancelledEvent(reason));
+    @Test
+    @DisplayName("구매자 취소는 판매자에게만 알린다")
+    void notifiesOnlySellerOnCancellationByBuyer() {
+        listener.onSellerOrderCancelled(new SellerOrderCancelledEvent(
+                ORDER_ID, SELLER_ORDER_ID, SELLER, BUYER, LocalDateTime.now()));
 
         verify(notificationService).create(SELLER, NotificationType.SELLER_ORDER_CANCELLED,
                 SELLER_ORDER_ID, "SELLER_ORDER_CANCELLED:SELLER:7");
         verifyNoMoreInteractions(notificationService); // 취소한 구매자 본인에게는 알리지 않음
     }
 
-    @Test
-    @DisplayName("판매자 거절은 구매자에게만 판매자 거절 알림을 보낸다")
-    void notifiesOnlyBuyerOnRejectionBySeller() {
-        listener.onSellerOrderCancelled(cancelledEvent(SellerOrderCancelReason.SELLER));
+    @ParameterizedTest(name = "reason={0}")
+    @NullSource
+    @EnumSource(value = SellerOrderRejectReason.class, names = "SELLER")
+    @DisplayName("판매자 직접 거절(reason 없음 포함)은 구매자에게만 판매자 거절 알림을 보낸다")
+    void notifiesOnlyBuyerOnRejectionBySeller(SellerOrderRejectReason reason) {
+        listener.onSellerOrderRejected(rejectedEvent(reason));
 
         verify(notificationService).create(BUYER, NotificationType.SELLER_ORDER_REJECTED,
-                ORDER_ID, SELLER_ORDER_ID, "SELLER_ORDER_CANCELLED:BUYER:7");
+                ORDER_ID, SELLER_ORDER_ID, "SELLER_ORDER_REJECTED:BUYER:7");
         verifyNoMoreInteractions(notificationService);
     }
 
     @Test
     @DisplayName("24시간 자동 거절은 구매자(자동 취소)와 판매자(자동 거절)에게 각각 다른 키로 알린다")
     void notifiesBuyerAndSellerOnAutoRejection() {
-        listener.onSellerOrderCancelled(cancelledEvent(SellerOrderCancelReason.AUTO));
+        listener.onSellerOrderRejected(rejectedEvent(SellerOrderRejectReason.AUTO));
 
         verify(notificationService).create(BUYER, NotificationType.SELLER_ORDER_AUTO_CANCELLED,
-                ORDER_ID, SELLER_ORDER_ID, "SELLER_ORDER_CANCELLED:BUYER:7");
+                ORDER_ID, SELLER_ORDER_ID, "SELLER_ORDER_REJECTED:BUYER:7");
         verify(notificationService).create(SELLER, NotificationType.SELLER_ORDER_AUTO_REJECTED,
-                SELLER_ORDER_ID, "SELLER_ORDER_CANCELLED:SELLER:7");
+                SELLER_ORDER_ID, "SELLER_ORDER_REJECTED:SELLER:7");
         verifyNoMoreInteractions(notificationService);
     }
 
@@ -154,8 +156,8 @@ class NotificationEventListenerTest {
                 ORDER_ID, SELLER_ORDER_ID, "ORDER_ITEM_AUTO_CONFIRMED:11");
     }
 
-    private SellerOrderCancelledEvent cancelledEvent(SellerOrderCancelReason reason) {
-        return new SellerOrderCancelledEvent(ORDER_ID, SELLER_ORDER_ID, SELLER, BUYER, LocalDateTime.now(), reason);
+    private SellerOrderRejectedEvent rejectedEvent(SellerOrderRejectReason reason) {
+        return new SellerOrderRejectedEvent(ORDER_ID, SELLER_ORDER_ID, SELLER, BUYER, reason, LocalDateTime.now());
     }
 
     private ShipmentStatusChangedEvent shipmentEvent(String status) {
