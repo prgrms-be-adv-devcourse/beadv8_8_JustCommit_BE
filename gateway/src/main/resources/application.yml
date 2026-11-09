@@ -21,6 +21,35 @@ spring:
           # /internal/** 은 일부러 등록하지 않음 → Gateway에서 404
           # 타임아웃이 다른 좁은 경로(*-confirm 등)는 넓은 경로보다 위에 둠: 위에서부터 처음 맞는 규칙 하나만 씀
           routes:
+            # 요청 수 제한 (docs/services/gateway.md): IP당 1분 5회
+            # 토큰 통: 1초에 1개 차고 최대 60개, 요청 1번에 12개 → 처음 5번 연속 가능, 그 뒤 12초마다 1번 = 1분 5회
+            # 초과하면 429 예외 → GatewayExceptionHandler가 ApiResponse로
+            - id: member-login
+              uri: ${MEMBER_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/v1/auth/login
+                - Method=POST
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.burstCapacity: 60
+                    redis-rate-limiter.requestedTokens: 12
+                    key-resolver: "#{@clientIpKeyResolver}"
+                    throw-on-limit: true
+            - id: member-email-send
+              uri: ${MEMBER_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/v1/auth/email/send
+                - Method=POST
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.burstCapacity: 60
+                    redis-rate-limiter.requestedTokens: 12
+                    key-resolver: "#{@clientIpKeyResolver}"
+                    throw-on-limit: true
             - id: member
               uri: ${MEMBER_SERVICE_URL:http://localhost:8081}
               predicates:
