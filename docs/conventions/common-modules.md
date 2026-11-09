@@ -1,7 +1,7 @@
 # 공통 모듈
 
 > 언제 읽나: common-* 모듈에 코드를 넣거나 쓸 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: Miro 12, 노션 기획안 「공통 코드 정리」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: Miro 12, 노션 기획안 「공통 코드 정리」
 
 ## 모듈 목록
 
@@ -9,9 +9,8 @@
 |---|---|---|
 | `common-core` | `ApiResponse`, `ErrorCode` (서블릿 · 리액티브 의존 없음) | Gateway(WebFlux)도 같은 형식으로 401 · 403 · 503을 내야 함 |
 | `common-web` | `PagingRequest` · `PagingResponse`, `BusinessException`, `GlobalExceptionHandler`, `CommonErrorCode`, HTTP Service Client **그룹 설정기**(내부 그룹에만 `X-Internal-Key` · `Authorization` · 연결 실패 1회 재시도, 타임아웃) | 모든 서비스가 같은 응답 · 에러 · 호출 방식 |
-| `common-security` (공유) | `AuthMember`, 공개키 토큰 검증, `TokenException` · `TokenType` | 검증 로직 하나로 |
+| `common-security` (공유) | `AuthMember`, 공개키 토큰 검증(`JwtVerifier`, 발급 시각까지 꺼내는 `verifyAccessToken`), `TokenException` · `TokenType`, 토큰 해시 `TokenHash` | 검증 로직 · Redis 키 해시 형식 하나로 |
 | `common-security` (서블릿) | `JwtAuthenticationFilter`, 401/403 핸들러, `SecurityConfig` 기본 규칙, `/internal/**` 내부 키 필터, `UserIdMdcFilter` | 서비스 2차 검증 |
-| `common-security` (WebFlux) | Gateway JWT 1차 검증 `GlobalFilter` | Gateway 1차 검증 |
 | `common-messaging` | `EventEnvelope`, Outbox 저장 · 커밋 후 발행 · 재전송(10초 · 5회 · 7일), `traceparent` 헤더, 소비 실패 처리 기본 설정(1 · 2 · 4초 제자리 재시도 → `원래토픽.DLT`), 민감 필드 암호화, 토픽 이름 상수 | 유실 · 중복 대응을 한 방식으로 |
 | `common-logging` | `common-logging.yml`(JSON · 레벨 · traceId · Kafka 전파), actuator · micrometer-tracing 의존성, 개인정보 마스킹 | Loki에서 한 번에 검색 |
 

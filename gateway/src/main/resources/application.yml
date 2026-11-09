@@ -1,0 +1,112 @@
+spring:
+  application:
+    name: gateway
+  # 토큰 폐기 확인용 (키는 member가 씀). 못 읽으면 503 (fail-closed)
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      # 오래 기다리지 않고 503으로 끝내기 위한 명령 제한 시간
+      timeout: 1s
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # CORS는 Gateway에서만 (서비스에는 넣지 않음). 지금 프론트는 같은 출처(운영 Nginx · 로컬 Vite 프록시)라
+          # 실제로 쓰이진 않지만, 프론트 주소가 갈라지면 CORS_ALLOWED_ORIGINS만 바꾸면 됨 (쉼표로 여러 개)
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+                allowed-methods: GET,POST,PUT,PATCH,DELETE,OPTIONS
+                allowed-headers: "*"
+                # Refresh 쿠키를 주고받으려면 필요. 이때 allowed-origins에 * 는 쓸 수 없음
+                allow-credentials: true
+                max-age: 3600
+          # 기본 타임아웃: 연결 1초 · 응답 10초 (docs/conventions/resilience.md)
+          httpclient:
+            connect-timeout: 1000
+            response-timeout: 10s
+          # 외부 경로 → 담당 서비스 (경로 목록: docs/reference/external-apis.md)
+          # /internal/** 은 일부러 등록하지 않음 → Gateway에서 404
+          # 타임아웃이 다른 좁은 경로(*-confirm 등)는 넓은 경로보다 위에 둠: 위에서부터 처음 맞는 규칙 하나만 씀
+          routes:
+            # 요청 수 제한 (docs/services/gateway.md): IP당 1분 5회
+            # 토큰 통: 1초에 1개 차고 최대 60개, 요청 1번에 12개 → 처음 5번 연속 가능, 그 뒤 12초마다 1번 = 1분 5회
+            # 초과하면 429 예외 → GatewayExceptionHandler가 ApiResponse로
+            - id: member-login
+              uri: ${MEMBER_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/v1/auth/login
+                - Method=POST
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.burstCapacity: 60
+                    redis-rate-limiter.requestedTokens: 12
+                    key-resolver: "#{@clientIpKeyResolver}"
+                    throw-on-limit: true
+            - id: member-email-send
+              uri: ${MEMBER_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/v1/auth/email/send
+                - Method=POST
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.burstCapacity: 60
+                    redis-rate-limiter.requestedTokens: 12
+                    key-resolver: "#{@clientIpKeyResolver}"
+                    throw-on-limit: true
+            - id: member
+              uri: ${MEMBER_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/v1/auth/**,/api/v1/users/**,/api/v1/sellers/**,/oauth2/**,/login/oauth2/**
+            - id: product
+              uri: ${PRODUCT_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/api/v1/products/**,/api/v1/species/**,/api/v1/admin/imageReviews/**
+            - id: market-courier-webhook
+              uri: ${MARKET_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/v1/webhooks/courier
+              metadata:
+                response-timeout: 5000
+            - id: market
+              uri: ${MARKET_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/v1/cart/**,/api/v1/orders/**,/api/v1/webhooks/**
+            - id: payment-charge-confirm
+              uri: ${PAYMENT_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/api/v1/wallet/charges/*/confirm
+              metadata:
+                response-timeout: 65000
+            - id: payment
+              uri: ${PAYMENT_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/api/v1/wallet/**
+            - id: settlement
+              uri: ${SETTLEMENT_SERVICE_URL:http://localhost:8085}
+              predicates:
+                - Path=/api/v1/settlements/**
+            - id: notification-subscribe
+              uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
+              predicates:
+                - Path=/api/v1/notifications/subscribe
+              metadata:
+                response-timeout: -1
+            - id: notification
+              uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
+              predicates:
+                - Path=/api/v1/notifications/**
+
+server:
+  port: 8080
+
+# RS256 공개키 (PEM 또는 한 줄 Base64). 기본값 없음: 없으면 앱이 시작하지 않음
+jwt:
+  public-key: ${JWT_PUBLIC_KEY}

@@ -36,6 +36,23 @@ public class JwtVerifier {
    * @throws TokenException 만료면 EXPIRED, 그 밖의 문제는 INVALID
    */
   public AuthMember parseAccessToken(String token) {
+    return toAuthMember(parseAccessClaims(token));
+  }
+
+  /**
+   * parseAccessToken과 같은 검증에 발급 시각(iat)까지 꺼낸다. Gateway가 회원 단위 폐기를 확인할 때 쓴다.
+   *
+   * @throws TokenException 만료면 EXPIRED, iat가 없는 것을 포함해 그 밖의 문제는 INVALID
+   */
+  public VerifiedAccessToken verifyAccessToken(String token) {
+    Claims claims = parseAccessClaims(token);
+    if (claims.getIssuedAt() == null) {
+      throw new TokenException(TokenException.Reason.INVALID);
+    }
+    return new VerifiedAccessToken(toAuthMember(claims), claims.getIssuedAt().toInstant().getEpochSecond());
+  }
+
+  private Claims parseAccessClaims(String token) {
     Claims claims;
     try {
       claims = parser.parseSignedClaims(token).getPayload();
@@ -47,6 +64,10 @@ public class JwtVerifier {
     if (!TokenType.ACCESS.name().equals(claims.get(CLAIM_TYPE, String.class))) {
       throw new TokenException(TokenException.Reason.INVALID);
     }
+    return claims;
+  }
+
+  private static AuthMember toAuthMember(Claims claims) {
     return new AuthMember(Long.valueOf(claims.getSubject()), claims.get(CLAIM_ROLE, String.class));
   }
 

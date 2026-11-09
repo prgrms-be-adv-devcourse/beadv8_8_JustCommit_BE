@@ -1,7 +1,7 @@
 # 외부 API 목록
 
 > 언제 읽나: 외부 API의 경로 · 담당 서비스를 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-06 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
 
 ## 서비스별 목록
 
@@ -14,7 +14,7 @@
 | POST | `auth/email/send` | 인증번호 발송 | 공개 |
 | POST | `auth/email/verify` | 인증번호 확인 | 공개 |
 | POST | `auth/login` | 로그인 | 공개 |
-| POST | `auth/logout` | 로그아웃 | 로그인 |
+| POST | `auth/logout` | 로그아웃 | 공개(Refresh 쿠키) |
 | POST | `auth/reissue` | 토큰 재발급 | 공개(Refresh 쿠키) |
 | POST | `users` | 회원가입 | 공개 |
 | POST | `users/social` | 소셜 가입 완료 | 공개 |

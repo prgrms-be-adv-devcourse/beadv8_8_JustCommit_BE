@@ -1,7 +1,7 @@
 # 인증 · 인가 규칙
 
 > 언제 읽나: 토큰 · 권한 · 공개 경로 · 로그아웃을 다룰 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: Miro 6, A1, 노션 기획안 「인증 · 인가」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: Miro 6, A1, 노션 기획안 「인증 · 인가」
 
 ## 토큰 발급과 검증
 
@@ -15,7 +15,7 @@
 | 키 교체 | 이번 범위 밖. 키를 바꾸면 모든 회원이 다시 로그인 (한계, 노션 2절 11/6 결정) |
 | 왜 이중 검증인가 | 포트가 실수로 열려도 위조 토큰이 통과하지 않게 (심층 방어) → [ADR 0001](../decisions/0001-scg-rs256-double-validation.md) |
 
-코드 위치: 검증 로직 · `AuthMember` → `common-security`, 서비스 필터 → `common-security`(서블릿), Gateway 필터 → `common-security`(WebFlux), 발급 → member → [공통 모듈](../conventions/common-modules.md)
+코드 위치: 검증 로직 · `AuthMember` → `common-security`, 서비스 필터 → `common-security`(서블릿), Gateway 필터 → `gateway/` 안 (`JwtAuthenticationFilter`, 쓰는 곳이 Gateway 하나뿐이라 공통 모듈로 빼지 않음), 발급 → member → [공통 모듈](../conventions/common-modules.md)
 
 ## 토큰 폐기
 
@@ -40,7 +40,9 @@
 
 ## 공개 경로
 
-토큰 없이 통과하는 경로(상품 · 품종 조회, 로그인 · 가입 · 이메일 인증, 카카오 로그인, 택배 웹훅)는 **Gateway와 각 서비스 양쪽에** 설정합니다. 한쪽만 바꾸면 401이 나거나 검증 없이 통과합니다. 택배 웹훅은 토큰 대신 `X-Api-Key`로 확인합니다.
+토큰 없이 통과하는 경로(상품 · 품종 조회, 로그인 · 로그아웃 · 재발급 · 가입 · 이메일 인증, 카카오 로그인, 택배 웹훅)는 **Gateway와 각 서비스 양쪽에** 설정합니다. 한쪽만 바꾸면 401이 나거나 검증 없이 통과합니다. 택배 웹훅은 토큰 대신 `X-Api-Key`로 확인합니다.
+
+로그아웃(`POST /api/v1/auth/logout`)은 Gateway가 토큰 검사를 하지 않습니다. Access 토큰이 만료돼도 재발급 없이 로그아웃할 수 있게 하기 위해서입니다. member가 Refresh 쿠키로 이 기기의 Refresh를 지우고, 함께 온 Access 토큰이 서명이 맞고 아직 유효하면 블랙리스트에 넣습니다 (사용자 결정 2026-11-09).
 
 ## 내부 API 보호
 
