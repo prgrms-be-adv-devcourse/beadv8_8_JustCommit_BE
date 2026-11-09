@@ -38,6 +38,7 @@ import com.justcommit.backend.market.client.product.ProductStatus;
 import com.justcommit.backend.market.client.product.ProductQuery;
 import com.justcommit.backend.market.client.product.ProductUseCase;
 import com.justcommit.backend.market.client.product.ReservationItem;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -210,6 +211,22 @@ class OrderServiceTest {
     void rejectsChangedPriceBeforeSavingOrRemovingCartItems() {
         assertRejected(OrderErrorCode.PRICE_CHANGED,
                 product(101L, 20L, "가격 변경", "12000", true));
+    }
+
+    @Test
+    @DisplayName("가격 동의로 저장 가격을 현재 가격으로 바꾼 뒤 주문하면 그 가격으로 예약하고 주문이 만들어진다")
+    void createsOrderAfterPriceConsent() {
+        CartItem consented = selected(1L, 101L, "10000");
+        consented.changePrice(money("12000")); // CartService.updatePrices가 하는 일
+        stubLookup(List.of(consented), List.of(product(101L, 20L, "몬스테라", "12000", true)));
+        stubSavedOrder();
+        stubInsufficientBalance();
+
+        OrderCreateResponse response = orderService.create(10L, request(1L));
+
+        assertThat(response.totalAmount()).isEqualByComparingTo("15000");
+        verify(productUseCase).reserve(99L, List.of(new ReservationItem(101L, money("12000"))));
+        verify(cartService).removeSelectedItems(10L, List.of(1L));
     }
 
     @Test

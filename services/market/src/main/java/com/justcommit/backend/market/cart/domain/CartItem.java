@@ -33,4 +33,9 @@ public class CartItem extends BaseTimeEntity {
         this.productId = productId;
         this.price = price;
     }
+
+    // 구매자가 바뀐 가격에 동의했을 때만 부른다
+    public void changePrice(BigDecimal price) {
+        this.price = price;
+    }
 }

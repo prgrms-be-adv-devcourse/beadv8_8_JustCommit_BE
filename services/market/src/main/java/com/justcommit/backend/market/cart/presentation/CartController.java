@@ -1,5 +1,6 @@
 package com.justcommit.backend.market.cart.presentation;
 
+import com.justcommit.backend.common.response.ApiResponse;
 import com.justcommit.backend.common.security.AuthMember;
 import com.justcommit.backend.market.cart.application.CartService;
 import jakarta.validation.Valid;
@@ -24,6 +25,12 @@ public class CartController {
     public ResponseEntity<Long> addItem(@AuthenticationPrincipal AuthMember member,
                                         @Valid @RequestBody CartItemAddRequest cartItemAddRequest) {
         return ResponseEntity.ok(cartService.addItemToCart(member.memberId(), cartItemAddRequest.productId()));
+    }
+
+    @PatchMapping("/items/prices")
+    public ApiResponse<CartResponse> updatePrices(@AuthenticationPrincipal AuthMember member,
+                                                  @Valid @RequestBody CartItemPriceUpdateRequest request) {
+        return ApiResponse.ok("장바구니 가격을 갱신했습니다.", cartService.updatePrices(member.memberId(), request.items()));
     }
 
     @DeleteMapping("/items/{productId}")
