@@ -74,7 +74,7 @@ custom:
     secure: ${COOKIE_SECURE:false}
   oauth2:
     # 카카오 로그인 state 쿠키 서명 키 (openssl rand -base64 32)
-    cookie-secret: ${OAUTH2_COOKIE_SECRET}
+    state-secret: ${OAUTH2_STATE_SECRET}
   frontend:
     # 소셜 로그인 후 돌아갈 프론트 주소
     base-url: ${FRONTEND_BASE_URL:http://localhost:5173}

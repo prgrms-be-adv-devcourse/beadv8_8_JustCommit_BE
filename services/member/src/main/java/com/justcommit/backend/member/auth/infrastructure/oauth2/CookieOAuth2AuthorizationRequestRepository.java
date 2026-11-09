@@ -38,9 +38,9 @@ public class CookieOAuth2AuthorizationRequestRepository
   private final boolean secure;
 
   public CookieOAuth2AuthorizationRequestRepository(
-          @Value("${custom.oauth2.cookie-secret}") String cookieSecret,
+          @Value("${custom.oauth2.state-secret}") String stateSecret,
           @Value("${custom.cookie.secure}") boolean secure) {
-    this.signingKey = deriveKey(cookieSecret);
+    this.signingKey = deriveKey(stateSecret);
     this.secure = secure;
   }
 
@@ -110,7 +110,7 @@ public class CookieOAuth2AuthorizationRequestRepository
     }
   }
 
-  // custom.oauth2.cookie-secret에서 쿠키 서명 전용 키를 파생
+  // custom.oauth2.state-secret에서 쿠키 서명 전용 키를 파생
   private static SecretKeySpec deriveKey(String secret) {
     try {
       Mac mac = Mac.getInstance(HMAC_ALGORITHM);

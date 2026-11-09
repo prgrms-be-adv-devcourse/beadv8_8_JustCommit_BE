@@ -14,4 +14,4 @@ account:
 
 custom:
   oauth2:
-    cookie-secret: test-only-oauth2-cookie-secret-0123456789
+    state-secret: test-only-oauth2-state-secret-0123456789
