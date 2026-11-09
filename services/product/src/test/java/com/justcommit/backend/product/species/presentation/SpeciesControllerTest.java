@@ -63,7 +63,7 @@ class SpeciesControllerTest {
     @DisplayName("품종 상세를 조회하면 사진 목록을 포함해 반환")
     void getSpeciesDetail() throws Exception {
         SpeciesDetailResponse detail = new SpeciesDetailResponse(
-                1L, "몬스테라", "Monstera deliciosa", "FOLIAGE", "MEDIUM", "WHEN_SURFACE_DRY", "EASY", "GREEN", false,
+                1L, "몬스테라", "Monstera deliciosa", "FOLIAGE", "MEDIUM", "WHEN_SURFACE_DRY", "EASY", "GREEN",
                 List.of(new SpeciesDetailResponse.ImageResponse("https://example.com/monstera.jpg", 0)));
         given(speciesService.getSpeciesDetail(1L)).willReturn(detail);
 
@@ -71,7 +71,6 @@ class SpeciesControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.name").value("몬스테라"))
                 .andExpect(jsonPath("$.data.scientificName").value("Monstera deliciosa"))
-                .andExpect(jsonPath("$.data.isBanned").value(false))
                 .andExpect(jsonPath("$.data.pictures[0].sortOrder").value(0));
     }
 

@@ -68,17 +68,16 @@ public class  ProductServiceTest {
     private static final Long NEW_SPECIES_ID = 2L;   // 수정할 때 바꿀 품종
 
     //품종 만들기
-    private Species species(Long id, String name, boolean banned) {
+    private Species species(Long id, String name) {
         Species species = BeanUtils.instantiateClass(Species.class);
         ReflectionTestUtils.setField(species, "id", id);
         ReflectionTestUtils.setField(species, "name", name);
-        ReflectionTestUtils.setField(species, "banned", banned);
         return species;
     }
 
     //상품 만들기
     private Product product(ProductStatus status) {
-        Product product = Product.create(species(1L, "몬스테라", false), SELLER_ID,
+        Product product = Product.create(species(1L, "몬스테라"), SELLER_ID,
                 "몬스테라 분양합니다", "잘 자란 몬스테라입니다", new BigDecimal("30000"),
                 50, "중형", "베란다에서 키웠어요", List.of("https://example.com/a.jpg"));
         ReflectionTestUtils.setField(product, "id", PRODUCT_ID);
@@ -120,7 +119,7 @@ public class  ProductServiceTest {
 
         //given 1) 회원 1번이 판매자? -> true 2)품종 1번 -> 품종 1번에 대한 정보 3)저장시 -> 저장 객체 반환
         given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
-        given(speciesRepository.findById(1L)).willReturn(Optional.of(species(1L, "몬스테라", false)));
+        given(speciesRepository.findById(1L)).willReturn(Optional.of(species(1L, "몬스테라")));
         given(productRepository.save(any(Product.class))).willAnswer(invocation -> invocation.getArgument(0)); //
         given(memberQuery.getNickname(SELLER_ID)).willReturn("판매자1");
 
@@ -166,7 +165,7 @@ public class  ProductServiceTest {
         Product product = product(ProductStatus.ACTIVE);
         given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
         given(speciesRepository.findById(NEW_SPECIES_ID))
-                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스", false)));
+                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스")));
 
         // when - service
         productService.updateProduct(SELLER_ID, PRODUCT_ID,
@@ -226,20 +225,6 @@ public class  ProductServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ProductErrorCode.SPECIES_NOT_FOUND);
     }
-    @Test
-    @DisplayName("금지 품종으로 수정하면 BANNED_SPECIES, 상품은 바뀌지 않음")
-    void updateProductWithBannedSpecies() {
-        Product product = product(ProductStatus.ACTIVE);
-        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
-        given(speciesRepository.findById(NEW_SPECIES_ID))
-                .willReturn(Optional.of(species(NEW_SPECIES_ID, "금지 품종", true)));
-
-        assertThatThrownBy(() -> productService.updateProduct(SELLER_ID, PRODUCT_ID, updateRequest(null)))
-                .isInstanceOf(BusinessException.class)
-                .extracting("errorCode").isEqualTo(ProductErrorCode.BANNED_SPECIES);
-        assertThat(product.getTitle()).isEqualTo("몬스테라 분양합니다");
-    }
-
     // 결제 대기·판매 완료 상품은 수정 불가 (정책 2.3-1)
     @Test
     @DisplayName("판매 중이 아닌 상품을 수정하면 PRODUCT_NOT_EDITABLE, 상품은 바뀌지 않음")
@@ -247,7 +232,7 @@ public class  ProductServiceTest {
         Product product = product(ProductStatus.PAYMENT_PENDING);
         given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
         given(speciesRepository.findById(NEW_SPECIES_ID))
-                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스", false)));
+                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스")));
 
         assertThatThrownBy(() -> productService.updateProduct(SELLER_ID, PRODUCT_ID, updateRequest(null)))
                 .isInstanceOf(BusinessException.class)
@@ -495,7 +480,7 @@ public class  ProductServiceTest {
         Product product = product(ProductStatus.ACTIVE);   // 기존 사진: a.jpg
         given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
         given(speciesRepository.findById(NEW_SPECIES_ID))
-                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스", false)));
+                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스")));
 
         productService.updateProduct(SELLER_ID, PRODUCT_ID,
                 updateRequest(List.of("https://example.com/c.jpg")));
@@ -509,7 +494,7 @@ public class  ProductServiceTest {
         Product product = product(ProductStatus.ACTIVE);
         given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
         given(speciesRepository.findById(NEW_SPECIES_ID))
-                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스", false)));
+                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스")));
 
         productService.updateProduct(SELLER_ID, PRODUCT_ID,
                 updateRequest(List.of("https://example.com/a.jpg", "https://example.com/c.jpg")));
@@ -534,7 +519,7 @@ public class  ProductServiceTest {
         Product product = product(ProductStatus.SOLD_OUT);
         given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
         given(speciesRepository.findById(NEW_SPECIES_ID))
-                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스", false)));
+                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스")));
 
         assertThatThrownBy(() -> productService.updateProduct(SELLER_ID, PRODUCT_ID,
                 updateRequest(List.of("https://example.com/c.jpg"))))

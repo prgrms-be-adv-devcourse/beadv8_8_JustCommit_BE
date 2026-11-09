@@ -49,9 +49,6 @@ public class Species extends BaseTimeEntity {
     @Column(length = 30)
     private SpeciesCategory category;
 
-    @Column(name = "is_banned", nullable = false)
-    private boolean banned;
-
     @OneToMany(mappedBy = "species")
     @OrderBy("sortOrder ASC")
     @BatchSize(size = 100)

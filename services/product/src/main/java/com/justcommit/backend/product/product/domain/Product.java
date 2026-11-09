@@ -96,9 +96,6 @@ public class Product extends BaseTimeEntity {
     public static Product create(Species species, Long sellerId, String title, String description,
                                  BigDecimal price, Integer heightCm, String potSize, String growNote,
                                  List<String> imageUrls) {
-        if (species.isBanned()) {
-            throw new BusinessException(ProductErrorCode.BANNED_SPECIES);
-        }
         Product product = new Product(species, sellerId, title, description, price, heightCm, potSize, growNote);
         product.replaceImages(imageUrls);
         return product;
@@ -129,9 +126,6 @@ public class Product extends BaseTimeEntity {
                        List<String> imageUrls) {
         if (status != ProductStatus.ACTIVE) {
             throw new BusinessException(ProductErrorCode.PRODUCT_NOT_EDITABLE);
-        }
-        if (species.isBanned()) {
-            throw new BusinessException(ProductErrorCode.BANNED_SPECIES);
         }
         this.species = species;
         this.title = title;

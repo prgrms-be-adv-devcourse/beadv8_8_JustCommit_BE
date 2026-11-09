@@ -208,21 +208,6 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.code").value("INVALID_FIELD_ERROR"));
     }
 
-    // 금지 품종 -> 400
-    @Test
-    @DisplayName("금지 품종으로 등록하면 400 BANNED_SPECIES")
-    void createProductWithBannedSpecies() throws Exception {
-        loginAs(SELLER_ID, SELLER);
-        given(productService.createProduct(eq(SELLER_ID), any()))
-                .willThrow(new BusinessException(ProductErrorCode.BANNED_SPECIES));
-
-        mockMvc.perform(post("/api/v1/products")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(VALID_CREATE_BODY))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("BANNED_SPECIES"));
-    }
-
     // 없는 품종 -> 404
     @Test
     @DisplayName("없는 품종으로 등록하면 404 SPECIES_NOT_FOUND")

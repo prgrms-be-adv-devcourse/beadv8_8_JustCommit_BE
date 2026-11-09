@@ -14,7 +14,6 @@ public record SpeciesDetailResponse(
         String watering,
         String difficulty,
         String color,
-        boolean isBanned,
         List<ImageResponse> pictures
 ) {
     public static SpeciesDetailResponse from(Species species) {
@@ -27,7 +26,6 @@ public record SpeciesDetailResponse(
                 nameOf(species.getWatering()),
                 nameOf(species.getDifficulty()),
                 nameOf(species.getColor()),
-                species.isBanned(),
                 species.getImages().stream()
                         .map(ImageResponse::from)
                         .toList());
