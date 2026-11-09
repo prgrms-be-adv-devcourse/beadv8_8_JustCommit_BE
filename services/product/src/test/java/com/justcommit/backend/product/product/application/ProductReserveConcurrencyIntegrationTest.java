@@ -1,5 +1,7 @@
 package com.justcommit.backend.product.product.application;
 
+import com.justcommit.backend.product.reservation.infrastructure.ProductReservationRepository;
+import com.justcommit.backend.product.exception.ProductErrorCode;
 import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.product.client.member.MemberQuery;
@@ -35,6 +37,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -45,6 +49,7 @@ import java.util.function.IntFunction;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DataJpaTest
 @ActiveProfiles("test")
@@ -57,6 +62,7 @@ class ProductReserveConcurrencyIntegrationTest {
 
     private static final int THREADS = 10;
     private static final Long SELLER_ID = 1L;
+    private static final BigDecimal PRICE = new BigDecimal("10000");
 
     // 행 잠금 동작은 DB마다 달라서 운영과 같은 PostgreSQL로 검증
     @Container
@@ -73,6 +79,7 @@ class ProductReserveConcurrencyIntegrationTest {
     @Autowired ProductService productService;
     @Autowired ProductRepository productRepository;
     @Autowired SpeciesRepository speciesRepository;
+    @Autowired ProductReservationRepository reservationRepository;
 
     // 예약 흐름에서 쓰지 않는 ProductService 의존성은 목으로 대체
     @MockitoBean MemberQuery memberQuery;
@@ -92,6 +99,7 @@ class ProductReserveConcurrencyIntegrationTest {
     void cleanUp() {
         productRepository.deleteAllInBatch();
         speciesRepository.deleteAllInBatch();
+        reservationRepository.deleteAllInBatch();   // 테스트마다 같은 orderId를 다시 쓰므로 예약 기록도 지움
     }
 
     @Test
@@ -101,7 +109,7 @@ class ProductReserveConcurrencyIntegrationTest {
 
         // 주문 100 ~ 109가 같은 상품을 동시에 예약
         List<Boolean> results = runConcurrently(
-                i -> () -> productUseCase.reserve(100L + i, List.of(productId)));
+                i -> () -> reserves(100L + i, productId));
 
         assertThat(results).filteredOn(Boolean::booleanValue).hasSize(1);
         assertThat(results).filteredOn(reserved -> !reserved).hasSize(THREADS - 1);
@@ -122,9 +130,9 @@ class ProductReserveConcurrencyIntegrationTest {
         Long taken = saveActiveProduct();
         Long free1 = saveActiveProduct();
         Long free2 = saveActiveProduct();
-        assertThat(productUseCase.reserve(1L, List.of(taken))).isTrue();
+        assertThat(reserves(1L, taken)).isTrue();
 
-        boolean reserved = productUseCase.reserve(2L, List.of(free1, taken, free2));
+        boolean reserved = reserves(2L, free1, taken, free2);
 
         assertThat(reserved).isFalse();
         // 주문 2가 잠깐 잡았던 상품은 다시 판매 중으로 돌아와야 함
@@ -142,7 +150,7 @@ class ProductReserveConcurrencyIntegrationTest {
         List<Long> own = IntStream.range(0, THREADS).mapToObj(i -> saveActiveProduct()).toList();
 
         List<Boolean> results = runConcurrently(
-                i -> () -> productUseCase.reserve(100L + i, List.of(shared, own.get(i))));
+                i -> () -> reserves(100L + i, shared, own.get(i)));
 
         assertThat(results).filteredOn(Boolean::booleanValue).hasSize(1);
 
@@ -164,7 +172,7 @@ class ProductReserveConcurrencyIntegrationTest {
     void onlyOneOfSoldOutAndReleaseAppliesConcurrently() throws Exception {
         Long productId = saveActiveProduct();
         Long orderId = 1L;
-        assertThat(productUseCase.reserve(orderId, List.of(productId))).isTrue();
+        assertThat(reserves(orderId, productId)).isTrue();
 
         // 짝수 스레드는 결제 완료, 홀수 스레드는 주문 만료를 같은 주문에 동시 실행
         List<Boolean> results = runConcurrently(i -> i % 2 == 0
@@ -194,9 +202,9 @@ class ProductReserveConcurrencyIntegrationTest {
         Long newOrderId = 11L;
 
         // 주문 10 예약 → 만료로 해제 → 주문 11이 같은 상품을 다시 예약
-        assertThat(productUseCase.reserve(expiredOrderId, List.of(productId))).isTrue();
+        assertThat(reserves(expiredOrderId, productId)).isTrue();
         assertThat(productUseCase.release(expiredOrderId)).isTrue();
-        assertThat(productUseCase.reserve(newOrderId, List.of(productId))).isTrue();
+        assertThat(reserves(newOrderId, productId)).isTrue();
 
         // 주문 10의 결제 완료·만료 요청이 뒤늦게 도착 → 예약 주인이 아니므로 0건 처리
         assertThat(productUseCase.markSoldOut(expiredOrderId)).isFalse();
@@ -218,7 +226,7 @@ class ProductReserveConcurrencyIntegrationTest {
         // 0번 스레드는 판매자 삭제, 나머지는 구매자 예약
         List<Boolean> results = runConcurrently(i -> i == 0
                 ? () -> succeeds(() -> productService.deleteProduct(SELLER_ID, productId))
-                : () -> productUseCase.reserve(100L + i, List.of(productId)));
+                : () -> reserves(100L + i, productId));
 
         // 삭제와 예약은 둘 다 판매 중일 때만 가능하므로, 먼저 잠금을 잡은 한 건만 성공
         assertThat(results).filteredOn(Boolean::booleanValue).hasSize(1);
@@ -236,13 +244,14 @@ class ProductReserveConcurrencyIntegrationTest {
     @DisplayName("판매자 수정과 구매자 예약이 동시에 실행돼도 수정이 예약 상태를 덮어쓰지 않는다")
     void sellerUpdateDoesNotOverwriteReservationConcurrently() throws Exception {
         Long productId = saveActiveProduct();
+        // 가격은 그대로 두고 제목만 바꿈 (가격이 바뀌면 예약이 PRICE_CHANGED로 실패해 이 테스트의 관심사가 아님)
         ProductRequest request = new ProductRequest(species.getId(), "수정된 제목", "설명",
-                new BigDecimal("20000"), null, null, null, List.of());
+                PRICE, null, null, null, List.of());
 
         // 0번 스레드는 판매자 수정, 나머지는 구매자 예약
         List<Boolean> results = runConcurrently(i -> i == 0
                 ? () -> succeeds(() -> productService.updateProduct(SELLER_ID, productId, request))
-                : () -> productUseCase.reserve(100L + i, List.of(productId)));
+                : () -> reserves(100L + i, productId));
 
         // 예약은 항상 정확히 한 주문만 성공
         List<Boolean> reserveResults = results.subList(1, THREADS);
@@ -257,10 +266,64 @@ class ProductReserveConcurrencyIntegrationTest {
         assertThat(product.getTitle()).isEqualTo(results.get(0) ? "수정된 제목" : "몬스테라 중품");
     }
 
-    // 판매자 API는 실패를 예외로 알리므로, 다른 결과와 비교할 수 있게 성공 여부로 바꾼다
-    private boolean succeeds(Runnable sellerAction) {
+    @Test
+    @DisplayName("주문서 가격이 하나라도 다르면 PRICE_CHANGED로 아무것도 예약하지 않는다")
+    void reservesNothingWhenAnyPriceChanged() {
+        Long same = saveActiveProduct();
+        Long changed = saveActiveProduct();
+        Map<Long, BigDecimal> expectedPrices = new LinkedHashMap<>();
+        expectedPrices.put(same, PRICE);
+        expectedPrices.put(changed, new BigDecimal("9000"));
+
+        assertThatThrownBy(() -> productUseCase.reserve(1L, expectedPrices))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.PRICE_CHANGED);
+
+        assertActive(same);
+        assertActive(changed);
+        // 실패한 예약은 기록도 남지 않아 같은 orderId로 다시 시도할 수 있음
+        assertThat(reserves(1L, same, changed)).isTrue();
+    }
+
+    @Test
+    @DisplayName("같은 orderId로 다시 예약하면 그대로 성공하고 상태는 바뀌지 않는다")
+    void sameOrderIdReservesAgainIdempotently() {
+        Long productId = saveActiveProduct();
+        assertThat(reserves(1L, productId)).isTrue();
+
+        assertThat(reserves(1L, productId)).isTrue();
+
+        assertReservedBy(productId, 1L);
+    }
+
+    @Test
+    @DisplayName("해제된 orderId로 늦게 온 예약은 RESERVATION_RELEASED로 거절한다")
+    void rejectsLateReservationOfReleasedOrder() {
+        Long productId = saveActiveProduct();
+        assertThat(reserves(1L, productId)).isTrue();
+        assertThat(productUseCase.release(1L)).isTrue();
+
+        assertThatThrownBy(() -> productUseCase.reserve(1L, Map.of(productId, PRICE)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.RESERVATION_RELEASED);
+        assertActive(productId);
+    }
+
+    @Test
+    @DisplayName("예약 응답 타임아웃으로 해제가 먼저 오면, 그 뒤에 도착한 예약은 거절한다")
+    void rejectsReservationArrivingAfterRelease() {
+        Long productId = saveActiveProduct();
+        // market이 예약 응답을 못 받아 주문을 실패로 끝냄 → 해제가 예약보다 먼저 도착
+        assertThat(productUseCase.release(1L)).isFalse();
+
+        assertThat(reserves(1L, productId)).isFalse();
+        assertActive(productId);
+    }
+
+    // 실패를 예외로 알리는 동작을, 다른 결과와 비교할 수 있게 성공 여부로 바꾼다
+    private boolean succeeds(Runnable action) {
         try {
-            sellerAction.run();
+            action.run();
             return true;
         } catch (BusinessException e) {
             return false;
@@ -279,8 +342,17 @@ class ProductReserveConcurrencyIntegrationTest {
         assertThat(product.getReservedOrderId()).isEqualTo(orderId);
     }
 
+    // 주문서 가격이 현재 가격과 같은 예약. 409(예약 불가 · 가격 변경 · 해제된 주문)면 false
+    private boolean reserves(Long orderId, Long... productIds) {
+        Map<Long, BigDecimal> expectedPrices = new LinkedHashMap<>();
+        for (Long productId : productIds) {
+            expectedPrices.put(productId, PRICE);
+        }
+        return succeeds(() -> productUseCase.reserve(orderId, expectedPrices));
+    }
+
     private Long saveActiveProduct() {
-        Product product = Product.create(species, SELLER_ID, "몬스테라 중품", "설명", new BigDecimal("10000"),
+        Product product = Product.create(species, SELLER_ID, "몬스테라 중품", "설명", PRICE,
                 null, null, null, List.of());
         return productRepository.save(product).getId();
     }
