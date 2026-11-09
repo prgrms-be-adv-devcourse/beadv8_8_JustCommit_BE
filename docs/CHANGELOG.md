@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-09 · reference/kafka-topics.md · glossary.md · services/market.md · open-questions.md · 반품 이벤트 이름 확정 `ReturnRequested` · `ReturnApproved` · `ReturnRejected` · `OrderItemReturned`(`OrderItemRefunded` 대체), 미정 목록에서 이벤트 이름 항목 정리 (#242)
 - 2026-11-09 · reference/kafka-topics.md · glossary.md · services/market.md · 판매자 전부 거절을 `SellerOrderRejected`(`reason`: `SELLER` · `AUTO`)로 분리, `SellerOrderCancelled`는 구매자 취소만 (#242)
 - 2026-11-09 · reference/kafka-topics.md · conventions/events.md · services/market · notification · settlement · `order.events.v1` · `shipment.events.v1`을 `market.events.v1` 하나로 합침(토픽 13→12개, ADR 0018), 판매자 수락 `SellerOrderAccepted`(`rejectedItemCount`) · `SellerOrderCancelled` `reason`(`BUYER` · `SELLER` · `AUTO`)별 알림 확정 (#242)
 - 2026-11-09 · glossary.md · 「수락 · 거절」 코드에 `SellerOrderAccepted` 추가 (#242)
