@@ -8,8 +8,28 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+      properties:
+        "[spring.json.trusted.packages]": "com.justcommit.backend.*"
+    listener:
+      # TODO(Kafka 연결 Task): market.events.v1 구독 · EventEnvelope 매핑을 붙이면 true로 바꾼다
+      # 지금은 구독 코드만 옮겨 두고 시작하지 않는다 (market이 보내는 타입 헤더의 패키지가 notification 이벤트 record와 달라 받아도 읽지 못함)
+      auto-startup: ${KAFKA_LISTENER_AUTO_STARTUP:false}
 
 server:
   port: 8086
 jwt:
   public-key: ${JWT_PUBLIC_KEY}
+
+custom:
+  kafka:
+    topics:
+      purchase-confirmed: ${PURCHASE_CONFIRMED_TOPIC:market.purchase-confirmed.v1}
+      seller-order-paid: ${SELLER_ORDER_PAID_TOPIC:market.seller-order-paid.v1}
+      seller-order-cancelled: ${SELLER_ORDER_CANCELLED_TOPIC:market.seller-order-cancelled.v1}
+      order-item-auto-confirmed: ${ORDER_ITEM_AUTO_CONFIRMED_TOPIC:market.order-item-auto-confirmed.v1}
+      shipment-status-changed: ${SHIPMENT_STATUS_CHANGED_TOPIC:market.shipment-status-changed.v1}
