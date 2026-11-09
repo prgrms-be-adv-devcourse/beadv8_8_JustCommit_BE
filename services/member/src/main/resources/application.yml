@@ -6,10 +6,75 @@ spring:
     username: ${DB_USERNAME:member_app}
     password: ${DB_PASSWORD:member_app}
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: validate
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      # Redis가 멈춰도 요청 스레드가 오래 묶이지 않도록 짧게 (Lettuce 기본 60초)
+      timeout: 2s
+      connect-timeout: 2s
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    # 비어 있어도 시작은 됨 (메일 발송 때만 실패)
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+  security:
+    oauth2:
+      client:
+        registration:
+          kakao:
+            client-id: ${KAKAO_CLIENT_ID}
+            client-secret: ${KAKAO_CLIENT_SECRET}
+            client-authentication-method: client_secret_post
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope: account_email
+            client-name: Kakao
+        provider:
+          kakao:
+            authorization-uri: https://kauth.kakao.com/oauth/authorize
+            token-uri: https://kauth.kakao.com/oauth/token
+            user-info-uri: https://kapi.kakao.com/v2/user/me
+            user-name-attribute: id
 
 server:
   port: 8081
+  # Gateway 뒤에서 X-Forwarded-* 헤더로 원래 주소를 계산 (카카오 redirect_uri가 내부 주소로 만들어지지 않도록)
+  forward-headers-strategy: framework
+
+# 비밀값은 기본값 없음: 환경변수가 없으면 시작 실패
 jwt:
   public-key: ${JWT_PUBLIC_KEY}
+  private-key: ${JWT_PRIVATE_KEY}
+  access-token-expiration: 30m
+  signup-token-expiration: 10m
+
+# 환급 계좌번호 AES-256-GCM 암호화 키 (32바이트, Base64)
+account:
+  encryption-key: ${ACCOUNT_ENCRYPTION_KEY}
+
+custom:
+  cookie:
+    # 쿠키 Secure 속성. 운영 HTTPS면 COOKIE_SECURE=true
+    secure: ${COOKIE_SECURE:false}
+  oauth2:
+    # 카카오 로그인 state 쿠키 서명 키 (openssl rand -base64 32)
+    state-secret: ${OAUTH2_STATE_SECRET}
+  frontend:
+    # 소셜 로그인 후 돌아갈 프론트 주소
+    base-url: ${FRONTEND_BASE_URL:http://localhost:5173}

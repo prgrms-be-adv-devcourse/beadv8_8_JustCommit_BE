@@ -1,0 +1,17 @@
+# 테스트 전용 값 (운영·실제 데이터에 사용 금지)
+# JWT 개인키·공개키는 파일에 두지 않고 테스트 실행마다 새로 만든다 (MemberApplicationTests)
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          kakao:
+            client-id: test-kakao-client-id
+            client-secret: test-kakao-client-secret
+
+account:
+  encryption-key: fpbj/8EvmkgpWJBkWKQz4wXmSqMNixbOXY7pZb92ZR4=
+
+custom:
+  oauth2:
+    state-secret: test-only-oauth2-state-secret-0123456789
