@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ChargeTest {
 
-    private final Wallet wallet = new Wallet(1L);
+    private final Wallet wallet = Wallet.forMember(1L);
 
     @ParameterizedTest
     @ValueSource(strings = {"10000", "30000", "100000"})

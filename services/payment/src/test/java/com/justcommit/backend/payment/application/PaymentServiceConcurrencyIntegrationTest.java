@@ -1,14 +1,14 @@
 package com.justcommit.backend.payment.application;
 
-import com.justcommit.backend.common.config.JpaAuditingConfig;
+import com.justcommit.backend.payment.config.JpaAuditingConfig;
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.member.MemberQuery;
 import com.justcommit.backend.payment.PaymentResult;
 import com.justcommit.backend.payment.PaymentStatus;
 import com.justcommit.backend.payment.PaymentUseCase;
 import com.justcommit.backend.payment.domain.RefType;
 import com.justcommit.backend.payment.domain.TransactionStatus;
 import com.justcommit.backend.payment.domain.Wallet;
+import com.justcommit.backend.payment.domain.WalletType;
 import com.justcommit.backend.payment.domain.WalletTransaction;
 import com.justcommit.backend.payment.infrastructure.repository.WalletRepository;
 import com.justcommit.backend.payment.infrastructure.repository.WalletTransactionRepository;
@@ -55,13 +55,12 @@ import static org.mockito.BDDMockito.given;
 })
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, PaymentService.class})
+@Import({JpaAuditingConfig.class, PaymentService.class, WalletService.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class PaymentServiceConcurrencyIntegrationTest {
 
     private static final int THREADS = 8;
-    private static final Long HOLDING_ID = 999L;
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
@@ -77,13 +76,9 @@ class PaymentServiceConcurrencyIntegrationTest {
     @Autowired WalletRepository walletRepository;
     @Autowired WalletTransactionRepository walletTransactionRepository;
 
-    // PaymentService가 HOLDING 회원 ID를 member 모듈에서 조회하므로 목으로 대체
-    @MockitoBean MemberQuery memberQuery;
-
     @BeforeEach
     void setUpHolding() {
-        given(memberQuery.getHoldingMemberId()).willReturn(HOLDING_ID);
-        walletRepository.save(new Wallet(HOLDING_ID));
+        walletRepository.save(Wallet.system(WalletType.HOLDING));
     }
 
     @AfterEach
@@ -106,12 +101,12 @@ class PaymentServiceConcurrencyIntegrationTest {
         assertThat(results).filteredOn(r -> r.status() == PaymentStatus.ALREADY_PAID).hasSize(THREADS - 1);
 
         assertThat(balanceOf(buyerId)).isEqualByComparingTo("7000");
-        assertThat(balanceOf(HOLDING_ID)).isEqualByComparingTo("3000");
+        assertThat(holdingBalance()).isEqualByComparingTo("3000");
 
         // 구매자 출금 1건 + HOLDING 입금 1건
         assertThat(walletTransactionRepository.count()).isEqualTo(2);
-        assertThat(findTransaction(buyerId, orderId).getStatus()).isEqualTo(TransactionStatus.OUT);
-        assertThat(findTransaction(HOLDING_ID, orderId).getStatus()).isEqualTo(TransactionStatus.IN);
+        assertThat(findTransaction(walletIdOf(buyerId), orderId).getStatus()).isEqualTo(TransactionStatus.OUT);
+        assertThat(findTransaction(holdingWalletId(), orderId).getStatus()).isEqualTo(TransactionStatus.IN);
     }
 
     @Test
@@ -129,7 +124,7 @@ class PaymentServiceConcurrencyIntegrationTest {
                 .hasSize(THREADS - 3);
 
         assertThat(balanceOf(buyerId)).isEqualByComparingTo("1000");
-        assertThat(balanceOf(HOLDING_ID)).isEqualByComparingTo("9000");
+        assertThat(holdingBalance()).isEqualByComparingTo("9000");
 
         // 결제 3건 × (구매자 출금 + HOLDING 입금)
         assertThat(walletTransactionRepository.count()).isEqualTo(6);
@@ -138,7 +133,7 @@ class PaymentServiceConcurrencyIntegrationTest {
     @Test
     @DisplayName("HOLDING 지갑이 없으면 예외가 나고 구매자 차감과 거래내역이 모두 롤백된다")
     void rollsBackBuyerDebitWhenHoldingWalletMissing() {
-        given(memberQuery.getHoldingMemberId()).willReturn(404L); // 지갑이 없는 회원 ID
+        walletRepository.deleteAllInBatch(); // @BeforeEach에서 만든 HOLDING 지갑을 지운다
         Long buyerId = 3L;
         saveWallet(buyerId, "10000");
 
@@ -146,14 +141,13 @@ class PaymentServiceConcurrencyIntegrationTest {
                 .isInstanceOf(BusinessException.class);
 
         assertThat(balanceOf(buyerId)).isEqualByComparingTo("10000");
-        assertThat(balanceOf(HOLDING_ID)).isEqualByComparingTo("0");
         assertThat(walletTransactionRepository.count()).isZero();
     }
 
     @Test
     void allowsSameRefOnDifferentWallets() {
-        Wallet buyerWallet = walletRepository.save(new Wallet(11L));
-        Wallet escrowWallet = walletRepository.save(new Wallet(12L));
+        Wallet buyerWallet = walletRepository.save(Wallet.forMember(11L));
+        Wallet escrowWallet = walletRepository.save(Wallet.forMember(12L));
 
         walletTransactionRepository.saveAndFlush(
                 WalletTransaction.paymentOut(buyerWallet, 900L, new BigDecimal("3000"), LocalDateTime.now()));
@@ -165,7 +159,7 @@ class PaymentServiceConcurrencyIntegrationTest {
 
     @Test
     void rejectsDuplicateRefOnSameWallet() {
-        Wallet buyerWallet = walletRepository.save(new Wallet(13L));
+        Wallet buyerWallet = walletRepository.save(Wallet.forMember(13L));
         walletTransactionRepository.saveAndFlush(
                 WalletTransaction.paymentOut(buyerWallet, 901L, new BigDecimal("3000"), LocalDateTime.now()));
 
@@ -174,8 +168,24 @@ class PaymentServiceConcurrencyIntegrationTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    @Test
+    @DisplayName("지갑이 없는 판매자에게 정산하면 지갑을 만들고 정산금을 적립한다")
+    void createsSellerWalletOnFirstSettlement() {
+        Long sellerId = 77L;
+        Wallet holding = walletRepository.findByWalletType(WalletType.HOLDING).orElseThrow();
+        holding.credit(new BigDecimal("10000"));
+        walletRepository.saveAndFlush(holding);
+        walletRepository.saveAndFlush(Wallet.system(WalletType.REVENUE));
+
+        paymentUseCase.distributeSettlement(1L, sellerId, new BigDecimal("9500"), new BigDecimal("500"));
+
+        assertThat(balanceOf(sellerId)).isEqualByComparingTo("9500");
+        assertThat(holdingBalance()).isEqualByComparingTo("0");
+        assertThat(revenueBalance()).isEqualByComparingTo("500");
+    }
+
     private void saveWallet(Long memberId, String balance) {
-        Wallet wallet = new Wallet(memberId);
+        Wallet wallet = Wallet.forMember(memberId);
         wallet.credit(new BigDecimal(balance));
         walletRepository.save(wallet);
     }
@@ -184,8 +194,23 @@ class PaymentServiceConcurrencyIntegrationTest {
         return walletRepository.findByMemberId(memberId).orElseThrow().getBalance();
     }
 
-    private WalletTransaction findTransaction(Long memberId, Long orderId) {
-        Long walletId = walletRepository.findByMemberId(memberId).orElseThrow().getId();
+    private BigDecimal holdingBalance() {
+        return walletRepository.findByWalletType(WalletType.HOLDING).orElseThrow().getBalance();
+    }
+
+    private BigDecimal revenueBalance() {
+        return walletRepository.findByWalletType(WalletType.REVENUE).orElseThrow().getBalance();
+    }
+
+    private Long holdingWalletId() {
+        return walletRepository.findByWalletType(WalletType.HOLDING).orElseThrow().getId();
+    }
+
+    private Long walletIdOf(Long memberId) {
+        return walletRepository.findByMemberId(memberId).orElseThrow().getId();
+    }
+
+    private WalletTransaction findTransaction(Long walletId, Long orderId) {
         return walletTransactionRepository.findAll().stream()
                 .filter(t -> t.getWallet().getId().equals(walletId))
                 .filter(t -> t.getRefType() == RefType.PAYMENT && t.getRefId().equals(orderId))
@@ -246,7 +271,7 @@ class PaymentServiceConcurrencyIntegrationTest {
                 .hasSize(THREADS);
 
         // HOLDING에는 3,000원 × 8명 = 24,000원
-        assertThat(balanceOf(HOLDING_ID))
+        assertThat(holdingBalance())
                 .isEqualByComparingTo("24000");
 
         // 거래내역: 구매자 출금 8건 + HOLDING 입금 8건
@@ -262,7 +287,7 @@ class PaymentServiceConcurrencyIntegrationTest {
         saveWallet(buyerId, "10000");
 
         Wallet holdingWallet = walletRepository
-                .findByMemberId(HOLDING_ID).orElseThrow();
+                .findByWalletType(WalletType.HOLDING).orElseThrow();
 
         // 같은 주문의 HOLDING 거래내역을 미리 저장
         walletTransactionRepository.saveAndFlush(
@@ -282,7 +307,7 @@ class PaymentServiceConcurrencyIntegrationTest {
                 .isEqualByComparingTo("10000");
 
         // HOLDING 입금도 취소됐는지
-        assertThat(balanceOf(HOLDING_ID))
+        assertThat(holdingBalance())
                 .isEqualByComparingTo("0");
 
         // 미리 저장한 거래내역 1건만 남아야 함
@@ -295,19 +320,17 @@ class PaymentServiceConcurrencyIntegrationTest {
     void preventsConcurrentShippingFeeCollectionAndRefund() throws Exception {
         Long sellerOrderId = 700L;
         Long buyerId = 20L;
-        Long revenueId = 998L;
         BigDecimal shippingFee = new BigDecimal("3000");
 
-        given(memberQuery.getRevenueMemberId()).willReturn(revenueId);
 
         // 초기 지갑 준비
-        Wallet holding = walletRepository.findByMemberId(HOLDING_ID)
+        Wallet holding = walletRepository.findByWalletType(WalletType.HOLDING)
                 .orElseThrow();
         holding.credit(new BigDecimal("10000"));
         walletRepository.saveAndFlush(holding);
 
-        walletRepository.saveAndFlush(new Wallet(buyerId));
-        walletRepository.saveAndFlush(new Wallet(revenueId));
+        walletRepository.saveAndFlush(Wallet.forMember(buyerId));
+        walletRepository.saveAndFlush(Wallet.system(WalletType.REVENUE));
 
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
@@ -368,11 +391,11 @@ class PaymentServiceConcurrencyIntegrationTest {
         assertThat(refunded).isEqualTo(2L - collected);
 
         // 잔액 검증
-        assertThat(balanceOf(HOLDING_ID))
+        assertThat(holdingBalance())
                 .isEqualByComparingTo("7000");
 
         BigDecimal buyerBalance = balanceOf(buyerId);
-        BigDecimal revenueBalance = balanceOf(revenueId);
+        BigDecimal revenueBalance = revenueBalance();
 
         assertThat(buyerBalance.add(revenueBalance))
                 .isEqualByComparingTo("3000");
@@ -383,15 +406,13 @@ class PaymentServiceConcurrencyIntegrationTest {
     void rejectsRefundAfterShippingFeeCollected() {
         Long sellerOrderId = 701L;
         Long buyerId = 21L;
-        Long revenueId = 998L;
         BigDecimal shippingFee = new BigDecimal("3000");
-        given(memberQuery.getRevenueMemberId()).willReturn(revenueId);
 
-        Wallet holding = walletRepository.findByMemberId(HOLDING_ID).orElseThrow();
+        Wallet holding = walletRepository.findByWalletType(WalletType.HOLDING).orElseThrow();
         holding.credit(new BigDecimal("10000")); // 이 배송비 + 다른 주문 돈
         walletRepository.saveAndFlush(holding);
-        walletRepository.saveAndFlush(new Wallet(buyerId));
-        walletRepository.saveAndFlush(new Wallet(revenueId));
+        walletRepository.saveAndFlush(Wallet.forMember(buyerId));
+        walletRepository.saveAndFlush(Wallet.system(WalletType.REVENUE));
 
         paymentUseCase.collectShippingFee(sellerOrderId, shippingFee);
         long txCount = walletTransactionRepository.count();
@@ -400,8 +421,8 @@ class PaymentServiceConcurrencyIntegrationTest {
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", PaymentErrorCode.SHIPPING_FEE_ALREADY_COLLECTED);
 
-        assertThat(balanceOf(HOLDING_ID)).isEqualByComparingTo("7000");
-        assertThat(balanceOf(revenueId)).isEqualByComparingTo("3000");
+        assertThat(holdingBalance()).isEqualByComparingTo("7000");
+        assertThat(revenueBalance()).isEqualByComparingTo("3000");
         assertThat(balanceOf(buyerId)).isEqualByComparingTo("0");
         assertThat(walletTransactionRepository.count()).isEqualTo(txCount);
     }

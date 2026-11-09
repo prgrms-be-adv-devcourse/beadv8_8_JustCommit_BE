@@ -1,8 +1,7 @@
 package com.justcommit.backend.payment.application;
 
-import com.justcommit.backend.common.config.JpaAuditingConfig;
+import com.justcommit.backend.payment.config.JpaAuditingConfig;
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.member.MemberQuery;
 import com.justcommit.backend.payment.PaymentResult;
 import com.justcommit.backend.payment.PaymentStatus;
 import com.justcommit.backend.payment.PaymentUseCase;
@@ -10,6 +9,7 @@ import com.justcommit.backend.payment.domain.Charge;
 import com.justcommit.backend.payment.domain.ChargeStatus;
 import com.justcommit.backend.payment.domain.ChargeType;
 import com.justcommit.backend.payment.domain.Wallet;
+import com.justcommit.backend.payment.domain.WalletType;
 import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
 import com.justcommit.backend.payment.infrastructure.pg.TossConfirmResponse;
 import com.justcommit.backend.payment.infrastructure.pg.TossPaymentClient;
@@ -63,14 +63,13 @@ import static org.mockito.Mockito.*;
 })
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ChargeService.class, PaymentService.class, PaymentKeyCipher.class})
+@Import({JpaAuditingConfig.class, ChargeService.class, PaymentService.class, WalletService.class, PaymentKeyCipher.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class ChargeServiceConcurrencyIntegrationTest {
 
     private static final int THREADS = 8;
     private static final Long MEMBER_ID = 1L;
-    private static final Long HOLDING_ID = 999L;
     private static final BigDecimal CHARGE_AMOUNT = new BigDecimal("10000");
 
     @Container
@@ -91,12 +90,10 @@ class ChargeServiceConcurrencyIntegrationTest {
     @Autowired PaymentKeyCipher paymentKeyCipher;
 
     @MockitoBean TossPaymentClient tossPaymentClient;
-    @MockitoBean MemberQuery memberQuery;
 
     @BeforeEach
     void setUp() {
-        given(memberQuery.getHoldingMemberId()).willReturn(HOLDING_ID);
-        walletRepository.save(new Wallet(HOLDING_ID));
+        walletRepository.save(Wallet.system(WalletType.HOLDING));
 
         // 토스는 항상 요청한 값 그대로 승인. 실제 네트워크 지연처럼 약간 기다리게 해서 요청이 겹치도록 함
         given(tossPaymentClient.confirm(any(), any(), any())).willAnswer(inv -> {
@@ -174,7 +171,7 @@ class ChargeServiceConcurrencyIntegrationTest {
 
         // 10,000 + 충전 10,000 - 결제 7,000
         assertThat(balanceOf(MEMBER_ID)).isEqualByComparingTo("13000");
-        assertThat(balanceOf(HOLDING_ID)).isEqualByComparingTo("7000");
+        assertThat(walletRepository.findByWalletType(WalletType.HOLDING).orElseThrow().getBalance()).isEqualByComparingTo("7000");
         assertThat(chargeRepository.findById(charge.getId()).orElseThrow().getStatus())
                 .isEqualTo(ChargeStatus.APPROVED);
         // 충전 입금 1건 + 결제 7건 × (구매자 출금 + HOLDING 입금)
@@ -182,7 +179,7 @@ class ChargeServiceConcurrencyIntegrationTest {
     }
 
     private Wallet saveWallet(Long memberId, String balance) {
-        Wallet wallet = new Wallet(memberId);
+        Wallet wallet = Wallet.forMember(memberId);
         BigDecimal amount = new BigDecimal(balance);
         if (amount.signum() > 0) {
             wallet.credit(amount);

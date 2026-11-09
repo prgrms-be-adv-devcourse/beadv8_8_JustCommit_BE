@@ -1,6 +1,6 @@
 package com.justcommit.backend.payment.application;
 
-import com.justcommit.backend.common.config.JpaAuditingConfig;
+import com.justcommit.backend.payment.config.JpaAuditingConfig;
 import com.justcommit.backend.payment.domain.Wallet;
 import com.justcommit.backend.payment.infrastructure.repository.WalletRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -69,7 +69,7 @@ class WalletServiceIntegrationTest {
     @DisplayName("이미 지갑이 있으면 새로 만들지 않고 기존 잔액도 그대로 둔다")
     void keepsExistingWallet() {
         Long memberId = 2L;
-        Wallet existing = new Wallet(memberId);
+        Wallet existing = Wallet.forMember(memberId);
         existing.credit(new BigDecimal("5000"));
         walletRepository.save(existing);
 

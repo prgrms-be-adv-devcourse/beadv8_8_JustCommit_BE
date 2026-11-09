@@ -6,8 +6,20 @@ spring:
     username: ${DB_USERNAME:payment_app}
     password: ${DB_PASSWORD:payment_app}
   jpa:
+    open-in-view: false
     hibernate:
-      ddl-auto: validate
+      # TODO(결제 DB·Flyway 이슈): Flyway V1 마이그레이션을 추가하면 validate로 되돌린다 (지금은 테이블이 없어 validate면 앱이 뜨지 않음)
+      ddl-auto: none
 
 server:
   port: 8084
+
+jwt:
+  public-key: ${JWT_PUBLIC_KEY}
+
+custom:
+  payment:
+    toss:
+      secret-key: ${TOSS_SECRET_KEY:}
+      base-url: https://api.tosspayments.com
+      key-encryption-key: ${PAYMENT_KEY_ENCRYPTION_KEY}

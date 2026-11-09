@@ -1,6 +1,6 @@
 package com.justcommit.backend.payment.domain;
 
-import com.justcommit.backend.common.entity.BaseTimeEntity;
+import com.justcommit.backend.payment.common.entity.BaseTimeEntity;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
