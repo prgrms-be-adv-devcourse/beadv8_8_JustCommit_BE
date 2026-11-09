@@ -10,6 +10,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -49,6 +50,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public ResponseEntity<ApiResponse<Void>> handleMissingParameter(MissingServletRequestParameterException e) {
         return toResponse(CommonErrorCode.MISSING_PARAMETER, e.getParameterName() + " 파라미터가 필요합니다.");
+    }
+
+    // 필수 요청 헤더 누락 (@RequestHeader(required = true), 예: Idempotency-Key)
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingHeader(MissingRequestHeaderException e) {
+        return toResponse(CommonErrorCode.MISSING_HEADER, e.getHeaderName() + " 헤더가 필요합니다.");
     }
 
     // 경로 변수, 쿼리 파라미터 타입 불일치 (예: /species/abc)
