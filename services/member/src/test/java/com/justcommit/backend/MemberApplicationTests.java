@@ -6,13 +6,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
@@ -28,10 +29,13 @@ class MemberApplicationTests {
     @ServiceConnection
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
 
-    // 테스트할 때마다 새 RSA 키를 만들어 공개키만 넣는다 (키를 파일에 남기지 않음)
+    // 테스트할 때마다 새 RSA 키 쌍을 만들어 개인키 · 공개키를 함께 넣는다 (키를 파일에 남기지 않음)
+    private static final KeyPair JWT_KEY_PAIR = newKeyPair();
+
     @DynamicPropertySource
-    static void jwtPublicKey(DynamicPropertyRegistry registry) {
-        registry.add("jwt.public-key", MemberApplicationTests::newPublicKey);
+    static void jwtKeys(DynamicPropertyRegistry registry) {
+        registry.add("jwt.private-key", () -> encode(JWT_KEY_PAIR.getPrivate().getEncoded()));
+        registry.add("jwt.public-key", () -> encode(JWT_KEY_PAIR.getPublic().getEncoded()));
     }
 
     @Test
@@ -40,13 +44,17 @@ class MemberApplicationTests {
         assertThat(flyway.info().all()).isEmpty();
     }
 
-    private static String newPublicKey() {
+    private static KeyPair newKeyPair() {
         try {
             KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
             generator.initialize(2048);
-            return Base64.getEncoder().encodeToString(generator.generateKeyPair().getPublic().getEncoded());
+            return generator.generateKeyPair();
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    private static String encode(byte[] der) {
+        return Base64.getEncoder().encodeToString(der);
     }
 }
