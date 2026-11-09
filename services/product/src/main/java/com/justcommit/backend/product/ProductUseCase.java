@@ -40,12 +40,13 @@ public interface ProductUseCase {
      */
     boolean markSoldOut(Long orderId);
     /**
-     * 결제 완료된 주문 상품 한 건을 취소할 때, 그 상품을 다시 판매 중으로 되돌린다. (SOLD_OUT → ACTIVE)
-     * 같은 상품이 취소 후 다른 주문으로 다시 팔린 뒤 중복 호출되면 그 판매가 풀릴 수 있으므로,
-     * 호출하는 쪽에서 주문 상품 상태를 잠금과 함께 확인해 중복 호출을 막아야 한다.
+     * 환불 성공 뒤(취소 · 반품) 이 주문이 잡은 상품 한 건을 다시 판매 중으로 되돌린다.
+     * (PAYMENT_PENDING 또는 SOLD_OUT → ACTIVE, reservedOrderId 비움)
+     * 조건이 orderId라, 같은 이벤트가 두 번 오거나 이미 다른 주문에 다시 팔린 상품이면 아무것도 바꾸지 않는다.
      *
-     * @return 복구되면 true, 판매 완료 상태가 아니면 false
+     * @param hidden true면 숨김도 켠다 (판매자 거절 · 자동 거절 · 반품). false면 숨김 상태를 그대로 둔다
+     * @return 되돌렸으면 true, 바꿀 상품이 없으면 false (정상)
      */
-    boolean releaseItem(Long productId);
+    boolean releaseItem(Long productId, Long orderId, boolean hidden);
 
 }

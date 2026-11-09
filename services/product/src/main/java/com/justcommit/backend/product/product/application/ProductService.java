@@ -106,8 +106,8 @@ public class ProductService implements ProductQuery, ProductUseCase {
 
     @Override
     @Transactional
-    public boolean releaseItem(Long productId){
-        return productRepository.releaseItem(productId)>0;
+    public boolean releaseItem(Long productId, Long orderId, boolean hidden) {
+        return productRepository.releaseItem(productId, orderId, hidden) > 0;
     }
 
     @Override
