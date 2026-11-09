@@ -52,11 +52,11 @@ public class OrderService {
     private final CartService cartService;
     private final ProductQuery productQuery;
     private final ProductUseCase productUseCase;
-    private final OrderPaymentTtlStore paymentTtlStore;
     private final PaymentUseCase paymentUseCase;
     private final OrderQuery orderQuery;
     private final ShipmentService shipmentService;
     private final OrderItemConfirmationService orderItemConfirmationService;
+    private final OrderExpirationService orderExpirationService;
     private final ShipmentQuery shipmentQuery;
     private final SellerOrderEventPublisher sellerOrderEventPublisher;
 
@@ -144,7 +144,6 @@ public class OrderService {
             saved = orderPayment(saved);
         } else {
             expiresAt = saved.getCreatedAt().plus(PAYMENT_WINDOW);
-            paymentTtlStore.startAfterCommit(saved.getId(), expiresAt);
         }
 
         cartService.removeSelectedItems(memberId, request.cartItemIds()); //이후 다시담기
@@ -173,41 +172,39 @@ public class OrderService {
 
         if (pay(order, memberId)) {
             order = orderPayment(order);
-            paymentTtlStore.deleteAfterCommit(order.getId());
             return toResponse(order, null);
         }
         return toResponse(order, expiresAt);
     }
 
-    @Transactional
+    // 트랜잭션 없이 후보만 읽고, 주문마다 따로 커밋한다. 한 주문이 실패해도 나머지는 계속한다.
+    // shortcut: 매번 실패하는 주문이 100건 쌓이면 뒤 주문이 밀린다. release가 실제 호출이 되는 #277에서 실패 횟수 · 제외 장치를 넣는다.
     public void expirePendingOrders() {
         LocalDateTime cutoff = LocalDateTime.now().minus(PAYMENT_WINDOW);
-        List<Orders> pendingOrders = ordersRepository.findByStatusAndCreatedAtBefore(OrderStatus.PAYMENT_PENDING, cutoff);
-        Map<Long, List<OrdersItem>> itemsByOrder = new LinkedHashMap<>();
-        for (Orders order : pendingOrders) {
-            itemsByOrder.put(order.getId(), order.getSellerOrders().stream()
-                    .flatMap(sellerOrder -> sellerOrder.getItems().stream()).toList());
-        }
-        for (Orders order : pendingOrders) {
-            order.expire();
-            ordersRepository.saveAndFlush(order);
-            productUseCase.release(order.getId()); // 이미 해제된 경우 false여도 만료 처리한다.
-            itemsByOrder.get(order.getId()).stream()
-                    .forEach(item -> cartService.restoreItem(order.getBuyerId(), item.getProductId(), item.getPrice()));
+        for (Orders order : ordersRepository.findTop100ByStatusAndCreatedAtBeforeOrderByIdAsc(
+                OrderStatus.PAYMENT_PENDING, cutoff)) {
+            try {
+                orderExpirationService.expire(order.getId());
+            } catch (RuntimeException exception) {
+                log.error("결제 대기 만료 실패: orderId={}", order.getId(), exception);
+            }
         }
     }
 
+    // 주문 단위로 잠그므로 후보를 주문별로 묶는다. 주문상품마다 잠그면 두 파드가 같은 주문의 상품을 서로 건너뛸 수 있다.
     public void autoConfirmDeliveredItems() {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(3);
-        for (AutoConfirmTarget target : ordersItemRepository.findAutoConfirmTargets(
-                OrderStatus.PAID, OrderItemStatus.NORMAL, ShipmentStatus.DELIVERED, cutoff)) {
+        Map<Long, List<Long>> itemIdsByOrder = ordersItemRepository.findAutoConfirmTargets(
+                        OrderStatus.PAID, OrderItemStatus.NORMAL, ShipmentStatus.DELIVERED, cutoff).stream()
+                .collect(Collectors.groupingBy(AutoConfirmTarget::orderId, LinkedHashMap::new,
+                        Collectors.mapping(AutoConfirmTarget::orderItemId, Collectors.toList())));
+        itemIdsByOrder.forEach((orderId, orderItemIds) -> {
             try {
-                orderItemConfirmationService.autoConfirmOrderItem(target.orderItemId());
+                orderItemConfirmationService.autoConfirmOrder(orderId, orderItemIds);
             } catch (RuntimeException exception) {
-                log.error("자동 구매확정 실패: orderId={}, sellerOrderId={}, orderItemId={}",
-                        target.orderId(), target.sellerOrderId(), target.orderItemId(), exception);
+                log.error("자동 구매확정 실패: orderId={}, orderItemIds={}", orderId, orderItemIds, exception);
             }
-        }
+        });
     }
 
     public void confirm(Long memberId, Long orderItemId) {

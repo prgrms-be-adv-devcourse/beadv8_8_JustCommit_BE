@@ -7,6 +7,7 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.exception.CommonErrorCode;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.OrderItemStatus;
+import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
 import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.OrderResult;
 import com.justcommit.backend.market.PurchaseConfirmedEvent;
@@ -19,7 +20,6 @@ import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
-import com.justcommit.backend.market.order.infrastructure.OrderPaymentTtlStore;
 import com.justcommit.backend.market.order.infrastructure.AutoConfirmTarget;
 import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
@@ -77,7 +77,7 @@ class OrderServiceTest {
     @Mock CartService cartService;
     @Mock ProductQuery productQuery;
     @Mock ProductUseCase productUseCase;
-    @Mock OrderPaymentTtlStore paymentTtlStore;
+    @Mock OrderExpirationService orderExpirationService;
     @Mock PaymentUseCase paymentUseCase;
     @Mock OrderQuery orderQuery;
     @Mock OrderResult orderResult;
@@ -152,7 +152,6 @@ class OrderServiceTest {
         assertThat(response.expiresAt()).isEqualTo(response.createdAt().plusMinutes(10));
         verify(productQuery).getProducts(List.of(101L));
         verify(productUseCase).reserve(99L, List.of(new ReservationItem(101L, money("10000"))));
-        verify(paymentTtlStore).startAfterCommit(99L, response.expiresAt());
         verify(cartService).removeSelectedItems(10L, List.of(1L));
     }
 
@@ -266,7 +265,6 @@ class OrderServiceTest {
 
         verify(productUseCase).reserve(99L, List.of(new ReservationItem(101L, money("10000"))));
         verify(cartService, never()).removeSelectedItems(any(Long.class), any());
-        verify(paymentTtlStore, never()).startAfterCommit(any(), any());
     }
 
     @Test
@@ -284,7 +282,6 @@ class OrderServiceTest {
         assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
         verify(paymentUseCase, never()).pay(any(), any(), any());
         verify(cartService, never()).removeSelectedItems(any(Long.class), any());
-        verify(paymentTtlStore, never()).startAfterCommit(any(), any());
     }
 
     @Test
@@ -300,7 +297,6 @@ class OrderServiceTest {
         assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PENDING);
         assertThat(response.expiresAt()).isEqualTo(response.createdAt().plusMinutes(10));
         verify(productUseCase, never()).markSoldOut(any());
-        verify(paymentTtlStore).startAfterCommit(99L, response.expiresAt());
     }
 
     @Test
@@ -310,16 +306,50 @@ class OrderServiceTest {
         sellerOrder.addItems(List.of(new OrdersItem(sellerOrder, 101L, "몬스테라", money("10000"))));
         order.addSellerOrders(List.of(sellerOrder));
         ReflectionTestUtils.setField(order, "id", 99L);
-        when(ordersRepository.findByStatusAndCreatedAtBefore(eq(OrderStatus.PAYMENT_PENDING), any()))
-                .thenReturn(List.of(order));
+        when(ordersRepository.findByIdForUpdateSkipLocked(99L)).thenReturn(Optional.of(order));
         when(productUseCase.release(99L)).thenReturn(true);
 
-        orderService.expirePendingOrders();
+        expirationService().expire(99L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.EXPIRED);
         verify(ordersRepository).saveAndFlush(order);
         verify(productUseCase).release(99L);
         verify(cartService).restoreItem(10L, 101L, money("10000"));
+    }
+
+    @Test
+    void expirationSkipsOrderLockedByAnotherPodOrNoLongerPending() {
+        Orders paid = pendingOrder(10L);
+        paid.paid();
+        when(ordersRepository.findByIdForUpdateSkipLocked(98L)).thenReturn(Optional.empty());
+        when(ordersRepository.findByIdForUpdateSkipLocked(99L)).thenReturn(Optional.of(paid));
+
+        expirationService().expire(98L);
+        expirationService().expire(99L);
+
+        assertThat(paid.getStatus()).isEqualTo(OrderStatus.PAID);
+        verify(productUseCase, never()).release(any());
+        verify(cartService, never()).restoreItem(any(Long.class), any(Long.class), any());
+    }
+
+    @Test
+    void expirationContinuesWithNextOrderAfterFailure() {
+        Orders first = pendingOrder(10L);
+        Orders second = pendingOrder(10L);
+        ReflectionTestUtils.setField(first, "id", 1L);
+        ReflectionTestUtils.setField(second, "id", 2L);
+        when(ordersRepository.findTop100ByStatusAndCreatedAtBeforeOrderByIdAsc(
+                eq(OrderStatus.PAYMENT_PENDING), any(LocalDateTime.class))).thenReturn(List.of(first, second));
+        doThrow(new IllegalStateException("일시적 실패")).when(orderExpirationService).expire(1L);
+
+        orderService.expirePendingOrders();
+
+        verify(orderExpirationService).expire(1L);
+        verify(orderExpirationService).expire(2L);
+    }
+
+    private OrderExpirationService expirationService() {
+        return new OrderExpirationService(ordersRepository, productUseCase, cartService);
     }
 
     @Test
@@ -342,7 +372,6 @@ class OrderServiceTest {
         assertThat(response.expiresAt()).isNull();
         verify(productUseCase).markSoldOut(99L);
         verify(shipmentService).createShipments(orderResult);
-        verify(paymentTtlStore, never()).startAfterCommit(any(), any());
         verify(cartService).removeSelectedItems(10L, List.of(1L));
     }
 
@@ -447,7 +476,6 @@ class OrderServiceTest {
         OrderCreateResponse response = orderService.create(10L, request(1L));
 
         assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PENDING);
-        verify(paymentTtlStore).startAfterCommit(99L, response.expiresAt());
     }
 
     @Test
@@ -470,7 +498,6 @@ class OrderServiceTest {
         assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
         verify(productUseCase, never()).markSoldOut(any());
         verify(cartService, never()).removeSelectedItems(any(Long.class), any());
-        verify(paymentTtlStore, never()).startAfterCommit(any(), any());
     }
 
     @Test
@@ -622,7 +649,7 @@ class OrderServiceTest {
         OrdersItem item = stubConfirmableItem();
         ReflectionTestUtils.setField(item, "status", OrderItemStatus.REFUND_REQUESTED);
 
-        confirmationServiceUnderTest.autoConfirmOrderItem(item.getId());
+        autoConfirm(item);
 
         assertThat(item.getStatus()).isEqualTo(OrderItemStatus.REFUND_REQUESTED);
         verify(shipmentQuery, never()).findBySellerOrderId(any());
@@ -634,7 +661,7 @@ class OrderServiceTest {
         OrdersItem item = stubConfirmableItem();
         ReflectionTestUtils.setField(item.getSellerOrder().getOrder(), "status", OrderStatus.CANCELLED);
 
-        confirmationServiceUnderTest.autoConfirmOrderItem(item.getId());
+        autoConfirm(item);
 
         assertThat(item.getStatus()).isEqualTo(OrderItemStatus.NORMAL);
         verify(shipmentQuery, never()).findBySellerOrderId(any());
@@ -646,7 +673,7 @@ class OrderServiceTest {
         when(shipmentQuery.findBySellerOrderId(7L))
                 .thenReturn(new ShipmentResult(8L, "DELIVERED", null));
 
-        confirmationServiceUnderTest.autoConfirmOrderItem(item.getId());
+        autoConfirm(item);
 
         assertThat(item.getStatus()).isEqualTo(OrderItemStatus.NORMAL);
         verify(purchaseConfirmedEventPublisher, never()).publishAfterCommit(any());
@@ -673,18 +700,35 @@ class OrderServiceTest {
     }
 
     @Test
-    void autoConfirmationContinuesWithNextItemAfterFailure() {
+    void autoConfirmationGroupsItemsByOrderAndContinuesWithNextOrderAfterFailure() {
         when(ordersItemRepository.findAutoConfirmTargets(eq(OrderStatus.PAID), eq(OrderItemStatus.NORMAL),
                 eq(ShipmentStatus.DELIVERED), any(LocalDateTime.class)))
                 .thenReturn(List.of(new AutoConfirmTarget(1L, 10L, 100L),
-                        new AutoConfirmTarget(1L, 10L, 101L)));
+                        new AutoConfirmTarget(1L, 10L, 101L),
+                        new AutoConfirmTarget(2L, 20L, 200L)));
         doThrow(new IllegalStateException("일시적 실패"))
-                .when(orderItemConfirmationService).autoConfirmOrderItem(100L);
+                .when(orderItemConfirmationService).autoConfirmOrder(1L, List.of(100L, 101L));
 
         orderService.autoConfirmDeliveredItems();
 
-        verify(orderItemConfirmationService).autoConfirmOrderItem(100L);
-        verify(orderItemConfirmationService).autoConfirmOrderItem(101L);
+        verify(orderItemConfirmationService).autoConfirmOrder(1L, List.of(100L, 101L));
+        verify(orderItemConfirmationService).autoConfirmOrder(2L, List.of(200L));
+    }
+
+    @Test
+    void autoConfirmationSkipsOrderLockedByAnotherPod() {
+        when(ordersRepository.findByIdForUpdateSkipLocked(99L)).thenReturn(Optional.empty());
+
+        confirmationServiceUnderTest.autoConfirmOrder(99L, List.of(11L));
+
+        verify(ordersItemRepository, never()).findOrderIdByItemId(any());
+        verify(sellerOrderEventPublisher, never()).publishAfterCommit(any(OrderItemAutoConfirmedEvent.class));
+    }
+
+    private void autoConfirm(OrdersItem item) {
+        when(ordersRepository.findByIdForUpdateSkipLocked(99L))
+                .thenReturn(Optional.of(item.getSellerOrder().getOrder()));
+        confirmationServiceUnderTest.autoConfirmOrder(99L, List.of(item.getId()));
     }
 
     private OrdersItem stubConfirmableItem() {
