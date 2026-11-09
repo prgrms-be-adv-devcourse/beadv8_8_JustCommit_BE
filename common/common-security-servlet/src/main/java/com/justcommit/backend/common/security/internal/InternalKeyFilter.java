@@ -29,7 +29,7 @@ public class InternalKeyFilter extends OncePerRequestFilter {
   // 설정이 없거나 무효면 null -> /internal/** 요청을 모두 거부 (앱은 뜸)
   private final byte[] expectedKey;
 
-  public InternalKeyFilter (String configuredKey) {
+  public InternalKeyFilter(String configuredKey) {
     if (isUsable(configuredKey)) {
       this.expectedKey = configuredKey.getBytes(StandardCharsets.UTF_8);
     } else {
@@ -54,7 +54,7 @@ public class InternalKeyFilter extends OncePerRequestFilter {
       return;
     }
 
-    // 2.키가 맞음: 유효한 회원 토큰이 있으면 그대로 없거나 잘못됐으면 내부 서비스 인증
+    // 2. 키가 맞음: 유효한 회원 토큰이 있으면 그대로, 없거나 잘못됐으면 내부 서비스 인증
     Authentication current = SecurityContextHolder.getContext().getAuthentication();
     if (current == null || !current.isAuthenticated()) {
       SecurityContextHolder.getContext().setAuthentication(new InternalServiceAuthentication());
