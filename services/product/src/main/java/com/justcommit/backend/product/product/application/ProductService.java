@@ -1,11 +1,12 @@
 package com.justcommit.backend.product.product.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.product.client.member.MemberQuery;
+import com.justcommit.backend.common.exception.CommonErrorCode;
 import com.justcommit.backend.product.ProductQuery;
 import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.ProductUseCase;
+import com.justcommit.backend.product.client.member.MemberQuery;
 import com.justcommit.backend.product.exception.ProductErrorCode;
 import com.justcommit.backend.product.image.application.ProductImageCleaner;
 import com.justcommit.backend.product.image.application.ProductImageUrlValidator;
@@ -14,6 +15,8 @@ import com.justcommit.backend.product.product.domain.ProductImage;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import com.justcommit.backend.product.product.infrastructure.ProductSpecifications;
 import com.justcommit.backend.product.product.presentation.dto.*;
+import com.justcommit.backend.product.reservation.domain.ProductReservation;
+import com.justcommit.backend.product.reservation.infrastructure.ProductReservationRepository;
 import com.justcommit.backend.product.species.domain.Species;
 import com.justcommit.backend.product.species.infrastructure.SpeciesRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +24,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -31,6 +35,7 @@ import java.util.stream.Collectors;
 public class ProductService implements ProductQuery, ProductUseCase {
 
     private final ProductRepository productRepository;
+    private final ProductReservationRepository reservationRepository;
     private final SpeciesRepository speciesRepository;
     private final MemberQuery memberQuery;
     private final ProductImageUrlValidator imageUrlValidator;
@@ -58,17 +63,45 @@ public class ProductService implements ProductQuery, ProductUseCase {
 
     @Override
     @Transactional
-    public boolean reserve(Long orderId, List<Long> productIds) {
-        List<Long> ids = productIds.stream().distinct().toList();
-        if (ids.isEmpty()) {
-            return false;
+    public void reserve(Long orderId, Map<Long, BigDecimal> expectedPrices) {
+        if (expectedPrices.isEmpty()) {
+            throw new BusinessException(CommonErrorCode.BAD_REQUEST_DATA);
         }
-        int updated = productRepository.reserve(orderId, ids);
-        if (updated != ids.size()) {
-            productRepository.release(orderId);   // 일부만 예약된 것을 되돌림
-            return false;
+
+        // 1단계) 예약 기록을 잡고 잠그기
+        // 예약 기록을 잠가 같은 orderId의 해제와 순서를 정함 (실패하면 롤백되어 기록도 남지 않음)
+        reservationRepository.insertIfAbsent(orderId);
+        //행을 잠궈서 같은 주문 번호의 다른 작업(해제) 트랙잭션이 끝날 때까지 기다리도록 함.
+        ProductReservation reservation = reservationRepository.findWithLockByOrderId(orderId).orElseThrow();
+        //이미 해제되었으면 409
+        if (reservation.isReleased()) {
+            throw new BusinessException(ProductErrorCode.RESERVATION_RELEASED);
         }
-        return true;
+
+        // 2단계) 같은 주문이 다시 왔는지 확인
+        List<Long> ids = List.copyOf(expectedPrices.keySet());
+        // 같은 orderId로 다시 온 예약: 이미 이 주문이 모두 잡고 있으면 그대로 성공
+        // PAYMENT_PENDING으로 온 주문의 개수를 확인. 전부일 경우 이미 성공한 요청 -> 성공 끝냄(멱등 처리)
+        // 이 확인이 없을 경우 3단계에 안거려서 구매불가가 됨 -> 실패
+        if (productRepository.countByReservedOrderIdAndStatusAndIdIn(orderId, ProductStatus.PAYMENT_PENDING, ids) == ids.size()) {
+            return;
+        }
+
+        // 3단계) 조건부 Update 로 한 번에 잡기
+        // 구매 가능 조건을 건 UPDATE 한 번이라 동시에 잡아도 한 주문만 성공. 일부만 잡히면 예외로 롤백
+        // 바뀐 행수가 다를 경우 예외 처리
+        if (productRepository.reserve(orderId, ids) != ids.size()) {
+            throw new BusinessException(ProductErrorCode.PRODUCT_NOT_RESERVABLE);
+        }
+
+        // 4단계) 가격 확인
+        // 잡은 상품은 커밋 전까지 행이 잠겨 있어 가격이 바뀌지 않음. 하나라도 다르면 롤백
+        // 잡은 다음 비교하는 이유 : 그 틈에 가격이 바뀌는 문제를 방지하기 위해
+        boolean priceChanged = productRepository.findAllById(ids).stream()
+                .anyMatch(product -> product.getPrice().compareTo(expectedPrices.get(product.getId())) != 0);
+        if (priceChanged) {
+            throw new BusinessException(ProductErrorCode.PRICE_CHANGED);
+        }
     }
 
     @Override
@@ -80,6 +113,9 @@ public class ProductService implements ProductQuery, ProductUseCase {
     @Override
     @Transactional
     public boolean release(Long orderId) {
+        // 행이 없으면 RELEASED 로 만들고, 있으면 RELEASED 로 바꿈(잠금)
+        reservationRepository.upsertReleased(orderId);   // 예약 기록 행을 잠그고 RELEASED로 (늦은 예약 거절)
+        // 해당 주문이 잡은 PAYMENT_PENDING 상품만 ACTIVE 로 
         return productRepository.release(orderId) > 0;
     }
 
