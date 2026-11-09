@@ -16,6 +16,10 @@ server:
 jwt:
   public-key: ${JWT_PUBLIC_KEY}
 
+# /internal/** 요청의 X-Internal-Key 확인용 (common-security). 비어 있으면 앱은 뜨고 내부 요청만 401
+internal-api:
+  key: ${INTERNAL_API_KEY:}
+
 custom:
   image:
     base-url: ${S3_PUBLIC_BASE_URL:http://localhost:9000/team06-replant-images}
