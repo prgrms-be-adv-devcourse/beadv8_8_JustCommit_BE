@@ -2,8 +2,8 @@ package com.justcommit.backend.notification.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.response.PagingResponse;
-import com.justcommit.backend.market.ShipmentQuery;
-import com.justcommit.backend.market.ShipmentResult;
+import com.justcommit.backend.notification.client.market.ShipmentQuery;
+import com.justcommit.backend.notification.client.market.ShipmentResult;
 import com.justcommit.backend.notification.domain.Notification;
 import com.justcommit.backend.notification.domain.NotificationErrorCode;
 import com.justcommit.backend.notification.domain.NotificationType;

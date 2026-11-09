@@ -1,9 +1,9 @@
 package com.justcommit.backend.notification.application;
 
-import com.justcommit.backend.common.config.JpaAuditingConfig;
+import com.justcommit.backend.notification.config.JpaAuditingConfig;
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.market.ShipmentQuery;
-import com.justcommit.backend.market.ShipmentResult;
+import com.justcommit.backend.notification.client.market.ShipmentQuery;
+import com.justcommit.backend.notification.client.market.ShipmentResult;
 import com.justcommit.backend.notification.domain.NotificationType;
 import com.justcommit.backend.notification.infrastructure.repository.NotificationRepository;
 import com.justcommit.backend.notification.infrastructure.sse.NotificationSseRegistry;

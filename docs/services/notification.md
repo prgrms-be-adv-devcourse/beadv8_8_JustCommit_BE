@@ -1,7 +1,7 @@
 # notification 서비스
 
 > 언제 읽나: notification 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: Miro 5 · 10, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: Miro 5 · 10, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -39,8 +39,8 @@
 
 | 토픽 | 받아서 하는 일 | 멱등 처리 |
 |---|---|---|
-| `order.events.v1` | 수락 요청 · 승인 · 거절 · 자동 거절 · 취소 · 구매 확정 · 반품 알림 | `event_key` UK |
-| `shipment.events.v1` `ShipmentStatusChanged` | 배송 상태 · 반품 수거 알림 | `event_key` UK |
+| `market.events.v1` | 수락 요청 · 수락 · 거절 · 자동 거절 · 취소 · 구매 확정 · 반품 알림 | `event_key` UK |
+| `market.events.v1` `ShipmentStatusChanged` | 배송 상태 · 반품 수거 알림 | `event_key` UK |
 | `settlement.events.v1` | 정산 완료 알림 | `event_key` UK |
 | `product.events.v1` `ProductRejected` | 검수 반려 알림 (사유 포함) | `event_key` UK |
 

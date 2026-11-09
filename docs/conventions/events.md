@@ -1,7 +1,7 @@
 # 이벤트 규칙
 
 > 언제 읽나: Kafka 이벤트를 발행하거나 구독할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: Miro 8 · 11-1 · 11-2, 노션 기획안 「이벤트 규칙」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: Miro 8 · 11-1 · 11-2, 노션 기획안 「이벤트 규칙」
 
 ## 이름과 토픽
 
@@ -9,8 +9,8 @@
 |---|---|
 | 이벤트 이름 | 과거형 (`PurchaseConfirmed`, `ShipmentStatusChanged`) |
 | 토픽 | 도메인 기준 `{도메인}.events.v1` (예외: `member.address.events.v1` · `product.review.v1` · `species.events.v1`). market → product는 이벤트마다 하나 `market.<이름>.v1` → [ADR 0016](../decisions/0016-product-sale-events-from-market.md) |
-| Kafka Key | `aggregateId` — member: `memberId` · order/shipment: `sellerOrderId` · `market.*`: `orderId` · product: `productId` · species: `speciesId` · settlement: `sellerId` |
-| 토픽 수 | 도메인 토픽 8개 + market → product 토픽 5개 = **13개** → [Kafka 토픽 표](../reference/kafka-topics.md) |
+| Kafka Key | `aggregateId` — member: `memberId` · `market.events.v1`: `sellerOrderId` · `market.<이름>.v1`: `orderId` · product: `productId` · species: `speciesId` · settlement: `sellerId` |
+| 토픽 수 | 도메인 토픽 7개 + market → product 토픽 5개 = **12개** → [Kafka 토픽 표](../reference/kafka-topics.md) |
 
 ## 메시지 형식
 
