@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -35,11 +36,38 @@ class ProductApplicationTests {
     }
 
     @Test
-    @DisplayName("빈 DB에서 Flyway V1이 적용되고 ddl-auto validate로 product 서비스가 뜬다")
+    @DisplayName("빈 DB에서 Flyway V1 ~ V4가 적용되고 ddl-auto validate로 product 서비스가 뜬다")
     void contextLoads(@Autowired Flyway flyway) {
         assertThat(flyway.info().applied())
                 .extracting(info -> info.getVersion().getVersion(), MigrationInfo::getState)
-                .contains(tuple("1", MigrationState.SUCCESS));
+                .contains(tuple("1", MigrationState.SUCCESS), tuple("2", MigrationState.SUCCESS),
+                        tuple("3", MigrationState.SUCCESS), tuple("4", MigrationState.SUCCESS));
+    }
+
+    @Test
+    @DisplayName("V4가 품종 215종 · 사진 · 별칭을 넣고, 판매 금지로 뺀 나도풍란 · 파피오페딜럼은 없다")
+    void speciesDataLoaded(@Autowired JdbcTemplate jdbc) {
+        assertThat(jdbc.queryForObject("select count(*) from species", Integer.class)).isEqualTo(215);
+        assertThat(jdbc.queryForObject("select count(*) from species where id in (18, 178)", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from species where scientific_name is null", Integer.class)).isZero();
+        // 이름 · 학명에 이중 공백이나 둥근 따옴표가 없어야 검색 · 학명 대조가 어긋나지 않는다
+        assertThat(jdbc.queryForObject(
+                "select count(*) from species where name like '%  %' or scientific_name like '%  %'"
+                        + " or scientific_name ~ '[‘’]'", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from species_image", Integer.class)).isPositive();
+        assertThat(jdbc.queryForObject("select count(*) from species_alias", Integer.class)).isPositive();
+    }
+
+    @Test
+    @DisplayName("품종 id를 직접 넣은 뒤에도 시퀀스가 맞춰져 있어 id 없이 넣으면 마지막 id 다음 번호를 받는다")
+    void speciesSequenceAfterFixedIds(@Autowired JdbcTemplate jdbc) {
+        Long nextId = jdbc.queryForObject(
+                "insert into species (name) values ('시퀀스 확인용') returning id", Long.class);
+        try {
+            assertThat(nextId).isGreaterThan(217L);
+        } finally {
+            jdbc.update("delete from species where id = ?", nextId);
+        }
     }
 
     private static String newPublicKey() {

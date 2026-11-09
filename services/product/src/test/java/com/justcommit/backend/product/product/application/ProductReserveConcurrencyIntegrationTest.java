@@ -91,14 +91,15 @@ class ProductReserveConcurrencyIntegrationTest {
     @BeforeEach
     void setUp() {
         species = BeanUtils.instantiateClass(Species.class);
-        ReflectionTestUtils.setField(species, "name", "몬스테라");
+        // V4가 넣은 품종(몬스테라 등)과 이름이 겹치지 않게 테스트 전용 이름을 쓴다
+        ReflectionTestUtils.setField(species, "name", "테스트 품종");
         speciesRepository.save(species);
     }
 
     @AfterEach
     void cleanUp() {
         productRepository.deleteAllInBatch();
-        speciesRepository.deleteAllInBatch();
+        speciesRepository.deleteById(species.getId());   // V4 기준 데이터는 남기고 이 테스트가 만든 품종만 지움
         reservationRepository.deleteAllInBatch();   // 테스트마다 같은 orderId를 다시 쓰므로 예약 기록도 지움
     }
 
