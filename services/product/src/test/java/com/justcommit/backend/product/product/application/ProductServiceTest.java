@@ -149,13 +149,13 @@ public class  ProductServiceTest {
     }
 
     // 수정 요청
-    private ProductRequest updateRequest(List<String> pictureUrls) {
+    private ProductRequest updateRequest(List<String> imageUrls) {
         return new ProductRequest(NEW_SPECIES_ID, "스킨답서스 분양합니다", "새로 올립니다",
-                new BigDecimal("25000"), 30, "소형", null, pictureUrls);
+                new BigDecimal("25000"), 30, "소형", null, imageUrls);
     }
 
     //ProductImage 객체 목록을 URL 문자열 목록으로 변경
-    private List<String> pictureUrlsOf(Product product) {
+    private List<String> imageUrlsOf(Product product) {
         return product.getImages().stream().map(ProductImage::getS3Url).toList();
     }
 
@@ -177,7 +177,7 @@ public class  ProductServiceTest {
         assertThat(product.getPrice()).isEqualByComparingTo("25000");
         assertThat(product.getSpecies().getName()).isEqualTo("스킨답서스");
         assertThat(product.getGrowNote()).isNull();
-        assertThat(pictureUrlsOf(product))
+        assertThat(imageUrlsOf(product))
                 .containsExactly("https://example.com/c.jpg", "https://example.com/d.jpg");
     }
 

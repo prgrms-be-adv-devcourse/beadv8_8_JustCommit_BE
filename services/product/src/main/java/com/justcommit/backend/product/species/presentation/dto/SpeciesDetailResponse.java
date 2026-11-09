@@ -14,7 +14,7 @@ public record SpeciesDetailResponse(
         String difficulty,
         String color,
         boolean isBanned,
-        List<PictureResponse> pictures
+        List<ImageResponse> pictures
 ) {
     public static SpeciesDetailResponse from(Species species) {
         return new SpeciesDetailResponse(
@@ -27,7 +27,7 @@ public record SpeciesDetailResponse(
                 nameOf(species.getColor()),
                 species.isBanned(),
                 species.getImages().stream()
-                        .map(PictureResponse::from)
+                        .map(ImageResponse::from)
                         .toList());
     }
 
@@ -35,10 +35,10 @@ public record SpeciesDetailResponse(
         return value == null ? null : value.name();
     }
 
-    public record PictureResponse(String s3Url, int sortOrder) {
+    public record ImageResponse(String s3Url, int sortOrder) {
 
-        static PictureResponse from(SpeciesImage image) {
-            return new PictureResponse(image.getS3Url(), image.getSortOrder());
+        static ImageResponse from(SpeciesImage image) {
+            return new ImageResponse(image.getS3Url(), image.getSortOrder());
         }
     }
 }

@@ -15,8 +15,8 @@ public class ProductImageUrlValidator {
         this.imageUrls = imageUrls;
     }
 
-    public void validate(Long sellerId, List<String> pictureUrls) {
-        for (String url : pictureUrls) {
+    public void validate(Long sellerId, List<String> urls) {
+        for (String url : urls) {
             if (!imageUrls.isOwnedBy(sellerId, url)) {
                 throw new BusinessException(ProductErrorCode.INVALID_IMAGE_URL);
             }
