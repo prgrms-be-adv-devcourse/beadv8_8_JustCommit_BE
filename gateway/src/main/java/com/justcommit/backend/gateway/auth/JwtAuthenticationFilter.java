@@ -3,11 +3,12 @@ package com.justcommit.backend.gateway.auth;
 import com.justcommit.backend.common.security.JwtVerifier;
 import com.justcommit.backend.common.security.TokenException;
 import com.justcommit.backend.common.security.VerifiedAccessToken;
+import com.justcommit.backend.gateway.error.ErrorResponseWriter;
+import com.justcommit.backend.gateway.error.GatewayErrorCode;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.server.PathContainer;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
@@ -43,14 +44,16 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
 
     String token = resolveToken(exchange);
     if (token == null) {
-      return reject(exchange, HttpStatus.UNAUTHORIZED);
+      return reject(exchange, GatewayErrorCode.UNAUTHORIZED);
     }
 
     VerifiedAccessToken verified;
     try {
       verified = jwtVerifier.verifyAccessToken(token);
     } catch (TokenException e) {
-      return reject(exchange, HttpStatus.UNAUTHORIZED);
+      return reject(exchange, e.getReason() == TokenException.Reason.EXPIRED
+          ? GatewayErrorCode.TOKEN_EXPIRED
+          : GatewayErrorCode.INVALID_TOKEN);
     }
 
     return revocationChecker.isRevoked(token, verified)
@@ -58,20 +61,19 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
         .map(revoked -> revoked ? Decision.REVOKED : Decision.OK)
         .onErrorReturn(Decision.REDIS_UNAVAILABLE)
         .flatMap(decision -> switch (decision) {
-          case REVOKED -> reject(exchange, HttpStatus.UNAUTHORIZED);
-          case REDIS_UNAVAILABLE -> reject(exchange, HttpStatus.SERVICE_UNAVAILABLE);
+          // 로그아웃 · 회원 단위 폐기된 토큰: 재발급으로 살릴 수 없으니 INVALID_TOKEN (다시 로그인)
+          case REVOKED -> reject(exchange, GatewayErrorCode.INVALID_TOKEN);
+          case REDIS_UNAVAILABLE -> reject(exchange, GatewayErrorCode.SERVICE_UNAVAILABLE);
           case OK -> isAdminPath(exchange) && !ADMIN_ROLE.equals(verified.member().role())
-              ? reject(exchange, HttpStatus.FORBIDDEN)
+              ? reject(exchange, GatewayErrorCode.FORBIDDEN)
               : chain.filter(exchange);
         });
   }
 
   private enum Decision { OK, REVOKED, REDIS_UNAVAILABLE }
 
-  // 응답 본문(ApiResponse)은 다음 단계(에러 응답)에서 붙임. 지금은 상태 코드만.
-  private Mono<Void> reject(ServerWebExchange exchange, HttpStatus status) {
-    exchange.getResponse().setStatusCode(status);
-    return exchange.getResponse().setComplete();
+  private Mono<Void> reject(ServerWebExchange exchange, GatewayErrorCode errorCode) {
+    return ErrorResponseWriter.write(exchange, errorCode);
   }
 
   private String resolveToken(ServerWebExchange exchange) {
