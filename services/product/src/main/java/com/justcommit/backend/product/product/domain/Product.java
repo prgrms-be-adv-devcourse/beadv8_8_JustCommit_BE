@@ -77,7 +77,7 @@ public class Product extends BaseTimeEntity {
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("sortOrder ASC")
     @BatchSize(size = 100)
-    private List<ProductPicture> pictures = new ArrayList<>();
+    private List<ProductImage> images = new ArrayList<>();
 
     private Product(Species species, Long sellerId, String title, String description,
                     BigDecimal price, Integer heightCm, String potSize, String growNote) {
@@ -95,25 +95,25 @@ public class Product extends BaseTimeEntity {
 
     public static Product create(Species species, Long sellerId, String title, String description,
                                  BigDecimal price, Integer heightCm, String potSize, String growNote,
-                                 List<String> pictureUrls) {
+                                 List<String> imageUrls) {
         if (species.isBanned()) {
             throw new BusinessException(ProductErrorCode.BANNED_SPECIES);
         }
         Product product = new Product(species, sellerId, title, description, price, heightCm, potSize, growNote);
-        product.replacePictures(pictureUrls);
+        product.replaceImages(imageUrls);
         return product;
     }
 
     // 사진 목록을 통째로 교체 (등록, 수정 공통). 리스트 순서가 sort_order가 됨
-    public void replacePictures(List<String> pictureUrls) {
-        this.pictures.clear();
-        for (int i = 0; i < pictureUrls.size(); i++) {
-            this.pictures.add(new ProductPicture(this, pictureUrls.get(i), i));
+    public void replaceImages(List<String> imageUrls) {
+        this.images.clear();
+        for (int i = 0; i < imageUrls.size(); i++) {
+            this.images.add(new ProductImage(this, imageUrls.get(i), i));
         }
     }
 
     public String getThumbnailUrl() {
-        return pictures.isEmpty() ? null : pictures.get(0).getS3Url();
+        return images.isEmpty() ? null : images.get(0).getS3Url();
     }
 
     public boolean isOwnedBy(Long memberId) {
@@ -126,7 +126,7 @@ public class Product extends BaseTimeEntity {
 
     public void update(Species species, String title, String description,
                        BigDecimal price, Integer heightCm, String potSize, String growNote,
-                       List<String> pictureUrls) {
+                       List<String> imageUrls) {
         if (status != ProductStatus.ACTIVE) {
             throw new BusinessException(ProductErrorCode.PRODUCT_NOT_EDITABLE);
         }
@@ -140,7 +140,7 @@ public class Product extends BaseTimeEntity {
         this.heightCm = heightCm;
         this.potSize = potSize;
         this.growNote = growNote;
-        replacePictures(pictureUrls);
+        replaceImages(imageUrls);
     }
 
     public void delete(){

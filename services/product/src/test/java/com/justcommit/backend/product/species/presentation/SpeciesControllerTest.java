@@ -64,7 +64,7 @@ class SpeciesControllerTest {
     void getSpeciesDetail() throws Exception {
         SpeciesDetailResponse detail = new SpeciesDetailResponse(
                 1L, "몬스테라", "FOLIAGE", "MEDIUM", "WHEN_SURFACE_DRY", "EASY", "GREEN", false,
-                List.of(new SpeciesDetailResponse.PictureResponse("https://example.com/monstera.jpg", 0)));
+                List.of(new SpeciesDetailResponse.ImageResponse("https://example.com/monstera.jpg", 0)));
         given(speciesService.getSpeciesDetail(1L)).willReturn(detail);
 
         mockMvc.perform(get("/api/v1/species/1"))

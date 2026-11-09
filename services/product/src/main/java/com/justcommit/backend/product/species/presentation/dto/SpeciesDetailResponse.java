@@ -3,7 +3,7 @@ package com.justcommit.backend.product.species.presentation.dto;
 
 import java.util.List;
 import com.justcommit.backend.product.species.domain.Species;
-import com.justcommit.backend.product.species.domain.SpeciesPicture;
+import com.justcommit.backend.product.species.domain.SpeciesImage;
 
 public record SpeciesDetailResponse(
         Long speciesId,
@@ -14,7 +14,7 @@ public record SpeciesDetailResponse(
         String difficulty,
         String color,
         boolean isBanned,
-        List<PictureResponse> pictures
+        List<ImageResponse> pictures
 ) {
     public static SpeciesDetailResponse from(Species species) {
         return new SpeciesDetailResponse(
@@ -26,8 +26,8 @@ public record SpeciesDetailResponse(
                 nameOf(species.getDifficulty()),
                 nameOf(species.getColor()),
                 species.isBanned(),
-                species.getPictures().stream()
-                        .map(PictureResponse::from)
+                species.getImages().stream()
+                        .map(ImageResponse::from)
                         .toList());
     }
 
@@ -35,10 +35,10 @@ public record SpeciesDetailResponse(
         return value == null ? null : value.name();
     }
 
-    public record PictureResponse(String s3Url, int sortOrder) {
+    public record ImageResponse(String s3Url, int sortOrder) {
 
-        static PictureResponse from(SpeciesPicture picture) {
-            return new PictureResponse(picture.getS3Url(), picture.getSortOrder());
+        static ImageResponse from(SpeciesImage image) {
+            return new ImageResponse(image.getS3Url(), image.getSortOrder());
         }
     }
 }

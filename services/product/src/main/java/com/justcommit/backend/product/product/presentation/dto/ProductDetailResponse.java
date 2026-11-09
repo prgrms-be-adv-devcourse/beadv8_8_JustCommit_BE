@@ -5,7 +5,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import com.justcommit.backend.product.product.domain.Product;
-import com.justcommit.backend.product.product.domain.ProductPicture;
+import com.justcommit.backend.product.product.domain.ProductImage;
 
 public record ProductDetailResponse(
         Long productId,
@@ -39,7 +39,7 @@ public record ProductDetailResponse(
                 product.getStatus().name(),
                 product.isHidden(),
                 ProductSpeciesResponse.from(product.getSpecies()),
-                product.getPictures().stream().map(ProductPicture::getS3Url).toList(),
+                product.getImages().stream().map(ProductImage::getS3Url).toList(),
                 product.getCreatedAt(),
                 product.getUpdatedAt());
     }
