@@ -1,5 +1,7 @@
 package com.justcommit.backend.market.order.application;
 
+import com.justcommit.backend.common.client.exception.InternalApiResultUnknownException;
+import com.justcommit.backend.common.client.exception.InternalApiUnavailableException;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.exception.CommonErrorCode;
 import com.justcommit.backend.market.*;
@@ -22,6 +24,7 @@ import com.justcommit.backend.market.client.payment.PaymentUseCase;
 import com.justcommit.backend.market.client.product.ProductQuery;
 import com.justcommit.backend.market.client.product.ProductResult;
 import com.justcommit.backend.market.client.product.ProductUseCase;
+import com.justcommit.backend.market.client.product.ReservationItem;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -113,16 +116,31 @@ public class OrderService {
 
         Orders saved = ordersRepository.saveAndFlush(order);
 
-        if (!productUseCase.reserve(saved.getId(), productIds)) {
-            throw new BusinessException(OrderErrorCode.PRODUCT_UNAVAILABLE);
+        // 예약을 부른 뒤로는 확정 실패만 롤백한다. 롤백하면 product에 남은 예약을 풀 주문이 없어진다 (해제 이벤트는 #277)
+        try {
+            productUseCase.reserve(saved.getId(), selectedItems.stream()
+                    .map(item -> new ReservationItem(item.getProductId(), item.getPrice()))
+                    .toList());
+        } catch (BusinessException | InternalApiUnavailableException e) {
+            throw e; // 409 · 연결 실패: 예약이 안 된 게 확실하다
+        } catch (RuntimeException e) {
+            // 타임아웃 · 5xx · 본문 읽기 실패: 예약은 다시 부르지 않고 주문을 실패로 끝낸다
+            return failOrder(saved, "상품 예약 결과를 알 수 없음", e);
         }
 
         LocalDateTime expiresAt = null;
-        PaymentResult paymentResult = paymentUseCase.pay(saved.getId(), memberId, saved.getTotalAmount());
-        if (paymentResult.status() == PaymentStatus.WALLET_NOT_FOUND) {
-            throw new BusinessException(OrderErrorCode.WALLET_NOT_FOUND);
+        boolean paid;
+        try {
+            paid = pay(saved, memberId);
+        } catch (BusinessException | InternalApiUnavailableException e) {
+            // 지갑 없음 · 연결 실패: 결제가 안 된 게 확실하다
+            return failOrder(saved, "결제 실패", e);
+        } catch (RuntimeException e) {
+            // 5xx · 본문 읽기 실패: 결과를 단정할 수 없어 결제 대기로 두고 같은 키로 재결제한다
+            log.warn("결제 응답 오류, 결제 대기 유지: orderId={}", saved.getId(), e);
+            paid = false;
         }
-        if (paymentResult.isPaid()) {
+        if (paid) {
             saved = orderPayment(saved);
         } else {
             expiresAt = saved.getCreatedAt().plus(PAYMENT_WINDOW);
@@ -153,11 +171,7 @@ public class OrderService {
             throw new BusinessException(OrderErrorCode.PAYMENT_WINDOW_EXPIRED);
         }
 
-        PaymentResult paymentResult = paymentUseCase.pay(orderId, memberId, order.getTotalAmount());
-        if (paymentResult.status() == PaymentStatus.WALLET_NOT_FOUND) {
-            throw new BusinessException(OrderErrorCode.WALLET_NOT_FOUND);
-        }
-        if (paymentResult.isPaid()) {
+        if (pay(order, memberId)) {
             order = orderPayment(order);
             paymentTtlStore.deleteAfterCommit(order.getId());
             return toResponse(order, null);
@@ -269,14 +283,14 @@ public class OrderService {
             }
         }
         for (CancelItem item : cancelledItems) {
-            PaymentResult result = paymentUseCase.refundCancelledItem(item.itemId(), memberId, item.price());
+            PaymentResult result = paymentUseCase.refundCancelledItem(item.itemId(), orderId, memberId, item.price());
             if (result.status() != PaymentStatus.REFUNDED && result.status() != PaymentStatus.ALREADY_REFUNDED) {
                 throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
             }
         }
         for (Map.Entry<Long, BigDecimal> shippingFee : shippingFeesToRefund.entrySet()) {
             shipmentService.cancelShipment(shippingFee.getKey());
-            PaymentResult result = paymentUseCase.refundShippingFee(shippingFee.getKey(), memberId, shippingFee.getValue());
+            PaymentResult result = paymentUseCase.refundShippingFee(shippingFee.getKey(), orderId, memberId, shippingFee.getValue());
             if (result.status() != PaymentStatus.REFUNDED && result.status() != PaymentStatus.ALREADY_REFUNDED) {
                 throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
             }
@@ -331,7 +345,7 @@ public class OrderService {
         }
 
         item.cancel();
-        PaymentResult result = paymentUseCase.refundCancelledItem(item.getId(), memberId, item.getPrice());
+        PaymentResult result = paymentUseCase.refundCancelledItem(item.getId(), orderId, memberId, item.getPrice());
         if (!(result.status().equals(PaymentStatus.REFUNDED) || result.status().equals(PaymentStatus.ALREADY_REFUNDED))) {
             throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
         }
@@ -356,7 +370,7 @@ public class OrderService {
         if (sellerOrderCancelled) {
             if (sellerOrder.getShippingFee().compareTo(BigDecimal.ZERO) > 0) {
                 shipmentService.cancelShipment(sellerOrder.getId());
-                PaymentResult result = paymentUseCase.refundShippingFee(sellerOrder.getId(), order.getBuyerId(), sellerOrder.getShippingFee());
+                PaymentResult result = paymentUseCase.refundShippingFee(sellerOrder.getId(), order.getId(), order.getBuyerId(), sellerOrder.getShippingFee());
                 if (!(result.status().equals(PaymentStatus.REFUNDED) || result.status().equals(PaymentStatus.ALREADY_REFUNDED))) {
                     throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
                 }
@@ -368,6 +382,28 @@ public class OrderService {
             order.cancel();
         }
         return sellerOrderCancelled;
+    }
+
+    // 주문을 실패로 커밋한다. 장바구니는 그대로 둔다
+    private OrderCreateResponse failOrder(Orders order, String reason, RuntimeException e) {
+        log.warn("{}, 주문 실패: orderId={}", reason, order.getId(), e);
+        order.fail();
+        return toResponse(order, null);
+    }
+
+    // 응답 타임아웃이면 결제 대기로 두고 사용자가 같은 키(orderId)로 재결제한다. 자동 복구는 #280
+    private boolean pay(Orders order, Long memberId) {
+        PaymentResult result;
+        try {
+            result = paymentUseCase.pay(order.getId(), memberId, order.getTotalAmount());
+        } catch (InternalApiResultUnknownException e) {
+            log.warn("결제 응답 타임아웃, 결제 대기 유지: orderId={}", order.getId(), e);
+            return false;
+        }
+        if (result.status() == PaymentStatus.WALLET_NOT_FOUND) {
+            throw new BusinessException(OrderErrorCode.WALLET_NOT_FOUND);
+        }
+        return result.isPaid();
     }
 
     private Orders orderPayment(Orders order) {

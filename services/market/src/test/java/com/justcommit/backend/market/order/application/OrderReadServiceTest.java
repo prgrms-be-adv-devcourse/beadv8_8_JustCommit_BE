@@ -15,6 +15,7 @@ import com.justcommit.backend.market.order.presentation.OrderListRequest;
 import com.justcommit.backend.market.client.product.ProductQuery;
 import com.justcommit.backend.market.client.product.ProductResult;
 import com.justcommit.backend.market.client.product.ProductStatus;
+import com.justcommit.backend.market.client.settlement.SellerOrderSettlement;
 import com.justcommit.backend.market.client.settlement.SettlementQuery;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -208,7 +209,7 @@ class OrderReadServiceTest {
                 .thenReturn(Optional.of(item.getSellerOrder()));
         when(ordersItemRepository.findBySellerOrderIds(List.of(7L))).thenReturn(List.of(item));
 
-        when(settlementQuery.findSettledAtBySellerOrderId(7L)).thenReturn(Optional.empty());
+        when(settlementQuery.getSettlement(7L)).thenReturn(SellerOrderSettlement.of(null));
         when(productQuery.getProducts(List.of(101L))).thenReturn(List.of(product(101L, "https://img/monstera.jpg")));
 
         var response = orderReadService.sellerOrder(20L, 7L);
@@ -237,7 +238,7 @@ class OrderReadServiceTest {
         when(shipmentQuery.findBySellerOrderId(7L))
                 .thenReturn(new ShipmentResult(30L, "BOOKED", null, "TRACK-123",
                         LocalDateTime.of(2026, 10, 12, 10, 0), null, null));
-        when(settlementQuery.findSettledAtBySellerOrderId(7L)).thenReturn(Optional.of(settledAt));
+        when(settlementQuery.getSettlement(7L)).thenReturn(SellerOrderSettlement.of(settledAt));
 
         var response = orderReadService.sellerOrder(20L, 7L);
 

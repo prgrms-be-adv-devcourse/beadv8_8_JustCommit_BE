@@ -1,0 +1,1 @@
+{ "status": 409, "code": "PRODUCT_NOT_RESERVABLE", "message": "예약할 수 없는 상품이 포함되어 있습니다." }

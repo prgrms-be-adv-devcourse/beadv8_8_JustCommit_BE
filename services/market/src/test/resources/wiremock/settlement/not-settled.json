@@ -1,0 +1,1 @@
+{ "status": 200, "message": "정산 조회 성공", "data": { "sellerOrderId": 7, "settledAt": null } }

@@ -86,6 +86,13 @@ public class Orders extends BaseTimeEntity {
         status = OrderStatus.PAID;
     }
 
+    public void fail() {
+        if (status != OrderStatus.PAYMENT_PENDING) {
+            throw new IllegalStateException("결제대기 주문만 실패 처리할 수 있습니다.");
+        }
+        status = OrderStatus.PAYMENT_FAILED;
+    }
+
     public void confirm() {
         if (status != OrderStatus.PAID) {
             throw new IllegalStateException("결제된 주문만 확정처리 할 수있습니다.");
