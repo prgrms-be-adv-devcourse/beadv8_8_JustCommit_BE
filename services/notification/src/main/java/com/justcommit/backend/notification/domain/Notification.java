@@ -1,6 +1,6 @@
 package com.justcommit.backend.notification.domain;
 
-import com.justcommit.backend.common.entity.BaseTimeEntity;
+import com.justcommit.backend.notification.common.entity.BaseTimeEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;

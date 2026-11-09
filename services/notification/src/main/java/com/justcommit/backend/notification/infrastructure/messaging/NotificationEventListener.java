@@ -1,10 +1,10 @@
 package com.justcommit.backend.notification.infrastructure.messaging;
 
-import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
-import com.justcommit.backend.common.event.PurchaseConfirmedEvent;
-import com.justcommit.backend.market.SellerOrderCancelledEvent;
-import com.justcommit.backend.market.SellerOrderPaidEvent;
-import com.justcommit.backend.market.ShipmentStatusChangedEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.OrderItemAutoConfirmedEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.PurchaseConfirmedEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderCancelledEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderPaidEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.ShipmentStatusChangedEvent;
 import com.justcommit.backend.notification.application.NotificationService;
 import com.justcommit.backend.notification.domain.NotificationType;
 import lombok.RequiredArgsConstructor;
