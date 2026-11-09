@@ -27,6 +27,13 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.wiremock:wiremock-standalone:3.13.1'
+    // 테스트용 토큰 발급 (발급은 member 몫이라 테스트에서만 직접 서명)
+    testImplementation 'io.jsonwebtoken:jjwt-api:0.13.0'
+    testRuntimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
+    testRuntimeOnly 'io.jsonwebtoken:jjwt-jackson:0.13.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
