@@ -8,7 +8,8 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "notification", indexes = @Index(name = "idx_notification_member_read", columnList = "memberId, isRead"))
+@Table(name = "notification", indexes = @Index(name = "idx_notification_member_read_created",
+        columnList = "memberId, isRead, createdAt"))
 @NoArgsConstructor
 @Getter
 public class Notification extends BaseTimeEntity {

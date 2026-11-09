@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-09 · services/notification.md · 알림 테이블 Flyway V1 · `ddl-auto: validate`, 인덱스 칸 이름 `read` → `is_read`(엔티티 필드 `isRead`), 알림 종류 `SELLER_ORDER_CANCELLED_BUYER` 삭제(데이터 이전 없음) (#287)
 - 2026-11-09 · reference/env-vars.md · reference/redis-keys.md · conventions/resilience.md · conventions/common-modules.md · conventions/auth.md · services/gateway.md · open-questions.md · Gateway 구현 반영: 서비스 주소 · CORS 변수, 토큰 해시 형식 · 요청 수 제한 키, 실패 응답 확정(노션 10.8) · Redis 1초 · 못 읽으면 503, Gateway 필터는 `gateway/` 안, 429 응답 (#229)
 - 2026-11-09 · conventions/auth.md · reference/external-apis.md · services/gateway.md · 로그아웃을 Gateway 토큰 검사에서 제외(공개 경로), 만료된 Access여도 Refresh 쿠키로 로그아웃 (#229)
 - 2026-11-09 · reference/kafka-topics.md · glossary.md · services/market.md · open-questions.md · 반품 이벤트 이름 확정 `ReturnRequested` · `ReturnApproved` · `ReturnRejected` · `OrderItemReturned`(`OrderItemRefunded` 대체), 미정 목록에서 이벤트 이름 항목 정리 (#242)
