@@ -2,19 +2,22 @@ package com.justcommit.backend.product.product.infrastructure;
 
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.product.domain.Product;
-import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
+import jakarta.persistence.LockModeType;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpecificationExecutor<Product> {
 
     // 판매 중이고 숨김이 아닌 상품만 이 주문으로 예약
+    // 반환값 = 바뀐 행 수. productIds 개를 요청했는데. 그것과 다른 개수의 행이 바뀌었다면 품목 중 몇가지는 구매 불가 -> 예외
+    // 동시성 : 주문 여러개가 동시에 잡으려고 할 경우, DB가 행 단위로 줄을 세워서 먼저 온쪽을 바꿈 -> 한 주문만 성공함
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             UPDATE Product p
@@ -70,6 +73,9 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     // 상세: 품종과 사진을 함께 조회
     @EntityGraph(attributePaths = {"species", "images"})
     Optional<Product> findWithDetailById(Long id);
+
+    // 같은 orderId로 다시 온 예약인지 확인: 이 주문이 잡고 있는 결제 대기 상품 수
+    long countByReservedOrderIdAndStatusAndIdIn(Long reservedOrderId, ProductStatus status, Collection<Long> ids);
 
     // 다른 모듈용 다건 조회: 품종을 함께 조회해 N+1 방지
     @EntityGraph(attributePaths = "species")

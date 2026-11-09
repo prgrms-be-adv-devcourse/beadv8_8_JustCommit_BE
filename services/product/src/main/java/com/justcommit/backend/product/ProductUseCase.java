@@ -1,6 +1,8 @@
 package com.justcommit.backend.product;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 다른 모듈(market)에 공개하는 상품 상태 변경 API.
@@ -9,16 +11,19 @@ import java.util.List;
 public interface ProductUseCase {
 
     /**
-     * 주문서 작성 시 상품들을 해당 주문으로 예약한다. (ACTIVE → PAYMENT_PENDING)
-     * 하나라도 예약할 수 없으면 아무것도 예약하지 않는다.
+     * 주문 생성 때 상품들을 이 주문으로 예약한다. (ACTIVE → PAYMENT_PENDING)
+     * 전부 예약하거나 아무것도 예약하지 않는다. 같은 orderId로 다시 오면 처음 결과(성공)를 그대로 돌려준다.
      *
-     * @return 모두 예약되면 true, 판매 중이 아니거나 숨겨진 상품이 하나라도 있으면 false
-     *         (false인 경우 호출하는 쪽에서 주문 생성을 중단하거나 취소해야 함)
+     * @param expectedPrices 상품 ID → 주문서에 보여 준 가격
+     * @throws com.justcommit.backend.common.exception.BusinessException
+     *         판매 중이 아니거나 숨겨진 상품이 있으면 PRODUCT_NOT_RESERVABLE,
+     *         가격이 하나라도 다르면 PRICE_CHANGED, 이미 해제된 orderId면 RESERVATION_RELEASED (모두 409)
      */
-    boolean reserve(Long orderId, List<Long> productIds);
+    void reserve(Long orderId, Map<Long, BigDecimal> expectedPrices);
 
     /**
-     * 결제 실패, 주문 만료, 주문 취소 시 해당 주문이 예약한 상품을 모두 해제한다. (PAYMENT_PENDING → ACTIVE)
+     * 결제 전 만료 · 결제 확정 실패 때 해당 주문이 예약한 상품을 모두 해제한다. (PAYMENT_PENDING → ACTIVE)
+     * 예약 기록을 RELEASED로 남겨, 이 orderId로 늦게 도착한 예약은 거절된다.
      * (주문 만료와 취소가 겹치는 등 두 번 호출되어도 안전하게 하기 위함)
      *
      * @return 해제한 상품이 있으면 true, 이 주문으로 예약된 상품이 없으면 false
