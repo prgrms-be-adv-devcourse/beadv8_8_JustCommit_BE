@@ -6,6 +6,7 @@ spring:
     username: ${DB_USERNAME:member_app}
     password: ${DB_PASSWORD:member_app}
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: validate
   data:
