@@ -1,14 +1,14 @@
 # Redis 키
 
 > 언제 읽나: Redis 키를 새로 쓰거나 TTL을 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-06 · 관련: Miro A1, legacy/infrastructure-todo.md
+> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: Miro A1, legacy/infrastructure-todo.md
 
 ## 규칙
 
 - 키 형식 `{도메인}:{용도}:{id}` (소문자, 콜론 구분)
 - **모든 키에 TTL** (`noeviction`이라 TTL 없는 키가 쌓이면 쓰기가 실패함)
 - 이메일은 소문자로 바꾼 뒤 키에 넣음
-- 토큰 원문은 저장하지 않고 SHA-256 해시를 씀
+- 토큰 원문은 저장하지 않고 SHA-256 해시를 씀: `Bearer `를 뺀 토큰 → UTF-8 → SHA-256 → 소문자 16진수 64글자. 쓰는 쪽과 읽는 쪽 모두 `common-security-core`의 `TokenHash.sha256Hex`를 씀
 
 ## 키 목록
 
@@ -27,7 +27,7 @@
 
 ## 예외
 
-Gateway의 SCG `RedisRateLimiter`는 기본 키 `request_rate_limiter.{ip}.tokens` · `.timestamp`를 씁니다. 키 형식 규칙의 예외이고, TTL은 라이브러리가 자동으로 겁니다.
+Gateway의 SCG `RedisRateLimiter`는 기본 키 `request_rate_limiter.{경로 id.ip}.tokens` · `.timestamp`를 씁니다 (예: `request_rate_limiter.{member-login.10.0.0.1}.tokens`). 키 형식 규칙의 예외이고, TTL은 라이브러리가 자동으로 겁니다.
 
 ## 설정
 

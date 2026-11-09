@@ -1,7 +1,7 @@
 # 환경변수
 
 > 언제 읽나: 환경변수 · 비밀값을 추가하거나 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: Miro A3
+> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: Miro A3
 
 ## 변수 표
 
@@ -18,6 +18,8 @@
 | `INTERNAL_API_KEY` | 모든 서비스 | `/internal/**` 확인 |
 | 🟨 `MEMBER_ADDRESS_EVENT_KEY` | member · market | 주소 이벤트 전송 키 (판매자 주소 암호화) |
 | `REDIS_HOST` · `REDIS_PORT` · `REDIS_PASSWORD` | member · market · Gateway | – |
+| `MEMBER_SERVICE_URL` · `PRODUCT_SERVICE_URL` · `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` · `NOTIFICATION_SERVICE_URL` | Gateway | 라우팅할 서비스 주소. 없으면 로컬 포트(8081 ~ 8086) |
+| `CORS_ALLOWED_ORIGINS` | Gateway | CORS 허용 출처 (쉼표로 여러 개, `*` 금지). 없으면 `http://localhost:5173` |
 | `KAKAO_CLIENT_ID` · `KAKAO_CLIENT_SECRET` | member | 카카오 로그인 · 연결 해제 |
 | `MAIL_USERNAME` · `MAIL_PASSWORD` | member | Gmail SMTP |
 | `FRONTEND_BASE_URL` · `COOKIE_SECURE` | member | 리다이렉트 · 쿠키 Secure |

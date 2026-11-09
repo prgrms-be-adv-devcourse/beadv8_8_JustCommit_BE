@@ -15,7 +15,7 @@
 | 키 교체 | 이번 범위 밖. 키를 바꾸면 모든 회원이 다시 로그인 (한계, 노션 2절 11/6 결정) |
 | 왜 이중 검증인가 | 포트가 실수로 열려도 위조 토큰이 통과하지 않게 (심층 방어) → [ADR 0001](../decisions/0001-scg-rs256-double-validation.md) |
 
-코드 위치: 검증 로직 · `AuthMember` → `common-security`, 서비스 필터 → `common-security`(서블릿), Gateway 필터 → `common-security`(WebFlux), 발급 → member → [공통 모듈](../conventions/common-modules.md)
+코드 위치: 검증 로직 · `AuthMember` → `common-security`, 서비스 필터 → `common-security`(서블릿), Gateway 필터 → `gateway/` 안 (`JwtAuthenticationFilter`, 쓰는 곳이 Gateway 하나뿐이라 공통 모듈로 빼지 않음), 발급 → member → [공통 모듈](../conventions/common-modules.md)
 
 ## 토큰 폐기
 

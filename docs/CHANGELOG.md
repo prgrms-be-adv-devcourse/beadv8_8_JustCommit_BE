@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-09 · reference/env-vars.md · reference/redis-keys.md · conventions/resilience.md · conventions/common-modules.md · conventions/auth.md · services/gateway.md · open-questions.md · Gateway 구현 반영: 서비스 주소 · CORS 변수, 토큰 해시 형식 · 요청 수 제한 키, 실패 응답 확정(노션 10.8) · Redis 1초 · 못 읽으면 503, Gateway 필터는 `gateway/` 안, 429 응답 (#229)
 - 2026-11-09 · conventions/auth.md · reference/external-apis.md · services/gateway.md · 로그아웃을 Gateway 토큰 검사에서 제외(공개 경로), 만료된 Access여도 Refresh 쿠키로 로그아웃 (#229)
 - 2026-11-08 · testing/scenarios.md · 노션 「테스트 시나리오」 4절에 맞춤: S-C03 · D01 · D03 · D07 · E05 · F01 · H03 문장 수정, S-C08 · C09 · D10 추가, P 그룹 분리, 상세 칸은 노션 링크 (#259)
 - 2026-11-08 · testing/strategy.md · WireMock 규칙(스텁 위치 · 주소 바꿔 끼우기 · 응답 흉내 7가지 · verify) 추가, ID 그룹에 P (#259)
