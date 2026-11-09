@@ -2,7 +2,7 @@ package com.justcommit.backend.settlement.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.settlement.SettlementQuery;
-import com.justcommit.backend.payment.PaymentUseCase;
+import com.justcommit.backend.settlement.client.payment.SettlementPayoutClient;
 import com.justcommit.backend.settlement.SettlementResult;
 import com.justcommit.backend.settlement.domain.Settlement;
 import com.justcommit.backend.settlement.domain.exception.SettlementErrorCode;
@@ -21,7 +21,7 @@ import java.util.Optional;
 public class SettlementService implements SettlementQuery {
 
     private final SettlementRepository settlementRepository;
-    private final PaymentUseCase paymentUseCase;
+    private final SettlementPayoutClient settlementPayoutClient;
 
     @Override
     @Transactional(readOnly = true)
@@ -49,7 +49,7 @@ public class SettlementService implements SettlementQuery {
                 )
         );
 
-        paymentUseCase.distributeSettlement(
+        settlementPayoutClient.distributeSettlement(
                 settlement.getId(),
                 sellerId,
                 settlement.getPayoutAmount(),
