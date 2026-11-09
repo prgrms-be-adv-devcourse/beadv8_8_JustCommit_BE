@@ -1,7 +1,7 @@
 package com.justcommit.backend.product.product.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.member.MemberQuery;
+import com.justcommit.backend.product.client.member.MemberQuery;
 import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.exception.ProductErrorCode;

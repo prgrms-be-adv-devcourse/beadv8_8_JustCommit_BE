@@ -3,7 +3,7 @@
 # 이미 받은 파일은 건너뛰므로 여러 번 실행해도 된다.
 set -e
 
-SQL="src/main/resources/db/data/species.sql"
+SQL="services/product/src/main/resources/db/data/species.sql"
 OUT="build/species-images/species"
 
 total=0

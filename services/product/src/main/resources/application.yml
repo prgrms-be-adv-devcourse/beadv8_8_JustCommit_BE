@@ -6,8 +6,24 @@ spring:
     username: ${DB_USERNAME:product_app}
     password: ${DB_PASSWORD:product_app}
   jpa:
+    open-in-view: false
     hibernate:
-      ddl-auto: validate
+      # TODO(#237): Flyway V1 마이그레이션을 추가하면 validate로 되돌린다 (지금은 테이블이 없어 validate면 앱이 뜨지 않음)
+      ddl-auto: none
 
 server:
   port: 8082
+
+jwt:
+  public-key: ${JWT_PUBLIC_KEY}
+
+custom:
+  image:
+    base-url: ${S3_PUBLIC_BASE_URL:http://localhost:9000/team06-replant-images}
+  s3:
+    bucket: ${S3_BUCKET_NAME:team06-replant-images}
+    region: ${AWS_REGION:ap-northeast-2}
+    endpoint: ${S3_ENDPOINT:}
+    access-key: ${S3_ACCESS_KEY:}
+    secret-key: ${S3_SECRET_KEY:}
+    upload-url-duration: 10m
