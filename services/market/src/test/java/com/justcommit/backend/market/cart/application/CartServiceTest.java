@@ -1,19 +1,25 @@
 package com.justcommit.backend.market.cart.application;
 
+import com.justcommit.backend.common.client.exception.InternalApiUnavailableException;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.exception.CommonErrorCode;
 import com.justcommit.backend.market.cart.domain.Cart;
 import com.justcommit.backend.market.cart.domain.CartItem;
 import com.justcommit.backend.market.cart.infrastructure.CartItemRepository;
 import com.justcommit.backend.market.cart.infrastructure.CartRepository;
+import com.justcommit.backend.market.cart.presentation.CartItemPriceUpdateRequest;
 import com.justcommit.backend.market.cart.presentation.CartResponse;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.market.client.product.ProductQuery;
 import com.justcommit.backend.market.client.product.ProductResult;
 import com.justcommit.backend.market.client.product.ProductStatus;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -21,9 +27,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -324,6 +332,155 @@ class CartServiceTest {
         assertThat(cart.getItems()).hasSize(1);
         assertThat(cart.getItems().getFirst().getPrice()).isEqualByComparingTo("12000");
         verify(cartItemRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("가격 동의: 한 항목의 저장 가격을 동의한 현재 가격으로 바꾸고 price와 nowPrice가 같은 장바구니를 돌려준다")
+    void updatesSingleItemToConsentedPrice() {
+        Cart cart = new Cart(10L);
+        CartItem item = addItem(cart, 1L, 101L, "10000");
+        when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
+        when(productQuery.getProducts(List.of(101L))).thenReturn(List.of(product(101L, "몬스테라", "12000", ProductStatus.ACTIVE)));
+
+        CartResponse response = cartService.updatePrices(10L, List.of(consent(1L, "12000")));
+
+        assertThat(item.getPrice()).isEqualByComparingTo("12000");
+        assertThat(response.items()).singleElement().satisfies(responseItem -> {
+            assertThat(responseItem.price()).isEqualByComparingTo("12000");
+            assertThat(responseItem.nowPrice()).isEqualByComparingTo("12000");
+            assertThat(responseItem.isChangedPrice()).isFalse();
+        });
+        assertThat(response.totalAmount()).isEqualByComparingTo("12000");
+        assertThat(response.nowTotalAmount()).isEqualByComparingTo("12000");
+    }
+
+    @Test
+    @DisplayName("가격 동의: 여러 항목을 product 조회 한 번으로 함께 바꾸고, 고르지 않은 항목은 그대로 둔다")
+    void updatesSeveralItemsWithOneProductLookup() {
+        Cart cart = new Cart(10L);
+        CartItem first = addItem(cart, 1L, 101L, "10000");
+        CartItem second = addItem(cart, 2L, 102L, "20000");
+        CartItem notSelected = addItem(cart, 3L, 103L, "5000");
+        when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
+        when(productQuery.getProducts(List.of(101L, 102L, 103L))).thenReturn(List.of(
+                product(101L, "몬스테라", "12000", ProductStatus.ACTIVE),
+                product(102L, "필로덴드론", "18000", ProductStatus.ACTIVE),
+                product(103L, "선인장", "6000", ProductStatus.ACTIVE)));
+
+        CartResponse response = cartService.updatePrices(10L, List.of(consent(2L, "18000"), consent(1L, "12000")));
+
+        assertThat(first.getPrice()).isEqualByComparingTo("12000");
+        assertThat(second.getPrice()).isEqualByComparingTo("18000");
+        assertThat(notSelected.getPrice()).isEqualByComparingTo("5000");
+        assertThat(response.items()).extracting(item -> item.isChangedPrice()).containsExactly(false, false, true);
+        assertThat(response.totalAmount()).isEqualByComparingTo("35000");
+        assertThat(response.nowTotalAmount()).isEqualByComparingTo("36000");
+        verify(productQuery, times(1)).getProducts(any());
+    }
+
+    @Test
+    @DisplayName("가격 동의: 화면에서 본 뒤 가격이 또 바뀌었으면 PRICE_CHANGED, 저장 가격은 그대로")
+    void rejectsPriceChangedAgainAfterConsent() {
+        Cart cart = new Cart(10L);
+        CartItem item = addItem(cart, 1L, 101L, "10000");
+        when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
+        when(productQuery.getProducts(List.of(101L))).thenReturn(List.of(product(101L, "몬스테라", "13000", ProductStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> cartService.updatePrices(10L, List.of(consent(1L, "12000"))))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.PRICE_CHANGED));
+        assertThat(item.getPrice()).isEqualByComparingTo("10000");
+    }
+
+    @Test
+    @DisplayName("가격 동의: 한 항목만 가격이 달라도 전체를 거부하고 맞는 항목도 바꾸지 않는다")
+    void rejectsWholeRequestWhenOneItemDiffers() {
+        Cart cart = new Cart(10L);
+        CartItem matching = addItem(cart, 1L, 101L, "10000");
+        CartItem differing = addItem(cart, 2L, 102L, "20000");
+        when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
+        when(productQuery.getProducts(List.of(101L, 102L))).thenReturn(List.of(
+                product(101L, "몬스테라", "12000", ProductStatus.ACTIVE),
+                product(102L, "필로덴드론", "22000", ProductStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> cartService.updatePrices(10L, List.of(consent(1L, "12000"), consent(2L, "21000"))))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.PRICE_CHANGED));
+        assertThat(matching.getPrice()).isEqualByComparingTo("10000");
+        assertThat(differing.getPrice()).isEqualByComparingTo("20000");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("unavailableProducts")
+    @DisplayName("가격 동의: 구매 불가 상품이 섞이면 PRODUCT_UNAVAILABLE, 가격만 갱신해 구매 가능하게 만들지 않는다")
+    void rejectsUnavailableProduct(String ignored, List<ProductResult> secondProduct) {
+        Cart cart = new Cart(10L);
+        CartItem available = addItem(cart, 1L, 101L, "10000");
+        CartItem unavailable = addItem(cart, 2L, 102L, "20000");
+        when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
+        List<ProductResult> products = new ArrayList<>(List.of(product(101L, "몬스테라", "12000", ProductStatus.ACTIVE)));
+        products.addAll(secondProduct);
+        when(productQuery.getProducts(List.of(101L, 102L))).thenReturn(products);
+
+        // 102의 동의 가격(21000)도 현재 가격과 달라, 구매 불가를 가격보다 먼저 확인하는지 함께 본다
+        assertThatThrownBy(() -> cartService.updatePrices(10L, List.of(consent(1L, "12000"), consent(2L, "21000"))))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.PRODUCT_UNAVAILABLE));
+        assertThat(available.getPrice()).isEqualByComparingTo("10000");
+        assertThat(unavailable.getPrice()).isEqualByComparingTo("20000");
+    }
+
+    private static Stream<Arguments> unavailableProducts() {
+        return Stream.of(
+                Arguments.of("품절", List.of(product(102L, "품절", "22000", ProductStatus.SOLD_OUT))),
+                Arguments.of("결제 대기", List.of(product(102L, "예약됨", "22000", ProductStatus.PAYMENT_PENDING))),
+                Arguments.of("삭제", List.of(product(102L, "삭제", "22000", ProductStatus.DELETED))),
+                Arguments.of("숨김", List.of(new ProductResult(102L, 20L, "숨김", new BigDecimal("22000"),
+                        ProductStatus.ACTIVE, true, null, null))),
+                Arguments.of("내 상품", List.of(new ProductResult(102L, 10L, "내 상품", new BigDecimal("22000"),
+                        ProductStatus.ACTIVE, false, null, null))),
+                Arguments.of("product 결과에 없음", List.of()));
+    }
+
+    @Test
+    @DisplayName("가격 동의: 다른 회원 항목이나 없는 ID면 product를 부르지 않고 RESOURCE_NOT_FOUND")
+    void rejectsAnotherMembersOrUnknownCartItem() {
+        Cart cart = new Cart(10L);
+        CartItem item = addItem(cart, 1L, 101L, "10000");
+        when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
+
+        assertThatThrownBy(() -> cartService.updatePrices(10L, List.of(consent(1L, "12000"), consent(2L, "20000"))))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(CommonErrorCode.RESOURCE_NOT_FOUND));
+        assertThat(item.getPrice()).isEqualByComparingTo("10000");
+        verify(productQuery, never()).getProducts(any());
+    }
+
+    @Test
+    @DisplayName("가격 동의: 같은 항목 ID가 두 번 오면 BAD_REQUEST_DATA")
+    void rejectsDuplicateCartItemIdForPriceUpdate() {
+        assertThatThrownBy(() -> cartService.updatePrices(10L, List.of(consent(1L, "12000"), consent(1L, "13000"))))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(CommonErrorCode.BAD_REQUEST_DATA));
+        verify(cartRepository, never()).findByMemberId(anyLong());
+    }
+
+    @Test
+    @DisplayName("가격 동의: product 조회가 실패하면 예외를 그대로 넘기고 저장 가격은 그대로")
+    void propagatesProductLookupFailure() {
+        Cart cart = new Cart(10L);
+        CartItem item = addItem(cart, 1L, 101L, "10000");
+        when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
+        when(productQuery.getProducts(List.of(101L)))
+                .thenThrow(new InternalApiUnavailableException("product", new RuntimeException("connection refused")));
+
+        assertThatThrownBy(() -> cartService.updatePrices(10L, List.of(consent(1L, "12000"))))
+                .isInstanceOf(InternalApiUnavailableException.class);
+        assertThat(item.getPrice()).isEqualByComparingTo("10000");
+    }
+
+    private static CartItemPriceUpdateRequest.Item consent(long cartItemId, String expectedPrice) {
+        return new CartItemPriceUpdateRequest.Item(cartItemId, new BigDecimal(expectedPrice));
     }
 
     private static CartItem addItem(Cart cart, long cartItemId, long productId, String price) {
