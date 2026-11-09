@@ -10,13 +10,21 @@ import com.justcommit.backend.common.security.TokenHash;
 import com.justcommit.backend.gateway.GatewayIntegrationTest;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient.ResponseSpec;
 
 /** Gateway 1차 토큰 검사 (docs/conventions/auth.md, 시나리오 S-A02 ~ S-A05 · S-A08) */
 class JwtAuthenticationIntegrationTest extends GatewayIntegrationTest {
+
+  @DynamicPropertySource
+  static void properties(DynamicPropertyRegistry registry) {
+    registerProperties(registry, Map.of());
+  }
 
   private static final String PROTECTED = "/api/v1/cart";
 

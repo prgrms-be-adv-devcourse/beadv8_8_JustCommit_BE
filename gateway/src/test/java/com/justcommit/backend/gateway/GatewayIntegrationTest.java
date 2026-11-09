@@ -7,6 +7,9 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMoc
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import io.jsonwebtoken.Jwts;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.net.ServerSocket;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
@@ -15,13 +18,15 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.testcontainers.containers.GenericContainer;
 
@@ -48,13 +53,28 @@ public abstract class GatewayIntegrationTest {
     SERVICES.start();
   }
 
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(KEY_PAIR.getPublic().getEncoded()));
-    registry.add("spring.data.redis.host", REDIS::getHost);
-    registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
+  /**
+   * 테스트 클래스마다 자기 @DynamicPropertySource에서 부른다. 바꿀 값은 overrides로 넘긴다.
+   * (부모 · 자식 클래스에 @DynamicPropertySource를 따로 두면 같은 키를 덮어쓰는 순서가 보장되지 않아서 한곳에서 정함)
+   */
+  protected static void registerProperties(DynamicPropertyRegistry registry, Map<String, Supplier<Object>> overrides) {
+    Map<String, Supplier<Object>> values = new LinkedHashMap<>();
+    values.put("jwt.public-key", () -> Base64.getEncoder().encodeToString(KEY_PAIR.getPublic().getEncoded()));
+    values.put("spring.data.redis.host", REDIS::getHost);
+    values.put("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
     for (String service : new String[] {"MEMBER", "PRODUCT", "MARKET", "PAYMENT", "SETTLEMENT", "NOTIFICATION"}) {
-      registry.add(service + "_SERVICE_URL", SERVICES::baseUrl);
+      values.put(service + "_SERVICE_URL", SERVICES::baseUrl);
+    }
+    values.putAll(overrides);
+    values.forEach(registry::add);
+  }
+
+  /** 아무도 안 듣는 포트 (연결 거절을 흉내 낼 때) */
+  protected static int closedPort() {
+    try (ServerSocket socket = new ServerSocket(0)) {
+      return socket.getLocalPort();
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
     }
   }
 
@@ -75,6 +95,11 @@ public abstract class GatewayIntegrationTest {
     SERVICES.resetAll();
     // 기본: 서비스는 어떤 요청이든 200
     SERVICES.stubFor(any(anyUrl()).willReturn(aResponse().withStatus(200).withBody("service-ok")));
+    prepareRedis();
+  }
+
+  /** 테스트마다 Redis를 비움 (폐기 키 · 요청 수 제한 통). Redis가 없는 테스트는 덮어써서 건너뜀 */
+  protected void prepareRedis() {
     redis.getConnectionFactory().getReactiveConnection().serverCommands().flushAll().block();
   }
 
