@@ -1,8 +1,8 @@
 package com.justcommit.backend.gateway.auth;
 
-import com.justcommit.backend.common.security.AuthMember;
 import com.justcommit.backend.common.security.JwtVerifier;
 import com.justcommit.backend.common.security.TokenException;
+import com.justcommit.backend.common.security.VerifiedAccessToken;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -16,8 +16,9 @@ import org.springframework.web.util.pattern.PathPatternParser;
 import reactor.core.publisher.Mono;
 
 /**
- * Gateway 1차 토큰 검사. 공개 경로가 아니면 Access 토큰의 서명 · 만료 · type을 확인하고,
- * ADMIN 경로는 권한까지 본다. 통과하면 토큰을 바꾸지 않고 그대로 서비스로 넘긴다 (서비스가 2차 검사).
+ * Gateway 1차 토큰 검사. 공개 경로가 아니면
+ * ① Access 토큰의 서명 · 만료 · type → ② Redis 폐기 여부(로그아웃 · 회원 단위) → ③ ADMIN 경로 권한 순서로 본다.
+ * 통과하면 토큰을 바꾸지 않고 그대로 서비스로 넘긴다 (서비스가 2차 검사).
  */
 @Component
 public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
@@ -27,9 +28,11 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
   private static final String ADMIN_ROLE = "ADMIN";
 
   private final JwtVerifier jwtVerifier;
+  private final TokenRevocationChecker revocationChecker;
 
-  public JwtAuthenticationFilter(JwtVerifier jwtVerifier) {
+  public JwtAuthenticationFilter(JwtVerifier jwtVerifier, TokenRevocationChecker revocationChecker) {
     this.jwtVerifier = jwtVerifier;
+    this.revocationChecker = revocationChecker;
   }
 
   @Override
@@ -43,18 +46,27 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
       return reject(exchange, HttpStatus.UNAUTHORIZED);
     }
 
-    AuthMember member;
+    VerifiedAccessToken verified;
     try {
-      member = jwtVerifier.parseAccessToken(token);
+      verified = jwtVerifier.verifyAccessToken(token);
     } catch (TokenException e) {
       return reject(exchange, HttpStatus.UNAUTHORIZED);
     }
 
-    if (isAdminPath(exchange) && !ADMIN_ROLE.equals(member.role())) {
-      return reject(exchange, HttpStatus.FORBIDDEN);
-    }
-    return chain.filter(exchange);
+    return revocationChecker.isRevoked(token, verified)
+        // Redis 오류만 503으로 바꿈. 아래 chain.filter(서비스 호출)의 오류는 여기서 잡지 않도록 먼저 결과를 정함
+        .map(revoked -> revoked ? Decision.REVOKED : Decision.OK)
+        .onErrorReturn(Decision.REDIS_UNAVAILABLE)
+        .flatMap(decision -> switch (decision) {
+          case REVOKED -> reject(exchange, HttpStatus.UNAUTHORIZED);
+          case REDIS_UNAVAILABLE -> reject(exchange, HttpStatus.SERVICE_UNAVAILABLE);
+          case OK -> isAdminPath(exchange) && !ADMIN_ROLE.equals(verified.member().role())
+              ? reject(exchange, HttpStatus.FORBIDDEN)
+              : chain.filter(exchange);
+        });
   }
+
+  private enum Decision { OK, REVOKED, REDIS_UNAVAILABLE }
 
   // 응답 본문(ApiResponse)은 다음 단계(에러 응답)에서 붙임. 지금은 상태 코드만.
   private Mono<Void> reject(ServerWebExchange exchange, HttpStatus status) {

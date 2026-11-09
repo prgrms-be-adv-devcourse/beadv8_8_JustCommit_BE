@@ -36,6 +36,29 @@ class JwtVerifierTest {
   }
 
   @Test
+  @DisplayName("verifyAccessToken은 회원 정보와 발급 시각(iat, 초)을 함께 꺼냄")
+  void verifyAccessTokenReturnsIssuedAt() {
+    Instant issuedAt = Instant.now().minusSeconds(120);
+    String token = token(KEY_PAIR.getPrivate(), "ACCESS", issuedAt, Instant.now().plusSeconds(60));
+
+    VerifiedAccessToken verified = verifier.verifyAccessToken(token);
+
+    assertThat(verified.member()).isEqualTo(new AuthMember(4L, "SELLER"));
+    assertThat(verified.issuedAt()).isEqualTo(issuedAt.getEpochSecond());
+  }
+
+  @Test
+  @DisplayName("iat가 없는 토큰은 verifyAccessToken에서 INVALID (끊은 시각과 비교할 수 없음)")
+  void verifyAccessTokenWithoutIssuedAt() {
+    String token = token(KEY_PAIR.getPrivate(), "ACCESS", null, Instant.now().plusSeconds(60));
+
+    assertThatThrownBy(() -> verifier.verifyAccessToken(token))
+            .isInstanceOf(TokenException.class)
+            .extracting(e -> ((TokenException) e).getReason())
+            .isEqualTo(TokenException.Reason.INVALID);
+  }
+
+  @Test
   @DisplayName("Signup 토큰을 Access 토큰으로 검증하면 INVALID")
   void signupTokenIsInvalid() {
     String token = token(KEY_PAIR.getPrivate(), "SIGNUP", Instant.now().plusSeconds(60));
@@ -100,11 +123,15 @@ class JwtVerifierTest {
 
   // 발급은 member 몫이라, 테스트용 토큰은 여기서 직접 만든다 (회원 4, SELLER)
   private static String token(Key signingKey, String type, Instant expiresAt) {
+    return token(signingKey, type, Instant.now().minusSeconds(120), expiresAt);
+  }
+
+  private static String token(Key signingKey, String type, Instant issuedAt, Instant expiresAt) {
     return Jwts.builder()
             .subject("4")
             .claim("type", type)
             .claim("role", "SELLER")
-            .issuedAt(Date.from(Instant.now().minusSeconds(120)))
+            .issuedAt(issuedAt == null ? null : Date.from(issuedAt))
             .expiration(Date.from(expiresAt))
             .signWith(signingKey)
             .compact();

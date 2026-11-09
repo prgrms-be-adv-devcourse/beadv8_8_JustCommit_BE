@@ -1,6 +1,14 @@
 spring:
   application:
     name: gateway
+  # 토큰 폐기 확인용 (키는 member가 씀). 못 읽으면 503 (fail-closed)
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      # 오래 기다리지 않고 503으로 끝내기 위한 명령 제한 시간
+      timeout: 1s
   cloud:
     gateway:
       server:
