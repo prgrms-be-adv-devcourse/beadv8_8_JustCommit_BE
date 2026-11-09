@@ -16,7 +16,7 @@
 | 주문상품 | `OrdersItem` | 주문 상품, 주문 아이템 | 주문 안의 상품 하나. 취소 · 반품 · 구매 확정의 단위 | [market](services/market.md) |
 | 결제 대기 | `PAYMENT_PENDING` (주문) | 결제중, 미결제 | 잔액이 부족해 결제를 기다리는 주문 | [market 정책](services/market.md#정책) |
 | 결제 기한 만료 | `PAYMENT_WINDOW_EXPIRED` | 결제 시간 초과 | 결제 대기 기한이 지나 결제를 거절하는 것. 결제할 때 market이 직접 확인 | [market 정책](services/market.md#정책) |
-| 수락 · 거절 | `ACCEPT_PENDING` · `SellerOrderAccepted` | 주문 확인, 주문 승인 | 결제 후 판매자가 주문을 받을지 정하는 단계. 수락해야 배송이 생김 | [market 정책](services/market.md#정책) |
+| 수락 · 거절 | `ACCEPT_PENDING` · `SellerOrderAccepted` · `SellerOrderRejected` | 주문 확인, 주문 승인 | 결제 후 판매자가 주문을 받을지 정하는 단계. 수락해야 배송이 생김 | [market 정책](services/market.md#정책) |
 | 자동 거절 | – | 자동 취소 (구매자 알림 문구) | 판매자가 기한 안에 응답하지 않아 거절된 주문 | [market 정책](services/market.md#정책) |
 | 배송 | `Shipment` | 택배, 배송 건 | 판매자 주문 하나의 택배. 반품은 방향이 다른 새 배송 | [market](services/market.md) |
 | 택배 예약 | `BOOKED` | 접수, 택배 접수, 픽업 대기 (화면 표시) | 택배사에 수거를 예약한 상태. 상품 「예약」과 구분해 항상 「택배 예약」으로 씀 | [market 정책](services/market.md#정책) |

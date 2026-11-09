@@ -30,7 +30,8 @@
 | `member.address.events.v1` | `MemberAddressChanged` | market | **판매자 기본 배송지**(택배 보내는 사람 주소). 이름 · 연락처 · 주소는 전송 키로 암호화 |
 | `market.events.v1` | `SellerOrderPaid` (판매자에게 수락 요청) | notification | "주문이 들어왔어요. 수락해 주세요" |
 | `market.events.v1` | `SellerOrderAccepted` (판매자 수락, `rejectedItemCount` 포함) | notification | 구매자에게 수락 알림. `rejectedItemCount`가 1 이상이면 일부 거절 알림 1건으로 |
-| `market.events.v1` | `SellerOrderCancelled` (`reason`: `BUYER` · `SELLER` · `AUTO`) · `OrderItemCancelled` | notification | `BUYER`: 판매자에게만 취소 알림 (본인 취소는 구매자에게 안 보냄). `SELLER`: 구매자에게 판매자 거절 알림. `AUTO`: 구매자에게 자동 취소 · 판매자에게 24시간 자동 거절 알림 |
+| `market.events.v1` | `SellerOrderRejected` (상품 전부 거절, `reason`: `SELLER` · `AUTO`) | notification | `SELLER`: 구매자에게 판매자 거절 알림. `AUTO`: 구매자에게 자동 취소 · 판매자에게 24시간 자동 거절 알림 |
+| `market.events.v1` | `SellerOrderCancelled` · `OrderItemCancelled` (구매자 취소) | notification | 판매자에게만 취소 알림 (본인 취소는 구매자에게 안 보냄) |
 | `market.events.v1` | `PurchaseConfirmed` · `OrderItemAutoConfirmed` | settlement · notification | 판매자 주문이 끝나면 정산 생성, 구매 확정 알림 |
 | `market.events.v1` | 🟨 `ReturnRequested` · `ReturnApproved`(자동 승인 포함) · `ReturnRejected` · `OrderItemRefunded`(환불) | notification | 반품 신청 · 거절 · 환불 완료 알림 |
 | `market.events.v1` | `ShipmentStatusChanged` | notification | 배송 상태 · 반품 수거 알림 |
