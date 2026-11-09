@@ -8,8 +8,7 @@ spring:
   jpa:
     open-in-view: false
     hibernate:
-      # TODO(#237): Flyway V1 마이그레이션을 추가하면 validate로 되돌린다 (지금은 테이블이 없어 validate면 앱이 뜨지 않음)
-      ddl-auto: none
+      ddl-auto: validate
 
 server:
   port: 8082
