@@ -58,7 +58,7 @@ com.justcommit.backend
 └── notification    # 알림
 ```
 
-자세한 모듈별 책임과 의존성 규칙은 [모듈 아키텍처 문서](docs/module-architecture.md)를 참고하세요.
+자세한 모듈별 책임과 의존성 규칙은 [모듈 아키텍처 문서](docs/legacy/module-architecture.md)를 참고하세요. 최종 프로젝트(MSA) 설계는 [AGENTS.md의 문서 지도](AGENTS.md#문서-지도)에서 찾을 수 있습니다.
 
 
 ## 팀 구성 및 담당
@@ -72,8 +72,8 @@ com.justcommit.backend
 ## 문서
 - [Figma 기획 자료](https://www.figma.com/board/rnZsalDwY3qwQA0zXaRz6J/일단커밋--기획-자료?node-id=953-5785)
 - [세미 프로젝트 발표 자료](https://docs.google.com/presentation/d/1Q5_6gDUDwS8OuLEVtGVHGAggYA9iuS1z/edit)
-- [모듈 아키텍처](docs/module-architecture.md)
-- [인프라 TODO](docs/infrastructure-todo.md)
+- [설계 문서 지도 (AGENTS.md)](AGENTS.md#문서-지도)
+- [모듈 아키텍처 (세미)](docs/legacy/module-architecture.md)
 
 
 <img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/grass.png" width="100%">
