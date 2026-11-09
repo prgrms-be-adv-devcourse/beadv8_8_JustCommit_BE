@@ -39,9 +39,9 @@ class MemberApplicationTests {
     }
 
     @Test
-    @DisplayName("member 서비스가 DB에 연결되고 Flyway가 실행된다")
+    @DisplayName("V1 마이그레이션이 적용되고 엔티티와 테이블이 맞는다 (ddl-auto: validate 통과)")
     void contextLoads(@Autowired Flyway flyway) {
-        assertThat(flyway.info().all()).isEmpty();
+        assertThat(flyway.info().applied()).hasSize(1);
     }
 
     private static KeyPair newKeyPair() {
