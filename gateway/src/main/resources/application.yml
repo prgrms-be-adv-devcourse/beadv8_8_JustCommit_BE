@@ -13,6 +13,17 @@ spring:
     gateway:
       server:
         webflux:
+          # CORS는 Gateway에서만 (서비스에는 넣지 않음). 지금 프론트는 같은 출처(운영 Nginx · 로컬 Vite 프록시)라
+          # 실제로 쓰이진 않지만, 프론트 주소가 갈라지면 CORS_ALLOWED_ORIGINS만 바꾸면 됨 (쉼표로 여러 개)
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+                allowed-methods: GET,POST,PUT,PATCH,DELETE,OPTIONS
+                allowed-headers: "*"
+                # Refresh 쿠키를 주고받으려면 필요. 이때 allowed-origins에 * 는 쓸 수 없음
+                allow-credentials: true
+                max-age: 3600
           # 기본 타임아웃: 연결 1초 · 응답 10초 (docs/conventions/resilience.md)
           httpclient:
             connect-timeout: 1000
