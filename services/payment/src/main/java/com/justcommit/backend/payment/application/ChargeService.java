@@ -30,14 +30,16 @@ public class ChargeService {
     private final TossPaymentClient tossPaymentClient;
     private final WalletTransactionRepository walletTransactionRepository;
     private final PaymentKeyCipher paymentKeyCipher;
+    private final WalletService walletService;
 
     @Transactional
     public ChargeCreateResponse createCharge(Long memberId, ChargeCreateRequest request) {
-        // 지갑 조회
         Wallet wallet = walletRepository.findByMemberId(memberId)
-                .orElseThrow(() -> new BusinessException(
-                        PaymentErrorCode.WALLET_NOT_FOUND
-                ));
+                .orElseGet(() -> {
+                    walletService.createIfAbsent(memberId);
+                    return walletRepository.findByMemberId(memberId)
+                            .orElseThrow(() -> new BusinessException(PaymentErrorCode.WALLET_NOT_FOUND));
+                });
 
         ChargeType chargeType = request.getChargeType() != null
                 ? request.getChargeType()

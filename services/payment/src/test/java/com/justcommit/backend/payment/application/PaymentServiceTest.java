@@ -1,12 +1,12 @@
 package com.justcommit.backend.payment.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.member.MemberQuery;
 import com.justcommit.backend.payment.PaymentResult;
 import com.justcommit.backend.payment.PaymentStatus;
 import com.justcommit.backend.payment.domain.RefType;
 import com.justcommit.backend.payment.domain.TransactionStatus;
 import com.justcommit.backend.payment.domain.Wallet;
+import com.justcommit.backend.payment.domain.WalletType;
 import com.justcommit.backend.payment.domain.WalletTransaction;
 import com.justcommit.backend.payment.infrastructure.repository.WalletRepository;
 import com.justcommit.backend.payment.infrastructure.repository.WalletTransactionRepository;
@@ -38,12 +38,10 @@ class PaymentServiceTest {
     private static final Long ORDER_ID = 100L;
     private static final Long BUYER_ID = 10L;
     private static final Long WALLET_ID = 1L;
-    private static final Long HOLDING_ID = 999L;
     private static final Long HOLDING_WALLET_ID = 2L;
 
     @Mock WalletRepository walletRepository;
     @Mock WalletTransactionRepository walletTransactionRepository;
-    @Mock MemberQuery memberQuery;
     @InjectMocks PaymentService paymentService;
 
     @Test
@@ -112,8 +110,7 @@ class PaymentServiceTest {
     @DisplayName("HOLDING 지갑이 없으면 예외를 던진다")
     void throwsWhenHoldingWalletMissing() {
         stubBuyerWallet(buyerWalletWithBalance("10000"));
-        when(memberQuery.getHoldingMemberId()).thenReturn(HOLDING_ID);
-        when(walletRepository.findByMemberIdForUpdate(HOLDING_ID)).thenReturn(Optional.empty());
+        when(walletRepository.findByWalletTypeForUpdate(WalletType.HOLDING)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> paymentService.pay(ORDER_ID, BUYER_ID, new BigDecimal("3000")))
                 .isInstanceOf(BusinessException.class);
@@ -133,7 +130,7 @@ class PaymentServiceTest {
         assertThat(result.balanceAfter()).isEqualByComparingTo("2000");
         assertThat(buyerWallet.getBalance()).isEqualByComparingTo("2000");
         verify(walletTransactionRepository, never()).save(any());
-        verifyNoInteractions(memberQuery);
+        verify(walletRepository, never()).findByWalletTypeForUpdate(any());
     }
 
     @Test
@@ -146,7 +143,7 @@ class PaymentServiceTest {
         assertThat(result.status()).isEqualTo(PaymentStatus.WALLET_NOT_FOUND);
         assertThat(result.isPaid()).isFalse();
         assertThat(result.balanceAfter()).isNull();
-        verifyNoInteractions(walletTransactionRepository, memberQuery);
+        verifyNoInteractions(walletTransactionRepository);
     }
 
     @Test
@@ -163,7 +160,7 @@ class PaymentServiceTest {
         assertThat(result.isPaid()).isTrue();
         assertThat(buyerWallet.getBalance()).isEqualByComparingTo("7000");
         verify(walletTransactionRepository, never()).save(any());
-        verifyNoInteractions(memberQuery);
+        verify(walletRepository, never()).findByWalletTypeForUpdate(any());
     }
 
     @Test
@@ -173,7 +170,7 @@ class PaymentServiceTest {
         assertThatThrownBy(() -> paymentService.pay(ORDER_ID, BUYER_ID, new BigDecimal("-1")))
                 .isInstanceOf(BusinessException.class);
 
-        verifyNoInteractions(walletRepository, walletTransactionRepository, memberQuery);
+        verifyNoInteractions(walletRepository, walletTransactionRepository);
     }
 
     @Test
@@ -185,7 +182,7 @@ class PaymentServiceTest {
         assertThatThrownBy(() -> paymentService.pay(ORDER_ID, BUYER_ID, null))
                 .isInstanceOf(BusinessException.class);
 
-        verifyNoInteractions(walletRepository, walletTransactionRepository, memberQuery);
+        verifyNoInteractions(walletRepository, walletTransactionRepository);
     }
 
     // 구매자 지갑 조회 + 중복 결제 아님
@@ -195,21 +192,20 @@ class PaymentServiceTest {
                 .thenReturn(false);
     }
 
-    // HOLDING 회원 ID 조회 + HOLDING 지갑 조회
+    // HOLDING 지갑 조회
     private void stubHoldingWallet(Wallet holdingWallet) {
-        when(memberQuery.getHoldingMemberId()).thenReturn(HOLDING_ID);
-        when(walletRepository.findByMemberIdForUpdate(HOLDING_ID)).thenReturn(Optional.of(holdingWallet));
+        when(walletRepository.findByWalletTypeForUpdate(WalletType.HOLDING)).thenReturn(Optional.of(holdingWallet));
     }
 
     private Wallet buyerWalletWithBalance(String balance) {
-        Wallet wallet = new Wallet(BUYER_ID);
+        Wallet wallet = Wallet.forMember(BUYER_ID);
         wallet.credit(new BigDecimal(balance));
         ReflectionTestUtils.setField(wallet, "id", WALLET_ID);
         return wallet;
     }
 
     private Wallet holdingWallet() {
-        Wallet wallet = new Wallet(HOLDING_ID);
+        Wallet wallet = Wallet.system(WalletType.HOLDING);
         ReflectionTestUtils.setField(wallet, "id", HOLDING_WALLET_ID);
         return wallet;
     }

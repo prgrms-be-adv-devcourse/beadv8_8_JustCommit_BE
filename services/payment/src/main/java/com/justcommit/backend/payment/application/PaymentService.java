@@ -1,7 +1,7 @@
 package com.justcommit.backend.payment.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.member.MemberQuery;
+import com.justcommit.backend.payment.domain.WalletType;
 import com.justcommit.backend.payment.PaymentResult;
 import com.justcommit.backend.payment.PaymentUseCase;
 import com.justcommit.backend.payment.domain.RefType;
@@ -31,7 +31,7 @@ public class PaymentService implements PaymentUseCase {
 
     private final WalletRepository walletRepository;
     private final WalletTransactionRepository walletTransactionRepository;
-    private final MemberQuery memberQuery; // 시스템 HOLDING
+    private final WalletService walletService;
 
     @Override
     @Transactional
@@ -59,9 +59,8 @@ public class PaymentService implements PaymentUseCase {
                 WalletTransaction.paymentOut(buyerWallet, orderId, amount, now));
 
 
-        Long holdingMemberId = memberQuery.getHoldingMemberId();
         Wallet holdingWallet = walletRepository
-                .findByMemberIdForUpdate(holdingMemberId)
+                .findByWalletTypeForUpdate(WalletType.HOLDING)
                 .orElseThrow(() -> new BusinessException(
                         PaymentErrorCode.WALLET_NOT_FOUND
                 ));
@@ -97,15 +96,14 @@ public class PaymentService implements PaymentUseCase {
             throw new BusinessException(PaymentErrorCode.INVALID_AMOUNT);
         }
 
-        Long holdingId = memberQuery.getHoldingMemberId();
-        Long revenueId = memberQuery.getRevenueMemberId();
-
         // 판매자 지갑 잠금
         Wallet sellerWallet = walletRepository
                 .findByMemberIdForUpdate(sellerId)
-                .orElseThrow(() -> new BusinessException(
-                        PaymentErrorCode.WALLET_NOT_FOUND
-                ));
+                .orElseGet(() -> {
+                    walletService.createIfAbsent(sellerId);
+                    return walletRepository.findByMemberIdForUpdate(sellerId)
+                            .orElseThrow(() -> new BusinessException(PaymentErrorCode.WALLET_NOT_FOUND));
+                });
 
         // 중복 정산 방지
         if (walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(
@@ -115,14 +113,14 @@ public class PaymentService implements PaymentUseCase {
 
         // HOLDING 지갑 잠금
         Wallet holdingWallet = walletRepository
-                .findByMemberIdForUpdate(holdingId)
+                .findByWalletTypeForUpdate(WalletType.HOLDING)
                 .orElseThrow(() -> new BusinessException(
                         PaymentErrorCode.WALLET_NOT_FOUND
                 ));
 
         // REVENUE 지갑 잠금
         Wallet revenueWallet = walletRepository
-                .findByMemberIdForUpdate(revenueId)
+                .findByWalletTypeForUpdate(WalletType.REVENUE)
                 .orElseThrow(() -> new BusinessException(
                         PaymentErrorCode.WALLET_NOT_FOUND
                 ));
@@ -175,7 +173,7 @@ public class PaymentService implements PaymentUseCase {
 
         // HOLDING 지갑 잠금
         Wallet holdingWallet = walletRepository
-                .findByMemberIdForUpdate(memberQuery.getHoldingMemberId())
+                .findByWalletTypeForUpdate(WalletType.HOLDING)
                 .orElseThrow(() -> new BusinessException(PaymentErrorCode.WALLET_NOT_FOUND));
 
         // 중복 수신 방지
@@ -193,7 +191,7 @@ public class PaymentService implements PaymentUseCase {
 
         // REVENUE 지갑 잠금
         Wallet revenueWallet = walletRepository
-                .findByMemberIdForUpdate(memberQuery.getRevenueMemberId())
+                .findByWalletTypeForUpdate(WalletType.REVENUE)
                 .orElseThrow(() -> new BusinessException(PaymentErrorCode.WALLET_NOT_FOUND));
 
         LocalDateTime now = LocalDateTime.now(); // HOLDING 출금·REVENUE 입금을 같은 시각으로 기록
@@ -267,7 +265,7 @@ public class PaymentService implements PaymentUseCase {
 
         // HOLDING 지갑 잠금
         Wallet holdingWallet = walletRepository
-                .findByMemberIdForUpdate(memberQuery.getHoldingMemberId())
+                .findByWalletTypeForUpdate(WalletType.HOLDING)
                 .orElseThrow(() -> new BusinessException(PaymentErrorCode.WALLET_NOT_FOUND));
 
         // 이미 수납된 배송비는 환불 불가

@@ -1,12 +1,12 @@
 package com.justcommit.backend.payment.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.member.MemberQuery;
 import com.justcommit.backend.payment.PaymentResult;
 import com.justcommit.backend.payment.PaymentStatus;
 import com.justcommit.backend.payment.domain.RefType;
 import com.justcommit.backend.payment.domain.TransactionStatus;
 import com.justcommit.backend.payment.domain.Wallet;
+import com.justcommit.backend.payment.domain.WalletType;
 import com.justcommit.backend.payment.domain.WalletTransaction;
 import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
 import com.justcommit.backend.payment.infrastructure.repository.WalletRepository;
@@ -44,12 +44,10 @@ class PaymentServiceRefundTest {
     private static final Long BUYER_ID = 10L;
     private static final Long BUYER_WALLET_ID = 1L;
 
-    private static final Long HOLDING_ID = 999L;
     private static final Long HOLDING_WALLET_ID = 2L;
 
     @Mock WalletRepository walletRepository;
     @Mock WalletTransactionRepository walletTransactionRepository;
-    @Mock MemberQuery memberQuery;
     @InjectMocks PaymentService paymentService;
 
     // ===== refundCancelledItem =====
@@ -105,7 +103,7 @@ class PaymentServiceRefundTest {
         assertThat(result.balanceAfter()).isEqualByComparingTo("8000");
         assertThat(buyerWallet.getBalance()).isEqualByComparingTo("8000");
         verify(walletTransactionRepository, never()).save(any());
-        verifyNoInteractions(memberQuery); // HOLDING 지갑은 잠그지 않는다
+        verify(walletRepository, never()).findByWalletTypeForUpdate(any()); // HOLDING 지갑은 잠그지 않는다
     }
 
     // ===== refundShippingFee =====
@@ -157,7 +155,7 @@ class PaymentServiceRefundTest {
 
         assertThat(result.status()).isEqualTo(PaymentStatus.ALREADY_REFUNDED);
         verify(walletTransactionRepository, never()).save(any());
-        verifyNoInteractions(memberQuery);
+        verify(walletRepository, never()).findByWalletTypeForUpdate(any());
     }
 
     // ===== 기존 내역과 다른 요청 =====
@@ -174,7 +172,7 @@ class PaymentServiceRefundTest {
 
         assertThat(buyerWallet.getBalance()).isEqualByComparingTo("8000");
         verify(walletTransactionRepository, never()).save(any());
-        verifyNoInteractions(memberQuery);
+        verify(walletRepository, never()).findByWalletTypeForUpdate(any());
     }
 
     @Test
@@ -206,7 +204,7 @@ class PaymentServiceRefundTest {
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", PaymentErrorCode.WALLET_NOT_FOUND);
 
-        verifyNoInteractions(walletTransactionRepository, memberQuery);
+        verifyNoInteractions(walletTransactionRepository);
     }
 
     @Test
@@ -214,8 +212,7 @@ class PaymentServiceRefundTest {
     void throwsWhenHoldingWalletMissing() {
         Wallet buyerWallet = buyerWallet("5000");
         stubBuyerWallet(buyerWallet, RefType.ORDER_ITEM_CANCEL_REFUND, ORDER_ITEM_ID);
-        when(memberQuery.getHoldingMemberId()).thenReturn(HOLDING_ID);
-        when(walletRepository.findByMemberIdForUpdate(HOLDING_ID)).thenReturn(Optional.empty());
+        when(walletRepository.findByWalletTypeForUpdate(WalletType.HOLDING)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> paymentService.refundCancelledItem(ORDER_ITEM_ID, BUYER_ID, new BigDecimal("3000")))
                 .isInstanceOf(BusinessException.class)
@@ -257,7 +254,7 @@ class PaymentServiceRefundTest {
         assertInvalid(() -> paymentService.refundShippingFee(SELLER_ORDER_ID, BUYER_ID, null));
         assertInvalid(() -> paymentService.refundShippingFee(SELLER_ORDER_ID, BUYER_ID, BigDecimal.ZERO));
 
-        verifyNoInteractions(walletRepository, walletTransactionRepository, memberQuery);
+        verifyNoInteractions(walletRepository, walletTransactionRepository);
     }
 
 
@@ -327,10 +324,9 @@ class PaymentServiceRefundTest {
                 .thenReturn(Optional.of(previous));
     }
 
-    // HOLDING 회원 ID 조회 + HOLDING 지갑 조회
+    // HOLDING 지갑 조회
     private void stubHoldingWallet(Wallet holdingWallet) {
-        when(memberQuery.getHoldingMemberId()).thenReturn(HOLDING_ID);
-        when(walletRepository.findByMemberIdForUpdate(HOLDING_ID)).thenReturn(Optional.of(holdingWallet));
+        when(walletRepository.findByWalletTypeForUpdate(WalletType.HOLDING)).thenReturn(Optional.of(holdingWallet));
     }
 
     // HOLDING 지갑에 같은 환불 건 출금 내역이 있는지
@@ -352,15 +348,14 @@ class PaymentServiceRefundTest {
     }
 
     private Wallet buyerWallet(String balance) {
-        return wallet(BUYER_ID, BUYER_WALLET_ID, balance);
+        return wallet(Wallet.forMember(BUYER_ID), BUYER_WALLET_ID, balance);
     }
 
     private Wallet holdingWallet(String balance) {
-        return wallet(HOLDING_ID, HOLDING_WALLET_ID, balance);
+        return wallet(Wallet.system(WalletType.HOLDING), HOLDING_WALLET_ID, balance);
     }
 
-    private Wallet wallet(Long memberId, Long walletId, String balance) {
-        Wallet wallet = new Wallet(memberId);
+    private Wallet wallet(Wallet wallet, Long walletId, String balance) {
         ReflectionTestUtils.setField(wallet, "id", walletId);
         if (new BigDecimal(balance).signum() > 0) {
             wallet.credit(new BigDecimal(balance));

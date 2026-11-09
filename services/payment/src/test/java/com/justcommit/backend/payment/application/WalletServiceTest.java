@@ -112,7 +112,7 @@ class WalletServiceTest {
     }
 
     private Wallet walletWithId() {
-        Wallet wallet = new Wallet(MEMBER_ID);
+        Wallet wallet = Wallet.forMember(MEMBER_ID);
         ReflectionTestUtils.setField(wallet, "id", WALLET_ID);
         return wallet;
     }

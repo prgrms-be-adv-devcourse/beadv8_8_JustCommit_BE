@@ -53,7 +53,7 @@ public class WalletService implements PaymentQuery {
             return;
         }
         try {
-            walletRepository.saveAndFlush(new Wallet(memberId));
+            walletRepository.saveAndFlush(Wallet.forMember(memberId));
         } catch (DataIntegrityViolationException e) {
             // 동시에 같은 회원 지갑을 만들려다 member_id UK에 걸린 경우 → 이미 생성됨
         }
