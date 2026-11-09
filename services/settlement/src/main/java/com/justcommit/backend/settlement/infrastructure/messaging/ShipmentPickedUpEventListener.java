@@ -1,7 +1,6 @@
 package com.justcommit.backend.settlement.infrastructure.messaging;
 
-import com.justcommit.backend.common.event.ShipmentPickedUpEvent;
-import com.justcommit.backend.payment.PaymentUseCase;
+import com.justcommit.backend.settlement.client.payment.SettlementPayoutClient;
 import lombok.RequiredArgsConstructor;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
@@ -12,7 +11,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class ShipmentPickedUpEventListener {
 
-    private final PaymentUseCase paymentUseCase;
+    private final SettlementPayoutClient settlementPayoutClient;
 
     @KafkaListener(
             topics = "${custom.kafka.topics.shipment-picked-up}",
@@ -20,6 +19,6 @@ public class ShipmentPickedUpEventListener {
     )
     public void onShipmentPickedUp(ShipmentPickedUpEvent event) {
         // 중복 수신은 collectShippingFee가 sellerOrderId로 걸러낸다
-        paymentUseCase.collectShippingFee(event.sellerOrderId(), event.shippingFee());
+        settlementPayoutClient.collectShippingFee(event.sellerOrderId(), event.shippingFee());
     }
 }

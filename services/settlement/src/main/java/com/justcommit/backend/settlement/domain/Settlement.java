@@ -1,6 +1,6 @@
 package com.justcommit.backend.settlement.domain;
 
-import com.justcommit.backend.common.entity.BaseTimeEntity;
+import com.justcommit.backend.settlement.common.entity.BaseTimeEntity;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.settlement.domain.exception.SettlementErrorCode;
 import jakarta.persistence.Column;
