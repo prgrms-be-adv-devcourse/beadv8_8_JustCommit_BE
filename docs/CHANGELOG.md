@@ -1,12 +1,14 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-09 · reference/kafka-topics.md · conventions/events.md · services/market · notification · settlement · `order.events.v1` · `shipment.events.v1`을 `market.events.v1` 하나로 합침(토픽 13→12개, ADR 0018), 판매자 수락 `SellerOrderAccepted`(`rejectedItemCount`) · `SellerOrderCancelled` `reason`(`BUYER` · `SELLER` · `AUTO`)별 알림 확정 (#242)
+- 2026-11-09 · glossary.md · 「수락 · 거절」 코드에 `SellerOrderAccepted` 추가 (#242)
 - 2026-11-08 · testing/scenarios.md · 노션 「테스트 시나리오」 4절에 맞춤: S-C03 · D01 · D03 · D07 · E05 · F01 · H03 문장 수정, S-C08 · C09 · D10 추가, P 그룹 분리, 상세 칸은 노션 링크 (#259)
 - 2026-11-08 · testing/strategy.md · WireMock 규칙(스텁 위치 · 주소 바꿔 끼우기 · 응답 흉내 7가지 · verify) 추가, ID 그룹에 P (#259)
 - 2026-11-08 · services/gateway · notification · settlement · 테스트 시나리오 ID 목록을 노션 서비스 칸에 맞춤 (#259)
