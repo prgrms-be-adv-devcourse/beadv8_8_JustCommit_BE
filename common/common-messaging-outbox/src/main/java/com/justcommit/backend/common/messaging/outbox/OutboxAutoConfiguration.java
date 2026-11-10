@@ -6,7 +6,6 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -26,13 +25,6 @@ import java.util.concurrent.Executors;
 @AutoConfiguration
 @EnableScheduling
 public class OutboxAutoConfiguration {
-
-  // 서비스가 직접 만든 매퍼가 있으면 그걸 씀 (예: product 받는 쪽 설정)
-  @Bean
-  @ConditionalOnMissingBean
-  EventEnvelopeMapper eventEnvelopeMapper() {
-    return new EventEnvelopeMapper();
-  }
 
   @Bean
   OutboxRelay outboxRelay(ProducerFactory<?, ?> producerFactory, OutboxEventRepository repository,
