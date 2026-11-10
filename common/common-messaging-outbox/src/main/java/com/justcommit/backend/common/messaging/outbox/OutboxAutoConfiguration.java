@@ -5,6 +5,7 @@ import jakarta.persistence.EntityManager;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
@@ -44,8 +45,9 @@ public class OutboxAutoConfiguration {
   OutboxPublisher outboxPublisher(EntityManager entityManager, EventEnvelopeMapper mapper, OutboxRelay relay) {
     return new OutboxPublisher(entityManager, mapper, relay, Clock.systemUTC());
   }
-
+  // outbox.scheduler.enabled = false면 재전송, 정리x (기본은 켜짐, 테스트에서 끔)
   @Bean
+  @ConditionalOnBooleanProperty(name = "outbox.scheduler.enabled", matchIfMissing = true)
   OutboxScheduler outboxScheduler(OutboxEventRepository repository, OutboxRelay relay,
                                   PlatformTransactionManager transactionManager) {
     return new OutboxScheduler(repository, relay, transactionManager, Clock.systemUTC());
