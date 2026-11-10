@@ -126,6 +126,7 @@ class SellerRegisterServiceTest {
 
     then(memberRepository).shouldHaveNoInteractions();
     then(sellerRepository).should(never()).saveAndFlush(any());
+    then(outboxPublisher).should(never()).publish(any());
   }
 
   @Test
@@ -140,6 +141,7 @@ class SellerRegisterServiceTest {
             .isEqualTo(MemberErrorCode.MEMBER_NOT_FOUND);
 
     then(sellerRepository).should(never()).saveAndFlush(any());
+    then(outboxPublisher).should(never()).publish(any());
   }
 
   @Test
@@ -155,5 +157,8 @@ class SellerRegisterServiceTest {
             .isInstanceOf(BusinessException.class)
             .extracting("errorCode")
             .isEqualTo(MemberErrorCode.ALREADY_SELLER);
+
+    // 저장이 실패했으니 판매자 등록 이벤트도 남지 않음
+    then(outboxPublisher).should(never()).publish(any());
   }
 }
