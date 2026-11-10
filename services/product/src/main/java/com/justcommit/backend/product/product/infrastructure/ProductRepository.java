@@ -70,6 +70,18 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             """)
     int releaseItem(@Param("productId") Long productId, @Param("orderId") Long orderId, @Param("hide") boolean hide);
 
+    // 판매자 탈퇴: 판매 중(숨김 포함)인 상품만 소프트 삭제. 결제 대기 · 판매 완료 상품은 주문 기록 때문에 남김
+    // shortcut: 검수 중 · 반려 상태가 생기면(사진 검수) 조건에 함께 넣는다
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            UPDATE Product p
+            SET p.status = com.justcommit.backend.product.ProductStatus.DELETED,
+                p.updatedAt = CURRENT_TIMESTAMP
+            WHERE p.sellerId = :sellerId
+              AND p.status = com.justcommit.backend.product.ProductStatus.ACTIVE
+            """)
+    int deleteOnSaleBySeller(@Param("sellerId") Long sellerId);
+
     // 목록: 품종을 함께 조회해 N+1 방지 (사진은 Product의 @BatchSize로 처리)
     @Override
     @EntityGraph(attributePaths = "species") //상품 조회시 품종을 함께 Join 으로 가져옴
