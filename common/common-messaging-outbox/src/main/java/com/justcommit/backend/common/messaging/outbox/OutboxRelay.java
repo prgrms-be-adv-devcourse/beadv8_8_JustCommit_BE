@@ -12,10 +12,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 /**
  * Outbox 행을 Kafka로 보내고 결과를 기록한다 (Outbox 릴레이).
@@ -30,6 +27,10 @@ public class OutboxRelay {
   static final Duration SEND_TIMEOUT = Duration.ofSeconds(5);
   static final String TRACEPARENT_HEADER = "traceparent";
   private static final int ERROR_MAX_LENGTH = 500;
+
+  // 커밋 직후 발행을 동시에 몇 개까지 할지. 넘으면 바로 보내지 않고 재전송 스케줄러에 맡김 (DB 연결 · Kafka 부담 방지)
+  static final int MAX_CONCURRENT_SENDS = 10;
+
   private static final Logger log = LoggerFactory.getLogger(OutboxRelay.class);
 
   private final KafkaTemplate<String, String> kafkaTemplate;
@@ -37,6 +38,7 @@ public class OutboxRelay {
   private final TransactionTemplate newTransaction;
   private final Executor executor;
   private final Clock clock;
+  private final Semaphore sendPermits = new Semaphore(MAX_CONCURRENT_SENDS);
 
   OutboxRelay(KafkaTemplate<String, String> kafkaTemplate, OutboxEventRepository repository,
               PlatformTransactionManager transactionManager, Executor executor, Clock clock) {
@@ -49,19 +51,48 @@ public class OutboxRelay {
     this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
   }
 
-  // 커밋 직후: 요청 스레드를 붙잡지 않도록 다른 스레드에서 보내고, 결과는 새 트랜잭션에 기록
+  // 커밋 직후: 요청 스레드를 붙잡지 않도록 다른 스레드에서 보냄.
+  // 커밋은 이미 끝났으므로 어떤 경우에도 호출한 쪽에 예외를 넘기지 않음 (못 보낸 건 재전송 스케줄러가 보냄)
   void publishAfterCommit(OutboxEvent event) {
-    executor.execute(() -> {
-      try {
-        send(event);
-        newTransaction.executeWithoutResult(status -> repository.markPublished(event.getId(), clock.instant()));
-      } catch (Exception e) {
-        String error = describe(e);
-        newTransaction.executeWithoutResult(status -> repository.recordFailure(event.getId(), error, MAX_ATTEMPTS));
-        log.warn("Outbox 커밋 직후 발행 실패, 재전송 대기: eventId={}, topic={}, error={}",
-            event.getId(), event.getTopic(), error);
-      }
-    });
+    if (!sendPermits.tryAcquire()) {
+      return;
+    }
+    try {
+      executor.execute(() -> {
+        try {
+          sendAndRecord(event);
+        } finally {
+          sendPermits.release();
+        }
+      });
+    } catch (RejectedExecutionException e) {
+      // 앱이 꺼지는 중 등으로 실행을 못 함
+      sendPermits.release();
+      log.warn("Outbox 커밋 직후 발행을 시작하지 못함, 재전송 대기: eventId={}, error={}", event.getId(), describe(e));
+    }
+  }
+
+  private void sendAndRecord(OutboxEvent event) {
+    try {
+      send(event);
+    } catch (Exception e) {
+      String error = describe(e);
+      log.warn("Outbox 커밋 직후 발행 실패, 재전송 대기: eventId={}, topic={}, error={}",
+          event.getId(), event.getTopic(), error);
+      recordQuietly(event, () -> repository.recordFailure(event.getId(), error, MAX_ATTEMPTS));
+      return;
+    }
+    // 보내기는 성공: 기록만 실패하면 실패 횟수를 올리지 않음 (재전송으로 한 번 더 나갈 수 있음, 최소 1회 전달)
+    recordQuietly(event, () -> repository.markPublished(event.getId(), clock.instant()));
+  }
+
+  // 결과 기록이 실패해도(DB 장애 등) 로그만 남김: 행이 PENDING으로 남아 재전송 스케줄러가 다시 보냄
+  private void recordQuietly(OutboxEvent event, Runnable update) {
+    try {
+      newTransaction.executeWithoutResult(status -> update.run());
+    } catch (RuntimeException e) {
+      log.warn("Outbox 발행 결과 기록 실패, 재전송 대기: eventId={}, error={}", event.getId(), describe(e));
+    }
   }
 
   // Kafka가 저장했다고 응답할 때까지 기다림 (최대 SEND_TIMEOUT). payload는 로그에 남기지 않음
