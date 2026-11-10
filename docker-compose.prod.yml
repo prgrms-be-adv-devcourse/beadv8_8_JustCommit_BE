@@ -106,6 +106,33 @@ services:
       retries: 10
       start_period: 30s
 
+  # 성능 측정(#351): 서버 CPU · 메모리 · 디스크 지표. CPU steal 값으로 크레딧 제한도 보인다
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    container_name: replant-node-exporter
+    command: ["--path.rootfs=/host"]
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    ports:
+      - "127.0.0.1:9100:9100" # SSH 터널로만 접근
+    restart: unless-stopped
+
+  # 성능 측정(#351): DB 연결 수 · 잠금 수 · 트랜잭션 지표
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.17.1
+    container_name: replant-postgres-exporter
+    environment:
+      DATA_SOURCE_URI: postgres:5432/${DB_NAME}?sslmode=disable
+      DATA_SOURCE_USER: ${DB_USERNAME}
+      DATA_SOURCE_PASS: ${DB_PASSWORD}
+    ports:
+      - "127.0.0.1:9187:9187" # SSH 터널로만 접근
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
 networks:
   # 서버에서 처음 한 번 만든다: docker network create replant-net
   replant-net:

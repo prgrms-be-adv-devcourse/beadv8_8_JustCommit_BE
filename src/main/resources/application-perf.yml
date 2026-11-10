@@ -16,3 +16,9 @@ management:
       # 응답 시간을 구간별로 세어 두면 Prometheus에서 p95 · p99를 계산할 수 있다
       percentiles-histogram:
         "[http.server.requests]": true
+
+# Tomcat 작업 스레드(기본 최대 200) 사용 수를 지표로 내보낸다 — 커넥션 풀(10)과 비교용
+server:
+  tomcat:
+    mbeanregistry:
+      enabled: true
