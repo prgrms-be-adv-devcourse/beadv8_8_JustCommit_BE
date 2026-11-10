@@ -13,7 +13,7 @@
 | `common-security` (서블릿) | `JwtAuthenticationFilter`, 401/403 핸들러, `SecurityConfig` 기본 규칙, `/internal/**` 내부 키 필터, `UserIdMdcFilter` | 서비스 2차 검증 |
 | `common-messaging` | `EventEnvelope` · `IntegrationEvent`, 토픽 이름 상수, 소비 실패 처리 기본 설정(1 · 2 · 4초 제자리 재시도 → `원래토픽.DLT`), 민감 필드 암호화 | 모든 서비스가 같은 형식으로 주고받게 |
 | `common-messaging-outbox` | Outbox 저장 · 커밋 후 발행 · 재전송(10초 · 5회) · 정리(7일), `traceparent` 헤더, 권장 SQL | 보내는 서비스만 의존 (받기만 하는 서비스가 `outbox_event` 테이블을 만들 필요 없게 분리) |
-| `common-logging` | `common-logging.yml`(JSON · 레벨 · traceId · Kafka 전파), actuator · micrometer-tracing 의존성, 개인정보 마스킹 | Loki에서 한 번에 검색 |
+| `common-logging` | `common-logging.yml`(JSON · 레벨 · traceId · Kafka 전파 · OTLP 추적 내보내기), actuator · micrometer-tracing(OTel 브리지) · OTLP exporter 의존성, 개인정보 마스킹 | Loki에서 한 번에 검색, Tempo에서 구간별 지연 확인 |
 
 Resilience4j는 쓰지 않습니다 → [ADR 0011](../decisions/0011-no-circuit-breaker.md)
 

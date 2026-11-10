@@ -1,23 +1,26 @@
 # 관측 (로그 · 지표 · 알림)
 
-> 언제 읽나: 로그 형식, 대시보드, 알림을 다룰 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: Miro 16, 노션 「정책 정리」 10.10
+> 언제 읽나: 로그 형식, 추적, 대시보드, 알림을 다룰 때
+> 상태: ✅ 확정 · 마지막 수정 2026-11-10 · 관련: Miro 16, 노션 「정책 정리」 10.10, ADR 0008 · 0019
 
 ## 구성
 
-Alloy가 컨테이너 로그를 모아 Loki로, Prometheus가 `/actuator/prometheus`를 수집하고, Grafana가 대시보드와 알림을 맡아 Slack 웹훅으로 보냅니다. 로그용 OpenSearch · ELK는 쓰지 않습니다. Grafana는 포트를 외부에 열지 않고 SSH 터널로만 접속합니다.
+Alloy가 컨테이너 로그를 모아 Loki로, 서비스가 OTLP로 보낸 추적을 받아 Tempo로 넘깁니다. Prometheus가 `/actuator/prometheus`를 수집하고, Grafana가 대시보드와 알림을 맡아 Slack 웹훅으로 보냅니다. Grafana에서 Loki 로그와 Tempo 추적을 traceId로 서로 오갑니다. 로그용 OpenSearch · ELK는 쓰지 않습니다. Grafana는 포트를 외부에 열지 않고 SSH 터널로만 접속합니다.
 
-| 도구 | 보관 |
-|---|---|
-| Loki | 14일 |
-| Prometheus | 7일 |
+| 도구 | 하는 일 | 보관 |
+|---|---|---|
+| Alloy | 로그 · 추적 수집 | – |
+| Loki | 로그 | 14일 |
+| Tempo | 분산 추적 (샘플링 100%) | 3일 |
+| Prometheus | 지표 | 7일 |
+| Grafana | 화면 · 알림 | – |
 
 ## 로그
 
 | 항목 | 내용 |
 |---|---|
 | 형식 | 운영 JSON(ECS, Spring Boot 내장 structured logging), 로컬 텍스트 |
-| 추적 | Micrometer Tracing traceId를 REST · Kafka 헤더 `traceparent`로 전파, 로그에만 기록 (Tempo · Zipkin 없음) |
+| 추적 | Micrometer Tracing(OTel 브리지) traceId를 REST · Kafka 헤더 `traceparent`로 전파해 로그에 기록, span은 OTLP로 Alloy → Tempo |
 | MDC | 인증 필터(`UserIdMdcFilter`)가 memberId를 넣고, `common-logging`은 형식 · 키 이름만 정함 |
 | 메시지 | 한국어 한 문장 + 값은 key-value (`log.atInfo().addKeyValue(...)`), 객체 통째 출력 금지 |
 | 금지 | 이름 · 전화 · 주소 · 이메일 · 계좌 · 비밀번호 · 토큰 · 결제 키 · 쿼리스트링을 로그에 남기지 않음 |
