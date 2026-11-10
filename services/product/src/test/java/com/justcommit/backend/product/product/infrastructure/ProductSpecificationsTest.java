@@ -68,7 +68,8 @@ class ProductSpecificationsTest {
     @BeforeEach
     void setUp() {
         Species species = BeanUtils.instantiateClass(Species.class);
-        ReflectionTestUtils.setField(species, "name", "몬스테라");
+        // V4가 넣은 품종과 이름이 겹치지 않게 테스트 전용 이름을 쓴다
+        ReflectionTestUtils.setField(species, "name", "테스트 품종");
         entityManager.persist(species);
 
         active  = save(species, SELLER_ID, "판매 중");
@@ -92,10 +93,10 @@ class ProductSpecificationsTest {
         entityManager.clear();   // 메모리의 엔티티를 비워서 다시 덮어쓰지 않게 함
     }
 
-    // 관리 조건을 가진 품종 저장 (품종명은 unique)
+    // 관리 조건을 가진 품종 저장 (품종명은 unique라 V4가 넣은 품종과 겹치지 않게 "테스트 "를 붙임)
     private Species species(String name, Light light, Watering watering, Difficulty difficulty) {
         Species species = BeanUtils.instantiateClass(Species.class);
-        ReflectionTestUtils.setField(species, "name", name);
+        ReflectionTestUtils.setField(species, "name", "테스트 " + name);
         ReflectionTestUtils.setField(species, "light", light);
         ReflectionTestUtils.setField(species, "watering", watering);
         ReflectionTestUtils.setField(species, "difficulty", difficulty);

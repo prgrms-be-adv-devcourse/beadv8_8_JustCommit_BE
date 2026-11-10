@@ -18,13 +18,12 @@ import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 class ProductTest {
 
     // 테스트용 품종을 만드는 메서드
-    private Species species (boolean banned){
+    private Species species(){
         Species species = BeanUtils.instantiateClass(Species.class);
         //Species 는 생성자가 protected 여서  BeanUtils.instantiateClass는 생성자 접근 제한을 무시하고 강제로 객체 생성
 
         // Null 이 될 수 없는 값들만 집어넣음
         ReflectionTestUtils.setField(species, "name", "몬스테라");
-        ReflectionTestUtils.setField(species, "banned", banned);
         return species;
     }
 
@@ -35,18 +34,9 @@ class ProductTest {
     }
 
     @Test
-    @DisplayName("금지 품종으로는 상품을 생성할 수 없음 (BANNED_SPECIES)")
-    void createWithBannedSpecies() {
-        assertThatThrownBy(() -> create(species(true)))
-                .isInstanceOf(BusinessException.class)
-                .extracting("errorCode")
-                .isEqualTo(ProductErrorCode.BANNED_SPECIES);
-    }
-
-    @Test
     @DisplayName("상품을 생성하면 판매 중·숨김 아님 상태이고 첫 사진이 썸네일")
     void create() {
-        Product product = create(species(false));
+        Product product = create(species());
 
         assertThat(product.getStatus()).isEqualTo(ProductStatus.ACTIVE);
         assertThat(product.isHidden()).isFalse();
@@ -54,7 +44,7 @@ class ProductTest {
     @Test
     @DisplayName("결제 대기 중인 상품도 숨길 수 있음")
     void hidePaymentPendingProduct() {
-        Product product = create(species(false));
+        Product product = create(species());
         ReflectionTestUtils.setField(product, "status", ProductStatus.PAYMENT_PENDING);
 
         product.changeHidden(true);
@@ -65,7 +55,7 @@ class ProductTest {
     @Test
     @DisplayName("삭제된 상품은 숨김을 바꿀 수 없음 (PRODUCT_NOT_HIDEABLE)")
     void hideDeletedProduct() {
-        Product product = create(species(false));
+        Product product = create(species());
         product.delete();
 
         assertThatThrownBy(() -> product.changeHidden(true))

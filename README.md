@@ -10,7 +10,7 @@
 | 구분 | 주요 기능 |
 | --- | --- |
 | **회원 (Member)** | 이메일 인증 회원가입, JWT 로그인, 카카오 로그인, 배송지 관리, 판매자 등록 |
-| **상품 (Product)** | 상품 등록 · 수정 · 삭제 · 숨김, 판매 금지 품종 등록 차단, 품종 · 생육환경 · 가격 필터 검색, 품종 정보 조회(농사로 217종) |
+| **상품 (Product)** | 상품 등록 · 수정 · 삭제 · 숨김, 품종 · 생육환경 · 가격 필터 검색, 품종 정보 조회(농사로 215종, 이름 · 학명 · 별칭 검색) |
 | **장바구니 · 주문 (Market)** | 장바구니 담기 · 삭제 · 조회, 장바구니 주문, 수거 전 주문 취소, 구매 확정 · 배송 완료 3일 후 자동 확정, 주문 · 판매 내역 조회 |
 | **결제 (Payment)** | 토스페이먼츠 예치금 충전, 예치금 결제, 주문 취소 시 상품 금액 · 배송비 환불, 잔액 · 거래 내역 조회 |
 | **정산 (Settlement)** | 구매 확정 시 수수료 공제 후 판매자 정산, 정산 내역 조회 |
@@ -138,7 +138,7 @@ Spring Modulith 아키텍처 검증 테스트만 실행하려면 다음 명령�
 
 운영 서버는 Nginx(HTTPS, `replant.kro.kr`)가 요청을 받아 같은 서버의 Spring 컨테이너(`127.0.0.1:8080`)로 넘깁니다. `docker-compose.prod.yml`에 Spring(app), PostgreSQL, Redis, Kafka가 있고, 모든 포트는 `127.0.0.1`에만 열립니다.
 
-전체 배포(백엔드 develop, 프론트 develop, 모의 택배사 main)는 `scripts/deploy.sh` 하나로 합니다. 서버 홈에 복사해 `bash ~/deploy.sh`로 실행하며, 비밀값은 서버에 별도로 보관합니다. 배포 전에 `.env.example`에 있는 변수가 서버에 모두 있는지 검사하고, 끝나면 health 확인과 품종 데이터 적재까지 합니다.
+전체 배포(백엔드 develop, 프론트 develop, 모의 택배사 main)는 `scripts/deploy.sh` 하나로 합니다. 서버 홈에 복사해 `bash ~/deploy.sh`로 실행하며, 비밀값은 서버에 별도로 보관합니다. 배포 전에 `.env.example`에 있는 변수가 서버에 모두 있는지 검사하고, 끝나면 health 확인과 품종 수 확인까지 합니다.
 
 아래는 백엔드만 직접 띄울 때입니다.
 
@@ -149,11 +149,8 @@ docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 - 프로젝트 이름이 `replant`로 고정되어 있어 어느 폴더에서 실행해도 같은 볼륨(데이터)을 씁니다.
-- 세미 프로젝트에서는 Flyway를 끄고 `ddl-auto: update`로 테이블을 만듭니다. 품종 데이터는 첫 배포 후 한 번 넣습니다 (이미 있는 행은 건너뜀).
-
-```bash
-docker compose -f docker-compose.prod.yml exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < services/product/src/main/resources/db/data/species.sql
-```
+- 세미 프로젝트에서는 Flyway를 끄고 `ddl-auto: update`로 테이블을 만듭니다. 세미 운영 DB에는 품종 데이터가 이미 들어가 있습니다.
+- 서비스로 나눈 뒤에는 product 서비스가 시작할 때 Flyway가 품종 데이터(`V4__insert_species_data.sql`)를 `product_db`에 넣습니다.
 
 - 확인: `curl https://replant.kro.kr/actuator/health` 가 `UP`이면 정상입니다.
 - `KAKAO_CLIENT_ID`, `KAKAO_CLIENT_SECRET`이 비어 있으면 Spring이 기동에 실패합니다.
