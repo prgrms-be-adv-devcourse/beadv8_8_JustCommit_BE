@@ -16,6 +16,13 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+    consumer:
+      group-id: market
+      # 그룹이 처음 생길 때(첫 배포), 그 전에 쌓인 회원 이벤트부터 읽어 복제본을 채움
+      auto-offset-reset: earliest
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: com.justcommit.backend.common.messaging.consumer.EventEnvelopeDeserializer
   # 내부 API 그룹 주소. 연결 1초 · 응답 3초는 common-web 기본값
   http:
     serviceclient:
