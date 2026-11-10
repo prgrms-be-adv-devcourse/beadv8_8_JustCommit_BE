@@ -318,6 +318,7 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("다른 파드가 잡았거나 이미 결제된 주문은 만료하지 않고 건너뛴다")
     void expirationSkipsOrderLockedByAnotherPodOrNoLongerPending() {
         Orders paid = pendingOrder(10L);
         paid.paid();
@@ -333,6 +334,7 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("한 주문의 만료가 실패해도 다음 주문은 계속 처리한다")
     void expirationContinuesWithNextOrderAfterFailure() {
         Orders first = pendingOrder(10L);
         Orders second = pendingOrder(10L);
