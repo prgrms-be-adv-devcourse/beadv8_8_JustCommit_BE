@@ -1,5 +1,7 @@
 package com.justcommit.backend.member.member.application;
 
+import com.justcommit.backend.member.event.MemberCreated;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.domain.*;
@@ -43,6 +45,9 @@ class SignupServiceTest {
 
   @Mock
   private AccountCipher accountCipher;
+
+  @Mock
+  private OutboxPublisher outboxPublisher;
 
   @InjectMocks
   private SignupService signupService;
@@ -129,6 +134,9 @@ class SignupServiceTest {
 
     // then: 인증 완료 기록 삭제
     then(verificationStore).should().deleteVerified(EMAIL);
+
+    // then: 다른 서비스에 가입을 알림 (판매자 아님)
+    then(outboxPublisher).should().publish(new MemberCreated(1L, NICKNAME, "MEMBER", false));
   }
 
   @Test

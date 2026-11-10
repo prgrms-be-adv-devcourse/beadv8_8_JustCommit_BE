@@ -1,16 +1,18 @@
 package com.justcommit.backend.member.member.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
-import com.justcommit.backend.member.auth.infrastructure.jwt.SignupClaims;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.common.security.TokenException;
 import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.auth.application.LoginResult;
 import com.justcommit.backend.member.auth.application.RefreshTokenIssuer;
+import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
+import com.justcommit.backend.member.auth.infrastructure.jwt.SignupClaims;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
+import com.justcommit.backend.member.event.MemberCreated;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +34,7 @@ public class SocialSignupService {
   private final AccountCipher accountCipher;
   private final JwtProvider jwtProvider;
   private final RefreshTokenIssuer refreshTokenIssuer;
+  private final OutboxPublisher outboxPublisher;
 
   @Value("${jwt.access-token-expiration}")
   private Duration accessTokenExpiration;
@@ -83,7 +86,8 @@ public class SocialSignupService {
             command.addressName()
     ));
 
-    // TODO: common-messaging 이후 Outbox로 member.events.v1에 가입 이벤트 발행
+    // 다른 서비스에 가입을 알림 (같은 트랜잭션에 저장, 커밋된 뒤에만 발행). 가입 직후는 판매자가 아님
+    outboxPublisher.publish(MemberCreated.from(member, false));
 
     // 가입 후 바로 로그인
     return issueTokens(member);

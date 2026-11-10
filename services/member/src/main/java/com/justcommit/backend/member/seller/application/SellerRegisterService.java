@@ -1,12 +1,14 @@
 package com.justcommit.backend.member.seller.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.member.domain.Member;
-import com.justcommit.backend.member.seller.domain.Seller;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
+import com.justcommit.backend.member.event.MemberUpdated;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.seller.domain.Seller;
 import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -18,6 +20,7 @@ public class SellerRegisterService {
 
   private final MemberRepository memberRepository;
   private final SellerRepository sellerRepository;
+  private final OutboxPublisher outboxPublisher;
 
   // 판매자 등록: 판매자 여부 확인 → 회원 조회 → 권한 변경 → 판매자 저장
   @Transactional
@@ -41,6 +44,9 @@ public class SellerRegisterService {
     } catch (DataIntegrityViolationException e) {
       throw new BusinessException(MemberErrorCode.ALREADY_SELLER);
     }
+
+    // 다른 서비스의 회원 복제본에 판매자 등록을 알림. ADMIN은 role이 그대로라 seller로 구분
+    outboxPublisher.publish(MemberUpdated.from(member, true));
 
     // sellerId = memberId (SELLER는 회원 id를 PK로 사용)
     return new SellerResult(member.getId(), member.getNickname(), seller.getIntro(), seller.getCreatedAt());
