@@ -53,17 +53,22 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             """)
     int markSoldOut(@Param("orderId") Long orderId);
 
-    // 이 주문으로 판매 완료된 상품 한 건만 판매중으로 되돌림 (결제 후 단건 취소)
-    @Modifying(flushAutomatically = true,clearAutomatically = true)
+    // 판매 재개: 이 주문이 잡은 상품 한 건만 판매 중으로 되돌림 (결제 후 취소 · 반품, 취소가 판매 완료보다 먼저 와도 맞게)
+    // hide = true면 숨김도 켬 (판매자 거절 · 자동 거절 · 반품). false면 숨김 상태를 그대로 둠
+    // 이미 다른 주문에 다시 팔린 상품은 reservedOrderId가 달라 건드리지 않음
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
-        UPDATE Product p
-        SET p.status = com.justcommit.backend.product.ProductStatus.ACTIVE,
-            p.reservedOrderId = null,
-            p.updatedAt = CURRENT_TIMESTAMP
-        WHERE p.id = :productId
-          AND p.status = com.justcommit.backend.product.ProductStatus.SOLD_OUT
-        """)
-    int releaseItem( @Param("productId") Long productId);
+            UPDATE Product p
+            SET p.status = com.justcommit.backend.product.ProductStatus.ACTIVE,
+                p.reservedOrderId = null,
+                p.hidden = CASE WHEN :hide = true THEN true ELSE p.hidden END,
+                p.updatedAt = CURRENT_TIMESTAMP
+            WHERE p.id = :productId
+              AND p.reservedOrderId = :orderId
+              AND p.status IN (com.justcommit.backend.product.ProductStatus.PAYMENT_PENDING,
+                               com.justcommit.backend.product.ProductStatus.SOLD_OUT)
+            """)
+    int releaseItem(@Param("productId") Long productId, @Param("orderId") Long orderId, @Param("hide") boolean hide);
 
     // 목록: 품종을 함께 조회해 N+1 방지 (사진은 Product의 @BatchSize로 처리)
     @Override

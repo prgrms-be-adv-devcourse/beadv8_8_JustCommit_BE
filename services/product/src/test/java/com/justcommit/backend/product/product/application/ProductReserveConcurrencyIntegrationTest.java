@@ -321,6 +321,65 @@ class ProductReserveConcurrencyIntegrationTest {
         assertActive(productId);
     }
 
+    @Test
+    @DisplayName("판매 재개: 구매자 취소면 판매 완료 상품을 판매 중으로 되돌리고 숨기지 않는다")
+    void releaseItemAfterBuyerCancelKeepsVisible() {
+        Long productId = saveActiveProduct();
+        assertThat(reserves(1L, productId)).isTrue();
+        assertThat(productUseCase.markSoldOut(1L)).isTrue();
+
+        assertThat(productUseCase.releaseItem(productId, 1L, false)).isTrue();
+
+        assertActive(productId);
+        assertThat(productRepository.findById(productId).orElseThrow().isHidden()).isFalse();
+    }
+
+    @Test
+    @DisplayName("판매 재개: 판매자 거절 · 반품이면 판매 중으로 되돌리고 숨긴다")
+    void releaseItemWithHideHidesProduct() {
+        Long productId = saveActiveProduct();
+        assertThat(reserves(1L, productId)).isTrue();
+        assertThat(productUseCase.markSoldOut(1L)).isTrue();
+
+        assertThat(productUseCase.releaseItem(productId, 1L, true)).isTrue();
+
+        assertActive(productId);
+        assertThat(productRepository.findById(productId).orElseThrow().isHidden()).isTrue();
+    }
+
+    @Test
+    @DisplayName("판매 재개: 취소가 판매 완료보다 먼저 와도 결제 대기 상품을 되돌리고, 늦은 판매 완료는 0건이다")
+    void releaseItemBeforeSoldOutThenLateSoldOutIsNoop() {
+        Long productId = saveActiveProduct();
+        assertThat(reserves(1L, productId)).isTrue();
+
+        assertThat(productUseCase.releaseItem(productId, 1L, false)).isTrue();
+        assertThat(productUseCase.markSoldOut(1L)).isFalse();
+
+        assertActive(productId);
+    }
+
+    @Test
+    @DisplayName("판매 재개: 이미 다른 주문에 다시 팔린 상품이나 같은 이벤트가 다시 오면 아무것도 바꾸지 않는다")
+    void releaseItemIgnoresOtherOrderAndDuplicates() {
+        Long productId = saveActiveProduct();
+        assertThat(reserves(1L, productId)).isTrue();
+        assertThat(productUseCase.markSoldOut(1L)).isTrue();
+        assertThat(productUseCase.releaseItem(productId, 1L, false)).isTrue();
+
+        // 주문 2가 다시 사서 판매 완료
+        assertThat(reserves(2L, productId)).isTrue();
+        assertThat(productUseCase.markSoldOut(2L)).isTrue();
+
+        // 주문 1의 취소 이벤트가 한 번 더 와도(중복) 주문 2의 판매는 그대로
+        assertThat(productUseCase.releaseItem(productId, 1L, true)).isFalse();
+
+        Product product = productRepository.findById(productId).orElseThrow();
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+        assertThat(product.getReservedOrderId()).isEqualTo(2L);
+        assertThat(product.isHidden()).isFalse();
+    }
+
     // 실패를 예외로 알리는 동작을, 다른 결과와 비교할 수 있게 성공 여부로 바꾼다
     private boolean succeeds(Runnable action) {
         try {

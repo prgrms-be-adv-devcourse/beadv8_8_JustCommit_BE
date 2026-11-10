@@ -41,8 +41,8 @@ public class ProductInternalController {
     // 주문 생성 때 상품 예약. 전부 예약되거나 아무것도 예약되지 않음, 같은 orderId로 다시 오면 그대로 성공
     @PostMapping("/reservations")
     public ApiResponse<Void> reserve(
-            // 없을 때도 400으로 답하려고 required = false로 받고 직접 확인 (공통 예외 처리기는 헤더 누락을 500으로 바꿈)
-            @RequestHeader(value = IDEMPOTENCY_KEY, required = false) Long idempotencyKey,
+            // 없으면 공통 예외 처리기가 400 MISSING_HEADER로 답함
+            @RequestHeader(IDEMPOTENCY_KEY) Long idempotencyKey,
             @RequestBody @Valid ProductReservationRequest request) {
 
         if (!request.orderId().equals(idempotencyKey)) {

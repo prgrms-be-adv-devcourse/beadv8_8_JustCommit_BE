@@ -9,6 +9,24 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    admin:
+      fail-fast: false
+    consumer:
+      # Consumer Group = 서비스 이름 (docs/conventions/events.md)
+      group-id: product
+      # 그룹이 처음 붙을 때 앞에 쌓인 이벤트부터 받음 (판매 완료 · 해제를 놓치지 않게)
+      auto-offset-reset: earliest
+      # 봉투(EventEnvelope) JSON을 문자열로 받아 EventEnvelopeMapper로 바꿈
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      # 처리에 실패한 메시지를 원래 문자열 그대로 원래토픽.DLT로 보냄
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    listener:
+      concurrency: 3
 
 server:
   port: 8082
