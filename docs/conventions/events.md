@@ -1,7 +1,7 @@
 # 이벤트 규칙
 
 > 언제 읽나: Kafka 이벤트를 발행하거나 구독할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: Miro 8 · 11-1 · 11-2, 노션 기획안 「이벤트 규칙」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-10 · 관련: Miro 8 · 11-1 · 11-2, 노션 기획안 「이벤트 규칙」
 
 ## 이름과 토픽
 
@@ -38,29 +38,35 @@
 ## Outbox
 
 알림용을 포함한 **모든 이벤트**를 Outbox로 발행합니다.
+이벤트를 보내는 서비스는 `common-messaging-outbox`를 의존하고 받기만 하는 서비스는 필요 없습니다.
 
 1. 업무 데이터와 `outbox_event` 행을 같은 트랜잭션에 저장
-2. 커밋 직후 바로 Kafka로 발행 (`afterCommit`)
-3. 남은 행은 재전송 스케줄러가 **10초마다** 다시 보냄. **5번** 실패하면 `FAILED` + 경고 로그 + 팀 메신저 알림
-4. 발행이 끝난 행은 **7일** 보관 후 삭제 (모든 서비스 같은 값)
+2. 커밋 직후 바로 Kafka로 발행 (다른 스레드에서, Kafka가 저장했다고 응답해야 `PUBLISHED`)
+3. 남은 행은 재전송 스케줄러가 **10초마다** 다시 보냄 (만든 지 5초 지난 행, 한 행씩 `FOR UPDATE SKIP LOCKED`). 커밋 직후 발행을 포함해 **5번** 실패하면 `FAILED` + 경고 로그 + 팀 메신저 알림
+4. 발행이 끝난 행은 **7일** 보관 후 삭제 (1시간마다 정리, 모든 서비스 같은 값)
+
+보낸 뒤 기록에 실패하면 같은 이벤트가 다시 나갈 수 있습니다(최소 1회 전달). 받는 쪽이 업무 키로 중복을 막습니다(아래 「소비와 멱등」).
 
 ```java
-OutboxEvent e = outbox.save(PurchaseConfirmed.of(...));
-afterCommit(() -> relay.publish(e.getId()));
+@Transactional
+public void confirm(...) {
+    // 업무 처리 ...
+    outboxPublisher.publish(new PurchaseConfirmed(sellerOrderId, sellerId, amount)); // 트랜잭션 밖이면 예외
+}
 ```
 
-| 칸 | 내용 |
-|---|---|
-| `id` | PK (= `eventId`) |
-| `aggregate_type` · `aggregate_id` | Key 계산용 |
-| `topic` · `event_type` | 보낼 토픽 · 이벤트 이름 |
-| `payload` | 봉투 JSON |
-| `traceparent` | 헤더로 보낼 값 |
-| `status` · `published_at` | 발행 상태 |
-| `attempt_count` · `last_error` | 재전송 횟수 · 마지막 실패 원인 |
-| `created_at` | 대기 시간 알림 기준 |
+| 칸 | 타입 | 내용 |
+|---|---|---|
+| `id` | `uuid` | PK (= `eventId`) |
+| `aggregate_id` | `varchar(100)` | Kafka Key |
+| `topic` · `event_type` | `varchar(100)` | 보낼 토픽 · 이벤트 이름 |
+| `payload` | `text` | 봉투 JSON |
+| `traceparent` | `varchar(55)` | 헤더로 보낼 값 (common-logging 전까지 비어 있음) |
+| `status` · `published_at` | `varchar(20)` · `timestamptz` | `PENDING` · `PUBLISHED` · `FAILED`, 발행 시각 |
+| `attempt_count` · `last_error` | `integer` · `varchar(500)` | 실패 횟수(커밋 직후 발행 포함) · 마지막 실패 원인 |
+| `created_at` | `timestamptz` | 재전송 · 대기 시간 알림 기준 |
 
-인덱스 `(status, created_at)`. 🟨 나머지 칸 이름 · 타입은 `common-messaging` 담당이 최종 확인합니다.
+인덱스 `(status, created_at)`. 테이블은 서비스마다 자기 Flyway 새 버전으로 만듭니다 (권장 SQL: `common-messaging-outbox`의 `outbox/outbox_event.sql`, 이미 적용된 V1은 고치지 않음). 재전송 · 정리를 끄려면 `outbox.scheduler.enabled=false`.
 
 ## 소비와 멱등
 
