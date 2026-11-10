@@ -1,4 +1,4 @@
-package com.justcommit.backend.payment;
+package com.justcommit.backend.payment.application;
 
 import java.math.BigDecimal;
 

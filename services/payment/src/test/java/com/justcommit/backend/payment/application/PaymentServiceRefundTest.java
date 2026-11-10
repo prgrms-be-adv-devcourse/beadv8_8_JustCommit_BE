@@ -1,8 +1,6 @@
 package com.justcommit.backend.payment.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.payment.PaymentResult;
-import com.justcommit.backend.payment.PaymentStatus;
 import com.justcommit.backend.payment.domain.RefType;
 import com.justcommit.backend.payment.domain.TransactionStatus;
 import com.justcommit.backend.payment.domain.Wallet;

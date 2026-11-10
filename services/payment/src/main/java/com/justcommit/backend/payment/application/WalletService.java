@@ -1,7 +1,6 @@
 package com.justcommit.backend.payment.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.payment.PaymentQuery;
 import com.justcommit.backend.payment.domain.RefType;
 import com.justcommit.backend.payment.domain.Wallet;
 import com.justcommit.backend.payment.domain.WalletTransaction;
@@ -22,12 +21,11 @@ import java.math.BigDecimal;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
-public class WalletService implements PaymentQuery {
+public class WalletService {
 
     private final WalletRepository walletRepository;
     private final WalletTransactionRepository walletTransactionRepository;
 
-    @Override
     public BigDecimal getBalance(Long memberId) {
         return getWallet(memberId).getBalance();
     }
