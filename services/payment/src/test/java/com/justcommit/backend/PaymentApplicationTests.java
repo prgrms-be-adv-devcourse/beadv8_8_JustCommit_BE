@@ -1,6 +1,7 @@
 package com.justcommit.backend;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.justcommit.backend.payment.domain.WalletType;
@@ -16,6 +17,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -48,6 +51,30 @@ class PaymentApplicationTests {
         // 시스템 지갑은 V1이 종류별로 하나씩 만든다
         assertThat(walletRepository.findByWalletType(WalletType.HOLDING)).isPresent();
         assertThat(walletRepository.findByWalletType(WalletType.REVENUE)).isPresent();
+    }
+
+    // 엔티티 생성 메서드를 거치지 않고 SQL로 직접 넣어 DB 제약만 확인한다
+    @Test
+    @DisplayName("회원 지갑은 member_id가 꼭 있고, 시스템 지갑은 member_id를 가질 수 없다 (ck_wallet_member_id)")
+    void rejectsWalletWithWrongMemberId(@Autowired JdbcTemplate jdbcTemplate) {
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "insert into wallet (wallet_type, member_id, balance, version) values ('MEMBER', null, 0, 0)"))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_wallet_member_id");
+
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "insert into wallet (wallet_type, member_id, balance, version) values ('REVENUE', 1, 0, 0)"))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_wallet_member_id");
+    }
+
+    @Test
+    @DisplayName("시스템 지갑은 종류별로 하나만 만들 수 있다 (uk_wallet_system_type)")
+    void rejectsSecondSystemWalletOfSameType(@Autowired JdbcTemplate jdbcTemplate) {
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "insert into wallet (wallet_type, member_id, balance, version) values ('HOLDING', null, 0, 0)"))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("uk_wallet_system_type");
     }
 
     private static String newPublicKey() {
