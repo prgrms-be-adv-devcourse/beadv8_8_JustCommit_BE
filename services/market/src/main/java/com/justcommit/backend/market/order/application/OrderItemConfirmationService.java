@@ -41,9 +41,13 @@ public class OrderItemConfirmationService {
         confirmItem(memberId, orderItemId, false);
     }
 
+    // 자동 구매 확정은 주문마다 짧은 트랜잭션 하나. 다른 파드 · 구매자 요청이 잡은 주문은 건너뛰고 다음 주기에 다시 본다.
     @Transactional
-    public void autoConfirmOrderItem(Long orderItemId) {
-        confirmItem(null, orderItemId, true);
+    public void autoConfirmOrder(Long orderId, List<Long> orderItemIds) {
+        if (ordersRepository.findByIdForUpdateSkipLocked(orderId).isEmpty()) {
+            return;
+        }
+        orderItemIds.forEach(orderItemId -> confirmItem(null, orderItemId, true));
     }
 
     private void confirmItem(Long memberId, Long orderItemId, boolean automatic) {

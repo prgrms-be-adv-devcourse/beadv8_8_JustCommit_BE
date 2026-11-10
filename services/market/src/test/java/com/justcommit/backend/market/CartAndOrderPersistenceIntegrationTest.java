@@ -66,7 +66,7 @@ class CartAndOrderPersistenceIntegrationTest {
         entityManager.persist(order);
         entityManager.flush();
 
-        List<Orders> pending = ordersRepository.findByStatusAndCreatedAtBefore(
+        List<Orders> pending = ordersRepository.findTop100ByStatusAndCreatedAtBeforeOrderByIdAsc(
                 OrderStatus.PAYMENT_PENDING, LocalDateTime.now().plusMinutes(1));
 
         assertThat(pending).extracting(Orders::getId).contains(order.getId());

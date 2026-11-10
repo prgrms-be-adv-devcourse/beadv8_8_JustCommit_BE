@@ -1,7 +1,7 @@
 # Redis 키
 
 > 언제 읽나: Redis 키를 새로 쓰거나 TTL을 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: Miro A1, legacy/infrastructure-todo.md
+> 상태: ✅ 확정 · 마지막 수정 2026-11-10 · 관련: Miro A1, legacy/infrastructure-todo.md
 
 ## 규칙
 
@@ -23,7 +23,6 @@
 | `auth:blacklist:{토큰 해시}` | `1` | 토큰 남은 수명 (최대 30분) | member 씀 · Gateway 읽음 | 로그아웃한 Access 토큰 거절 |
 | `auth:revoked-member:{memberId}` | 끊은 시각 (초) | 30분 | member 씀 · Gateway 읽음 | `iat <= 끊은 시각`인 토큰 모두 거절 |
 | ⬜ 회원별 Refresh 목록 (이름 미정) | Refresh 해시 Set | 1일 | member | 탈퇴 · 비밀번호 변경 때 Refresh 일괄 삭제 |
-| `order:payment:ttl:{orderId}` | `1` | 남은 결제 시간 (최대 10분) | market | 결제 대기 주문 |
 
 ## 예외
 
@@ -32,6 +31,6 @@ Gateway의 SCG `RedisRateLimiter`는 기본 키 `request_rate_limiter.{경로 id
 ## 설정
 
 - 앱 서버 Docker 1대 (`redis:8-alpine`, ElastiCache 안 씀)
-- 비밀번호 필수. K3s 파드(Gateway · market)가 접속해야 해서 `127.0.0.1` 대신 **서버 내부 주소에 바인딩**하고, 보안 그룹으로 외부 접속을 막음
+- 비밀번호 필수. K3s 파드(Gateway)가 접속해야 해서 `127.0.0.1` 대신 **서버 내부 주소에 바인딩**하고, 보안 그룹으로 외부 접속을 막음
 - `maxmemory 256MB` + `noeviction` → 꽉 차면 쓰기 실패 (메모리 90% 알림 대상)
 - AOF 켜짐 → 재시작해도 Refresh 토큰 유지 (서버가 매일 꺼졌다 켜짐)
