@@ -37,6 +37,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-client'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    // 성능 측정(#351): /actuator/prometheus 지표 노출. 실험 브랜치 전용
+    runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
     implementation 'org.springframework.boot:spring-boot-starter-kafka'
     implementation 'org.springframework.modulith:spring-modulith-starter-core'
     implementation 'org.flywaydb:flyway-core'

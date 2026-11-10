@@ -28,6 +28,7 @@ public class SecurityConfig {
     // 인증 없이 접근 가능한 경로 (permitAll 목록)
     private static final String[] PUBLIC_PATHS = {
             "/actuator/health/**",
+            "/actuator/prometheus", // 성능 측정(#351): 8081 포트로만 열리고 서버 밖에서는 SSH 터널로만 접근
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",

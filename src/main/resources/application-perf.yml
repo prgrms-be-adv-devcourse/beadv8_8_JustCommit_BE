@@ -1,0 +1,18 @@
+# 성능 측정(#351) 전용 설정. 실험 브랜치에만 있고 develop에 머지하지 않는다.
+# 켜는 법: SPRING_PROFILES_ACTIVE=prod,perf
+
+management:
+  # 지표는 API(8080)와 다른 포트로 연다. Nginx는 8080만 넘기므로 인터넷에서는 /actuator/prometheus가 보이지 않는다.
+  server:
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: replant-semi
+    distribution:
+      # 응답 시간을 구간별로 세어 두면 Prometheus에서 p95 · p99를 계산할 수 있다
+      percentiles-histogram:
+        "[http.server.requests]": true
