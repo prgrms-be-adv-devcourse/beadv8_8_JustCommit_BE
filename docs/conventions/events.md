@@ -32,7 +32,7 @@
 | Key | `aggregateId` |
 | 헤더 | `traceparent` (W3C, traceId 전파) |
 | `occurredAt` | 시간대 포함 (`OffsetDateTime`) |
-| `version` | payload 형식이 바뀌면 올림 |
+| `version` | payload 형식이 바뀌면 올림 (1부터. 없거나 1 미만이면 형식 오류로 바로 DLT) |
 | 개인정보 | 민감 필드만 토픽별 전송 키로 암호화 (AES-256-GCM, 예: 판매자 주소). 로그와 DLT 알림에는 payload를 남기지 않음 |
 
 ## Outbox
@@ -80,11 +80,37 @@ public void confirm(...) {
 
 ## 실패 처리
 
-모든 리스너가 같은 방식(제자리 재시도)을 씁니다 → [ADR 0017](../decisions/0017-blocking-retry-dlt.md)
+모든 리스너가 같은 방식(제자리 재시도)을 씁니다 → [ADR 0017](../decisions/0017-blocking-retry-dlt.md). `common-messaging`이 기본 설정을 제공하고, 서비스가 에러 처리기를 직접 만들면 그걸 씁니다.
 
 | 단계 | 내용 |
 |---|---|
-| 형식이 깨진 메시지 | `ErrorHandlingDeserializer` — 재시도 없이 바로 `원래토픽.DLT` |
+| 형식이 깨진 메시지 | `ErrorHandlingDeserializer` + `EventEnvelopeDeserializer` — 봉투로 못 바꾸면(JSON 오류 · 빈 칸 · `version` 1 미만) 재시도 없이 바로 `원래토픽.DLT` (받은 원문 그대로) |
+| payload를 서비스 클래스로 못 바꿈 | Jackson 예외 — 다시 해도 같으므로 재시도 없이 바로 `원래토픽.DLT` |
 | 처리 실패 재시도 | `DefaultErrorHandler` + BackOff 1 · 2 · 4초, 제자리(블로킹). 재시도 중 같은 파티션의 뒤 메시지는 기다림(최대 약 7초), 순서는 지켜짐. `@RetryableTopic`은 쓰지 않음 |
-| 최종 실패 | `원래토픽.DLT`로 보내고 Slack 알림 (payload는 알림에 넣지 않음) |
+| 최종 실패 | `원래토픽.DLT`로 보내고 에러 로그 (토픽 · 위치 · `eventId` · 원인 종류만, payload 없음). Slack 알림은 로그 기반 알림을 만들 때 연결 |
 | 재처리 | 수동 |
+
+받는 서비스는 yml의 기존 `spring.kafka.consumer` 아래에 세 줄을 넣습니다.
+
+```yaml
+spring:
+  kafka:
+    consumer:
+      group-id: product   # 서비스 이름
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: com.justcommit.backend.common.messaging.consumer.EventEnvelopeDeserializer
+```
+
+리스너는 봉투를 받아 `eventType`으로 나눈 뒤 payload를 자기 record로 바꿉니다.
+
+```java
+@KafkaListener(topics = KafkaTopics.MEMBER_EVENTS)
+void on(EventEnvelope envelope) {
+    switch (envelope.eventType()) {
+        case "MemberCreated", "MemberUpdated" -> upsert(envelopeMapper.readPayload(envelope, MemberChanged.class));
+        case "MemberWithdrawn" -> withdraw(envelopeMapper.readPayload(envelope, MemberWithdrawn.class));
+        default -> { } // 모르는 이벤트는 무시 (나중에 추가되는 이벤트 대비)
+    }
+}
+```
