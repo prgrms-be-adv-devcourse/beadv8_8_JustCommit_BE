@@ -1,7 +1,7 @@
 # member 서비스
 
 > 언제 읽나: member 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: Miro 5 · 6, A1, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-10 · 관련: Miro 5 · 6, A1, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -22,7 +22,7 @@
 | `ADDRESS` | 배송지 (최대 4개, 기본 1개) |
 | `SELLER` | 판매자 등록 정보 · 소개글 · 사진 이용 동의 |
 | ⬜ 탈퇴 기록 (이름 미정) | 이메일 · 휴대폰 HMAC + 탈퇴 시각 (30일 보관) |
-| `OUTBOX` | 발행 대기 이벤트 |
+| `OUTBOX_EVENT` | 발행 대기 이벤트 (`common-messaging-outbox`, Flyway V2) |
 
 ## 외부 API
 
@@ -45,10 +45,24 @@
 
 ## 발행 이벤트
 
-| 토픽 | 이벤트 |
+Outbox(`common-messaging-outbox`)로 발행합니다. Key는 `memberId`입니다.
+
+| 토픽 | 이벤트 | 발행 시점 | 상태 |
+|---|---|---|---|
+| `member.events.v1` | `MemberCreated` | 로컬 · 소셜 가입 | ✅ |
+| `member.events.v1` | `MemberUpdated` | 판매자 등록 (닉네임 변경 API가 생기면 그때도) | ✅ |
+| `member.events.v1` | `MemberWithdrawn` | 탈퇴 | ⬜ record만 (탈퇴 기능과 함께) |
+| `member.address.events.v1` | `MemberAddressChanged` (판매자 기본 배송지, 암호화) | 판매자 기본 배송지 변경 | ⬜ |
+
+payload (받는 쪽은 upsert, `occurredAt`이 저장된 값보다 오래되면 무시):
+
+| 이벤트 | payload |
 |---|---|
-| `member.events.v1` | `MemberCreated` · `MemberUpdated` · `MemberWithdrawn` |
-| `member.address.events.v1` | `MemberAddressChanged` (판매자 기본 배송지, 암호화) |
+| `MemberCreated` · `MemberUpdated` | `{ "memberId": 7, "nickname": "초록손", "role": "MEMBER", "seller": false }` (바뀐 칸만이 아니라 바뀐 뒤 전체 값) |
+| `MemberWithdrawn` | `{ "memberId": 7 }` |
+
+- `role`: `MEMBER` · `SELLER` · `ADMIN`
+- `seller`: 판매자 등록 여부. ADMIN도 판매자가 될 수 있어 `role`과 따로 보냄 (ADMIN 변경은 지금 SQL이라 이벤트 없음)
 
 상세 → [Kafka 토픽 표](../reference/kafka-topics.md)
 

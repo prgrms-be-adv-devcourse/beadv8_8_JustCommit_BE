@@ -1,5 +1,7 @@
 package com.justcommit.backend.member.member.application;
 
+import com.justcommit.backend.member.event.MemberCreated;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
 import com.justcommit.backend.member.auth.infrastructure.jwt.SignupClaims;
@@ -52,6 +54,9 @@ class SocialSignupServiceTest {
 
   @Mock
   private RefreshTokenIssuer refreshTokenIssuer;
+
+  @Mock
+  private OutboxPublisher outboxPublisher;
 
   @InjectMocks
   private SocialSignupService socialSignupService;
@@ -117,6 +122,7 @@ class SocialSignupServiceTest {
     assertThat(saved.getAccountNoEnc()).isEqualTo("v1:encrypted");
 
     verify(addressRepository).save(any(Address.class));
+    verify(outboxPublisher).publish(new MemberCreated(5L, "소셜회원", "MEMBER", false));
   }
 
   @Test

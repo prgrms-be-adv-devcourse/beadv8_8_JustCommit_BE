@@ -1,5 +1,7 @@
 package com.justcommit.backend.member.seller.application;
 
+import com.justcommit.backend.member.event.MemberUpdated;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Role;
@@ -34,6 +36,9 @@ class SellerRegisterServiceTest {
 
   @Mock
   private SellerRepository sellerRepository;
+
+  @Mock
+  private OutboxPublisher outboxPublisher;
 
   @InjectMocks
   private SellerRegisterService sellerRegisterService;
@@ -88,6 +93,9 @@ class SellerRegisterServiceTest {
     Seller savedSeller = sellerCaptor.getValue();
     assertThat(savedSeller.getMember()).isSameAs(member);
     assertThat(savedSeller.getIntro()).isEqualTo(INTRO);
+
+    // then: 다른 서비스에 판매자 등록을 알림
+    then(outboxPublisher).should().publish(new MemberUpdated(MEMBER_ID, NICKNAME, "SELLER", true));
   }
 
   @Test
@@ -101,6 +109,8 @@ class SellerRegisterServiceTest {
     sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, null));
 
     assertThat(admin.getRole()).isEqualTo(Role.ADMIN);
+    // ADMIN은 role이 그대로라 seller로 판매자임을 알림
+    then(outboxPublisher).should().publish(new MemberUpdated(MEMBER_ID, NICKNAME, "ADMIN", true));
     then(sellerRepository).should().saveAndFlush(any(Seller.class));
   }
 
@@ -116,6 +126,7 @@ class SellerRegisterServiceTest {
 
     then(memberRepository).shouldHaveNoInteractions();
     then(sellerRepository).should(never()).saveAndFlush(any());
+    then(outboxPublisher).should(never()).publish(any());
   }
 
   @Test
@@ -130,6 +141,7 @@ class SellerRegisterServiceTest {
             .isEqualTo(MemberErrorCode.MEMBER_NOT_FOUND);
 
     then(sellerRepository).should(never()).saveAndFlush(any());
+    then(outboxPublisher).should(never()).publish(any());
   }
 
   @Test
@@ -145,5 +157,8 @@ class SellerRegisterServiceTest {
             .isInstanceOf(BusinessException.class)
             .extracting("errorCode")
             .isEqualTo(MemberErrorCode.ALREADY_SELLER);
+
+    // 저장이 실패했으니 판매자 등록 이벤트도 남지 않음
+    then(outboxPublisher).should(never()).publish(any());
   }
 }

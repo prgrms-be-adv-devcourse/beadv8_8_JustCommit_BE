@@ -1,11 +1,13 @@
 package com.justcommit.backend.member.member.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
+import com.justcommit.backend.member.event.MemberCreated;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +27,7 @@ public class SignupService {
   private final EmailVerificationRedisStore verificationStore;
   private final PasswordEncoder passwordEncoder;
   private final AccountCipher accountCipher;
+  private final OutboxPublisher outboxPublisher;
 
   // 회원가입: 이메일 인증 확인 → 중복 검사 → 회원 저장 → 기본 배송지 저장 → 인증 완료 상태 삭제
   @Transactional
@@ -75,7 +78,8 @@ public class SignupService {
             command.addressName()
     ));
 
-    // TODO: common-messaging 이후 Outbox로 member.events.v1에 가입 이벤트 발행
+    // 4. 다른 서비스에 가입을 알림 (같은 트랜잭션에 저장, 커밋된 뒤에만 발행). 가입 직후는 판매자가 아님
+    outboxPublisher.publish(MemberCreated.from(member, false));
 
     verificationStore.deleteVerified(email);  // 같은 인증으로 다시 가입x
     return new SignupResult(member.getId(), member.getNickname());
