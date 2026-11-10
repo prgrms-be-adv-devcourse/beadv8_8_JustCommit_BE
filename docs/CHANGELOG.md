@@ -6,6 +6,7 @@
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
+- 2026-11-10 · decisions/0019 · decisions/0008 · infra/observability.md · infra/deploy.md · reference/ports.md · conventions/common-modules.md · overview.md · glossary.md · 분산 추적 Tempo 추가: 서비스 → OTLP → Alloy → Tempo(샘플링 100% · 보관 3일), Loki ↔ Tempo traceId 연결, `common-logging`에 OTLP exporter, 데이터 서버 · 포트 3200 · 4317, 용어 「분산 추적」 (#301)
 - 2026-11-10 · conventions/events.md · conventions/common-modules.md · Outbox 구현 반영: `common-messaging-outbox` 모듈 분리(보내는 서비스만), 칸 확정(`aggregate_type` 제외, 타입 명시), Kafka 응답 후에만 `PUBLISHED` · 5초 유예 · 한 행씩 `SKIP LOCKED` · 실패 횟수는 커밋 직후 발행 포함, 권장 SQL 위치 (#323)
 - 2026-11-09 · services/notification.md · 알림 테이블 Flyway V1 · `ddl-auto: validate`, 인덱스 칸 이름 `read` → `is_read`(엔티티 필드 `isRead`), 알림 종류 `SELLER_ORDER_CANCELLED_BUYER` 삭제(데이터 이전 없음) (#287)
 - 2026-11-09 · reference/env-vars.md · reference/redis-keys.md · conventions/resilience.md · conventions/common-modules.md · conventions/auth.md · services/gateway.md · open-questions.md · Gateway 구현 반영: 서비스 주소 · CORS 변수, 토큰 해시 형식 · 요청 수 제한 키, 실패 응답 확정(노션 10.8) · Redis 1초 · 못 읽으면 503, Gateway 필터는 `gateway/` 안, 429 응답 (#229)

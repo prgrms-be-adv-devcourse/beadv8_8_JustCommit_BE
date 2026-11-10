@@ -1,14 +1,14 @@
 # 서버 배치 · 배포
 
 > 언제 읽나: 서버 구성이나 CI/CD를 바꿀 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-06 · 관련: Miro 15, 노션 기획안 「배포 · 운영 변경」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-10 · 관련: Miro 15, 노션 기획안 「배포 · 운영 변경」
 
 ## 서버 배치
 
 | 서버 | 올라가는 것 |
 |---|---|
 | 앱 서버 t3.large | Nginx · Redis · 404-express · compose 서비스 5개(member · product · payment · settlement · notification) · K3s 단일 노드(Gateway 파드 2개 · market 파드 2개 · ai-service HPA CPU 70% 1→2개) |
-| 데이터 서버 t3.medium | PostgreSQL(인스턴스 1개 안에서 서비스별 DB · 계정 + pgvector) · Kafka(KRaft 단일) · OpenSearch(힙 512MB) · Loki · Prometheus · Grafana |
+| 데이터 서버 t3.medium | PostgreSQL(인스턴스 1개 안에서 서비스별 DB · 계정 + pgvector) · Kafka(KRaft 단일) · OpenSearch(힙 512MB) · Loki · Tempo · Prometheus · Grafana |
 
 Gateway는 K3s Service 이름으로 market에 보내고 K3s가 살아 있는 파드에 나눠 줍니다. 두 market 파드는 같은 market DB를 씁니다 → [ADR 0014](../decisions/0014-gateway-market-k3s-two-pods.md). 포트 → [컨테이너 · 포트](../reference/ports.md)
 
