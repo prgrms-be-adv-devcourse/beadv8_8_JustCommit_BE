@@ -1,4 +1,4 @@
-package com.justcommit.backend.payment;
+package com.justcommit.backend.payment.application;
 
 public enum PaymentStatus {
     PAID,

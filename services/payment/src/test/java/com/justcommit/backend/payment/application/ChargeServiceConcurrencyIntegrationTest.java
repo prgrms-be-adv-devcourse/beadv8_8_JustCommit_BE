@@ -2,9 +2,6 @@ package com.justcommit.backend.payment.application;
 
 import com.justcommit.backend.payment.config.JpaAuditingConfig;
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.payment.PaymentResult;
-import com.justcommit.backend.payment.PaymentStatus;
-import com.justcommit.backend.payment.PaymentUseCase;
 import com.justcommit.backend.payment.domain.Charge;
 import com.justcommit.backend.payment.domain.ChargeStatus;
 import com.justcommit.backend.payment.domain.ChargeType;
@@ -83,7 +80,7 @@ class ChargeServiceConcurrencyIntegrationTest {
     }
 
     @Autowired ChargeService chargeService;
-    @Autowired PaymentUseCase paymentUseCase;
+    @Autowired PaymentService paymentUseCase;
     @Autowired ChargeRepository chargeRepository;
     @Autowired WalletRepository walletRepository;
     @Autowired WalletTransactionRepository walletTransactionRepository;
