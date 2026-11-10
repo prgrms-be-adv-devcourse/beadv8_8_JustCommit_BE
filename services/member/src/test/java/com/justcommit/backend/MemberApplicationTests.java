@@ -39,9 +39,9 @@ class MemberApplicationTests {
     }
 
     @Test
-    @DisplayName("V1 마이그레이션이 적용되고 엔티티와 테이블이 맞는다 (ddl-auto: validate 통과)")
+    @DisplayName("V1 · V2(Outbox) 마이그레이션이 적용되고 엔티티와 테이블이 맞는다 (ddl-auto: validate 통과)")
     void contextLoads(@Autowired Flyway flyway) {
-        assertThat(flyway.info().applied()).hasSize(1);
+        assertThat(flyway.info().applied()).extracting(m -> m.getVersion().getVersion()).containsExactly("1", "2");
     }
 
     private static KeyPair newKeyPair() {
