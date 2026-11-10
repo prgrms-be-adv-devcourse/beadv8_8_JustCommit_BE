@@ -32,7 +32,7 @@
 | Key | `aggregateId` |
 | 헤더 | `traceparent` (W3C, traceId 전파) |
 | `occurredAt` | 시간대 포함 (`OffsetDateTime`) |
-| `version` | payload 형식이 바뀌면 올림 |
+| `version` | payload 형식이 바뀌면 올림 (1부터. 없거나 1 미만이면 형식 오류로 바로 DLT) |
 | 개인정보 | 민감 필드만 토픽별 전송 키로 암호화 (AES-256-GCM, 예: 판매자 주소). 로그와 DLT 알림에는 payload를 남기지 않음 |
 
 ## Outbox
