@@ -1,7 +1,7 @@
 # settlement 서비스
 
 > 언제 읽나: settlement 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: Miro 5, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-11 · 관련: Miro 5, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -50,7 +50,7 @@
 
 | 이벤트 | 받아서 하는 일 | 멱등 처리 |
 |---|---|---|
-| `market.events.v1` `PurchaseConfirmed` · `OrderItemAutoConfirmed` | 판매자 주문이 끝나면 정산 생성 | 정산 UK |
+| `market.events.v1` `PurchaseConfirmed` | 판매자 주문이 끝나면(수동 · 자동 확정 모두) 정산 생성. `shippingFee`로 배송비도 정산 때 옮김 | 정산 UK (`uk_settlement_seller_order_id`) |
 | `member.events.v1` | `MEMBER_REPLICA` 저장 · 갱신 | memberId upsert |
 
 ## 스케줄러

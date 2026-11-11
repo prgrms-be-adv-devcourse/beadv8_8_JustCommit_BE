@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-11 · reference/kafka-topics.md · services/market.md · services/settlement.md · market 도메인 이벤트를 `market.events.v1` + Outbox로 전환(이벤트마다 다른 토픽 → 하나), `PurchaseConfirmed`에 `shippingFee` 추가 · `ShipmentPickedUp` 삭제(정산 담당과 합의), `OrderItemAutoConfirmed`는 알림 전용(정산 구독 제외), 일부 취소 알림 `OrderItemCancelled` 다시 발행, 도메인 이벤트 payload 표 추가 (#277)
 - 2026-11-11 · reference/kafka-topics.md · 파티션 3을 브로커 기본값 `KAFKA_NUM_PARTITIONS: 3`으로 적용(로컬 · 운영 compose), 토픽 코드 선언 · 운영 자동 생성 끄기는 다음 단계 (#369)
 - 2026-11-11 · reference/env-vars.md · DB 접속 변수를 코드에 맞춤: `DB_HOST` · `DB_PORT` · `DB_NAME` → `DB_URL`(JDBC 주소 전체) (#291)
 - 2026-11-11 · infra/deploy.md · 서비스 공통 `Dockerfile`(`MODULE` 인자) · 이미지 이름 `ghcr.io/prgrms-be-adv-devcourse/replant-{서비스}` · 태그 커밋 해시 7자리 + `latest` 규칙 추가 (#291)

@@ -1,72 +1,50 @@
 package com.justcommit.backend.market.order.infrastructure.kafka;
 
+import com.justcommit.backend.common.messaging.KafkaTopics;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
+import com.justcommit.backend.market.OrderItemCancelledEvent;
 import com.justcommit.backend.market.SellerOrderCancelledEvent;
 import com.justcommit.backend.market.SellerOrderPaidEvent;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
-import java.util.concurrent.CompletableFuture;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
 class SellerOrderEventPublisherTest {
 
-    @Mock KafkaTemplate<String, Object> kafkaTemplate;
+    private static final LocalDateTime NOW = LocalDateTime.of(2026, 11, 11, 10, 0);
 
-    @BeforeEach
-    void beginTransaction() {
-        TransactionSynchronizationManager.initSynchronization();
-        TransactionSynchronizationManager.setActualTransactionActive(true);
-    }
-
-    @AfterEach
-    void clearTransaction() {
-        TransactionSynchronizationManager.clearSynchronization();
-        TransactionSynchronizationManager.setActualTransactionActive(false);
-    }
+    private final OutboxPublisher outboxPublisher = mock(OutboxPublisher.class);
+    private final SellerOrderEventPublisher publisher = new SellerOrderEventPublisher(outboxPublisher);
 
     @Test
-    void sendsEachEventOnlyAfterCommit() {
-        var publisher = new SellerOrderEventPublisher(kafkaTemplate, "paid", "cancelled", "auto");
-        var paid = new SellerOrderPaidEvent(7L, 20L, 10L, LocalDateTime.now());
-        var cancelled = new SellerOrderCancelledEvent(9L, 8L, 21L, 10L, LocalDateTime.now());
-        var auto = new OrderItemAutoConfirmedEvent(11L, 9L, 7L, 10L, LocalDateTime.now());
-        when(kafkaTemplate.send("paid", "7", paid)).thenReturn(CompletableFuture.completedFuture(null));
-        when(kafkaTemplate.send("cancelled", "8", cancelled)).thenReturn(CompletableFuture.completedFuture(null));
-        when(kafkaTemplate.send("auto", "7", auto)).thenReturn(CompletableFuture.completedFuture(null));
+    @DisplayName("판매자 주문 알림 이벤트 3개를 market.events.v1 · Key sellerOrderId로 Outbox에 기록한다")
+    void publishesToOutbox() {
+        SellerOrderPaidEvent paid = new SellerOrderPaidEvent(8L, 21L, 10L, NOW);
+        SellerOrderCancelledEvent cancelled = new SellerOrderCancelledEvent(9L, 8L, 21L, 10L, NOW);
+        OrderItemAutoConfirmedEvent autoConfirmed = new OrderItemAutoConfirmedEvent(11L, 9L, 8L, 10L, NOW);
 
         publisher.publishAfterCommit(paid);
         publisher.publishAfterCommit(cancelled);
-        publisher.publishAfterCommit(auto);
-        verifyNoInteractions(kafkaTemplate);
+        publisher.publishAfterCommit(autoConfirmed);
+        OrderItemCancelledEvent itemCancelled = new OrderItemCancelledEvent(11L, 9L, 8L, 21L, "몬스테라", NOW);
+        publisher.publishAfterCommit(itemCancelled);
 
-        TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
-
-        verify(kafkaTemplate).send("paid", "7", paid);
-        verify(kafkaTemplate).send("cancelled", "8", cancelled);
-        verify(kafkaTemplate).send("auto", "7", auto);
-    }
-
-    @Test
-    void sendsNothingAfterRollback() {
-        var publisher = new SellerOrderEventPublisher(kafkaTemplate, "paid", "cancelled", "auto");
-        publisher.publishAfterCommit(new SellerOrderCancelledEvent(9L, 8L, 21L, 10L, LocalDateTime.now()));
-
-        TransactionSynchronizationManager.getSynchronizations().forEach(
-                synchronization -> synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
-
-        verifyNoInteractions(kafkaTemplate);
+        verify(outboxPublisher).publish(paid);
+        verify(outboxPublisher).publish(cancelled);
+        verify(outboxPublisher).publish(autoConfirmed);
+        verify(outboxPublisher).publish(itemCancelled);
+        assertThat(itemCancelled.eventType()).isEqualTo("OrderItemCancelled");
+        assertThat(itemCancelled.topic()).isEqualTo(KafkaTopics.MARKET_EVENTS);
+        assertThat(paid.eventType()).isEqualTo("SellerOrderPaid");
+        assertThat(cancelled.eventType()).isEqualTo("SellerOrderCancelled");
+        assertThat(autoConfirmed.eventType()).isEqualTo("OrderItemAutoConfirmed");
+        assertThat(paid.topic()).isEqualTo(KafkaTopics.MARKET_EVENTS);
+        assertThat(cancelled.aggregateId()).isEqualTo("8");
     }
 }
