@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-11 · reference/env-vars.md · DB 접속 변수를 코드에 맞춤: `DB_HOST` · `DB_PORT` · `DB_NAME` → `DB_URL`(JDBC 주소 전체) (#291)
 - 2026-11-11 · infra/deploy.md · 서비스 공통 `Dockerfile`(`MODULE` 인자) · 이미지 이름 `ghcr.io/prgrms-be-adv-devcourse/replant-{서비스}` · 태그 커밋 해시 7자리 + `latest` 규칙 추가 (#291)
 - 2026-11-11 · reference/kafka-topics.md · market → product 이벤트 payload 표 추가 (`OrderPaid` · `OrderExpired` · `OrderFailed`: `orderId`, `OrderItemCancelled`: `orderId` · `orderItemId` · `productId` · `reason`), 옛 `OrderItemCancelledEvent` 발행 삭제(판매 재개 토픽과 이름 겹침) (#277)
 - 2026-11-11 · services/market.md · product 연동 이벤트 Outbox 전환 반영: `market.order-paid` · `order-expired` · `order-failed` · `order-item-cancelled`를 Outbox로 발행(판매 재개는 환불 성공 뒤, 주문상품마다), product 내부 호출(판매 완료 · 해제 · 재개) 제거, 소유 테이블 `OUTBOX_EVENT`, `market.events.v1` 전환은 후속 (#277)
