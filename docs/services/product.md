@@ -1,7 +1,7 @@
 # product 서비스
 
 > 언제 읽나: product 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: Miro 5 · 13-1 · 17, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-11 · 관련: Miro 5 · 13-1 · 17, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -32,7 +32,7 @@
 
 ## 외부 API
 
-`products` (목록 · 등록 · 상세 · 수정 · 삭제) · `products/{id}/hidden` · `products/me` · `products/me/counts` · `products/images/upload-urls` · `species` · `species/{id}` · `admin/imageReviews` · ⬜ 이의 신청 → [외부 API 목록](../reference/external-apis.md)
+`products` (목록 · 등록 · 상세 · 수정 · 삭제) · `products/{id}/hidden` · `products/me` · `products/me/counts` · `products/images/uploadUrls` · `species` · `species/{id}` · `admin/imageReviews` · ⬜ 이의 신청 → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 

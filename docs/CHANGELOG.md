@@ -1,12 +1,13 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-10 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-11 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-11 · reference/external-apis.md · services/notification.md · services/product.md · 케밥 경로를 camelCase로: `notifications/unread-count` → `notifications/unreadCount`, `products/images/upload-urls` → `products/images/uploadUrls` (product 코드는 담당 반영 전까지 옛 경로) (#353)
 - 2026-11-10 · reference/redis-keys.md · reference/env-vars.md · market Redis 제거 반영: 결제 대기 TTL 키 `order:payment:ttl:{orderId}` 삭제(읽는 곳 없음), Redis 접속 서비스에서 market 제외 (#279)
 - 2026-11-10 · services/member.md · 회원 이벤트 발행 반영: 가입 → `MemberCreated` · 판매자 등록 → `MemberUpdated` (Outbox), payload `memberId` · `nickname` · `role` · `seller`(바뀐 뒤 전체 값, product 담당과 합의), 소유 테이블 `OUTBOX_EVENT` (#233)
 - 2026-11-10 · conventions/events.md · 받는 쪽 공통 설정 반영: `ErrorHandlingDeserializer` + `EventEnvelopeDeserializer`(빈 칸 · `version` 1 미만도 형식 오류), payload 변환 실패는 재시도 없이 DLT, 최종 실패는 에러 로그(Slack은 로그 기반 알림 때), 서비스 yml 설정 · 리스너 예시 (#324)

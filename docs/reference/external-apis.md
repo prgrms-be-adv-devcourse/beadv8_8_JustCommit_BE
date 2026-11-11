@@ -1,7 +1,7 @@
 # 외부 API 목록
 
 > 언제 읽나: 외부 API의 경로 · 담당 서비스를 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-11 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
 
 ## 서비스별 목록
 
@@ -37,7 +37,7 @@
 | DELETE | `products/{id}` | 삭제 | SELLER |
 | PATCH | `products/{id}/hidden` | 숨김 | SELLER |
 | GET | `products/me` · `products/me/counts` | 내 상품 · 상태별 개수 | SELLER |
-| POST | `products/images/upload-urls` | 사진 Presigned URL | SELLER |
+| POST | `products/images/uploadUrls` | 사진 Presigned URL | SELLER |
 | GET | `species` · `species/{id}` | 품종 목록 · 상세 (학명 · 별칭) | 공개 |
 | GET | `admin/imageReviews?status=MANUAL` | 수동 검수 대기 목록 | ADMIN |
 | PATCH | `admin/imageReviews/{id}` | 수동 검수 결과 | ADMIN |
@@ -68,7 +68,7 @@
 | POST | `wallet/charges/{id}/confirm` | 충전 승인 (토스) | 로그인 |
 | GET | `settlements` | 정산 내역 | SELLER |
 | GET | `notifications` | 알림 목록 | 로그인 |
-| GET | `notifications/unread-count` | 안 읽은 수 | 로그인 |
+| GET | `notifications/unreadCount` | 안 읽은 수 | 로그인 |
 | PATCH | `notifications` | 모두 읽음 | 로그인 |
 | PATCH | `notifications/{id}` | 읽음 | 로그인 |
 | GET | `notifications/subscribe` | SSE 구독 | 로그인 |
