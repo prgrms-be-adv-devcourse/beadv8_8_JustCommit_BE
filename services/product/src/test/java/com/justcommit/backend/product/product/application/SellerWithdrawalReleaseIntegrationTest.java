@@ -1,5 +1,6 @@
 package com.justcommit.backend.product.product.application;
 
+import com.justcommit.backend.product.config.ClockConfig;
 import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.ProductUseCase;
@@ -40,12 +41,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -55,7 +51,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ProductService.class, MemberReplicaService.class})
+@Import({JpaAuditingConfig.class, ClockConfig.class, ProductService.class, MemberReplicaService.class})
 @Testcontainers(disabledWithoutDocker = true)
 // 테스트 메서드를 트랜잭션으로 감싸지 않음 → 준비 데이터가 커밋되어 다른 스레드에서도 보임
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -227,10 +223,11 @@ class SellerWithdrawalReleaseIntegrationTest {
         }
     }
 
-    // 판매자 7의 상품을 주문 1로 예약해 결제 대기 상태로 둔다
+    // 판매자 7의 상품을 주문 1로 예약해 결제 대기 상태로 둔다 (예약은 판매 중 상품만 가능)
     private Long saveReservedProduct() {
         Product product = Product.create(species, SELLER_ID, "몬스테라 중품", "설명", PRICE,
                 null, null, null, List.of());
+        ReflectionTestUtils.setField(product, "status", ProductStatus.ACTIVE);
         Long productId = productRepository.save(product).getId();
         productUseCase.reserve(ORDER_ID, Map.of(productId, PRICE));
         assertStatus(productId, ProductStatus.PAYMENT_PENDING);

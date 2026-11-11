@@ -1,5 +1,7 @@
 package com.justcommit.backend.product.product.domain;
 
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.ParameterizedTest;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.exception.ProductErrorCode;
@@ -34,11 +36,12 @@ class ProductTest {
     }
 
     @Test
-    @DisplayName("상품을 생성하면 판매 중·숨김 아님 상태이고 첫 사진이 썸네일")
+    @DisplayName("상품을 생성하면 검수 중 · 숨김 아님 · 검수 버전 0 상태")
     void create() {
         Product product = create(species());
 
-        assertThat(product.getStatus()).isEqualTo(ProductStatus.ACTIVE);
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
+        assertThat(product.getReviewVersion()).isZero();
         assertThat(product.isHidden()).isFalse();
     }
     @Test
@@ -63,4 +66,155 @@ class ProductTest {
                 .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_HIDEABLE);
     }
 
+
+    // 품종 id까지 넣은 품종 (품종이 바뀌었는지 비교할 때)
+    private Species species(Long id) {
+        Species species = species();
+        ReflectionTestUtils.setField(species, "id", id);
+        return species;
+    }
+
+    // 상품 상태를 직접 지정 (검수 통과 메서드는 #343에서 생김)
+    private Product withStatus(Product product, ProductStatus status) {
+        ReflectionTestUtils.setField(product, "status", status);
+        return product;
+    }
+
+    // 제목 · 품종 · 사진만 바꿔 수정
+    private ReviewScope update(Product product, Species species, String title, List<String> imageUrls) {
+        return product.update(species, title, "설명", new BigDecimal("30000"), null, null, null, imageUrls);
+    }
+
+    // ── 수정: 상태 · 검수 범위 · 검수 버전 ───────────────────
+
+    @Test
+    @DisplayName("판매 중 상품의 글만 고치면 판매 중을 유지하고 글 검사만 하며, 검수 버전이 1 오름")
+    void updateTextOnlyKeepsActive() {
+        Species species = species(1L);
+        Product product = withStatus(create(species), ProductStatus.ACTIVE);
+
+        ReviewScope scope = update(product, species, "새 제목", List.of("https://example.com/a.jpg"));
+
+        assertThat(scope).isEqualTo(ReviewScope.TEXT_ONLY);
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.ACTIVE);
+        assertThat(product.getReviewVersion()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("판매 중 상품의 사진을 바꾸면 검수 중으로 돌아가고 사진 검수부터 함")
+    void updateImagesGoesToReview() {
+        Species species = species(1L);
+        Product product = withStatus(create(species), ProductStatus.ACTIVE);
+
+        ReviewScope scope = update(product, species, "몬스테라 분양합니다", List.of("https://example.com/b.jpg"));
+
+        assertThat(scope).isEqualTo(ReviewScope.FULL);
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
+        assertThat(product.getReviewVersion()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("품종을 바꾸면 사진이 같아도 사진 검수부터 함 (품종 대조가 사진 검수 단계에 있음)")
+    void updateSpeciesGoesToReview() {
+        Product product = withStatus(create(species(1L)), ProductStatus.ACTIVE);
+
+        ReviewScope scope = update(product, species(2L), "몬스테라 분양합니다", List.of("https://example.com/a.jpg"));
+
+        assertThat(scope).isEqualTo(ReviewScope.FULL);
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
+    }
+
+    @Test
+    @DisplayName("사진 순서만 바꾸면 같은 사진으로 보고 글 검사만 함")
+    void reorderImagesIsTextOnly() {
+        Species species = species(1L);
+        Product product = withStatus(Product.create(species, 1L, "몬스테라 분양합니다", "설명", new BigDecimal("30000"),
+                null, null, null, List.of("https://example.com/a.jpg", "https://example.com/b.jpg")), ProductStatus.ACTIVE);
+
+        ReviewScope scope = update(product, species, "몬스테라 분양합니다",
+                List.of("https://example.com/b.jpg", "https://example.com/a.jpg"));
+
+        assertThat(scope).isEqualTo(ReviewScope.TEXT_ONLY);
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.ACTIVE);
+        assertThat(product.getThumbnailUrl()).isEqualTo("https://example.com/b.jpg");
+    }
+
+    @Test
+    @DisplayName("반려된 상품은 글만 고쳐도 다시 검수 중이 됨")
+    void updateRejectedGoesToReview() {
+        Species species = species(1L);
+        Product product = withStatus(create(species), ProductStatus.REJECTED);
+
+        ReviewScope scope = update(product, species, "새 제목", List.of("https://example.com/a.jpg"));
+
+        assertThat(scope).isEqualTo(ReviewScope.TEXT_ONLY);
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
+    }
+
+    @Test
+    @DisplayName("검수 중 상품도 수정할 수 있고, 수정할 때마다 검수 버전이 1씩 오름")
+    void reviewVersionIncreasesEveryUpdate() {
+        Species species = species(1L);
+        Product product = create(species);
+
+        update(product, species, "첫 수정", List.of("https://example.com/a.jpg"));
+        update(product, species, "두 번째 수정", List.of("https://example.com/b.jpg"));
+
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
+        assertThat(product.getReviewVersion()).isEqualTo(2);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ProductStatus.class, names = {"PAYMENT_PENDING", "SOLD_OUT"})
+    @DisplayName("결제 대기 · 판매 완료 상품은 수정할 수 없음 (PRODUCT_NOT_EDITABLE), 검수 버전도 그대로")
+    void updateNotEditable(ProductStatus status) {
+        Species species = species(1L);
+        Product product = withStatus(create(species), status);
+
+        assertThatThrownBy(() -> update(product, species, "새 제목", List.of("https://example.com/a.jpg")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_EDITABLE);
+        assertThat(product.getStatus()).isEqualTo(status);
+        assertThat(product.getReviewVersion()).isZero();
+    }
+
+    // ── 삭제 ───────────────────────────────────────
+
+    @ParameterizedTest
+    @EnumSource(value = ProductStatus.class, names = {"ACTIVE", "REVIEW_PENDING", "REJECTED"})
+    @DisplayName("판매 중 · 검수 중 · 반려 상품은 삭제할 수 있음")
+    void deleteChangeable(ProductStatus status) {
+        Product product = withStatus(create(species()), status);
+
+        product.delete();
+
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.DELETED);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ProductStatus.class, names = {"PAYMENT_PENDING", "SOLD_OUT"})
+    @DisplayName("결제 대기 · 판매 완료 상품은 삭제할 수 없음 (PRODUCT_NOT_DELETABLE)")
+    void deleteNotDeletable(ProductStatus status) {
+        Product product = withStatus(create(species()), status);
+
+        assertThatThrownBy(product::delete)
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_DELETABLE);
+        assertThat(product.getStatus()).isEqualTo(status);
+    }
+
+    // ── 노출 ───────────────────────────────────────
+
+    @ParameterizedTest
+    @EnumSource(value = ProductStatus.class, names = {"REVIEW_PENDING", "REJECTED"})
+    @DisplayName("검수 중 · 반려 상품은 판매자 본인에게만 보이고, 구매할 수 없음")
+    void inReviewVisibleToOwnerOnly(ProductStatus status) {
+        Product product = withStatus(create(species()), status);
+
+        assertThat(product.isInReview()).isTrue();
+        assertThat(product.isVisibleTo(1L)).isTrue();     // 판매자 본인
+        assertThat(product.isVisibleTo(2L)).isFalse();    // 다른 회원
+        assertThat(product.isVisibleTo(null)).isFalse();  // 비회원
+        assertThat(product.isPurchasable()).isFalse();
+    }
 }

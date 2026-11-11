@@ -1,5 +1,6 @@
 package com.justcommit.backend.product.species.infrastructure;
 
+import com.justcommit.backend.product.config.ClockConfig;
 import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.product.species.domain.Species;
 import com.justcommit.backend.product.species.domain.SpeciesAlias;
@@ -33,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 })
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(JpaAuditingConfig.class)
+@Import({JpaAuditingConfig.class, ClockConfig.class})
 @Testcontainers(disabledWithoutDocker = true)
 class SpeciesSpecificationsTest {
 

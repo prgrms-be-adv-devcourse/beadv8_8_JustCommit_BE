@@ -1,17 +1,20 @@
 package com.justcommit.backend.product.product.application;
 
-import com.justcommit.backend.product.reservation.infrastructure.ProductReservationRepository;
-import com.justcommit.backend.product.exception.ProductErrorCode;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.ParameterizedTest;
+import com.justcommit.backend.product.config.ClockConfig;
 import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.product.client.member.MemberQuery;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.ProductUseCase;
+import com.justcommit.backend.product.client.member.MemberQuery;
+import com.justcommit.backend.product.exception.ProductErrorCode;
 import com.justcommit.backend.product.image.application.ProductImageCleaner;
 import com.justcommit.backend.product.image.application.ProductImageUrlValidator;
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import com.justcommit.backend.product.product.presentation.dto.ProductRequest;
+import com.justcommit.backend.product.reservation.infrastructure.ProductReservationRepository;
 import com.justcommit.backend.product.species.domain.Species;
 import com.justcommit.backend.product.species.infrastructure.SpeciesRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -36,15 +39,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.LinkedHashMap;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.function.IntFunction;
 import java.util.stream.IntStream;
 
@@ -54,7 +52,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ProductService.class})
+@Import({JpaAuditingConfig.class, ClockConfig.class, ProductService.class})
 @Testcontainers(disabledWithoutDocker = true)
 // 테스트 메서드를 트랜잭션으로 감싸지 않음 → 준비 데이터가 실제로 커밋되어 다른 스레드에서도 보임
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -411,9 +409,11 @@ class ProductReserveConcurrencyIntegrationTest {
         return succeeds(() -> productUseCase.reserve(orderId, expectedPrices));
     }
 
+    // 검수를 통과해 판매 중인 상품 (검수 통과 메서드는 #343에서 생김)
     private Long saveActiveProduct() {
         Product product = Product.create(species, SELLER_ID, "몬스테라 중품", "설명", PRICE,
                 null, null, null, List.of());
+        ReflectionTestUtils.setField(product, "status", ProductStatus.ACTIVE);
         return productRepository.save(product).getId();
     }
 
@@ -445,5 +445,20 @@ class ProductReserveConcurrencyIntegrationTest {
             start.countDown();
             executor.shutdownNow();
         }
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ProductStatus.class, names = {"REVIEW_PENDING", "REJECTED"})
+    @DisplayName("검수 중 · 반려 상품은 예약할 수 없어 PRODUCT_NOT_RESERVABLE(409), 상태도 그대로")
+    void cannotReserveInReviewProduct(ProductStatus status) {
+        Product product = Product.create(species, SELLER_ID, "몬스테라 중품", "설명", PRICE,
+                null, null, null, List.of());
+        ReflectionTestUtils.setField(product, "status", status);
+        Long productId = productRepository.save(product).getId();
+
+        assertThatThrownBy(() -> productUseCase.reserve(1L, Map.of(productId, PRICE)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_RESERVABLE);
+        assertThat(productRepository.findById(productId).orElseThrow().getStatus()).isEqualTo(status);
     }
 }

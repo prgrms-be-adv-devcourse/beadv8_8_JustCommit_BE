@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-11 · services/product.md · 등록 제한의 하루는 한국 시간 자정 기준, 검수 중 · 반려 상품은 판매자 본인 외에는 404 `PRODUCT_NOT_FOUND` (#341)
 - 2026-11-11 · services/market.md · 회원 복제본 반영: `MEMBER_REPLICA` 칸, `member.events.v1` 조건부 upsert(`occurredAt` 비교, 탈퇴 표시 유지), 장바구니는 가입 이벤트가 아니라 처음 쓸 때 생성, 회원 정보 표시 · 탈퇴 회원 주문 거절(`WITHDRAWN_MEMBER`), 판매자 배송지 이벤트는 후속 (#275)
 - 2026-11-10 · reference/redis-keys.md · reference/env-vars.md · market Redis 제거 반영: 결제 대기 TTL 키 `order:payment:ttl:{orderId}` 삭제(읽는 곳 없음), Redis 접속 서비스에서 market 제외 (#279)
 - 2026-11-10 · services/member.md · 회원 이벤트 발행 반영: 가입 → `MemberCreated` · 판매자 등록 → `MemberUpdated` (Outbox), payload `memberId` · `nickname` · `role` · `seller`(바뀐 뒤 전체 값, product 담당과 합의), 소유 테이블 `OUTBOX_EVENT` (#233)
