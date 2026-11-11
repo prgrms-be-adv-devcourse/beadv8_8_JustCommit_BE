@@ -19,6 +19,7 @@ dependencies {
     implementation project(':common:common-web')
     implementation project(':common:common-security-servlet')
     implementation project(':common:common-messaging')
+    implementation project(':common:common-messaging-outbox')
 
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
