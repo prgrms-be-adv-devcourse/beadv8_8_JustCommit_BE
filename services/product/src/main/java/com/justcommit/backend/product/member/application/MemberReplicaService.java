@@ -36,6 +36,9 @@ public class MemberReplicaService {
     @Transactional
     public int applyWithdrawn(Long memberId, OffsetDateTime occurredAt) {
         memberReplicaRepository.upsertWithdrawn(memberId, occurredAt);
+        // 예약 해제 · 판매 재개와 순서를 맞춤: 해제 중인 상품이 있으면 그 커밋을 기다린 뒤 ACTIVE가 된 것까지 삭제
+        // 결제 대기 · 판매 완료 상품이 나중에 해제되면 해제 쪽이 탈퇴를 보고 DELETED로 바꿈
+        productRepository.lockChangeableBySeller(memberId);
         return productRepository.deleteOnSaleBySeller(memberId);
     }
 }

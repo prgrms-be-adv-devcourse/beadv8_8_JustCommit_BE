@@ -107,6 +107,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
     @Override
     @Transactional
     public boolean releaseItem(Long productId, Long orderId, boolean hidden) {
+        productRepository.lockById(productId); // 판매자 탈퇴 처리와 순서를 맞춤
         return productRepository.releaseItem(productId, orderId, hidden) > 0;
     }
 
@@ -115,7 +116,8 @@ public class ProductService implements ProductQuery, ProductUseCase {
     public boolean release(Long orderId) {
         // 행이 없으면 RELEASED 로 만들고, 있으면 RELEASED 로 바꿈(잠금)
         reservationRepository.upsertReleased(orderId);   // 예약 기록 행을 잠그고 RELEASED로 (늦은 예약 거절)
-        // 해당 주문이 잡은 PAYMENT_PENDING 상품만 ACTIVE 로 
+        productRepository.lockByReservedOrder(orderId);   // 판매자 탈퇴 처리와 순서를 맞춤
+        // 해당 주문이 잡은 PAYMENT_PENDING 상품만 ACTIVE 로 (판매자가 탈퇴했으면 DELETED)
         return productRepository.release(orderId) > 0;
     }
 
