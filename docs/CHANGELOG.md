@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-11 · reference/kafka-topics.md · 파티션 3을 브로커 기본값 `KAFKA_NUM_PARTITIONS: 3`으로 적용(로컬 · 운영 compose), 토픽 코드 선언 · 운영 자동 생성 끄기는 다음 단계 (#369)
 - 2026-11-11 · reference/env-vars.md · DB 접속 변수를 코드에 맞춤: `DB_HOST` · `DB_PORT` · `DB_NAME` → `DB_URL`(JDBC 주소 전체) (#291)
 - 2026-11-11 · infra/deploy.md · 서비스 공통 `Dockerfile`(`MODULE` 인자) · 이미지 이름 `ghcr.io/prgrms-be-adv-devcourse/replant-{서비스}` · 태그 커밋 해시 7자리 + `latest` 규칙 추가 (#291)
 - 2026-11-11 · reference/external-apis.md · services/notification.md · services/product.md · 케밥 경로를 camelCase로: `notifications/unread-count` → `notifications/unreadCount`, `products/images/upload-urls` → `products/images/uploadUrls` (product 코드는 담당 반영 전까지 옛 경로) (#353)
