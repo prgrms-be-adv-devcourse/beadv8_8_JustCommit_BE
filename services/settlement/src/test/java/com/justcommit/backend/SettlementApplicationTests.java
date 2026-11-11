@@ -29,10 +29,12 @@ class SettlementApplicationTests {
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
 
     // 테스트할 때마다 새 RSA 키를 만들어 공개키만 넣는다 (키를 파일에 남기지 않음)
+    // Kafka 리스너는 끈다: 로컬 Kafka가 켜져 있으면 실제 앱과 같은 settlement 그룹으로 이벤트를 읽고 payment를 호출할 수 있어서
     @DynamicPropertySource
-    static void securityProperties(DynamicPropertyRegistry registry) {
+    static void testProperties(DynamicPropertyRegistry registry) {
         registry.add("jwt.public-key", SettlementApplicationTests::newPublicKey);
         registry.add("internal-api.key", () -> "test-internal-key");
+        registry.add("spring.kafka.listener.auto-startup", () -> "false");
     }
 
     @Test
