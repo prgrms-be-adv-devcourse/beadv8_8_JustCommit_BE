@@ -1,9 +1,10 @@
 package com.justcommit.backend.market.order.application;
 
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.cart.application.CartService;
-import com.justcommit.backend.market.client.product.ProductUseCase;
 import com.justcommit.backend.market.order.domain.Orders;
+import com.justcommit.backend.market.order.event.OrderExpired;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -15,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrderExpirationService {
 
     private final OrdersRepository ordersRepository;
-    private final ProductUseCase productUseCase;
+    private final OutboxPublisher outboxPublisher;
     private final CartService cartService;
 
     @Transactional
@@ -27,7 +28,8 @@ public class OrderExpirationService {
         }
         order.expire();
         ordersRepository.saveAndFlush(order);
-        productUseCase.release(order.getId()); // 이미 해제된 경우 false여도 만료 처리한다.
+        // 예약 해제는 product에 이벤트로 알린다. 같은 트랜잭션에 기록하고 커밋 뒤 발행 (ADR 0016)
+        outboxPublisher.publish(new OrderExpired(order.getId()));
         order.getSellerOrders().stream()
                 .flatMap(sellerOrder -> sellerOrder.getItems().stream())
                 .forEach(item -> cartService.restoreItem(order.getBuyerId(), item.getProductId(), item.getPrice()));

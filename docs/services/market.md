@@ -34,7 +34,7 @@ market 서비스가 소유하는 테이블입니다 (market DB).
 | `REVIEW` | 리뷰 (`seller_order_id` UK, 소프트 삭제) |
 | `REVIEW_TAG` | 리뷰 태그 5종 집계 |
 | `MEMBER_REPLICA` | 회원 복제본 (닉네임 · 권한 · 판매자 여부 · 탈퇴 표시 · 마지막 이벤트 시각). ⬜ 판매자 주소 칸(암호화)은 `member.address.events.v1`을 받을 때 추가 |
-| `OUTBOX` | 발행 대기 이벤트 |
+| `OUTBOX_EVENT` | 발행 대기 이벤트 (`common-messaging-outbox`, Flyway V3) |
 
 ## 외부 API
 
@@ -66,12 +66,13 @@ market 서비스가 부르는 다른 서비스의 API입니다.
 
 ## 발행 이벤트
 
-market 서비스가 발행하는 Kafka 이벤트입니다 (모두 Outbox).
+market 서비스가 발행하는 Kafka 이벤트입니다. 모두 Outbox로 발행하는 것이 목표이고, 지금 상태는 표의 「발행 방식」 칸을 따릅니다.
 
-| 토픽 | 이벤트 |
-|---|---|
-| `market.events.v1` | `SellerOrderPaid` · `SellerOrderAccepted` · `SellerOrderRejected` · `SellerOrderCancelled` · `OrderItemCancelled` · `PurchaseConfirmed` · `OrderItemAutoConfirmed` · `ShipmentStatusChanged` · `ReturnRequested` · `ReturnApproved` · `ReturnRejected` · `OrderItemReturned` |
-| `market.order-paid.v1` · `market.order-expired.v1` · `market.order-failed.v1` · `market.order-item-cancelled.v1` · `market.order-item-returned.v1` | product에 판매 완료 · 결제 전 예약 해제 · 판매 재개 (키 `orderId`) |
+| 토픽 | 이벤트 | 발행 방식 |
+|---|---|---|
+| `market.events.v1` | `SellerOrderPaid` · `SellerOrderAccepted` · `SellerOrderRejected` · `SellerOrderCancelled` · `OrderItemCancelled` · `PurchaseConfirmed` · `OrderItemAutoConfirmed` · `ShipmentStatusChanged` · `ReturnRequested` · `ReturnApproved` · `ReturnRejected` · `OrderItemReturned` | ⬜ 아직 이벤트마다 다른 토픽으로 Kafka 직접 발행. `market.events.v1` + Outbox 전환은 #277 B (정산 · 알림 담당과 맞춘 뒤) |
+| `market.order-paid.v1` · `market.order-expired.v1` · `market.order-failed.v1` · `market.order-item-cancelled.v1` | product에 판매 완료 · 결제 전 예약 해제 · 판매 재개 (키 `orderId`). 판매 재개는 환불 성공 뒤, 전체 취소도 주문상품마다, `reason`은 지금 `BUYER`만 | ✅ Outbox (#277 A) |
+| `market.order-item-returned.v1` | 반품 환불 뒤 판매 재개 | ⬜ 반품 기능 때 |
 
 상세 → [Kafka 토픽 표](../reference/kafka-topics.md)
 

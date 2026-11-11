@@ -6,6 +6,7 @@ import com.justcommit.backend.common.client.exception.InternalApiResultUnknownEx
 import com.justcommit.backend.common.client.exception.InternalApiUnavailableException;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.exception.CommonErrorCode;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
@@ -21,6 +22,10 @@ import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
+import com.justcommit.backend.market.order.event.OrderExpired;
+import com.justcommit.backend.market.order.event.OrderFailed;
+import com.justcommit.backend.market.order.event.OrderItemCancelled;
+import com.justcommit.backend.market.order.event.OrderPaid;
 import com.justcommit.backend.market.order.infrastructure.AutoConfirmTarget;
 import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
@@ -33,6 +38,7 @@ import com.justcommit.backend.market.shipment.application.ShipmentService;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import org.junit.jupiter.api.BeforeEach;
 import com.justcommit.backend.market.client.payment.PaymentResult;
+import com.justcommit.backend.market.client.payment.PaymentStatus;
 import com.justcommit.backend.market.client.payment.PaymentUseCase;
 import com.justcommit.backend.market.client.product.ProductResult;
 import com.justcommit.backend.market.client.product.ProductStatus;
@@ -54,6 +60,7 @@ import java.nio.ByteBuffer;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -79,6 +86,7 @@ class OrderServiceTest {
     @Mock MemberQuery memberQuery;
     @Mock ProductQuery productQuery;
     @Mock ProductUseCase productUseCase;
+    @Mock OutboxPublisher outboxPublisher;
     @Mock OrderExpirationService orderExpirationService;
     @Mock PaymentUseCase paymentUseCase;
     @Mock OrderQuery orderQuery;
@@ -296,6 +304,7 @@ class OrderServiceTest {
         assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
         verify(paymentUseCase, never()).pay(any(), any(), any());
         verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+        verify(outboxPublisher).publish(new OrderFailed(99L));
     }
 
     @Test
@@ -310,7 +319,7 @@ class OrderServiceTest {
 
         assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PENDING);
         assertThat(response.expiresAt()).isEqualTo(response.createdAt().plusMinutes(10));
-        verify(productUseCase, never()).markSoldOut(any());
+        verify(outboxPublisher, never()).publish(any(OrderPaid.class));
     }
 
     @Test
@@ -321,13 +330,12 @@ class OrderServiceTest {
         order.addSellerOrders(List.of(sellerOrder));
         ReflectionTestUtils.setField(order, "id", 99L);
         when(ordersRepository.findByIdForUpdateSkipLocked(99L)).thenReturn(Optional.of(order));
-        when(productUseCase.release(99L)).thenReturn(true);
 
         expirationService().expire(99L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.EXPIRED);
         verify(ordersRepository).saveAndFlush(order);
-        verify(productUseCase).release(99L);
+        verify(outboxPublisher).publish(new OrderExpired(99L));
         verify(cartService).restoreItem(10L, 101L, money("10000"));
     }
 
@@ -343,7 +351,7 @@ class OrderServiceTest {
         expirationService().expire(99L);
 
         assertThat(paid.getStatus()).isEqualTo(OrderStatus.PAID);
-        verify(productUseCase, never()).release(any());
+        verify(outboxPublisher, never()).publish(any());
         verify(cartService, never()).restoreItem(any(Long.class), any(Long.class), any());
     }
 
@@ -365,7 +373,7 @@ class OrderServiceTest {
     }
 
     private OrderExpirationService expirationService() {
-        return new OrderExpirationService(ordersRepository, productUseCase, cartService);
+        return new OrderExpirationService(ordersRepository, outboxPublisher, cartService);
     }
 
     @Test
@@ -374,8 +382,6 @@ class OrderServiceTest {
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
         stubSavedOrder();
         when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentResult.paid(money("0")));
-        when(productUseCase.markSoldOut(99L)).thenReturn(true);
-        when(ordersRepository.findById(99L)).thenAnswer(ignored -> Optional.of(savedOrder));
         when(orderQuery.getOrder(99L)).thenReturn(orderResult);
         doAnswer(invocation -> {
             assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAID);
@@ -386,24 +392,9 @@ class OrderServiceTest {
 
         assertThat(response.status()).isEqualTo(OrderStatus.PAID);
         assertThat(response.expiresAt()).isNull();
-        verify(productUseCase).markSoldOut(99L);
+        verify(outboxPublisher).publish(new OrderPaid(99L));
         verify(shipmentService).createShipments(orderResult);
         verify(cartService).removeSelectedItems(10L, List.of(1L));
-    }
-
-    @Test
-    void doesNotCreateShipmentsWhenProductCannotBeMarkedSoldOut() {
-        stubLookup(List.of(selected(1L, 101L, "10000")),
-                List.of(product(101L, 20L, "몬스테라", "10000", true)));
-        stubSavedOrder();
-        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentResult.paid(money("0")));
-
-        assertThatThrownBy(() -> orderService.create(10L, request(1L)))
-                .isInstanceOfSatisfying(BusinessException.class,
-                        exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.PRODUCT_UNAVAILABLE));
-
-        verify(shipmentService, never()).createShipments(any());
-        verify(cartService, never()).removeSelectedItems(any(Long.class), any());
     }
 
     @Test
@@ -411,15 +402,13 @@ class OrderServiceTest {
         Orders order = pendingOrder(10L);
         when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
         when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentResult.paid(money("0")));
-        when(productUseCase.markSoldOut(99L)).thenReturn(true);
-        when(ordersRepository.findById(99L)).thenReturn(Optional.of(order));
         when(orderQuery.getOrder(99L)).thenReturn(orderResult);
 
         OrderCreateResponse response = orderService.repayment(10L, 99L);
 
         assertThat(response.status()).isEqualTo(OrderStatus.PAID);
         assertThat(response.expiresAt()).isNull();
-        verify(productUseCase).markSoldOut(99L);
+        verify(outboxPublisher).publish(new OrderPaid(99L));
         verify(shipmentService).createShipments(orderResult);
     }
 
@@ -456,7 +445,7 @@ class OrderServiceTest {
 
         assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PENDING);
         assertThat(response.expiresAt()).isEqualTo(order.getCreatedAt().plusMinutes(10));
-        verify(productUseCase, never()).markSoldOut(any());
+        verify(outboxPublisher, never()).publish(any(OrderPaid.class));
         verify(shipmentService, never()).createShipments(any());
     }
 
@@ -512,8 +501,94 @@ class OrderServiceTest {
         assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_FAILED);
         assertThat(response.expiresAt()).isNull();
         assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
-        verify(productUseCase, never()).markSoldOut(any());
+        verify(outboxPublisher).publish(new OrderFailed(99L));
+        verify(outboxPublisher, never()).publish(any(OrderPaid.class));
         verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+    }
+
+    @Test
+    @DisplayName("전체 취소는 상품 · 배송비 환불이 모두 성공한 뒤 주문상품마다 판매 재개 이벤트를 남긴다")
+    void cancelPublishesItemCancelledAfterAllRefunds() {
+        Orders order = cancellableOrder();
+        when(paymentUseCase.refundCancelledItem(any(), eq(99L), eq(10L), any()))
+                .thenReturn(new PaymentResult(PaymentStatus.REFUNDED, money("0")));
+        when(paymentUseCase.refundShippingFee(eq(7L), eq(99L), eq(10L), any()))
+                .thenReturn(new PaymentResult(PaymentStatus.REFUNDED, money("0")));
+
+        orderService.cancel(10L, 99L);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        InOrder inOrder = inOrder(paymentUseCase, outboxPublisher);
+        inOrder.verify(paymentUseCase).refundCancelledItem(11L, 99L, 10L, money("10000"));
+        inOrder.verify(paymentUseCase).refundCancelledItem(12L, 99L, 10L, money("20000"));
+        inOrder.verify(paymentUseCase).refundShippingFee(7L, 99L, 10L, money("3000"));
+        inOrder.verify(outboxPublisher).publish(
+                new OrderItemCancelled(99L, 11L, 101L, OrderItemCancelled.CancelReason.BUYER));
+        inOrder.verify(outboxPublisher).publish(
+                new OrderItemCancelled(99L, 12L, 102L, OrderItemCancelled.CancelReason.BUYER));
+    }
+
+    @Test
+    @DisplayName("상품 환불이 거절되면 판매 재개 이벤트를 남기지 않는다")
+    void cancelDoesNotPublishItemCancelledWhenRefundFails() {
+        cancellableOrder();
+        when(paymentUseCase.refundCancelledItem(any(), eq(99L), eq(10L), any()))
+                .thenReturn(new PaymentResult(PaymentStatus.WALLET_NOT_FOUND, null));
+
+        assertThatThrownBy(() -> orderService.cancel(10L, 99L))
+                .isInstanceOf(BusinessException.class);
+
+        verify(outboxPublisher, never()).publish(any());
+    }
+
+    // 결제된 주문 1건 · 판매자 주문 1건 · 주문상품 2건 · 배송비 3,000원 · 배송 READY (취소 가능)
+    private Orders cancellableOrder() {
+        Orders order = pendingOrder(10L);
+        order.paid();
+        SellerOrder sellerOrder = new SellerOrder(order, 20L);
+        OrdersItem first = new OrdersItem(sellerOrder, 101L, "몬스테라", money("10000"));
+        OrdersItem second = new OrdersItem(sellerOrder, 102L, "선인장", money("20000"));
+        sellerOrder.addItems(List.of(first, second));
+        sellerOrder.setShippingFee(money("3000"));
+        order.addSellerOrders(List.of(sellerOrder));
+        ReflectionTestUtils.setField(sellerOrder, "id", 7L);
+        ReflectionTestUtils.setField(first, "id", 11L);
+        ReflectionTestUtils.setField(second, "id", 12L);
+        when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
+        when(sellerOrderRepository.findAllLockedByOrderId(99L)).thenReturn(List.of(sellerOrder));
+        when(shipmentQuery.findBySellerOrderIds(List.of(7L)))
+                .thenReturn(Map.of(7L, new ShipmentResult(8L, "READY", null)));
+        return order;
+    }
+
+    @Test
+    @DisplayName("부분 취소는 상품 환불이 성공한 뒤 그 주문상품의 판매 재개 이벤트를 남긴다")
+    void itemCancelPublishesItemCancelledAfterRefund() {
+        stubConfirmableItem();
+        when(shipmentQuery.findBySellerOrderId(7L)).thenReturn(new ShipmentResult(8L, "READY", null));
+        when(paymentUseCase.refundCancelledItem(11L, 99L, 10L, money("10000")))
+                .thenReturn(new PaymentResult(PaymentStatus.REFUNDED, money("0")));
+
+        orderService.itemCancel(10L, 11L);
+
+        InOrder inOrder = inOrder(paymentUseCase, outboxPublisher);
+        inOrder.verify(paymentUseCase).refundCancelledItem(11L, 99L, 10L, money("10000"));
+        inOrder.verify(outboxPublisher).publish(
+                new OrderItemCancelled(99L, 11L, 101L, OrderItemCancelled.CancelReason.BUYER));
+    }
+
+    @Test
+    @DisplayName("부분 취소에서 상품 환불이 거절되면 판매 재개 이벤트를 남기지 않는다")
+    void itemCancelDoesNotPublishItemCancelledWhenRefundFails() {
+        stubConfirmableItem();
+        when(shipmentQuery.findBySellerOrderId(7L)).thenReturn(new ShipmentResult(8L, "READY", null));
+        when(paymentUseCase.refundCancelledItem(11L, 99L, 10L, money("10000")))
+                .thenReturn(new PaymentResult(PaymentStatus.WALLET_NOT_FOUND, null));
+
+        assertThatThrownBy(() -> orderService.itemCancel(10L, 11L))
+                .isInstanceOf(BusinessException.class);
+
+        verify(outboxPublisher, never()).publish(any());
     }
 
     @Test
@@ -526,7 +601,7 @@ class OrderServiceTest {
 
         assertThat(response.status()).isEqualTo(OrderStatus.PAID);
         verify(paymentUseCase, never()).pay(any(), any(), any());
-        verify(productUseCase, never()).markSoldOut(any());
+        verify(outboxPublisher, never()).publish(any(OrderPaid.class));
         verify(shipmentService, never()).createShipments(any());
     }
 
