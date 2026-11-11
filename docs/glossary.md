@@ -1,7 +1,7 @@
 # 용어집 (유비쿼터스 언어)
 
 > 언제 읽나: 같은 대상을 부르는 표준 이름을 찾을 때, 별칭(다른 이름 · 일상어 · 영문)으로 검색할 때, 코드 이름과 문서 이름을 맞출 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-10 · 관련: 노션 「유비쿼터스 언어 정리」, 전체
+> 상태: ✅ 확정 · 마지막 수정 2026-11-11 · 관련: 노션 「유비쿼터스 언어 정리」, 전체
 
 문서 · 코드 · PR · 회의에서는 「표준 용어」만 씁니다. 「별칭」은 검색용이며 본문에 쓰지 않습니다. 시간 · 금액 · 횟수 같은 값은 여기 적지 않고 「원본」 문서를 봅니다.
 
@@ -118,6 +118,8 @@
 | K3s · 파드 | – | 쿠버네티스, k8s | Gateway · market · ai-service를 띄우는 가벼운 쿠버네티스와 그 실행 단위 | [배포](infra/deploy.md) |
 | SKIP LOCKED · ShedLock | – | 스케줄러 중복 방지 | 파드가 여럿일 때 스케줄러가 같은 일을 두 번 하지 않게 하는 방법 | [스케줄러](reference/schedulers.md) |
 | 분산 추적 | Tempo · `traceparent` | 트레이싱, 트레이스, span, Jaeger, Zipkin | 요청 하나가 Gateway · 서비스 · DB · 외부 API를 거치며 구간마다 걸린 시간을 이어 기록한 것. traceId로 로그와 연결 | [관측](infra/observability.md) |
+| exporter | node-exporter · postgres-exporter | 익스포터 | 지표를 스스로 내보내지 못하는 서버 · DB 옆에 붙어 Prometheus 형식으로 대신 내보내는 작은 프로그램 | [관측](infra/observability.md) |
+| CPU steal | `node_cpu_seconds_total{mode="steal"}` | 스틸, 뺏긴 CPU | t3 크레딧이 바닥나 AWS가 CPU를 묶을 때 오르는 「뺏긴 CPU 시간」. 부하 측정 무효 판단 기준 | [관측](infra/observability.md) |
 | ai-service | – | AI 서버, 추천 서버 | 품종 임베딩 · 추천 · 챗봇을 맡는 서비스 | [ai](services/ai.md) |
 
 ## 이름 통일 기준

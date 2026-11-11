@@ -1,11 +1,12 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-10 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-11 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
+- 2026-11-11 · infra/observability.md · reference/ports.md · glossary.md · 지표 수집 대상 표(actuator · node-exporter · postgres-exporter, Kafka · Redis ⬜), CPU steal로 크레딧 소진 측정 무효 판단, exporter 포트 9100 · 9187, 용어 「exporter」 · 「CPU steal」 (#301)
 - 2026-11-10 · decisions/0019 · decisions/0008 · infra/observability.md · infra/deploy.md · reference/ports.md · conventions/common-modules.md · overview.md · glossary.md · 분산 추적 Tempo 추가: 서비스 → OTLP → Alloy → Tempo(샘플링 100% · 보관 3일), Loki ↔ Tempo traceId 연결, `common-logging`에 OTLP exporter, 데이터 서버 · 포트 3200 · 4317, 용어 「분산 추적」 (#301)
 - 2026-11-10 · conventions/events.md · conventions/common-modules.md · Outbox 구현 반영: `common-messaging-outbox` 모듈 분리(보내는 서비스만), 칸 확정(`aggregate_type` 제외, 타입 명시), Kafka 응답 후에만 `PUBLISHED` · 5초 유예 · 한 행씩 `SKIP LOCKED` · 실패 횟수는 커밋 직후 발행 포함, 권장 SQL 위치 (#323)
 - 2026-11-09 · services/notification.md · 알림 테이블 Flyway V1 · `ddl-auto: validate`, 인덱스 칸 이름 `read` → `is_read`(엔티티 필드 `isRead`), 알림 종류 `SELLER_ORDER_CANCELLED_BUYER` 삭제(데이터 이전 없음) (#287)

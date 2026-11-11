@@ -1,7 +1,7 @@
 # 관측 (로그 · 지표 · 알림)
 
 > 언제 읽나: 로그 형식, 추적, 대시보드, 알림을 다룰 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-10 · 관련: Miro 16, 노션 「정책 정리」 10.10, ADR 0008 · 0019
+> 상태: ✅ 확정 · 마지막 수정 2026-11-11 · 관련: Miro 16, 노션 「정책 정리」 10.10, ADR 0008 · 0019
 
 ## 구성
 
@@ -14,6 +14,17 @@ Alloy가 컨테이너 로그를 모아 Loki로, 서비스가 OTLP로 보낸 추�
 | Tempo | 분산 추적 (샘플링 100%) | 3일 |
 | Prometheus | 지표 | 7일 |
 | Grafana | 화면 · 알림 | – |
+
+지표를 스스로 내보내지 못하는 서버 · DB에는 옆에 exporter를 붙여 Prometheus가 읽게 합니다.
+
+| 수집 대상 | 방법 |
+|---|---|
+| 서비스 | `/actuator/prometheus` (HTTP · Hikari · Tomcat · JVM) |
+| 서버 (앱 · 데이터) | node-exporter (CPU · 메모리 · 디스크 · CPU steal) |
+| PostgreSQL | postgres-exporter |
+| Kafka · Redis | ⬜ 미정 |
+
+대시보드 「서버 CPU」 패널에 CPU steal을 같이 표시합니다. 측정 중 steal이 오르면 t3 크레딧이 바닥나 AWS가 CPU를 묶은 것이므로 그 측정은 무효로 봅니다.
 
 ## 로그
 
