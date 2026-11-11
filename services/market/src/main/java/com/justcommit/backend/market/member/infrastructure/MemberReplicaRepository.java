@@ -29,15 +29,16 @@ public interface MemberReplicaRepository extends JpaRepository<MemberReplica, Lo
                    @Param("occurredAt") OffsetDateTime occurredAt);
 
   // 탈퇴: 복제본이 없어도 탈퇴 표시 행을 만듦 (늦게 온 가입 이벤트가 되살리지 못하게)
+  // 탈퇴는 마지막 상태라 같은 시각의 이벤트보다 우선한다 (<=)
   @Modifying
   @Query(value = """
       insert into member_replica (member_id, withdrawn, last_event_at, updated_at)
       values (:memberId, true, :occurredAt, now())
       on conflict (member_id) do update
-         set withdrawn = true,
-             last_event_at = excluded.last_event_at,
-             updated_at = now()
-       where member_replica.last_event_at < excluded.last_event_at
+          set withdrawn = true,
+              last_event_at = excluded.last_event_at,
+              updated_at = now()
+          where member_replica.last_event_at <= excluded.last_event_at
       """, nativeQuery = true)
   int markWithdrawn(@Param("memberId") Long memberId, @Param("occurredAt") OffsetDateTime occurredAt);
 }

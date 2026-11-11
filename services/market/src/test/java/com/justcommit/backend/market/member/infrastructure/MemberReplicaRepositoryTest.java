@@ -112,6 +112,17 @@ class MemberReplicaRepositoryTest {
     assertThat(read(7L).isWithdrawn()).isTrue();
   }
 
+  @Test
+  @DisplayName("정보 변경과 같은 시각의 탈퇴도 반영한다 (탈퇴는 마지막 상태라 같은 시각이면 탈퇴가 이김)")
+  void withdrawnAtSameTimeWins() {
+    repository.upsertMember(7L, "초록손", "MEMBER", false, T1);
+
+    int changed = repository.markWithdrawn(7L, T1);
+
+    assertThat(changed).isEqualTo(1);
+    assertThat(read(7L).isWithdrawn()).isTrue();
+  }
+
   // native 쿼리는 영속성 컨텍스트를 거치지 않으므로, 캐시를 비우고 DB에서 다시 읽는다
   private MemberReplica read(Long memberId) {
     entityManager.clear();
