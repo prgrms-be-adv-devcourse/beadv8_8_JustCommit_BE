@@ -1,7 +1,7 @@
 # market 서비스
 
 > 언제 읽나: market 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-11 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -33,7 +33,7 @@ market 서비스가 소유하는 테이블입니다 (market DB).
 | ⬜ 배송비 요금표 (이름 미정) | 기본 + 제주 · 도서산간 요금, 도서산간 우편번호, 버전 |
 | `REVIEW` | 리뷰 (`seller_order_id` UK, 소프트 삭제) |
 | `REVIEW_TAG` | 리뷰 태그 5종 집계 |
-| `MEMBER_REPLICA` | 회원 복제본 (판매자 주소 암호화 포함) |
+| `MEMBER_REPLICA` | 회원 복제본 (닉네임 · 권한 · 판매자 여부 · 탈퇴 표시 · 마지막 이벤트 시각). ⬜ 판매자 주소 칸(암호화)은 `member.address.events.v1`을 받을 때 추가 |
 | `OUTBOX` | 발행 대기 이벤트 |
 
 ## 외부 API
@@ -81,8 +81,8 @@ market 서비스가 받는 Kafka 이벤트입니다.
 
 | 이벤트 | 받아서 하는 일 | 멱등 처리 |
 |---|---|---|
-| `member.events.v1` | `MEMBER_REPLICA` 저장 · 갱신 · 탈퇴 상태, `MemberCreated`이면 장바구니 생성 | memberId upsert |
-| `member.address.events.v1` | 판매자 기본 배송지 (택배 보내는 사람 주소) | memberId upsert |
+| `member.events.v1` | `MEMBER_REPLICA` 저장 · 갱신 · 탈퇴 표시 (행은 지우지 않음). 장바구니는 만들지 않음 (처음 쓸 때 토큰의 memberId로 생성) | memberId upsert, `occurredAt`이 저장된 값보다 늦을 때만 반영 (중복 · 역순 · 탈퇴 선도착 무시) |
+| ⬜ `member.address.events.v1` | 판매자 기본 배송지 (택배 보내는 사람 주소). 아직 없어 택배 예약은 503 (#275 후속) | memberId upsert |
 
 ## 스케줄러
 
@@ -96,6 +96,7 @@ market 서비스의 업무 규칙입니다. 노션 「정책 정리」 6 · 7 ·
 |---|---|
 | 배송비 | 판매자 주문 1건당 1회. 지역 구분 요금(기본 + 제주 · 도서산간, 크기 무시). 요금표는 market 안에 두고 계산, 404-express가 바꾸면 웹훅 → 새 요금표를 버전과 함께 저장 + 버전 대사(주기 → [스케줄러 표](../reference/schedulers.md)). 새 요금표는 받은 뒤 생성되는 주문부터 |
 | 배송비 조작 방지 | 서버가 배송지로 직접 계산, 프론트가 본 금액(`expectedShippingFee`)과 다르면 `SHIPPING_FEE_CHANGED`. 저장한 배송비는 결제 대기(`PAYMENT_PENDING`) 중 안 바뀜 |
+| 회원 정보 | 닉네임 · 탈퇴 여부는 member를 부르지 않고 `MEMBER_REPLICA`에서 읽음. 탈퇴 표시면 「탈퇴한 회원」, 복제본이 아직 없으면 「알 수 없는 회원」(임시 문구, 장바구니 · 주문을 막지 않음). 탈퇴한 회원의 주문 생성은 403 `WITHDRAWN_MEMBER` (2차 방어, 1차는 Gateway 토큰 폐기). 복제본이 없는 회원은 탈퇴로 보지 않음 |
 | 결제 대기 (`PAYMENT_PENDING`) | 주문 생성 시각부터 10분. 예치금이 충분하면 바로 결제, 부족하면 결제 대기. 결제할 때 market이 만료 시각을 직접 확인해 지났으면 거절(`PAYMENT_WINDOW_EXPIRED`), 만료 스케줄러는 지난 주문 만료 · 예약 해제 뒷정리만. 결제 결과를 모르는 주문은 만료하지 않음 |
 | 결과 불명 복구 | 결제 · 취소 · 환불 결과를 모르면 Saga 복구가 같은 멱등 키로 다시 요청 (결제 orderId · 주문상품 환불 orderItemId · 배송비 환불 sellerOrderId). 취소 · 환불은 주문상품을 「취소 중」으로 두고 환불이 확정된 뒤 취소 완료 · 판매 재개 이벤트. 5번 안 되면 `REVIEW_REQUIRED` → [주문 · 결제](../flows/order-payment.md) |
 | 판매자 수락 | 결제 후 `ACCEPT_PENDING`. 수락 = 남은 주문상품 `NORMAL` + 배송 `READY`. 거절 = 판매자 주문 › 상품 트리에서 체크한 주문상품만 `CANCELLED` · 환불(사유 없음), 나머지는 수락. 전부 거절이면 배송 없음 + 배송비 환불. 결제 완료 시각(재결제면 재결제 완료 시각)부터 24시간 무응답이면 남은 주문상품 모두 자동 거절. 마감 전 재알림 없음. ⬜ 수락과 자동 거절이 겹칠 때 처리 → [미정](../open-questions.md) |
