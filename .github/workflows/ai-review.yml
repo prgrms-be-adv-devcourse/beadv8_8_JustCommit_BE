@@ -59,9 +59,13 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Claude GitHub App 없이 기본 토큰으로 코멘트를 단다 (작성자: github-actions[bot])
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # 막힌 명령을 로그에서 볼 수 있게 Claude 출력을 그대로 남긴다 (공개 레포라 로그도 공개, 토큰은 가려짐)
+          show_full_output: true
+          # Write는 요약을 파일로 남겨 --body-file로 올리기 위해서만 쓴다.
+          # 긴 여러 줄 본문을 명령에 직접 넣으면 명령 모양이 매번 달라져 권한 검사에 걸리고 코멘트가 안 달렸다
           claude_args: |
             --max-turns 30
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Glob,Grep"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Glob,Grep,Write"
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
@@ -89,10 +93,14 @@ jobs:
 
             ## 남기는 방법
             - 인라인 코멘트(mcp__github_inline_comment__create_inline_comment, confirmed: true)는 🔴 꼭 고칠 것에만 쓰세요. 🟡·🟢는 인라인으로 남기지 마세요.
-            - 요약 코멘트는 PR에 1개만 유지합니다. 반드시 아래 명령으로 남기세요
+            - 셸 명령은 `gh pr view`, `gh pr diff`, `gh pr comment` 세 가지만 허용됩니다. 파이프(|), &&, ;, $( ), 리다이렉트(>), heredoc을 붙이면 거절되니
+              명령은 항상 한 줄로 단독 실행하세요. 파일을 찾거나 읽을 때는 셸 대신 Read·Glob·Grep 도구를 쓰세요.
+            - 요약 코멘트는 PR에 1개만 유지합니다. 아래 두 단계를 반드시 이 순서로 하세요
               (이전 AI 요약이 있으면 그것을 고쳐 쓰고, 없으면 새로 만듭니다):
-              gh pr comment ${{ github.event.pull_request.number || inputs.pr_number }} --edit-last --create-if-none --body '<요약>'
-              본문은 작은따옴표로 감싸고(백틱이 셸 명령으로 실행되지 않게), 본문 안의 작은따옴표는 ’로 바꾸세요.
+              1. Write 도구로 요약 전체를 `.ai-review/summary.md`에 저장합니다.
+              2. 아래 명령을 그대로 한 줄로 실행합니다. 본문을 명령에 직접 넣지 마세요(--body 금지):
+                 gh pr comment ${{ github.event.pull_request.number || inputs.pr_number }} --edit-last --create-if-none --body-file .ai-review/summary.md
+              명령이 실패하면 오류 메시지를 확인하고 같은 명령을 한 번 더 실행하세요. 그래도 실패하면 실패 이유를 출력하고 끝내세요.
 
               요약은 읽기 쉽게 아래 형식을 그대로 따르세요. 지적은 표에 한 줄씩만 쓰고, 이유는 접힌 곳에 씁니다.
 
