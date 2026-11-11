@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-11 · services/settlement.md · reference/kafka-topics.md · settlement 구매 확정 수신을 `market.events.v1` 봉투로 전환, 소유 테이블 `SETTLEMENT`에 `shipping_fee`(옛 토픽은 null), 옛 토픽 `market.purchase-confirmed.v1`은 전환 중 함께 구독, `ShipmentPickedUp` 수신 삭제 (#364)
 - 2026-11-11 · services/product.md · 등록 제한의 하루는 한국 시간 자정 기준, 검수 중 · 반려 상품은 판매자 본인 외에는 404 `PRODUCT_NOT_FOUND` (#341)
 - 2026-11-11 · reference/kafka-topics.md · market → product 이벤트 payload 표 추가 (`OrderPaid` · `OrderExpired` · `OrderFailed`: `orderId`, `OrderItemCancelled`: `orderId` · `orderItemId` · `productId` · `reason`), 옛 `OrderItemCancelledEvent` 발행 삭제(판매 재개 토픽과 이름 겹침) (#277)
 - 2026-11-11 · services/market.md · product 연동 이벤트 Outbox 전환 반영: `market.order-paid` · `order-expired` · `order-failed` · `order-item-cancelled`를 Outbox로 발행(판매 재개는 환불 성공 뒤, 주문상품마다), product 내부 호출(판매 완료 · 해제 · 재개) 제거, 소유 테이블 `OUTBOX_EVENT`, `market.events.v1` 전환은 후속 (#277)

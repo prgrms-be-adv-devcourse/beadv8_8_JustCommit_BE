@@ -35,6 +35,10 @@ public class Settlement extends BaseTimeEntity {
     @Column(name = "fee", nullable = false, precision = 19)
     private BigDecimal fee;
 
+    // 배송비: 수수료 · 정산금 계산에 넣지 않음. 옛 토픽으로 받은 정산은 null
+    @Column(name = "shipping_fee", precision = 19)
+    private BigDecimal shippingFee;
+
     @Column(name = "payout_amount", nullable = false, precision = 19)
     private BigDecimal payoutAmount;
 
@@ -49,12 +53,13 @@ public class Settlement extends BaseTimeEntity {
 
 
     private Settlement(Long sellerOrderId, Long sellerId,
-                       BigDecimal saleAmount, BigDecimal fee,
+                       BigDecimal saleAmount, BigDecimal fee, BigDecimal shippingFee,
                        LocalDateTime settledAt, String itemSummary) {
         this.sellerOrderId = sellerOrderId;
         this.sellerId = sellerId;
         this.saleAmount = saleAmount;
         this.fee = fee;
+        this.shippingFee = shippingFee;
         this.payoutAmount = saleAmount.subtract(fee);
         this.settledAt = settledAt;
         this.itemSummary = itemSummary;
@@ -64,6 +69,7 @@ public class Settlement extends BaseTimeEntity {
             Long sellerOrderId,
             Long sellerId,
             BigDecimal saleAmount,
+            BigDecimal shippingFee,
             LocalDateTime settledAt,
             String itemSummary
     ) {
@@ -76,6 +82,7 @@ public class Settlement extends BaseTimeEntity {
                 sellerId,
                 saleAmount,
                 fee,
+                shippingFee,
                 settledAt,
                 itemSummary
         );

@@ -13,9 +13,15 @@ spring:
     admin:
       fail-fast: false
     consumer:
-      # 이벤트 클래스가 서비스마다 달라 문자열로 받고, KafkaConfig의 메시지 변환기가 리스너 파라미터 타입으로 변환한다
+      # Consumer Group = 서비스 이름 (docs/conventions/events.md)
+      group-id: settlement
+      # 그룹이 처음 붙는 토픽(market.events.v1)은 앞에 쌓인 구매 확정부터 받음 (market이 먼저 배포돼도 빠지지 않게)
+      auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # 봉투(EventEnvelope)로 받음. 형식이 깨지면 재시도 없이 원래토픽.DLT (옛 토픽은 KafkaConfig의 문자열 팩토리)
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: com.justcommit.backend.common.messaging.consumer.EventEnvelopeDeserializer
   http:
     serviceclient:
       internal-payment:
@@ -35,5 +41,5 @@ internal-api:
 custom:
   kafka:
     topics:
+      # 옛 구매 확정 토픽: market이 market.events.v1로 옮기는 동안만 함께 받음
       purchase-confirmed: ${PURCHASE_CONFIRMED_TOPIC:market.purchase-confirmed.v1}
-      shipment-picked-up: ${SHIPMENT_PICKED_UP_TOPIC:market.shipment-picked-up.v1}

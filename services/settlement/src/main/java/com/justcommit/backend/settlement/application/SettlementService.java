@@ -30,7 +30,8 @@ public class SettlementService implements SettlementQuery {
     }
 
     @Transactional
-    public SettlementResult settle(Long sellerOrderId, Long sellerId, BigDecimal saleAmount, String itemSummary) {
+    public SettlementResult settle(Long sellerOrderId, Long sellerId, BigDecimal saleAmount, BigDecimal shippingFee,
+                                   String itemSummary) {
         validateRequest(sellerOrderId, sellerId);
 
         // 이미 정산된 판매자 주문이면 기존 결과 반환
@@ -44,6 +45,7 @@ public class SettlementService implements SettlementQuery {
                         sellerOrderId,
                         sellerId,
                         saleAmount,
+                        shippingFee,
                         LocalDateTime.now(),
                         itemSummary
                 )
