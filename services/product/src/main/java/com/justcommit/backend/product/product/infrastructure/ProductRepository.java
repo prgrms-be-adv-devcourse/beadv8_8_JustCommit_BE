@@ -30,11 +30,17 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             """)
     int reserve(@Param("orderId") Long orderId, @Param("productIds") List<Long> productIds);
 
-    // 이 주문이 예약한 상품만 판매 중으로 되돌림
+    // 이 주문이 예약한 상품만 판매 중으로 되돌림. 판매자가 탈퇴했으면 DELETED (product.md 「판매자 탈퇴」)
+    // 탈퇴 처리와 동시에 실행돼도 맞도록 lockByReservedOrder로 행을 먼저 잠근 뒤 부른다
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             UPDATE Product p
-            SET p.status = com.justcommit.backend.product.ProductStatus.ACTIVE,
+            SET p.status = CASE
+                    WHEN EXISTS (SELECT 1 FROM MemberReplica m
+                                 WHERE m.memberId = p.sellerId AND m.withdrawn = true)
+                    THEN com.justcommit.backend.product.ProductStatus.DELETED
+                    ELSE com.justcommit.backend.product.ProductStatus.ACTIVE
+                END,
                 p.reservedOrderId = null,
                 p.updatedAt = CURRENT_TIMESTAMP
             WHERE p.reservedOrderId = :orderId
@@ -56,10 +62,16 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     // 판매 재개: 이 주문이 잡은 상품 한 건만 판매 중으로 되돌림 (결제 후 취소 · 반품, 취소가 판매 완료보다 먼저 와도 맞게)
     // hide = true면 숨김도 켬 (판매자 거절 · 자동 거절 · 반품). false면 숨김 상태를 그대로 둠
     // 이미 다른 주문에 다시 팔린 상품은 reservedOrderId가 달라 건드리지 않음
+    // 판매자가 탈퇴했으면 DELETED (product.md 「판매자 탈퇴」). lockById로 행을 먼저 잠근 뒤 부른다
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             UPDATE Product p
-            SET p.status = com.justcommit.backend.product.ProductStatus.ACTIVE,
+            SET p.status = CASE
+                    WHEN EXISTS (SELECT 1 FROM MemberReplica m
+                                 WHERE m.memberId = p.sellerId AND m.withdrawn = true)
+                    THEN com.justcommit.backend.product.ProductStatus.DELETED
+                    ELSE com.justcommit.backend.product.ProductStatus.ACTIVE
+                END,
                 p.reservedOrderId = null,
                 p.hidden = CASE WHEN :hide = true THEN true ELSE p.hidden END,
                 p.updatedAt = CURRENT_TIMESTAMP
@@ -69,6 +81,40 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
                                com.justcommit.backend.product.ProductStatus.SOLD_OUT)
             """)
     int releaseItem(@Param("productId") Long productId, @Param("orderId") Long orderId, @Param("hide") boolean hide);
+
+    // 판매자 탈퇴: 판매 중(숨김 포함)인 상품만 소프트 삭제. 결제 대기 · 판매 완료 상품은 주문 기록 때문에 남김
+    // shortcut: 검수 중 · 반려 상태가 생기면(사진 검수) 조건에 함께 넣는다
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            UPDATE Product p
+            SET p.status = com.justcommit.backend.product.ProductStatus.DELETED,
+                p.updatedAt = CURRENT_TIMESTAMP
+            WHERE p.sellerId = :sellerId
+              AND p.status = com.justcommit.backend.product.ProductStatus.ACTIVE
+            """)
+    int deleteOnSaleBySeller(@Param("sellerId") Long sellerId);
+
+    // ── 판매자 탈퇴와 예약 해제의 순서 맞추기 ───────────────────────
+    // 커밋 전 변경은 서로 보이지 않아, 잠금 없이 동시에 실행되면 탈퇴한 판매자의 상품이 ACTIVE로 남을 수 있다.
+    // 두 쪽 모두 상품 행을 먼저 잠그고 다음 문장에서 바꾸면, 뒤에 온 쪽이 앞 쪽의 커밋을 기다렸다가 커밋된 값을 보고 판단한다.
+    // 잠그는 순서를 id 순으로 같게 해 서로 기다리다 멈추지(데드락) 않게 한다
+
+    // 예약 해제 전: 이 주문이 잡은 상품 행을 잠금
+    @Query(value = "SELECT id FROM product WHERE reserved_order_id = :orderId ORDER BY id FOR UPDATE",
+            nativeQuery = true)
+    List<Long> lockByReservedOrder(@Param("orderId") Long orderId);
+
+    // 판매 재개 전: 이 상품 행을 잠금
+    @Query(value = "SELECT id FROM product WHERE id = :productId FOR UPDATE", nativeQuery = true)
+    List<Long> lockById(@Param("productId") Long productId);
+
+    // 판매자 탈퇴 전: 그 판매자의 상품 중 나중에 판매 중으로 되돌아올 수 있는 행을 잠금
+    @Query(value = """
+            SELECT id FROM product
+            WHERE seller_id = :sellerId AND status IN ('ACTIVE', 'PAYMENT_PENDING', 'SOLD_OUT')
+            ORDER BY id FOR UPDATE
+            """, nativeQuery = true)
+    List<Long> lockChangeableBySeller(@Param("sellerId") Long sellerId);
 
     // 목록: 품종을 함께 조회해 N+1 방지 (사진은 Product의 @BatchSize로 처리)
     @Override
