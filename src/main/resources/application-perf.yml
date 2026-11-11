@@ -22,3 +22,11 @@ server:
   tomcat:
     mbeanregistry:
       enabled: true
+
+# 외부 API를 가짜 서버(perf-fakes, WireMock)로 돌린다. 택배는 그 뒤에서 404-express로 중계된다
+custom:
+  courier:
+    base-url: ${PERF_FAKES_URL:http://perf-fakes:8080}
+  payment:
+    toss:
+      base-url: ${PERF_FAKES_URL:http://perf-fakes:8080}
