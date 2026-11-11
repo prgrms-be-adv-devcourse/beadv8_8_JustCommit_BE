@@ -5,12 +5,14 @@ import com.justcommit.backend.product.banned.domain.enums.TaxonRank;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 // 엔진이 답한 학명이 판매 금지 목록에 걸리는지 (속 · 종 · 변종 단위)
 // - 속 금지: 그 속이면 모두 금지 (예: Erythroxylum coca)
 // - 종 금지: 그 종과 아래 변종 금지. 속만 같으면 통과 (예: 호접란 Phalaenopsis 통과, Phalaenopsis japonica 금지)
 // - 변종 금지: 그 변종만 금지. 후보가 종까지만 같으면 판단 불가 → 관리자 확인
-// 비교 단위는 이름의 단어 수로 정한다(1 = 속, 2 = 종, 3 이상 = 변종). 별칭에는 단위 칸이 없어서
+// 비교 단위는 이름을 읽어 정한다(속 · 종 · 변종 표기). 별칭에는 단위 칸이 없어서
+// 명명자(예: Kitam., (Rchb.f.) Garay)가 붙어도 무시하고, 변종은 var. · subsp. · f. 뒤 단어나 세 번째 소문자 단어로 읽음
 public final class ScientificNameMatcher {
 
     public enum Result { BANNED, SPECIES_ONLY, NONE }
@@ -67,29 +69,51 @@ public final class ScientificNameMatcher {
     private record Named(ParsedName parsed, Entry entry) {
     }
 
-    // 소문자 · 공백 하나로 맞춘 학명을 속 · 종 · 변종 열쇠로 나눔
-    // 변종 열쇠는 "속 종 마지막단어"라 var. · subsp. · f. 표기가 달라도 같은 변종으로 봄
-    // 교잡종 기호(× 또는 단독 x)는 단어로 세지 않음 → "Sedirea ×japonica" · "Sedirea x japonica"도 종으로 봄
+    // 학명을 속 · 종 · 변종 열쇠(소문자)로 나눔
+    // - 교잡종 기호(× 또는 단독 x)는 단어로 세지 않음 → "Sedirea ×japonica"도 종으로 봄
+    // - 종소명 · 변종명은 글자와 하이픈만 있는 단어. 마침표 · 괄호가 있거나 대문자로 시작하는 뒤쪽 단어는 명명자로 보고 무시
+    // - 변종 열쇠는 "속 종 변종명"이라 var. · subsp. · f. 표기가 달라도 같은 변종으로 봄
     private record ParsedName(TaxonRank rank, String genus, String species, String infra) {
+
+        private static final Set<String> RANK_WORDS = Set.of("var.", "var", "subsp.", "subsp", "ssp.", "ssp", "f.", "fo.", "forma");
 
         static ParsedName of(String name) {
             if (name == null || name.isBlank()) {
                 return null;
             }
-            String[] t = Arrays.stream(name.toLowerCase(Locale.ROOT).replace('×', ' ').trim().split("\\s+"))
-                    .filter(w -> !w.isEmpty() && !w.equals("x"))
-                    .toArray(String[]::new);
-            if (t.length == 0) {
+            List<String> t = Arrays.stream(name.replace('×', ' ').trim().split("\\s+"))
+                    .filter(w -> !w.isEmpty() && !w.equalsIgnoreCase("x"))
+                    .toList();
+            if (t.isEmpty()) {
                 return null;
             }
-            if (t.length == 1) {
-                return new ParsedName(TaxonRank.GENUS, t[0], null, null);
+            String genus = t.get(0).toLowerCase(Locale.ROOT);
+            if (t.size() == 1 || !isEpithet(t.get(1))) {
+                return new ParsedName(TaxonRank.GENUS, genus, null, null);   // 속 + 명명자도 속으로
             }
-            String species = t[0] + " " + t[1];
-            if (t.length == 2) {
-                return new ParsedName(TaxonRank.SPECIES, t[0], species, null);
+            String species = genus + " " + t.get(1).toLowerCase(Locale.ROOT);
+            String infra = infraEpithet(t);
+            if (infra == null) {
+                return new ParsedName(TaxonRank.SPECIES, genus, species, null);
             }
-            return new ParsedName(TaxonRank.INFRA, t[0], species, species + " " + t[t.length - 1]);
+            return new ParsedName(TaxonRank.INFRA, genus, species, species + " " + infra);
+        }
+
+        // var. · subsp. · f. 뒤 단어, 없으면 세 번째 단어가 소문자 종소명 꼴일 때만 변종으로 봄 (대문자 · 마침표면 명명자)
+        private static String infraEpithet(List<String> t) {
+            for (int i = 2; i < t.size() - 1; i++) {
+                if (RANK_WORDS.contains(t.get(i).toLowerCase(Locale.ROOT)) && isEpithet(t.get(i + 1))) {
+                    return t.get(i + 1).toLowerCase(Locale.ROOT);
+                }
+            }
+            if (t.size() >= 3 && t.get(2).matches("[a-z][a-z-]*")) {
+                return t.get(2);
+            }
+            return null;
+        }
+
+        private static boolean isEpithet(String word) {
+            return word.matches("[\\p{L}][\\p{L}-]*");
         }
     }
 }

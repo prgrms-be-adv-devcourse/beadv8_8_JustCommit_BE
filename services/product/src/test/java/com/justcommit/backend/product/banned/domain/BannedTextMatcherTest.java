@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class BannedTextMatcherTest {
 
     private final BannedTextMatcher matcher = new BannedTextMatcher(
-            List.of("양귀비", "아편 양귀비", "복주머니란", "코카", "풍란", "나도풍란", "삽수"),
+            List.of("양귀비", "아편 양귀비", "복주머니란", "코카", "풍란", "나도풍란", "삽수", "대마"),
             List.of("자생지", "산채"),
             List.of("꽃양귀비", "개양귀비", "서양복주머니란", "코카콜라"));
 
@@ -36,6 +36,19 @@ class BannedTextMatcherTest {
     @DisplayName("예외 단어를 먼저 빼고 금지 이름 · 금지어 · 관리자 확인 단어를 찾는다")
     void match(String text, Result expected) {
         assertThat(matcher.match(text, null).result()).isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("사용자가 쓴 구분자 문자(|)도 문장부호처럼 지워 금지어를 놓치지 않는다")
+    void userPipeIsRemoved() {
+        assertThat(matcher.match("대|마 씨앗", null).result()).isEqualTo(Result.BANNED);
+        assertThat(matcher.match("대 마", null).result()).isEqualTo(Result.BANNED);
+    }
+
+    @Test
+    @DisplayName("제목 끝과 설명 앞은 붙여 읽지 않는다")
+    void titleAndDescriptionAreNotJoined() {
+        assertThat(matcher.match("분양합니다 대", "마당에서 키웠어요").result()).isEqualTo(Result.NONE);
     }
 
     @Test

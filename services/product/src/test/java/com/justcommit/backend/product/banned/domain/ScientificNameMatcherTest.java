@@ -37,7 +37,13 @@ class ScientificNameMatcherTest {
             "Monstera deliciosa, NONE",
             "Sedirea ×japonica, BANNED",                // 교잡종 기호(×)는 단어로 세지 않음
             "Sedirea x japonica, BANNED",               // 단독 x도 교잡종 기호로 봄
-            "Phalaenopsis × hybrida, NONE"              // 호접란 교잡종은 종 금지에 걸리지 않음
+            "Phalaenopsis × hybrida, NONE",             // 호접란 교잡종은 종 금지에 걸리지 않음
+            "Aster altaicus var. uchiyamae Kitam., BANNED",       // 명명자가 붙어도 변종으로 읽음
+            "Aster altaicus uchiyamae, BANNED",                   // var. 없는 세 단어 이름
+            "Aster altaicus Willd., SPECIES_ONLY",                // 명명자는 변종으로 보지 않음
+            "Sedirea japonica (Rchb.f.) Garay & H.R.Sweet, BANNED", // 괄호 · 마침표가 있는 명명자 무시
+            "Erythroxylum P.Browne, BANNED",                      // 속 + 명명자도 속으로
+            "Phalaenopsis Blume, NONE"                            // 호접란 속 + 명명자는 허용
     })
     @DisplayName("속 · 종 · 변종 단위로 대조한다")
     void match(String candidate, Result expected) {
