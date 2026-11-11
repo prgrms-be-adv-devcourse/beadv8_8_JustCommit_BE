@@ -366,11 +366,14 @@ public class OrderService {
         outboxPublisher.publish(new OrderItemCancelled(orderId, item.getId(), item.getProductId(),
                 OrderItemCancelled.CancelReason.BUYER));
 
-        // 일부만 취소된 경우의 판매자 알림은 #277 B에서 market.events.v1의 OrderItemCancelled로 다시 만든다.
-        // 옛 OrderItemCancelledEvent는 판매 재개 토픽(market.order-item-cancelled.v1)과 이름이 겹쳐 product가 DLT로 보내서 지웠다.
+        // 판매자 주문이 전부 취소되면 SellerOrderCancelled/ 일부만이면 OrderItemCancelled로 판매자에게 알린다 (market.events.v1)
         if (sellerOrderCancelled) {
             sellerOrderEventPublisher.publishAfterCommit(new SellerOrderCancelledEvent(
                     orderId, sellerOrderId, sellerOrder.getSellerId(), memberId, LocalDateTime.now()));
+        } else {
+            sellerOrderEventPublisher.publishAfterCommit(new OrderItemCancelledEvent(
+                    item.getId(), orderId, sellerOrderId, sellerOrder.getSellerId(), item.getProductName(),
+                    LocalDateTime.now()));
         }
     }
 

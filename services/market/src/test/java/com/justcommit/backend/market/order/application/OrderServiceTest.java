@@ -10,6 +10,8 @@ import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
+import com.justcommit.backend.market.OrderItemCancelledEvent;
+import com.justcommit.backend.market.SellerOrderCancelledEvent;
 import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.OrderResult;
 import com.justcommit.backend.market.PurchaseConfirmedEvent;
@@ -589,6 +591,39 @@ class OrderServiceTest {
                 .isInstanceOf(BusinessException.class);
 
         verify(outboxPublisher, never()).publish(any());
+    }
+
+    @Test
+    @DisplayName("판매자 주문에 상품이 남는 부분 취소는 판매자에게 일부 취소 알림(OrderItemCancelled)을 보낸다")
+    void itemCancelPublishesPartialCancelNoticeWhenOtherItemsRemain() {
+        Orders order = pendingOrder(10L);
+        order.paid();
+        SellerOrder sellerOrder = new SellerOrder(order, 20L);
+        OrdersItem first = new OrdersItem(sellerOrder, 101L, "몬스테라", money("10000"));
+        OrdersItem second = new OrdersItem(sellerOrder, 102L, "선인장", money("20000"));
+        sellerOrder.addItems(List.of(first, second));
+        order.addSellerOrders(List.of(sellerOrder));
+        ReflectionTestUtils.setField(sellerOrder, "id", 7L);
+        ReflectionTestUtils.setField(first, "id", 11L);
+        ReflectionTestUtils.setField(second, "id", 12L);
+        when(ordersItemRepository.findOrderIdByItemId(11L)).thenReturn(Optional.of(99L));
+        when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
+        when(ordersItemRepository.findSellerOrderIdByItemId(11L)).thenReturn(Optional.of(7L));
+        when(sellerOrderRepository.findLockedById(7L)).thenReturn(Optional.of(sellerOrder));
+        when(ordersItemRepository.findById(11L)).thenReturn(Optional.of(first));
+        when(shipmentQuery.findBySellerOrderId(7L)).thenReturn(new ShipmentResult(8L, "READY", null));
+        when(paymentUseCase.refundCancelledItem(11L, 99L, 10L, money("10000")))
+                .thenReturn(new PaymentResult(PaymentStatus.REFUNDED, money("0")));
+
+        orderService.itemCancel(10L, 11L);
+
+        ArgumentCaptor<OrderItemCancelledEvent> notice = ArgumentCaptor.forClass(OrderItemCancelledEvent.class);
+        verify(sellerOrderEventPublisher).publishAfterCommit(notice.capture());
+        assertThat(notice.getValue().orderItemId()).isEqualTo(11L);
+        assertThat(notice.getValue().sellerOrderId()).isEqualTo(7L);
+        assertThat(notice.getValue().sellerId()).isEqualTo(20L);
+        assertThat(notice.getValue().productName()).isEqualTo("몬스테라");
+        verify(sellerOrderEventPublisher, never()).publishAfterCommit(any(SellerOrderCancelledEvent.class));
     }
 
     @Test

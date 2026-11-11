@@ -2,6 +2,7 @@ package com.justcommit.backend.market.order.infrastructure.kafka;
 
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
+import com.justcommit.backend.market.OrderItemCancelledEvent;
 import com.justcommit.backend.market.SellerOrderCancelledEvent;
 import com.justcommit.backend.market.SellerOrderPaidEvent;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,10 @@ public class SellerOrderEventPublisher {
     }
 
     public void publishAfterCommit(OrderItemAutoConfirmedEvent event) {
+        outboxPublisher.publish(event);
+    }
+
+    public void publishAfterCommit(OrderItemCancelledEvent event) {
         outboxPublisher.publish(event);
     }
 }

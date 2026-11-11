@@ -3,6 +3,7 @@ package com.justcommit.backend.market.order.infrastructure.kafka;
 import com.justcommit.backend.common.messaging.KafkaTopics;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
+import com.justcommit.backend.market.OrderItemCancelledEvent;
 import com.justcommit.backend.market.SellerOrderCancelledEvent;
 import com.justcommit.backend.market.SellerOrderPaidEvent;
 import org.junit.jupiter.api.DisplayName;
@@ -31,10 +32,15 @@ class SellerOrderEventPublisherTest {
         publisher.publishAfterCommit(paid);
         publisher.publishAfterCommit(cancelled);
         publisher.publishAfterCommit(autoConfirmed);
+        OrderItemCancelledEvent itemCancelled = new OrderItemCancelledEvent(11L, 9L, 8L, 21L, "몬스테라", NOW);
+        publisher.publishAfterCommit(itemCancelled);
 
         verify(outboxPublisher).publish(paid);
         verify(outboxPublisher).publish(cancelled);
         verify(outboxPublisher).publish(autoConfirmed);
+        verify(outboxPublisher).publish(itemCancelled);
+        assertThat(itemCancelled.eventType()).isEqualTo("OrderItemCancelled");
+        assertThat(itemCancelled.topic()).isEqualTo(KafkaTopics.MARKET_EVENTS);
         assertThat(paid.eventType()).isEqualTo("SellerOrderPaid");
         assertThat(cancelled.eventType()).isEqualTo("SellerOrderCancelled");
         assertThat(autoConfirmed.eventType()).isEqualTo("OrderItemAutoConfirmed");
