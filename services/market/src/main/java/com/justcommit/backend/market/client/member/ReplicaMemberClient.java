@@ -46,6 +46,14 @@ class ReplicaMemberClient implements MemberQuery {
     return nicknames;
   }
 
+  // 복제본이 아직 없으면 탈퇴로 보지 않음: 이벤트가 안 온 것뿐이고, 탈퇴 직후는 Gateway가 토큰을 막음
+  @Override
+  public boolean isWithdrawn(Long memberId) {
+    return memberReplicaRepository.findById(memberId)
+        .map(MemberReplica::isWithdrawn)
+        .orElse(false);
+  }
+
   private static String displayName(MemberReplica replica) {
     if (replica.isWithdrawn()) {
       return WITHDRAWN_NICKNAME;

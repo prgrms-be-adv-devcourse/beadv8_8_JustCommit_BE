@@ -1,5 +1,6 @@
 package com.justcommit.backend.market.order.application;
 
+import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.common.client.exception.InternalApiErrorException;
 import com.justcommit.backend.common.client.exception.InternalApiResultUnknownException;
 import com.justcommit.backend.common.client.exception.InternalApiUnavailableException;
@@ -75,6 +76,7 @@ class OrderServiceTest {
     @Mock OrdersItemRepository ordersItemRepository;
     @Mock SellerOrderRepository sellerOrderRepository;
     @Mock CartService cartService;
+    @Mock MemberQuery memberQuery;
     @Mock ProductQuery productQuery;
     @Mock ProductUseCase productUseCase;
     @Mock OrderExpirationService orderExpirationService;
