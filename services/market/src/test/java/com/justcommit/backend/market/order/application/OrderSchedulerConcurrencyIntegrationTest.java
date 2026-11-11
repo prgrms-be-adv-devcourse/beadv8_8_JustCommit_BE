@@ -17,6 +17,9 @@ import com.justcommit.backend.market.PurchaseConfirmedEvent;
 import com.justcommit.backend.market.ShipmentQuery;
 import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.cart.application.CartService;
+import com.justcommit.backend.market.client.member.MemberQuery;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
+import com.justcommit.backend.market.order.event.OrderExpired;
 import com.justcommit.backend.market.client.payment.PaymentUseCase;
 import com.justcommit.backend.market.client.product.ProductQuery;
 import com.justcommit.backend.market.client.product.ProductUseCase;
@@ -88,8 +91,10 @@ class OrderSchedulerConcurrencyIntegrationTest {
     }
 
     @MockitoBean CartService cartService;
+    @MockitoBean MemberQuery memberQuery;
     @MockitoBean ProductQuery productQuery;
     @MockitoBean ProductUseCase productUseCase;
+    @MockitoBean OutboxPublisher outboxPublisher;
     @MockitoBean PaymentUseCase paymentUseCase;
     @MockitoBean OrderQuery orderQuery;
     @MockitoBean ShipmentService shipmentService;
@@ -115,12 +120,12 @@ class OrderSchedulerConcurrencyIntegrationTest {
         jdbcTemplate.update("update orders set created_at = ?", LocalDateTime.now().minusMinutes(11));
         Queue<Long> released = new ConcurrentLinkedQueue<>();
         Set<String> pods = ConcurrentHashMap.newKeySet();
-        when(productUseCase.release(anyLong())).thenAnswer(invocation -> {
-            released.add(invocation.getArgument(0));
+        doAnswer(invocation -> {
+            released.add(invocation.<OrderExpired>getArgument(0).orderId());
             pods.add(Thread.currentThread().getName());
             Thread.sleep(HOLD_MILLIS);
-            return true;
-        });
+            return null;
+        }).when(outboxPublisher).publish(any(OrderExpired.class));
 
         runOnTwoPods(orderService::expirePendingOrders);
 
@@ -145,7 +150,7 @@ class OrderSchedulerConcurrencyIntegrationTest {
 
         assertThat(jdbcTemplate.queryForObject("select status from orders where id = ?", String.class, orderId))
                 .isEqualTo("PAYMENT_PENDING");
-        verify(productUseCase, never()).release(any());
+        verify(outboxPublisher, never()).publish(any());
     }
 
     @Test

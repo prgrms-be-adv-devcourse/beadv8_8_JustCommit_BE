@@ -33,15 +33,20 @@ class ProductApplicationTests {
     @DynamicPropertySource
     static void jwtPublicKey(DynamicPropertyRegistry registry) {
         registry.add("jwt.public-key", ProductApplicationTests::newPublicKey);
+        // 앱이 뜨는지만 보는 테스트라 로컬 Kafka의 이벤트를 실제로 읽지 않게 (읽으면 product 그룹의 읽은 위치가 기록됨)
+        registry.add("spring.kafka.listener.auto-startup", () -> "false");
     }
 
     @Test
-    @DisplayName("빈 DB에서 Flyway V1 ~ V4가 적용되고 ddl-auto validate로 product 서비스가 뜬다")
-    void contextLoads(@Autowired Flyway flyway) {
+    @DisplayName("빈 DB에서 Flyway V1 ~ V8이 적용되고 ddl-auto validate로 product 서비스가 뜬다")
+    void contextLoads(@Autowired Flyway flyway, @Autowired JdbcTemplate jdbc) {
         assertThat(flyway.info().applied())
                 .extracting(info -> info.getVersion().getVersion(), MigrationInfo::getState)
                 .contains(tuple("1", MigrationState.SUCCESS), tuple("2", MigrationState.SUCCESS),
-                        tuple("3", MigrationState.SUCCESS), tuple("4", MigrationState.SUCCESS));
+                        tuple("3", MigrationState.SUCCESS), tuple("4", MigrationState.SUCCESS),
+                        tuple("5", MigrationState.SUCCESS));
+        // V5가 회원 복제본 테이블을 만듦 (없으면 이 조회가 실패)
+        assertThat(jdbc.queryForObject("select count(*) from member_replica", Integer.class)).isZero();
     }
 
     @Test

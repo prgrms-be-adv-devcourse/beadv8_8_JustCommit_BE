@@ -16,6 +16,13 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+    consumer:
+      group-id: market
+      # 그룹이 처음 생길 때(첫 배포), 그 전에 쌓인 회원 이벤트부터 읽어 복제본을 채움
+      auto-offset-reset: earliest
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: com.justcommit.backend.common.messaging.consumer.EventEnvelopeDeserializer
   # 내부 API 그룹 주소. 연결 1초 · 응답 3초는 common-web 기본값
   http:
     serviceclient:
@@ -41,7 +48,6 @@ custom:
       purchase-confirmed: ${PURCHASE_CONFIRMED_TOPIC:market.purchase-confirmed.v1}
       seller-order-paid: ${SELLER_ORDER_PAID_TOPIC:market.seller-order-paid.v1}
       seller-order-cancelled: ${SELLER_ORDER_CANCELLED_TOPIC:market.seller-order-cancelled.v1}
-      order-item-cancelled: ${ORDER_ITEM_CANCELLED_TOPIC:market.order-item-cancelled.v1}
       order-item-auto-confirmed: ${ORDER_ITEM_AUTO_CONFIRMED_TOPIC:market.order-item-auto-confirmed.v1}
       shipment-picked-up: ${SHIPMENT_PICKED_UP_TOPIC:market.shipment-picked-up.v1}
       shipment-status-changed: ${SHIPMENT_STATUS_CHANGED_TOPIC:market.shipment-status-changed.v1}

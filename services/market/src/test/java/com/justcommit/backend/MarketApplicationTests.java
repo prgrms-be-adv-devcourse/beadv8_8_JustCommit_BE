@@ -33,14 +33,16 @@ class MarketApplicationTests {
     static void jwtPublicKey(DynamicPropertyRegistry registry) {
         registry.add("jwt.public-key", MarketApplicationTests::newPublicKey);
         registry.add("internal-api.key", () -> "test-internal-key");
+        // 앱이 뜨는지만 보는 테스트라 로컬 Kafka의 이벤트를 실제로 읽지 않게 (읽으면 market 그룹의 읽은 위치가 기록됨)
+        registry.add("spring.kafka.listener.auto-startup", () -> "false");
     }
 
     @Test
-    @DisplayName("빈 DB에서 Flyway V1이 적용되고 ddl-auto validate로 market 서비스가 뜬다")
+    @DisplayName("빈 DB에서 Flyway V1 · V2 · V3가 적용되고 ddl-auto validate로 market 서비스가 뜬다")
     void contextLoads(@Autowired Flyway flyway) {
         assertThat(flyway.info().applied())
                 .extracting(info -> info.getVersion().getVersion(), MigrationInfo::getState)
-                .contains(tuple("1", MigrationState.SUCCESS));
+                .contains(tuple("1", MigrationState.SUCCESS), tuple("2", MigrationState.SUCCESS), tuple("3", MigrationState.SUCCESS));
     }
 
     private static String newPublicKey() {

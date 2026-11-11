@@ -12,6 +12,7 @@ import com.justcommit.backend.product.image.application.ProductImageCleaner;
 import com.justcommit.backend.product.image.application.ProductImageUrlValidator;
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.product.domain.ProductImage;
+import com.justcommit.backend.product.product.domain.ReviewScope;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import com.justcommit.backend.product.product.infrastructure.ProductSpecifications;
 import com.justcommit.backend.product.product.presentation.dto.*;
@@ -25,6 +26,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -34,12 +38,18 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class ProductService implements ProductQuery, ProductUseCase {
 
+    // 등록 제한 (정책 「등록 제한」)
+    private static final int REVIEW_PENDING_LIMIT = 5;
+    private static final int DAILY_REGISTER_LIMIT = 20;
+
     private final ProductRepository productRepository;
     private final ProductReservationRepository reservationRepository;
     private final SpeciesRepository speciesRepository;
     private final MemberQuery memberQuery;
     private final ProductImageUrlValidator imageUrlValidator;
     private final ProductImageCleaner imageCleaner;
+    private final Clock clock;
+
     // ── ProductQuery ───────────────────────────────
 
     @Override
@@ -88,8 +98,8 @@ public class ProductService implements ProductQuery, ProductUseCase {
         }
 
         // 3단계) 조건부 Update 로 한 번에 잡기
-        // 구매 가능 조건을 건 UPDATE 한 번이라 동시에 잡아도 한 주문만 성공. 일부만 잡히면 예외로 롤백
-        // 바뀐 행수가 다를 경우 예외 처리
+        // 구매 가능 조건(ACTIVE · 숨김 아님)을 건 UPDATE 한 번이라 동시에 잡아도 한 주문만 성공. 일부만 잡히면 예외로 롤백
+        // 검수 중 · 반려 상품도 ACTIVE가 아니라 여기서 걸려 409
         if (productRepository.reserve(orderId, ids) != ids.size()) {
             throw new BusinessException(ProductErrorCode.PRODUCT_NOT_RESERVABLE);
         }
@@ -107,6 +117,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
     @Override
     @Transactional
     public boolean releaseItem(Long productId, Long orderId, boolean hidden) {
+        productRepository.lockById(productId); // 판매자 탈퇴 처리와 순서를 맞춤
         return productRepository.releaseItem(productId, orderId, hidden) > 0;
     }
 
@@ -115,7 +126,8 @@ public class ProductService implements ProductQuery, ProductUseCase {
     public boolean release(Long orderId) {
         // 행이 없으면 RELEASED 로 만들고, 있으면 RELEASED 로 바꿈(잠금)
         reservationRepository.upsertReleased(orderId);   // 예약 기록 행을 잠그고 RELEASED로 (늦은 예약 거절)
-        // 해당 주문이 잡은 PAYMENT_PENDING 상품만 ACTIVE 로 
+        productRepository.lockByReservedOrder(orderId);   // 판매자 탈퇴 처리와 순서를 맞춤
+        // 해당 주문이 잡은 PAYMENT_PENDING 상품만 ACTIVE 로 (판매자가 탈퇴했으면 DELETED)
         return productRepository.release(orderId) > 0;
     }
 
@@ -138,13 +150,17 @@ public class ProductService implements ProductQuery, ProductUseCase {
     }
 
     // ── 상품 API ───────────────────────────────
+
     @Transactional
-    public ProductDetailResponse createProduct(Long sellerId, ProductRequest request){
+    public ProductDetailResponse createProduct(Long sellerId, ProductRequest request) {
 
         //판매자 여부 확인
         if (!memberQuery.isSeller(sellerId)) {
             throw new BusinessException(ProductErrorCode.NOT_SELLER);
         }
+
+        // 등록 제한 (사진 검사 · 품종 조회보다 먼저: 막힐 요청에 일을 더 하지 않게)
+        checkRegisterLimit(sellerId);
 
         List<String> imageUrls = request.pictureUrls() == null ? List.of() : request.pictureUrls();
         imageUrlValidator.validate(sellerId, imageUrls);
@@ -152,6 +168,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
         Species species = speciesRepository.findById(request.speciesId())
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.SPECIES_NOT_FOUND));
 
+        // 등록하면 REVIEW_PENDING (검수는 #343)
         Product product = Product.create(
                 species, sellerId, request.title(), request.description(), request.price(),
                 request.heightCm(), request.potSize(), request.growNote(), imageUrls);
@@ -159,15 +176,26 @@ public class ProductService implements ProductQuery, ProductUseCase {
         return ProductDetailResponse.from(productRepository.save(product), memberQuery.getNickname(sellerId));
     }
 
+    // 비용 보호: 검수 중 동시 5개(409), 하루 등록 20건(429, 삭제 포함, 한국 시간 자정 기준)
+    // 동시에 등록하면 확인과 저장 사이에 끼어 한도를 1~2건 넘을 수 있다. 비용 보호용이라 허용한다
+    private void checkRegisterLimit(Long sellerId) {
+        if (productRepository.countBySellerIdAndStatus(sellerId, ProductStatus.REVIEW_PENDING) >= REVIEW_PENDING_LIMIT) {
+            throw new BusinessException(ProductErrorCode.REVIEW_PENDING_LIMIT_EXCEEDED);
+        }
+        LocalDateTime startOfToday = LocalDate.now(clock).atStartOfDay();
+        if (productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(sellerId, startOfToday) >= DAILY_REGISTER_LIMIT) {
+            throw new BusinessException(ProductErrorCode.DAILY_REGISTER_LIMIT_EXCEEDED);
+        }
+    }
+
     // memberId: 로그인하지 않았으면 null
     public ProductDetailResponse getProductDetail(Long productId, Long memberId) {
-        Product product =  productRepository.findWithDetailById(productId)
+        Product product = productRepository.findWithDetailById(productId)
                 .filter(p -> p.getStatus() != ProductStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
-        // 삭제와 숨김을 구분해서 프론트가 비공개 안내를 띄울 수 있게 함
-        if (!product.isVisibleTo(memberId)) {
-            throw new BusinessException(ProductErrorCode.PRODUCT_HIDDEN);
-        }
+
+        // 검수 중 · 반려 · 숨김 상품을 남이 보면 404 · 403 (규칙은 Product 한 곳에)
+        product.checkViewableBy(memberId);
 
         return ProductDetailResponse.from(product, memberQuery.getNickname(product.getSellerId()));
     }
@@ -177,7 +205,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
                         ProductSpecifications.searchCondition(
                                 request.keyword(), request.speciesId(), request.category(),
                                 request.light(), request.watering(), request.difficulty(),
-                                request.minPrice(), request.maxPrice(),request.onSale()),
+                                request.minPrice(), request.maxPrice(), request.onSale()),
                         request.toPageable())
                 .map(ProductSearchResponse::from);
     }
@@ -194,7 +222,8 @@ public class ProductService implements ProductQuery, ProductUseCase {
 
         List<String> oldImageUrls = imageUrlsOf(product);   // update 전에 꺼내 둠
 
-        product.update(species, request.title(), request.description(), request.price(),
+        // 상태 · 검수 버전은 update 안에서 바뀜. 검수 범위는 #345에서 검수 요청 이벤트에 싣는다
+        ReviewScope reviewScope = product.update(species, request.title(), request.description(), request.price(),
                 request.heightCm(), request.potSize(), request.growNote(), imageUrls);
 
         // 기존 사진 중 새 목록에서 빠진 것만 커밋 후 삭제
@@ -216,12 +245,12 @@ public class ProductService implements ProductQuery, ProductUseCase {
         return product.getImages().stream().map(ProductImage::getS3Url).toList();
     }
 
-    private Product getOwnedProductForUpdate(Long memberId, Long productId){
+    private Product getOwnedProductForUpdate(Long memberId, Long productId) {
         Product product = productRepository.findWithLockById(productId)
                 .filter(p -> p.getStatus() != ProductStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
 
-        if(!product.isOwnedBy(memberId)){
+        if (!product.isOwnedBy(memberId)) {
             throw new BusinessException(ProductErrorCode.NOT_PRODUCT_OWNER);
         }
 
@@ -229,14 +258,14 @@ public class ProductService implements ProductQuery, ProductUseCase {
     }
 
     @Transactional
-    public void changeHidden(Long memberId, Long productId,  boolean hidden) {
-        getOwnedProductForUpdate(memberId,productId).changeHidden(hidden);
+    public void changeHidden(Long memberId, Long productId, boolean hidden) {
+        getOwnedProductForUpdate(memberId, productId).changeHidden(hidden);
     }
 
-    public Page<MyProductResponse> getMyProducts(Long sellerId, MyProductSearchRequest request){
+    public Page<MyProductResponse> getMyProducts(Long sellerId, MyProductSearchRequest request) {
         return productRepository.findAll(
-                ProductSpecifications.sellerCondition(sellerId,request.status(),request.hidden()),
-                request.toPageable())
+                        ProductSpecifications.sellerCondition(sellerId, request.status(), request.hidden()),
+                        request.toPageable())
                 .map(MyProductResponse::from);
     }
 
