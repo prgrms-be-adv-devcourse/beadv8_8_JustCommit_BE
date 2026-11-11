@@ -38,7 +38,7 @@ class ProductApplicationTests {
     }
 
     @Test
-    @DisplayName("빈 DB에서 Flyway V1 ~ V5가 적용되고 ddl-auto validate로 product 서비스가 뜬다")
+    @DisplayName("빈 DB에서 Flyway V1 ~ V8이 적용되고 ddl-auto validate로 product 서비스가 뜬다")
     void contextLoads(@Autowired Flyway flyway, @Autowired JdbcTemplate jdbc) {
         assertThat(flyway.info().applied())
                 .extracting(info -> info.getVersion().getVersion(), MigrationInfo::getState)
