@@ -1,6 +1,7 @@
 package com.justcommit.backend.product.messaging;
 
 import com.justcommit.backend.common.messaging.EventEnvelope;
+import com.justcommit.backend.common.messaging.EventEnvelopeMapper;
 import com.justcommit.backend.common.messaging.KafkaTopics;
 import com.justcommit.backend.product.member.application.MemberReplicaService;
 import com.justcommit.backend.product.messaging.event.MemberProfile;
@@ -22,15 +23,14 @@ public class MemberEventListener {
     static final String MEMBER_UPDATED = "MemberUpdated";
     static final String MEMBER_WITHDRAWN = "MemberWithdrawn";
 
-    private final EventReader eventReader;
+    private final EventEnvelopeMapper mapper;
     private final MemberReplicaService memberReplicaService;
 
     @KafkaListener(topics = "${MEMBER_EVENTS_TOPIC:" + KafkaTopics.MEMBER_EVENTS + "}")
-    public void onMemberEvent(String message) {
-        EventEnvelope envelope = eventReader.envelope(message);
+    public void onMemberEvent(EventEnvelope envelope) {
         switch (envelope.eventType()) {
             case MEMBER_CREATED, MEMBER_UPDATED -> {
-                MemberProfile profile = eventReader.payload(envelope, MemberProfile.class);
+                MemberProfile profile = mapper.readPayload(envelope, MemberProfile.class);
                 boolean applied = memberReplicaService.applyProfile(
                         profile.memberId(), profile.nickname(), profile.role(), profile.seller(),
                         envelope.occurredAt());
@@ -38,7 +38,7 @@ public class MemberEventListener {
                         envelope.eventId(), envelope.eventType(), profile.memberId(), applied);
             }
             case MEMBER_WITHDRAWN -> {
-                MemberWithdrawn withdrawn = eventReader.payload(envelope, MemberWithdrawn.class);
+                MemberWithdrawn withdrawn = mapper.readPayload(envelope, MemberWithdrawn.class);
                 int deleted = memberReplicaService.applyWithdrawn(withdrawn.memberId(), envelope.occurredAt());
                 log.info("회원 탈퇴 반영: eventId={}, memberId={}, deletedProducts={}",
                         envelope.eventId(), withdrawn.memberId(), deleted);
