@@ -7,17 +7,7 @@ import com.justcommit.backend.common.exception.CommonErrorCode;
 import com.justcommit.backend.market.*;
 import com.justcommit.backend.market.cart.application.CartService;
 import com.justcommit.backend.market.cart.domain.CartItem;
-import com.justcommit.backend.market.order.domain.OrderErrorCode;
-import com.justcommit.backend.market.order.domain.Orders;
-import com.justcommit.backend.market.order.domain.OrdersItem;
-import com.justcommit.backend.market.order.domain.SellerOrder;
-import com.justcommit.backend.market.order.infrastructure.*;
-import com.justcommit.backend.market.order.infrastructure.kafka.SellerOrderEventPublisher;
-import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
-import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
-import com.justcommit.backend.market.shipment.application.ShipmentService;
-import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
-import lombok.extern.slf4j.Slf4j;
+import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.market.client.payment.PaymentResult;
 import com.justcommit.backend.market.client.payment.PaymentStatus;
 import com.justcommit.backend.market.client.payment.PaymentUseCase;
@@ -25,7 +15,21 @@ import com.justcommit.backend.market.client.product.ProductQuery;
 import com.justcommit.backend.market.client.product.ProductResult;
 import com.justcommit.backend.market.client.product.ProductUseCase;
 import com.justcommit.backend.market.client.product.ReservationItem;
+import com.justcommit.backend.market.order.domain.OrderErrorCode;
+import com.justcommit.backend.market.order.domain.Orders;
+import com.justcommit.backend.market.order.domain.OrdersItem;
+import com.justcommit.backend.market.order.domain.SellerOrder;
+import com.justcommit.backend.market.order.infrastructure.AutoConfirmTarget;
+import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
+import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
+import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
+import com.justcommit.backend.market.order.infrastructure.kafka.SellerOrderEventPublisher;
+import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
+import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
+import com.justcommit.backend.market.shipment.application.ShipmentService;
+import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,6 +54,7 @@ public class OrderService {
     private final SellerOrderRepository sellerOrderRepository;
     private final OrdersItemRepository ordersItemRepository;
     private final CartService cartService;
+    private final MemberQuery memberQuery;
     private final ProductQuery productQuery;
     private final ProductUseCase productUseCase;
     private final PaymentUseCase paymentUseCase;
@@ -62,6 +67,11 @@ public class OrderService {
 
     @Transactional
     public OrderCreateResponse create(Long memberId, CartOrderCreateRequest request) {
+        // 탈퇴한 회원의 주문을 막는 2차 방어 (1차는 Gateway의 토큰 폐기)
+        if (memberQuery.isWithdrawn(memberId)) {
+            throw new BusinessException(OrderErrorCode.WITHDRAWN_MEMBER);
+        }
+
         List<CartItem> selectedItems = cartService.getSelectCartItems(memberId, request.cartItemIds());
         List<Long> productIds = selectedItems.stream().map(CartItem::getProductId).toList();
         List<ProductResult> products = productQuery.getProducts(productIds);

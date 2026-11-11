@@ -17,6 +17,7 @@ import com.justcommit.backend.market.PurchaseConfirmedEvent;
 import com.justcommit.backend.market.ShipmentQuery;
 import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.cart.application.CartService;
+import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.market.client.payment.PaymentUseCase;
 import com.justcommit.backend.market.client.product.ProductQuery;
 import com.justcommit.backend.market.client.product.ProductUseCase;
@@ -88,6 +89,7 @@ class OrderSchedulerConcurrencyIntegrationTest {
     }
 
     @MockitoBean CartService cartService;
+    @MockitoBean MemberQuery memberQuery;
     @MockitoBean ProductQuery productQuery;
     @MockitoBean ProductUseCase productUseCase;
     @MockitoBean PaymentUseCase paymentUseCase;

@@ -1,5 +1,6 @@
 package com.justcommit.backend.market.order.application;
 
+import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.common.client.exception.InternalApiErrorException;
 import com.justcommit.backend.common.client.exception.InternalApiResultUnknownException;
 import com.justcommit.backend.common.client.exception.InternalApiUnavailableException;
@@ -75,6 +76,7 @@ class OrderServiceTest {
     @Mock OrdersItemRepository ordersItemRepository;
     @Mock SellerOrderRepository sellerOrderRepository;
     @Mock CartService cartService;
+    @Mock MemberQuery memberQuery;
     @Mock ProductQuery productQuery;
     @Mock ProductUseCase productUseCase;
     @Mock OrderExpirationService orderExpirationService;
@@ -94,6 +96,18 @@ class OrderServiceTest {
     void setUpConfirmationService() {
         confirmationServiceUnderTest = new OrderItemConfirmationService(ordersRepository, ordersItemRepository,
                 sellerOrderRepository, shipmentQuery, purchaseConfirmedEventPublisher, sellerOrderEventPublisher);
+    }
+
+    @Test
+    @DisplayName("탈퇴한 회원은 장바구니 · 상품을 보기 전에 주문이 거절된다")
+    void rejectsWithdrawnMemberBeforeAnything() {
+        when(memberQuery.isWithdrawn(10L)).thenReturn(true);
+
+        assertThatThrownBy(() -> orderService.create(10L, request(1L)))
+            .isInstanceOfSatisfying(BusinessException.class,
+                exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.WITHDRAWN_MEMBER));
+        verify(cartService, never()).getSelectCartItems(any(Long.class), any());
+        verify(ordersRepository, never()).saveAndFlush(any());
     }
 
     @Test
