@@ -1,13 +1,27 @@
 # 이미지 빌드에 필요 없는 것과 비밀값은 빌드 컨텍스트에서 뺀다
-.git
-.gradle
+# `**/`를 붙여야 루트뿐 아니라 모듈 폴더(services/member/build 등) 안까지 뺀다
+
+# 빌드 결과물 · 도구 캐시 — 로컬 jar가 섞이면 이미지에 엉뚱한 jar가 들어갈 수 있다
+**/build
+**/out
+**/.gradle
+**/bin
 .idea
+**/*.iml
 .omc
-build
-out
-*.iml
-.env
-*.pem
+.git
+.github
+
+# 비밀값 (.env.example은 이름만 있어 이미지에 필요 없다)
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+
+# 이미지에 안 쓰는 것 — 모놀리스 src/는 Gradle 프로젝트에서 빠졌다
+src
 docker
 scripts
 docs
+docker-compose*.yml
+**/*.md

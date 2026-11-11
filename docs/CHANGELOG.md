@@ -7,6 +7,8 @@
 
 ## 기록
 
+- 2026-11-11 · reference/env-vars.md · DB 접속 변수를 코드에 맞춤: `DB_HOST` · `DB_PORT` · `DB_NAME` → `DB_URL`(JDBC 주소 전체) (#291)
+- 2026-11-11 · infra/deploy.md · 서비스 공통 `Dockerfile`(`MODULE` 인자) · 이미지 이름 `ghcr.io/prgrms-be-adv-devcourse/replant-{서비스}` · 태그 커밋 해시 7자리 + `latest` 규칙 추가 (#291)
 - 2026-11-11 · reference/external-apis.md · services/notification.md · services/product.md · 케밥 경로를 camelCase로: `notifications/unread-count` → `notifications/unreadCount`, `products/images/upload-urls` → `products/images/uploadUrls` (product 코드는 담당 반영 전까지 옛 경로) (#353)
 - 2026-11-11 · flows/image-review.md · services/product.md · 판매 금지 목록 반영: `banned_species` 118줄 · 별칭 22 · `banned_keyword` 12 (Flyway V7 · V8), 금지어에 관리자 확인 단어(`REVIEW`, 자생지 · 산채) 추가, 글 대조 정규화(띄어쓰기 · 문장부호 제거) (#342)
 - 2026-11-11 · glossary.md · 「결과 불명」 코드 이름을 `last_error` → `InternalApiResultUnknownException`(common-web 내부 API 클라이언트 예외)으로 (#330)
