@@ -14,7 +14,7 @@ class MemberReplicaQuery implements MemberQuery {
 
     private final MemberReplicaRepository memberReplicaRepository;
 
-    // 복제본이 없거나(가입 이벤트가 아직 안 옴) 탈퇴했거나 SELLER가 아니면 false
+    // 복제본이 없거나(가입 이벤트가 아직 안 옴) 탈퇴했거나 판매자 등록(seller)을 안 했으면 false
     @Override
     public boolean isSeller(Long memberId) {
         return memberReplicaRepository.findById(memberId)

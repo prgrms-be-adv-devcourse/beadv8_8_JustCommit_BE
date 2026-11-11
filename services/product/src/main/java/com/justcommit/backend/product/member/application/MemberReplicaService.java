@@ -23,8 +23,9 @@ public class MemberReplicaService {
      * @return 반영했으면 true, 오래된 이벤트 · 중복 · 이미 탈퇴한 회원이면 false (정상)
      */
     @Transactional
-    public boolean applyProfile(Long memberId, String nickname, MemberRole role, OffsetDateTime occurredAt) {
-        return memberReplicaRepository.upsertProfile(memberId, nickname, role.name(), occurredAt) > 0;
+    public boolean applyProfile(Long memberId, String nickname, MemberRole role, boolean seller,
+                                OffsetDateTime occurredAt) {
+        return memberReplicaRepository.upsertProfile(memberId, nickname, role.name(), seller, occurredAt) > 0;
     }
 
     /**

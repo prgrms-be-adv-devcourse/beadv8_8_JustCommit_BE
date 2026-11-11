@@ -1,16 +1,12 @@
 package com.justcommit.backend.product.member.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
+import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 // 회원 복제본. 행은 저장소의 upsert 쿼리로만 만들고 바꾼다 (이벤트 순서 · 중복을 쿼리 조건으로 막음)
 @Entity
@@ -34,6 +30,9 @@ public class MemberReplica {
     private MemberRole role;
 
     @Column(nullable = false)
+    private boolean seller;
+
+    @Column(nullable = false)
     private boolean withdrawn;
 
     @Column(name = "last_event_at", nullable = false)
@@ -44,7 +43,7 @@ public class MemberReplica {
     private LocalDateTime updatedAt;
 
     public boolean isSeller() {
-        return !withdrawn && role == MemberRole.SELLER;
+        return !withdrawn && seller;
     }
 
     public String displayNickname() {

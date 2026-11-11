@@ -32,7 +32,8 @@ public class MemberEventListener {
             case MEMBER_CREATED, MEMBER_UPDATED -> {
                 MemberProfile profile = eventReader.payload(envelope, MemberProfile.class);
                 boolean applied = memberReplicaService.applyProfile(
-                        profile.memberId(), profile.nickname(), profile.role(), envelope.occurredAt());
+                        profile.memberId(), profile.nickname(), profile.role(), profile.seller(),
+                        envelope.occurredAt());
                 log.info("회원 복제본 반영: eventId={}, eventType={}, memberId={}, applied={}",
                         envelope.eventId(), envelope.eventType(), profile.memberId(), applied);
             }

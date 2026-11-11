@@ -35,9 +35,11 @@ class MemberEventListenerTest {
     @ValueSource(strings = {"MemberCreated", "MemberUpdated"})
     @DisplayName("가입 · 정보 변경 이벤트면 닉네임 · 권한을 복제본에 반영한다")
     void profileEvents(String eventType) {
-        listener.onMemberEvent(envelope(eventType, 7, Map.of("memberId", 7, "nickname", "식물집사", "role", "SELLER")));
+        listener.onMemberEvent(envelope(eventType, 7,
+                Map.of("memberId", 7, "nickname", "식물집사", "role", "SELLER", "seller", true)));
 
-        verify(memberReplicaService).applyProfile(eq(7L), eq("식물집사"), eq(MemberRole.SELLER), any(OffsetDateTime.class));
+        verify(memberReplicaService).applyProfile(eq(7L), eq("식물집사"), eq(MemberRole.SELLER), eq(true),
+                any(OffsetDateTime.class));
     }
 
     @Test

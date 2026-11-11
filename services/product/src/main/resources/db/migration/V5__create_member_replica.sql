@@ -8,6 +8,7 @@ create table member_replica (
     member_id     bigint      not null,
     nickname      varchar(50),
     role          varchar(20),
+    seller        boolean     not null default false,
     withdrawn     boolean     not null default false,
     last_event_at timestamptz not null,
     created_at    timestamp(6),

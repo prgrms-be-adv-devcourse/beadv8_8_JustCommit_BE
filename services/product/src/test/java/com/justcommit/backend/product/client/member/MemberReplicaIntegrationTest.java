@@ -69,19 +69,29 @@ class MemberReplicaIntegrationTest {
         speciesRepository.save(species);
     }
 
+    // ── 복제본 저장 · 판매자 판단 ───────────────────────
+
     @Test
-    @DisplayName("가입 이벤트를 받으면 복제본이 생기고, SELLER면 판매자로 본다")
+    @DisplayName("가입 이벤트를 받으면 복제본이 생기고, seller=true면 판매자로 본다")
     void createdSellerIsSeller() {
-        assertThat(memberReplicaService.applyProfile(SELLER_ID, "식물집사", MemberRole.SELLER, T1)).isTrue();
+        assertThat(memberReplicaService.applyProfile(SELLER_ID, "식물집사", MemberRole.SELLER, true, T1)).isTrue();
 
         assertThat(memberQuery.isSeller(SELLER_ID)).isTrue();
         assertThat(memberQuery.getNickname(SELLER_ID)).isEqualTo("식물집사");
     }
 
     @Test
-    @DisplayName("MEMBER 권한이거나 복제본이 없으면 판매자가 아니고, 복제본이 없으면 닉네임은 null")
-    void memberOrMissingIsNotSeller() {
-        memberReplicaService.applyProfile(1L, "구매자", MemberRole.MEMBER, T1);
+    @DisplayName("ADMIN이라도 seller=true면 판매자로 본다 (role이 아니라 seller로 판단)")
+    void adminSellerIsSeller() {
+        memberReplicaService.applyProfile(SELLER_ID, "관리자판매자", MemberRole.ADMIN, true, T1);
+
+        assertThat(memberQuery.isSeller(SELLER_ID)).isTrue();
+    }
+
+    @Test
+    @DisplayName("seller=false면 판매자가 아니고, 복제본이 없으면 닉네임은 null")
+    void notSellerOrMissing() {
+        memberReplicaService.applyProfile(1L, "구매자", MemberRole.MEMBER, false, T1);
 
         assertThat(memberQuery.isSeller(1L)).isFalse();
         assertThat(memberQuery.isSeller(999L)).isFalse();
@@ -91,11 +101,11 @@ class MemberReplicaIntegrationTest {
     @Test
     @DisplayName("더 새 이벤트만 반영하고, 같은 이벤트가 다시 오거나 오래된 이벤트가 늦게 오면 무시한다")
     void appliesOnlyNewerEvents() {
-        memberReplicaService.applyProfile(SELLER_ID, "처음", MemberRole.MEMBER, T1);
-        assertThat(memberReplicaService.applyProfile(SELLER_ID, "판매자됨", MemberRole.SELLER, T3)).isTrue();
+        memberReplicaService.applyProfile(SELLER_ID, "처음", MemberRole.MEMBER, false, T1);
+        assertThat(memberReplicaService.applyProfile(SELLER_ID, "판매자됨", MemberRole.SELLER, true, T3)).isTrue();
 
-        assertThat(memberReplicaService.applyProfile(SELLER_ID, "판매자됨", MemberRole.SELLER, T3)).isFalse();
-        assertThat(memberReplicaService.applyProfile(SELLER_ID, "늦게온옛값", MemberRole.MEMBER, T2)).isFalse();
+        assertThat(memberReplicaService.applyProfile(SELLER_ID, "판매자됨", MemberRole.SELLER, true, T3)).isFalse();
+        assertThat(memberReplicaService.applyProfile(SELLER_ID, "늦게온옛값", MemberRole.MEMBER, false, T2)).isFalse();
 
         assertThat(memberQuery.getNickname(SELLER_ID)).isEqualTo("판매자됨");
         assertThat(memberQuery.isSeller(SELLER_ID)).isTrue();
@@ -104,10 +114,10 @@ class MemberReplicaIntegrationTest {
     @Test
     @DisplayName("탈퇴하면 판매자가 아니고 \"탈퇴한 회원\"으로 보이며, 늦게 온 가입 · 변경 이벤트로 되살아나지 않는다")
     void withdrawnIsTerminal() {
-        memberReplicaService.applyProfile(SELLER_ID, "식물집사", MemberRole.SELLER, T1);
+        memberReplicaService.applyProfile(SELLER_ID, "식물집사", MemberRole.SELLER, true, T1);
         memberReplicaService.applyWithdrawn(SELLER_ID, T2);
 
-        assertThat(memberReplicaService.applyProfile(SELLER_ID, "되살리기", MemberRole.SELLER, T3)).isFalse();
+        assertThat(memberReplicaService.applyProfile(SELLER_ID, "되살리기", MemberRole.SELLER, true, T3)).isFalse();
 
         assertThat(memberQuery.isSeller(SELLER_ID)).isFalse();
         assertThat(memberQuery.getNickname(SELLER_ID)).isEqualTo(MemberReplica.WITHDRAWN_NICKNAME);
@@ -117,11 +127,13 @@ class MemberReplicaIntegrationTest {
     @DisplayName("탈퇴 이벤트가 가입 이벤트보다 먼저 와도 탈퇴 상태로 남는다")
     void withdrawnBeforeCreated() {
         memberReplicaService.applyWithdrawn(SELLER_ID, T2);
-        memberReplicaService.applyProfile(SELLER_ID, "식물집사", MemberRole.SELLER, T1);
+        memberReplicaService.applyProfile(SELLER_ID, "식물집사", MemberRole.SELLER, true, T1);
 
         assertThat(memberQuery.isSeller(SELLER_ID)).isFalse();
         assertThat(memberQuery.getNickname(SELLER_ID)).isEqualTo(MemberReplica.WITHDRAWN_NICKNAME);
     }
+
+    // ── 탈퇴한 판매자의 상품 정리 ───────────────────────
 
     @Test
     @DisplayName("판매자가 탈퇴하면 판매 중(숨김 포함) 상품만 삭제하고, 결제 대기 · 판매 완료 · 다른 판매자 상품은 그대로 둔다")
