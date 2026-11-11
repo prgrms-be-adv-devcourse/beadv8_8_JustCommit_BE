@@ -13,9 +13,10 @@ spring:
     admin:
       fail-fast: false
     consumer:
-      # 이벤트 클래스가 서비스마다 달라 문자열로 받고, KafkaConfig의 메시지 변환기가 리스너 파라미터 타입으로 변환한다
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # 봉투(EventEnvelope)로 받고 eventType으로 payload 클래스를 고른다
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: com.justcommit.backend.common.messaging.consumer.EventEnvelopeDeserializer
   http:
     serviceclient:
       internal-payment:
@@ -35,5 +36,5 @@ internal-api:
 custom:
   kafka:
     topics:
-      purchase-confirmed: ${PURCHASE_CONFIRMED_TOPIC:market.purchase-confirmed.v1}
+      market-events: ${MARKET_EVENTS_TOPIC:market.events.v1}
       shipment-picked-up: ${SHIPMENT_PICKED_UP_TOPIC:market.shipment-picked-up.v1}

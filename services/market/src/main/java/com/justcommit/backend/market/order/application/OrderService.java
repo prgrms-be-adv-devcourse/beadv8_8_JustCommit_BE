@@ -283,12 +283,6 @@ public class OrderService {
 
         order.cancel();
 
-        // releaseItem의 clearAutomatically가 영속성 컨텍스트를 비우므로 이후에는 주문 엔티티를 변경하지 않는다.
-        for (CancelItem item : cancelledItems) {
-            if (!productUseCase.releaseItem(item.productId())) {
-                throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
-            }
-        }
         for (CancelItem item : cancelledItems) {
             PaymentResult result = paymentUseCase.refundCancelledItem(item.itemId(), orderId, memberId, item.price());
             if (result.status() != PaymentStatus.REFUNDED && result.status() != PaymentStatus.ALREADY_REFUNDED) {
@@ -306,6 +300,10 @@ public class OrderService {
         for (SellerOrder sellerOrder : activeSellerOrders) {
             sellerOrderEventPublisher.publishAfterCommit(new SellerOrderCancelledEvent(
                     orderId, sellerOrder.getId(), sellerOrder.getSellerId(), memberId, cancelledAt));
+        }
+        for (CancelItem item : cancelledItems) {
+            sellerOrderEventPublisher.publishAfterCommit(new OrderItemCancelledForProductEvent(
+                    orderId, item.itemId(), item.productId(), OrderItemCancelReason.BUYER));
         }
     }
 
@@ -359,9 +357,6 @@ public class OrderService {
         sellerOrder.calculateSettlementBaseAmount();
         boolean sellerOrderCancelled = finishCancellation(sellerOrder, order);
         String productName = item.getProductName();
-        if (!productUseCase.releaseItem(item.getProductId())) {
-            throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
-        }
         if (sellerOrderCancelled) {
             sellerOrderEventPublisher.publishAfterCommit(new SellerOrderCancelledEvent(
                     orderId, sellerOrderId, sellerOrder.getSellerId(), memberId, LocalDateTime.now()));
@@ -369,6 +364,8 @@ public class OrderService {
             sellerOrderEventPublisher.publishAfterCommit(new OrderItemCancelledEvent(
                     item.getId(), orderId, sellerOrderId, sellerOrder.getSellerId(), productName, LocalDateTime.now()));
         }
+        sellerOrderEventPublisher.publishAfterCommit(new OrderItemCancelledForProductEvent(
+                orderId, item.getId(), item.getProductId(), OrderItemCancelReason.BUYER));
     }
 
     private boolean finishCancellation(SellerOrder sellerOrder, Orders order) {
@@ -395,6 +392,7 @@ public class OrderService {
     private OrderCreateResponse failOrder(Orders order, String reason, RuntimeException e) {
         log.warn("{}, 주문 실패: orderId={}", reason, order.getId(), e);
         order.fail();
+        sellerOrderEventPublisher.publishAfterCommit(new OrderFailedEvent(order.getId()));
         return toResponse(order, null);
     }
 
@@ -414,22 +412,17 @@ public class OrderService {
     }
 
     private Orders orderPayment(Orders order) {
-        if (!productUseCase.markSoldOut(order.getId())) {
-            throw new BusinessException(OrderErrorCode.PRODUCT_UNAVAILABLE);
-        }
-        // 상품 벌크 업데이트가 영속성 컨텍스트를 비우므로 주문을 다시 관리 상태로 조회한다.
-        Orders managed = ordersRepository.findById(order.getId())
-                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
-        managed.paid();
+        order.paid();
 
-        OrderResult result = orderQuery.getOrder(managed.getId());
+        OrderResult result = orderQuery.getOrder(order.getId());
         LocalDateTime paidAt = LocalDateTime.now();
         for (SellerOrderResult sellerOrder : result.sellerOrders()) {
             sellerOrderEventPublisher.publishAfterCommit(new SellerOrderPaidEvent(
                     sellerOrder.id(), sellerOrder.sellerId(), result.buyerId(), paidAt));
         }
+        sellerOrderEventPublisher.publishAfterCommit(new OrderPaidEvent(order.getId()));
         shipmentService.createShipments(result);
-        return managed;
+        return order;
     }
 
     private OrderCreateResponse toResponse(Orders order, LocalDateTime expiresAt) {

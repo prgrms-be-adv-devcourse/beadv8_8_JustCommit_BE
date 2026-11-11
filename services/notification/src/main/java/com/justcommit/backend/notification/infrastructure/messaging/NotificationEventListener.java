@@ -1,5 +1,7 @@
 package com.justcommit.backend.notification.infrastructure.messaging;
 
+import com.justcommit.backend.common.messaging.EventEnvelope;
+import com.justcommit.backend.common.messaging.EventEnvelopeMapper;
 import com.justcommit.backend.notification.infrastructure.messaging.event.OrderItemAutoConfirmedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.PurchaseConfirmedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderAcceptedEvent;
@@ -24,6 +26,7 @@ public class NotificationEventListener {
 
     private static final String GROUP_ID = "notification";
 
+    private final EventEnvelopeMapper envelopeMapper;
     private final NotificationService notificationService;
 
     @KafkaListener(topics = "${custom.kafka.topics.shipment-status-changed}", groupId = GROUP_ID)
@@ -59,21 +62,32 @@ public class NotificationEventListener {
         notificationService.create(event.sellerId(), type, null, event.sellerOrderId(), event.itemSummary(), eventKey);
     }
 
-    @KafkaListener(topics = "${custom.kafka.topics.purchase-confirmed}", groupId = GROUP_ID)
-    public void onPurchaseConfirmed(PurchaseConfirmedEvent event) {
+    @KafkaListener(topics = "${custom.kafka.topics.market-events}", groupId = GROUP_ID)
+    public void onMarketEvent(EventEnvelope envelope) {
+        switch (envelope.eventType()) {
+            case "PurchaseConfirmed" -> onPurchaseConfirmed(envelopeMapper.readPayload(envelope, PurchaseConfirmedEvent.class));
+            case "SellerOrderPaid" -> onSellerOrderPaid(envelopeMapper.readPayload(envelope, SellerOrderPaidEvent.class));
+            case "SellerOrderAccepted" -> onSellerOrderAccepted(envelopeMapper.readPayload(envelope, SellerOrderAcceptedEvent.class));
+            case "SellerOrderCancelled" -> onSellerOrderCancelled(envelopeMapper.readPayload(envelope, SellerOrderCancelledEvent.class));
+            case "SellerOrderRejected" -> onSellerOrderRejected(envelopeMapper.readPayload(envelope, SellerOrderRejectedEvent.class));
+            case "OrderItemAutoConfirmed" -> onOrderItemAutoConfirmed(envelopeMapper.readPayload(envelope, OrderItemAutoConfirmedEvent.class));
+            default -> log.debug("notification이 쓰지 않는 market 이벤트라 건너뜀: eventType={}, eventId={}",
+                    envelope.eventType(), envelope.eventId());
+        }
+    }
+
+    private void onPurchaseConfirmed(PurchaseConfirmedEvent event) {
         notificationService.create(event.sellerId(), NotificationType.PURCHASE_CONFIRMED, event.sellerOrderId(),
                 "PURCHASE_CONFIRMED:" + event.sellerOrderId());
     }
 
-    @KafkaListener(topics = "${custom.kafka.topics.seller-order-paid}", groupId = GROUP_ID)
-    public void onSellerOrderPaid(SellerOrderPaidEvent event) {
+    private void onSellerOrderPaid(SellerOrderPaidEvent event) {
         notificationService.create(event.sellerId(), NotificationType.SELLER_ORDER_PAID, event.sellerOrderId(),
                 "SELLER_ORDER_PAID:" + event.sellerOrderId());
     }
 
     // 수락: 구매자에게 1건. 일부 상품을 거절했으면 수락 알림 대신 일부 거절 알림 1건으로 보낸다
-    @KafkaListener(topics = "${custom.kafka.topics.seller-order-accepted}", groupId = GROUP_ID)
-    public void onSellerOrderAccepted(SellerOrderAcceptedEvent event) {
+    private void onSellerOrderAccepted(SellerOrderAcceptedEvent event) {
         NotificationType type = event.rejectedItemCount() > 0
                 ? NotificationType.SELLER_ORDER_PARTLY_ACCEPTED
                 : NotificationType.SELLER_ORDER_ACCEPTED;
@@ -82,16 +96,14 @@ public class NotificationEventListener {
     }
 
     // 구매자 본인이 취소한 것이라 판매자에게만 알린다 (본인이 한 일은 알리지 않음)
-    @KafkaListener(topics = "${custom.kafka.topics.seller-order-cancelled}", groupId = GROUP_ID)
-    public void onSellerOrderCancelled(SellerOrderCancelledEvent event) {
+    private void onSellerOrderCancelled(SellerOrderCancelledEvent event) {
         notificationService.create(event.sellerId(), NotificationType.SELLER_ORDER_CANCELLED,
                 event.sellerOrderId(), "SELLER_ORDER_CANCELLED:SELLER:" + event.sellerOrderId());
     }
 
     // 전부 거절: 직접 거절이면 구매자에게만, 24시간 자동 거절이면 구매자(자동 취소)와 판매자(자동 거절)에게
     // reason이 없으면 직접 거절로 본다. 한 판매자 주문은 한 번만 거절되므로 키는 받는 사람별로만 나눈다
-    @KafkaListener(topics = "${custom.kafka.topics.seller-order-rejected}", groupId = GROUP_ID)
-    public void onSellerOrderRejected(SellerOrderRejectedEvent event) {
+    private void onSellerOrderRejected(SellerOrderRejectedEvent event) {
         String buyerKey = "SELLER_ORDER_REJECTED:BUYER:" + event.sellerOrderId();
         if (event.reason() == SellerOrderRejectReason.AUTO) {
             notificationService.create(event.buyerId(), NotificationType.SELLER_ORDER_AUTO_CANCELLED,
@@ -104,8 +116,7 @@ public class NotificationEventListener {
                 event.orderId(), event.sellerOrderId(), buyerKey);
     }
 
-    @KafkaListener(topics = "${custom.kafka.topics.order-item-auto-confirmed}", groupId = GROUP_ID)
-    public void onOrderItemAutoConfirmed(OrderItemAutoConfirmedEvent event) {
+    private void onOrderItemAutoConfirmed(OrderItemAutoConfirmedEvent event) {
         notificationService.create(event.buyerId(), NotificationType.ORDER_ITEM_AUTO_CONFIRMED,
                 event.orderId(), event.sellerOrderId(), "ORDER_ITEM_AUTO_CONFIRMED:" + event.orderItemId());
     }

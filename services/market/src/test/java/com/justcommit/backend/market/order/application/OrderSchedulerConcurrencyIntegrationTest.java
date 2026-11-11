@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
+import com.justcommit.backend.market.OrderExpiredEvent;
 import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.PurchaseConfirmedEvent;
 import com.justcommit.backend.market.ShipmentQuery;
@@ -115,18 +116,18 @@ class OrderSchedulerConcurrencyIntegrationTest {
     void expiresEachOrderOnceWhenTwoPodsRunTogether() throws Exception {
         List<Long> orderIds = saveOrders(false);
         jdbcTemplate.update("update orders set created_at = ?", LocalDateTime.now().minusMinutes(11));
-        Queue<Long> released = new ConcurrentLinkedQueue<>();
+        Queue<Long> expired = new ConcurrentLinkedQueue<>();
         Set<String> pods = ConcurrentHashMap.newKeySet();
-        when(productUseCase.release(anyLong())).thenAnswer(invocation -> {
-            released.add(invocation.getArgument(0));
+        doAnswer(invocation -> {
+            expired.add(invocation.<OrderExpiredEvent>getArgument(0).orderId());
             pods.add(Thread.currentThread().getName());
             Thread.sleep(HOLD_MILLIS);
-            return true;
-        });
+            return null;
+        }).when(sellerOrderEventPublisher).publishAfterCommit(any(OrderExpiredEvent.class));
 
         runOnTwoPods(orderService::expirePendingOrders);
 
-        assertThat(released).containsExactlyInAnyOrderElementsOf(orderIds);
+        assertThat(expired).containsExactlyInAnyOrderElementsOf(orderIds);
         assertThat(pods).hasSize(2);
         assertThat(jdbcTemplate.queryForList("select status from orders", String.class))
                 .hasSize(ORDERS).containsOnly("EXPIRED");
@@ -147,7 +148,7 @@ class OrderSchedulerConcurrencyIntegrationTest {
 
         assertThat(jdbcTemplate.queryForObject("select status from orders where id = ?", String.class, orderId))
                 .isEqualTo("PAYMENT_PENDING");
-        verify(productUseCase, never()).release(any());
+        verify(sellerOrderEventPublisher, never()).publishAfterCommit(any(OrderExpiredEvent.class));
     }
 
     @Test

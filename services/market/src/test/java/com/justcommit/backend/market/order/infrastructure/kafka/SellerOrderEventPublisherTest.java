@@ -1,77 +1,57 @@
 package com.justcommit.backend.market.order.infrastructure.kafka;
 
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
+import com.justcommit.backend.market.OrderFailedEvent;
+import com.justcommit.backend.market.OrderExpiredEvent;
 import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
+import com.justcommit.backend.market.OrderItemCancelReason;
 import com.justcommit.backend.market.OrderItemCancelledEvent;
+import com.justcommit.backend.market.OrderItemCancelledForProductEvent;
+import com.justcommit.backend.market.OrderPaidEvent;
 import com.justcommit.backend.market.SellerOrderCancelledEvent;
 import com.justcommit.backend.market.SellerOrderPaidEvent;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
-import java.util.concurrent.CompletableFuture;
 
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class SellerOrderEventPublisherTest {
 
-    @Mock KafkaTemplate<String, Object> kafkaTemplate;
-
-    @BeforeEach
-    void beginTransaction() {
-        TransactionSynchronizationManager.initSynchronization();
-        TransactionSynchronizationManager.setActualTransactionActive(true);
-    }
-
-    @AfterEach
-    void clearTransaction() {
-        TransactionSynchronizationManager.clearSynchronization();
-        TransactionSynchronizationManager.setActualTransactionActive(false);
-    }
+    @Mock OutboxPublisher outboxPublisher;
 
     @Test
-    void sendsEachEventOnlyAfterCommit() {
-        var publisher = new SellerOrderEventPublisher(kafkaTemplate, "paid", "cancelled", "item-cancelled", "auto");
+    void delegatesAllOrderEventsToOutboxPublisher() {
+        var publisher = new SellerOrderEventPublisher(outboxPublisher);
         var paid = new SellerOrderPaidEvent(7L, 20L, 10L, LocalDateTime.now());
         var cancelled = new SellerOrderCancelledEvent(9L, 8L, 21L, 10L, LocalDateTime.now());
         var itemCancelled = new OrderItemCancelledEvent(11L, 9L, 8L, 21L, "몬스테라", LocalDateTime.now());
-        var auto = new OrderItemAutoConfirmedEvent(11L, 9L, 7L, 10L, LocalDateTime.now());
-        when(kafkaTemplate.send("paid", "7", paid)).thenReturn(CompletableFuture.completedFuture(null));
-        when(kafkaTemplate.send("cancelled", "8", cancelled)).thenReturn(CompletableFuture.completedFuture(null));
-        when(kafkaTemplate.send("item-cancelled", "8", itemCancelled)).thenReturn(CompletableFuture.completedFuture(null));
-        when(kafkaTemplate.send("auto", "7", auto)).thenReturn(CompletableFuture.completedFuture(null));
+        var auto = new OrderItemAutoConfirmedEvent(12L, 9L, 8L, 10L, LocalDateTime.now());
+        var orderPaid = new OrderPaidEvent(9L);
+        var orderExpired = new OrderExpiredEvent(9L);
+        var orderFailed = new OrderFailedEvent(9L);
+        var productCancelled = new OrderItemCancelledForProductEvent(9L, 11L, 100L, OrderItemCancelReason.BUYER);
 
         publisher.publishAfterCommit(paid);
         publisher.publishAfterCommit(cancelled);
         publisher.publishAfterCommit(itemCancelled);
         publisher.publishAfterCommit(auto);
-        verifyNoInteractions(kafkaTemplate);
+        publisher.publishAfterCommit(orderPaid);
+        publisher.publishAfterCommit(orderExpired);
+        publisher.publishAfterCommit(orderFailed);
+        publisher.publishAfterCommit(productCancelled);
 
-        TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
-
-        verify(kafkaTemplate).send("paid", "7", paid);
-        verify(kafkaTemplate).send("cancelled", "8", cancelled);
-        verify(kafkaTemplate).send("item-cancelled", "8", itemCancelled);
-        verify(kafkaTemplate).send("auto", "7", auto);
-    }
-
-    @Test
-    void sendsNothingAfterRollback() {
-        var publisher = new SellerOrderEventPublisher(kafkaTemplate, "paid", "cancelled", "item-cancelled", "auto");
-        publisher.publishAfterCommit(new OrderItemCancelledEvent(11L, 9L, 8L, 21L, "몬스테라", LocalDateTime.now()));
-
-        TransactionSynchronizationManager.getSynchronizations().forEach(
-                synchronization -> synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
-
-        verifyNoInteractions(kafkaTemplate);
+        verify(outboxPublisher).publish(paid);
+        verify(outboxPublisher).publish(cancelled);
+        verify(outboxPublisher).publish(itemCancelled);
+        verify(outboxPublisher).publish(auto);
+        verify(outboxPublisher).publish(orderPaid);
+        verify(outboxPublisher).publish(orderExpired);
+        verify(outboxPublisher).publish(orderFailed);
+        verify(outboxPublisher).publish(productCancelled);
     }
 }

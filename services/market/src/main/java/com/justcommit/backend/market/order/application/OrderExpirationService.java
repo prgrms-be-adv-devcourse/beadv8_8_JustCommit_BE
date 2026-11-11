@@ -1,10 +1,11 @@
 package com.justcommit.backend.market.order.application;
 
+import com.justcommit.backend.market.OrderExpiredEvent;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.cart.application.CartService;
-import com.justcommit.backend.market.client.product.ProductUseCase;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
+import com.justcommit.backend.market.order.infrastructure.kafka.SellerOrderEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,8 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrderExpirationService {
 
     private final OrdersRepository ordersRepository;
-    private final ProductUseCase productUseCase;
     private final CartService cartService;
+    private final SellerOrderEventPublisher sellerOrderEventPublisher;
 
     @Transactional
     public void expire(Long orderId) {
@@ -27,7 +28,7 @@ public class OrderExpirationService {
         }
         order.expire();
         ordersRepository.saveAndFlush(order);
-        productUseCase.release(order.getId()); // 이미 해제된 경우 false여도 만료 처리한다.
+        sellerOrderEventPublisher.publishAfterCommit(new OrderExpiredEvent(order.getId()));
         order.getSellerOrders().stream()
                 .flatMap(sellerOrder -> sellerOrder.getItems().stream())
                 .forEach(item -> cartService.restoreItem(order.getBuyerId(), item.getProductId(), item.getPrice()));

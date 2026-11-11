@@ -2,23 +2,31 @@ package com.justcommit.backend.market.order.infrastructure.kafka;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.autoconfigure.AutoConfigurations;
-import org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 
 class KafkaTemplateConfigurationTest {
 
     @Test
-    void kafkaTemplateIsInjectedIntoOrderEventPublisher() {
+    void outboxPublisherIsInjectedIntoOrderEventPublisher() {
         new ApplicationContextRunner()
-                .withConfiguration(AutoConfigurations.of(KafkaAutoConfiguration.class))
-                .withUserConfiguration(PurchaseConfirmedEventPublisher.class)
-                .withPropertyValues("custom.kafka.topics.purchase-confirmed=market.purchase-confirmed.v1")
+                .withUserConfiguration(TestConfiguration.class)
                 .run(context -> {
-                    assertThat(context).hasSingleBean(KafkaTemplate.class);
+                    assertThat(context).hasSingleBean(OutboxPublisher.class);
                     assertThat(context).hasSingleBean(PurchaseConfirmedEventPublisher.class);
                 });
+    }
+
+    @Configuration
+    @Import(PurchaseConfirmedEventPublisher.class)
+    static class TestConfiguration {
+        @Bean
+        OutboxPublisher outboxPublisher() {
+            return org.mockito.Mockito.mock(OutboxPublisher.class);
+        }
     }
 }
