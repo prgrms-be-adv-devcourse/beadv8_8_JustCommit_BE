@@ -362,18 +362,15 @@ public class OrderService {
         }
         sellerOrder.calculateSettlementBaseAmount();
         boolean sellerOrderCancelled = finishCancellation(sellerOrder, order);
-        String productName = item.getProductName();
-
         // 판매 재개는 환불이 성공한 뒤 product에 알린다 (ADR 0016)
         outboxPublisher.publish(new OrderItemCancelled(orderId, item.getId(), item.getProductId(),
                 OrderItemCancelled.CancelReason.BUYER));
 
+        // 일부만 취소된 경우의 판매자 알림은 #277 B에서 market.events.v1의 OrderItemCancelled로 다시 만든다.
+        // 옛 OrderItemCancelledEvent는 판매 재개 토픽(market.order-item-cancelled.v1)과 이름이 겹쳐 product가 DLT로 보내서 지웠다.
         if (sellerOrderCancelled) {
             sellerOrderEventPublisher.publishAfterCommit(new SellerOrderCancelledEvent(
                     orderId, sellerOrderId, sellerOrder.getSellerId(), memberId, LocalDateTime.now()));
-        } else {
-            sellerOrderEventPublisher.publishAfterCommit(new OrderItemCancelledEvent(
-                    item.getId(), orderId, sellerOrderId, sellerOrder.getSellerId(), productName, LocalDateTime.now()));
         }
     }
 
