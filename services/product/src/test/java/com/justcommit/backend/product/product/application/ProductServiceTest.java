@@ -1,12 +1,9 @@
 package com.justcommit.backend.product.product.application;
 
-import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.params.ParameterizedTest;
-import java.time.LocalDateTime;
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.product.client.member.MemberQuery;
 import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.product.ProductStatus;
+import com.justcommit.backend.product.client.member.MemberQuery;
 import com.justcommit.backend.product.exception.ProductErrorCode;
 import com.justcommit.backend.product.image.application.ProductImageCleaner;
 import com.justcommit.backend.product.image.application.ProductImageUrlValidator;
@@ -19,6 +16,8 @@ import com.justcommit.backend.product.species.infrastructure.SpeciesRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -35,6 +34,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
@@ -584,6 +584,35 @@ public class  ProductServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ProductErrorCode.DAILY_REGISTER_LIMIT_EXCEEDED);
         verify(productRepository, never()).save(any());
+    }
+
+    // 하루 경계는 서버 시간대(UTC 등)가 아니라 한국 시간 자정
+    @Test
+    @DisplayName("한국 시간 자정 직후(UTC로는 전날 15시)에는 그날 00:00부터 센다")
+    void dailyLimitStartsAtKoreanMidnight() {
+        ReflectionTestUtils.setField(productService, "clock",
+                Clock.fixed(Instant.parse("2026-11-10T15:00:00Z"), ZoneId.of("Asia/Seoul")));   // 2026-11-11 00:00 KST
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
+        given(productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(SELLER_ID, LocalDateTime.of(2026, 11, 11, 0, 0)))
+                .willReturn(20L);
+
+        assertThatThrownBy(() -> productService.createProduct(SELLER_ID, createRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.DAILY_REGISTER_LIMIT_EXCEEDED);
+    }
+
+    @Test
+    @DisplayName("한국 시간 자정 직전(23:59:59)에는 아직 전날 00:00부터 센다")
+    void dailyLimitBeforeKoreanMidnight() {
+        ReflectionTestUtils.setField(productService, "clock",
+                Clock.fixed(Instant.parse("2026-11-10T14:59:59Z"), ZoneId.of("Asia/Seoul")));   // 2026-11-10 23:59:59 KST
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
+        given(productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(SELLER_ID, LocalDateTime.of(2026, 11, 10, 0, 0)))
+                .willReturn(20L);
+
+        assertThatThrownBy(() -> productService.createProduct(SELLER_ID, createRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.DAILY_REGISTER_LIMIT_EXCEEDED);
     }
 
     @Test

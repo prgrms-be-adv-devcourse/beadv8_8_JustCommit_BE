@@ -1,8 +1,8 @@
 package com.justcommit.backend.product.product.infrastructure;
 
-import com.justcommit.backend.product.config.ClockConfig;
 import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.product.ProductStatus;
+import com.justcommit.backend.product.config.ClockConfig;
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.species.domain.Species;
 import com.justcommit.backend.product.species.domain.enums.Difficulty;

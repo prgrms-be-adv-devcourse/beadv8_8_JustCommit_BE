@@ -194,16 +194,8 @@ public class ProductService implements ProductQuery, ProductUseCase {
                 .filter(p -> p.getStatus() != ProductStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
 
-        // 검수 중 · 반려 상품은 판매자 본인 외에는 없는 상품처럼 404 (검색에도 안 나옴)
-        // ※ 403으로 정하면 이 if 블록만 지우면 됨 (아래 isVisibleTo에서 PRODUCT_HIDDEN)
-        if (product.isInReview() && !product.isOwnedBy(memberId)) {
-            throw new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND);
-        }
-
-        // 삭제와 숨김을 구분해서 프론트가 비공개 안내를 띄울 수 있게 함
-        if (!product.isVisibleTo(memberId)) {
-            throw new BusinessException(ProductErrorCode.PRODUCT_HIDDEN);
-        }
+        // 검수 중 · 반려 · 숨김 상품을 남이 보면 404 · 403 (규칙은 Product 한 곳에)
+        product.checkViewableBy(memberId);
 
         return ProductDetailResponse.from(product, memberQuery.getNickname(product.getSellerId()));
     }

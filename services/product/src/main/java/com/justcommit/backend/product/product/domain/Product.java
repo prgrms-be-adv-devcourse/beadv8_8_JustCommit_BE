@@ -5,14 +5,30 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.exception.ProductErrorCode;
 import com.justcommit.backend.product.species.domain.Species;
-import jakarta.persistence.*;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.Index;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
+import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.BatchSize;
 
 import java.math.BigDecimal;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 
 @Entity
 @Table(
@@ -162,15 +178,22 @@ public class Product extends BaseTimeEntity {
         return status == ProductStatus.REVIEW_PENDING || status == ProductStatus.REJECTED;
     }
 
-    // 삭제된 상품은 아무에게도 안 보임. 숨김 · 검수 중 · 반려 상품은 판매자 본인에게만 보임
-    public boolean isVisibleTo(Long memberId) {
+    // 상세 노출 규칙 (memberId: 로그인하지 않았으면 null)
+    // 삭제 · 검수 중 · 반려는 판매자 본인 외에는 없는 상품처럼 404, 숨김은 본인 외에는 403
+    public void checkViewableBy(Long memberId) {
         if (status == ProductStatus.DELETED) {
-            return false;
+            throw new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND);
         }
         if (isOwnedBy(memberId)) {
-            return true;
+            return;
         }
-        return !hidden && !isInReview();
+        if (isInReview()) {
+            throw new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND);
+        }
+        // 삭제와 숨김을 구분해서 프론트가 비공개 안내를 띄울 수 있게 함
+        if (hidden) {
+            throw new BusinessException(ProductErrorCode.PRODUCT_HIDDEN);
+        }
     }
 
     public void changeHidden(boolean hidden){

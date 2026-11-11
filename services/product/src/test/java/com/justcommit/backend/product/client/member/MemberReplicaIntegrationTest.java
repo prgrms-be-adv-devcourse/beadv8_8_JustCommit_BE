@@ -1,8 +1,8 @@
 package com.justcommit.backend.product.client.member;
 
-import com.justcommit.backend.product.config.ClockConfig;
 import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.product.ProductStatus;
+import com.justcommit.backend.product.config.ClockConfig;
 import com.justcommit.backend.product.member.application.MemberReplicaService;
 import com.justcommit.backend.product.member.domain.MemberReplica;
 import com.justcommit.backend.product.member.domain.MemberRole;

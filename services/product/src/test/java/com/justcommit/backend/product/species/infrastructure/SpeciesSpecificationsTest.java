@@ -1,7 +1,7 @@
 package com.justcommit.backend.product.species.infrastructure;
 
-import com.justcommit.backend.product.config.ClockConfig;
 import com.justcommit.backend.common.config.JpaAuditingConfig;
+import com.justcommit.backend.product.config.ClockConfig;
 import com.justcommit.backend.product.species.domain.Species;
 import com.justcommit.backend.product.species.domain.SpeciesAlias;
 import com.justcommit.backend.product.species.domain.enums.AliasSource;

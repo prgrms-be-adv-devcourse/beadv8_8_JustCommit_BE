@@ -1,10 +1,10 @@
 package com.justcommit.backend.product.product.application;
 
-import com.justcommit.backend.product.config.ClockConfig;
 import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.ProductUseCase;
 import com.justcommit.backend.product.client.member.MemberQuery;
+import com.justcommit.backend.product.config.ClockConfig;
 import com.justcommit.backend.product.image.application.ProductImageCleaner;
 import com.justcommit.backend.product.image.application.ProductImageUrlValidator;
 import com.justcommit.backend.product.member.application.MemberReplicaService;
@@ -41,7 +41,12 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

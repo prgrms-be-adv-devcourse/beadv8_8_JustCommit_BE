@@ -1,13 +1,13 @@
 package com.justcommit.backend.product.product.domain;
 
-import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.params.ParameterizedTest;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.exception.ProductErrorCode;
 import com.justcommit.backend.product.species.domain.Species;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.BeanUtils;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -207,14 +207,35 @@ class ProductTest {
 
     @ParameterizedTest
     @EnumSource(value = ProductStatus.class, names = {"REVIEW_PENDING", "REJECTED"})
-    @DisplayName("검수 중 · 반려 상품은 판매자 본인에게만 보이고, 구매할 수 없음")
+    @DisplayName("검수 중 · 반려 상품은 판매자 본인에게만 보이고(남 · 비회원은 PRODUCT_NOT_FOUND), 구매할 수 없음")
     void inReviewVisibleToOwnerOnly(ProductStatus status) {
         Product product = withStatus(create(species()), status);
 
         assertThat(product.isInReview()).isTrue();
-        assertThat(product.isVisibleTo(1L)).isTrue();     // 판매자 본인
-        assertThat(product.isVisibleTo(2L)).isFalse();    // 다른 회원
-        assertThat(product.isVisibleTo(null)).isFalse();  // 비회원
+        product.checkViewableBy(1L);   // 판매자 본인은 예외 없음
+        assertThatThrownBy(() -> product.checkViewableBy(2L))      // 다른 회원
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND);
+        assertThatThrownBy(() -> product.checkViewableBy(null))    // 비회원
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND);
         assertThat(product.isPurchasable()).isFalse();
+    }
+
+    @Test
+    @DisplayName("숨긴 상품은 판매자 본인만 보고, 다른 회원에게는 PRODUCT_HIDDEN. 숨긴 검수 중 상품은 남에게 PRODUCT_NOT_FOUND")
+    void hiddenProductViewRules() {
+        Product hidden = withStatus(create(species()), ProductStatus.ACTIVE);
+        hidden.changeHidden(true);
+        Product hiddenInReview = create(species());
+        hiddenInReview.changeHidden(true);
+
+        hidden.checkViewableBy(1L);
+        assertThatThrownBy(() -> hidden.checkViewableBy(2L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_HIDDEN);
+        assertThatThrownBy(() -> hiddenInReview.checkViewableBy(2L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND);
     }
 }
