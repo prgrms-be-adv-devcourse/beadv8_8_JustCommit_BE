@@ -4,6 +4,7 @@ import com.justcommit.backend.common.client.exception.InternalApiResultUnknownEx
 import com.justcommit.backend.common.client.exception.InternalApiUnavailableException;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.exception.CommonErrorCode;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.*;
 import com.justcommit.backend.market.cart.application.CartService;
 import com.justcommit.backend.market.cart.domain.CartItem;
@@ -19,6 +20,9 @@ import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
+import com.justcommit.backend.market.order.event.OrderFailed;
+import com.justcommit.backend.market.order.event.OrderItemCancelled;
+import com.justcommit.backend.market.order.event.OrderPaid;
 import com.justcommit.backend.market.order.infrastructure.AutoConfirmTarget;
 import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
@@ -57,6 +61,7 @@ public class OrderService {
     private final MemberQuery memberQuery;
     private final ProductQuery productQuery;
     private final ProductUseCase productUseCase;
+    private final OutboxPublisher outboxPublisher;
     private final PaymentUseCase paymentUseCase;
     private final OrderQuery orderQuery;
     private final ShipmentService shipmentService;
@@ -126,7 +131,7 @@ public class OrderService {
 
         Orders saved = ordersRepository.saveAndFlush(order);
 
-        // 예약을 부른 뒤로는 확정 실패만 롤백한다. 롤백하면 product에 남은 예약을 풀 주문이 없어진다 (해제 이벤트는 #277)
+        // 예약을 부른 뒤로는 확정 실패만 롤백한다. 롤백하면 product에 남은 예약을 풀 주문이 없어진다 (해제는 OrderFailed 이벤트)
         try {
             productUseCase.reserve(saved.getId(), selectedItems.stream()
                     .map(item -> new ReservationItem(item.getProductId(), item.getPrice()))
@@ -188,7 +193,7 @@ public class OrderService {
     }
 
     // 트랜잭션 없이 후보만 읽고, 주문마다 따로 커밋한다. 한 주문이 실패해도 나머지는 계속한다.
-    // shortcut: 매번 실패하는 주문이 100건 쌓이면 뒤 주문이 밀린다. release가 실제 호출이 되는 #277에서 실패 횟수 · 제외 장치를 넣는다.
+    // shortcut: 같은 주문이 매번 실패하면(DB 오류 등) 100건이 쌓일 때 뒤 주문이 밀린다. 예약 해제는 #277부터 Outbox 기록이라 외부 장애로는 실패하지 않음. 필요해지면 실패 횟수 · 제외 장치를 넣는다.
     public void expirePendingOrders() {
         LocalDateTime cutoff = LocalDateTime.now().minus(PAYMENT_WINDOW);
         for (Orders order : ordersRepository.findTop100ByStatusAndCreatedAtBeforeOrderByIdAsc(
@@ -283,12 +288,6 @@ public class OrderService {
 
         order.cancel();
 
-        // releaseItem의 clearAutomatically가 영속성 컨텍스트를 비우므로 이후에는 주문 엔티티를 변경하지 않는다.
-        for (CancelItem item : cancelledItems) {
-            if (!productUseCase.releaseItem(item.productId())) {
-                throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
-            }
-        }
         for (CancelItem item : cancelledItems) {
             PaymentResult result = paymentUseCase.refundCancelledItem(item.itemId(), orderId, memberId, item.price());
             if (result.status() != PaymentStatus.REFUNDED && result.status() != PaymentStatus.ALREADY_REFUNDED) {
@@ -301,6 +300,11 @@ public class OrderService {
             if (result.status() != PaymentStatus.REFUNDED && result.status() != PaymentStatus.ALREADY_REFUNDED) {
                 throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
             }
+        }
+        // 판매 재개는 상품 · 배송비 환불이 모두 성공한 뒤 주문상품마다 product에 알린다 (ADR 0016)
+        for (CancelItem item : cancelledItems) {
+            outboxPublisher.publish(new OrderItemCancelled(orderId, item.itemId(), item.productId(),
+                    OrderItemCancelled.CancelReason.BUYER));
         }
         LocalDateTime cancelledAt = LocalDateTime.now();
         for (SellerOrder sellerOrder : activeSellerOrders) {
@@ -359,9 +363,11 @@ public class OrderService {
         sellerOrder.calculateSettlementBaseAmount();
         boolean sellerOrderCancelled = finishCancellation(sellerOrder, order);
         String productName = item.getProductName();
-        if (!productUseCase.releaseItem(item.getProductId())) {
-            throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
-        }
+
+        // 판매 재개는 환불이 성공한 뒤 product에 알린다 (ADR 0016)
+        outboxPublisher.publish(new OrderItemCancelled(orderId, item.getId(), item.getProductId(),
+                OrderItemCancelled.CancelReason.BUYER));
+
         if (sellerOrderCancelled) {
             sellerOrderEventPublisher.publishAfterCommit(new SellerOrderCancelledEvent(
                     orderId, sellerOrderId, sellerOrder.getSellerId(), memberId, LocalDateTime.now()));
@@ -395,6 +401,8 @@ public class OrderService {
     private OrderCreateResponse failOrder(Orders order, String reason, RuntimeException e) {
         log.warn("{}, 주문 실패: orderId={}", reason, order.getId(), e);
         order.fail();
+        // 잡아 둔 예약은 product가 풀도록 알린다. 결제 결과를 모르는 경우는 여기로 오지 않는다 (결제 대기 유지)
+        outboxPublisher.publish(new OrderFailed(order.getId()));
         return toResponse(order, null);
     }
 
@@ -414,22 +422,18 @@ public class OrderService {
     }
 
     private Orders orderPayment(Orders order) {
-        if (!productUseCase.markSoldOut(order.getId())) {
-            throw new BusinessException(OrderErrorCode.PRODUCT_UNAVAILABLE);
-        }
-        // 상품 벌크 업데이트가 영속성 컨텍스트를 비우므로 주문을 다시 관리 상태로 조회한다.
-        Orders managed = ordersRepository.findById(order.getId())
-                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
-        managed.paid();
+        order.paid();
+        // 판매 완료는 product에 알린다. 같은 트랜잭션에 기록하고 커밋 뒤 발행 (ADR 0016)
+        outboxPublisher.publish(new OrderPaid(order.getId()));
 
-        OrderResult result = orderQuery.getOrder(managed.getId());
+        OrderResult result = orderQuery.getOrder(order.getId());
         LocalDateTime paidAt = LocalDateTime.now();
         for (SellerOrderResult sellerOrder : result.sellerOrders()) {
             sellerOrderEventPublisher.publishAfterCommit(new SellerOrderPaidEvent(
                     sellerOrder.id(), sellerOrder.sellerId(), result.buyerId(), paidAt));
         }
         shipmentService.createShipments(result);
-        return managed;
+        return order;
     }
 
     private OrderCreateResponse toResponse(Orders order, LocalDateTime expiresAt) {

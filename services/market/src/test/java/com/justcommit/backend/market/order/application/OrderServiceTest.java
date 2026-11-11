@@ -6,6 +6,7 @@ import com.justcommit.backend.common.client.exception.InternalApiResultUnknownEx
 import com.justcommit.backend.common.client.exception.InternalApiUnavailableException;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.exception.CommonErrorCode;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
@@ -21,6 +22,9 @@ import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
+import com.justcommit.backend.market.order.event.OrderExpired;
+import com.justcommit.backend.market.order.event.OrderFailed;
+import com.justcommit.backend.market.order.event.OrderPaid;
 import com.justcommit.backend.market.order.infrastructure.AutoConfirmTarget;
 import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
@@ -79,6 +83,7 @@ class OrderServiceTest {
     @Mock MemberQuery memberQuery;
     @Mock ProductQuery productQuery;
     @Mock ProductUseCase productUseCase;
+    @Mock OutboxPublisher outboxPublisher;
     @Mock OrderExpirationService orderExpirationService;
     @Mock PaymentUseCase paymentUseCase;
     @Mock OrderQuery orderQuery;
@@ -296,6 +301,7 @@ class OrderServiceTest {
         assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
         verify(paymentUseCase, never()).pay(any(), any(), any());
         verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+        verify(outboxPublisher).publish(new OrderFailed(99L));
     }
 
     @Test
@@ -310,7 +316,7 @@ class OrderServiceTest {
 
         assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PENDING);
         assertThat(response.expiresAt()).isEqualTo(response.createdAt().plusMinutes(10));
-        verify(productUseCase, never()).markSoldOut(any());
+        verify(outboxPublisher, never()).publish(any(OrderPaid.class));
     }
 
     @Test
@@ -321,13 +327,12 @@ class OrderServiceTest {
         order.addSellerOrders(List.of(sellerOrder));
         ReflectionTestUtils.setField(order, "id", 99L);
         when(ordersRepository.findByIdForUpdateSkipLocked(99L)).thenReturn(Optional.of(order));
-        when(productUseCase.release(99L)).thenReturn(true);
 
         expirationService().expire(99L);
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.EXPIRED);
         verify(ordersRepository).saveAndFlush(order);
-        verify(productUseCase).release(99L);
+        verify(outboxPublisher).publish(new OrderExpired(99L));
         verify(cartService).restoreItem(10L, 101L, money("10000"));
     }
 
@@ -343,7 +348,7 @@ class OrderServiceTest {
         expirationService().expire(99L);
 
         assertThat(paid.getStatus()).isEqualTo(OrderStatus.PAID);
-        verify(productUseCase, never()).release(any());
+        verify(outboxPublisher, never()).publish(any());
         verify(cartService, never()).restoreItem(any(Long.class), any(Long.class), any());
     }
 
@@ -365,7 +370,7 @@ class OrderServiceTest {
     }
 
     private OrderExpirationService expirationService() {
-        return new OrderExpirationService(ordersRepository, productUseCase, cartService);
+        return new OrderExpirationService(ordersRepository, outboxPublisher, cartService);
     }
 
     @Test
@@ -374,8 +379,6 @@ class OrderServiceTest {
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
         stubSavedOrder();
         when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentResult.paid(money("0")));
-        when(productUseCase.markSoldOut(99L)).thenReturn(true);
-        when(ordersRepository.findById(99L)).thenAnswer(ignored -> Optional.of(savedOrder));
         when(orderQuery.getOrder(99L)).thenReturn(orderResult);
         doAnswer(invocation -> {
             assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAID);
@@ -386,24 +389,9 @@ class OrderServiceTest {
 
         assertThat(response.status()).isEqualTo(OrderStatus.PAID);
         assertThat(response.expiresAt()).isNull();
-        verify(productUseCase).markSoldOut(99L);
+        verify(outboxPublisher).publish(new OrderPaid(99L));
         verify(shipmentService).createShipments(orderResult);
         verify(cartService).removeSelectedItems(10L, List.of(1L));
-    }
-
-    @Test
-    void doesNotCreateShipmentsWhenProductCannotBeMarkedSoldOut() {
-        stubLookup(List.of(selected(1L, 101L, "10000")),
-                List.of(product(101L, 20L, "몬스테라", "10000", true)));
-        stubSavedOrder();
-        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentResult.paid(money("0")));
-
-        assertThatThrownBy(() -> orderService.create(10L, request(1L)))
-                .isInstanceOfSatisfying(BusinessException.class,
-                        exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.PRODUCT_UNAVAILABLE));
-
-        verify(shipmentService, never()).createShipments(any());
-        verify(cartService, never()).removeSelectedItems(any(Long.class), any());
     }
 
     @Test
@@ -411,15 +399,13 @@ class OrderServiceTest {
         Orders order = pendingOrder(10L);
         when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
         when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentResult.paid(money("0")));
-        when(productUseCase.markSoldOut(99L)).thenReturn(true);
-        when(ordersRepository.findById(99L)).thenReturn(Optional.of(order));
         when(orderQuery.getOrder(99L)).thenReturn(orderResult);
 
         OrderCreateResponse response = orderService.repayment(10L, 99L);
 
         assertThat(response.status()).isEqualTo(OrderStatus.PAID);
         assertThat(response.expiresAt()).isNull();
-        verify(productUseCase).markSoldOut(99L);
+        verify(outboxPublisher).publish(new OrderPaid(99L));
         verify(shipmentService).createShipments(orderResult);
     }
 
@@ -456,7 +442,7 @@ class OrderServiceTest {
 
         assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PENDING);
         assertThat(response.expiresAt()).isEqualTo(order.getCreatedAt().plusMinutes(10));
-        verify(productUseCase, never()).markSoldOut(any());
+        verify(outboxPublisher, never()).publish(any(OrderPaid.class));
         verify(shipmentService, never()).createShipments(any());
     }
 
@@ -512,7 +498,8 @@ class OrderServiceTest {
         assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_FAILED);
         assertThat(response.expiresAt()).isNull();
         assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
-        verify(productUseCase, never()).markSoldOut(any());
+        verify(outboxPublisher).publish(new OrderFailed(99L));
+        verify(outboxPublisher, never()).publish(any(OrderPaid.class));
         verify(cartService, never()).removeSelectedItems(any(Long.class), any());
     }
 
@@ -526,7 +513,7 @@ class OrderServiceTest {
 
         assertThat(response.status()).isEqualTo(OrderStatus.PAID);
         verify(paymentUseCase, never()).pay(any(), any(), any());
-        verify(productUseCase, never()).markSoldOut(any());
+        verify(outboxPublisher, never()).publish(any(OrderPaid.class));
         verify(shipmentService, never()).createShipments(any());
     }
 
