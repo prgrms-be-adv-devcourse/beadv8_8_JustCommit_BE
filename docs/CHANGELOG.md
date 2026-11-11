@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-11 · reference/kafka-topics.md · 파티션 3을 브로커 기본값 `KAFKA_NUM_PARTITIONS: 3`으로 적용(로컬 · 운영 compose), 토픽 코드 선언 · 운영 자동 생성 끄기는 다음 단계 (#369)
 - 2026-11-11 · glossary.md · 「결과 불명」 코드 이름을 `last_error` → `InternalApiResultUnknownException`(common-web 내부 API 클라이언트 예외)으로 (#330)
 - 2026-11-11 · services/product.md · 등록 제한의 하루는 한국 시간 자정 기준, 검수 중 · 반려 상품은 판매자 본인 외에는 404 `PRODUCT_NOT_FOUND` (#341)
 - 2026-11-11 · reference/kafka-topics.md · market → product 이벤트 payload 표 추가 (`OrderPaid` · `OrderExpired` · `OrderFailed`: `orderId`, `OrderItemCancelled`: `orderId` · `orderItemId` · `productId` · `reason`), 옛 `OrderItemCancelledEvent` 발행 삭제(판매 재개 토픽과 이름 겹침) (#277)
