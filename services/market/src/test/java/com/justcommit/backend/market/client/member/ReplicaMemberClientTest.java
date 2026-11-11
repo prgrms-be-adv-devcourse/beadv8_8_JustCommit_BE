@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -49,6 +50,17 @@ class ReplicaMemberClientTest {
   @DisplayName("판매자 기본 배송지는 복제본이 아직 없어 503 (#275 후속)")
   void defaultAddressStillUnavailable() {
     assertThatThrownBy(() -> client.getDefaultAddress(7L)).isInstanceOf(BusinessException.class);
+  }
+
+  @Test
+  @DisplayName("탈퇴 여부: 복제본에 탈퇴 표시가 있으면 true, 복제본이 아직 없으면 false")
+  void isWithdrawn() {
+    MemberReplica withdrawn = replica(7L, "초록손", true);
+    when(repository.findById(7L)).thenReturn(Optional.of(withdrawn));
+    when(repository.findById(9L)).thenReturn(Optional.empty());
+
+    assertThat(client.isWithdrawn(7L)).isTrue();
+    assertThat(client.isWithdrawn(9L)).isFalse();
   }
 
   // MemberReplica는 저장소의 upsert로만 만들어서, 테스트에서는 값만 흉내 낸다

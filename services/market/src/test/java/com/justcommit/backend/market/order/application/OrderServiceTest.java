@@ -99,6 +99,18 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("탈퇴한 회원은 장바구니 · 상품을 보기 전에 주문이 거절된다")
+    void rejectsWithdrawnMemberBeforeAnything() {
+        when(memberQuery.isWithdrawn(10L)).thenReturn(true);
+
+        assertThatThrownBy(() -> orderService.create(10L, request(1L)))
+            .isInstanceOfSatisfying(BusinessException.class,
+                exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.WITHDRAWN_MEMBER));
+        verify(cartService, never()).getSelectCartItems(any(Long.class), any());
+        verify(ordersRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
     void stopsBeforeProductLookupWhenCartSelectionIsInvalid() {
         CartOrderCreateRequest request = request(1L);
         when(cartService.getSelectCartItems(10L, List.of(1L)))
