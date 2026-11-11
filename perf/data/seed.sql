@@ -4,7 +4,7 @@
 --
 -- 만드는 것
 --   구매자 :buyers명 (지갑 잔액 1억, 잔액 부족으로 주문이 PAYMENT_PENDING에 묶이지 않게)
---   판매자 :sellers명 (판매자 등록 + 지갑 0원)
+--   판매자 :sellers명 (판매자 등록 + 기본 배송지(수거지) + 지갑 0원)
 --   판매 중 상품 :products개 (품종 · 판매자 · 가격을 고르게 섞음, 사진 1장)
 --   배송 완료 4일 지난 주문 :delivered건 (자동 구매확정 · 정산 대상, HOLDING 잔액도 맞춤)
 -- 테스트 계정 이메일: perf-buyer-{n}@perf.test · perf-seller-{n}@perf.test
@@ -37,6 +37,11 @@ FROM generate_series(1, :sellers) g, perf_tpl t;
 
 INSERT INTO seller (member_id, created_at, updated_at, intro)
 SELECT id, now(), now(), '부하 테스트 판매자' FROM member WHERE email LIKE 'perf-seller-%@perf.test';
+
+-- 판매자 기본 배송지: 택배 예약 때 수거 주소로 쓴다 (없으면 주문 후 택배 예약이 실패해 READY에 머묾)
+INSERT INTO address (created_at, updated_at, address1, address2, address_name, is_default, recipient_name, recipient_phone, zipcode, member_id)
+SELECT now(), now(), '서울시 테스트구 판매로 ' || m.id, NULL, '수거지', true, m.account_holder, m.phone, '00000', m.id
+FROM member m WHERE m.email LIKE 'perf-seller-%@perf.test';
 
 -- 2. 지갑 (구매자 1억, 판매자 0원)
 INSERT INTO wallet (created_at, updated_at, balance, member_id, version)
