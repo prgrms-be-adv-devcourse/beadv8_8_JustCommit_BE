@@ -44,7 +44,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -93,7 +92,7 @@ class PurchaseConfirmedKafkaIntegrationTest {
     }
 
     @Test
-    @DisplayName("같은 sellerOrderId가 옛 토픽과 새 토픽으로 한 번씩 와도 정산은 1건이다")
+    @DisplayName("같은 sellerOrderId가 옛 토픽과 새 토픽으로 한 번씩 와도 정산은 1건이고, 비어 있던 배송비는 새 토픽 값으로 채워진다")
     void sameSellerOrderFromBothTopicsSettlesOnce() {
         kafkaTemplate.send(LEGACY_TOPIC, "2001", legacyJson(2001L));
         Settlement first = awaitSettlement(2001L);
@@ -101,13 +100,14 @@ class PurchaseConfirmedKafkaIntegrationTest {
 
         kafkaTemplate.send(KafkaTopics.MARKET_EVENTS, "2001", purchaseConfirmedEnvelope(2001L, "3000"));
 
-        // 두 번째 수신까지 처리됐는지 확인한 뒤 건수를 봄
-        verify(settlementService, timeout(20_000).times(2))
-                .settle(eq(2001L), anyLong(), any(), any(), any());
+        // 두 번째 수신이 커밋돼 배송비가 채워질 때까지 기다린 뒤 건수를 봄
+        Settlement filled = awaitShippingFee(2001L);
+        assertThat(filled.getId()).isEqualTo(first.getId());
+        assertThat(filled.getShippingFee()).isEqualByComparingTo("3000");
+        assertThat(filled.getPayoutAmount()).isEqualByComparingTo(first.getPayoutAmount());
         assertThat(settlementRepository.findAll())
                 .filteredOn(s -> s.getSellerOrderId().equals(2001L))
-                .singleElement()
-                .satisfies(s -> assertThat(s.getId()).isEqualTo(first.getId()));
+                .hasSize(1);
         verify(settlementPayoutClient, times(1)).distributeSettlement(eq(first.getId()), anyLong(), any(), any());
     }
 
@@ -153,6 +153,18 @@ class PurchaseConfirmedKafkaIntegrationTest {
             sleep();
         }
         throw new AssertionError("정산이 생기지 않음: sellerOrderId=" + sellerOrderId);
+    }
+
+    private Settlement awaitShippingFee(Long sellerOrderId) {
+        long deadline = System.currentTimeMillis() + 20_000;
+        while (System.currentTimeMillis() < deadline) {
+            var found = settlementRepository.findBySellerOrderId(sellerOrderId);
+            if (found.isPresent() && found.get().getShippingFee() != null) {
+                return found.get();
+            }
+            sleep();
+        }
+        throw new AssertionError("배송비가 채워지지 않음: sellerOrderId=" + sellerOrderId);
     }
 
     private static void sleep() {

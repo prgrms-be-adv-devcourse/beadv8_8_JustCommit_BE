@@ -15,7 +15,7 @@
 
 | 테이블 | 설명 |
 |---|---|
-| `SETTLEMENT` | 정산 (`sellerOrderId` UK, `PENDING` / `COMPLETED` / `FAILED`, 음수 가능, `shipping_fee` 배송비: 옛 토픽으로 받은 정산은 null) |
+| `SETTLEMENT` | 정산 (`sellerOrderId` UK, `PENDING` / `COMPLETED` / `FAILED`, 음수 가능, `shipping_fee` 배송비: 옛 토픽으로만 받은 정산은 null, 같은 판매자 주문이 새 토픽으로 오면 채움) |
 | `MEMBER_REPLICA` | 회원 복제본 |
 | `OUTBOX` | 발행 대기 이벤트 |
 

@@ -88,6 +88,14 @@ public class Settlement extends BaseTimeEntity {
         );
     }
 
+    // 옛 토픽(배송비 없음)으로 먼저 정산된 뒤 새 토픽이 오면 비어 있는 배송비만 채운다. 이미 값이 있으면 바꾸지 않음.
+    // 지금은 기록만 한다. 정산 지급 때 배송비를 REVENUE로 옮기게 되면, 지급 뒤에 채워진 배송비는 옮겨지지 않으니 그때 다시 본다
+    public void updateShippingFeeIfAbsent(BigDecimal shippingFee) {
+        if (this.shippingFee == null && shippingFee != null) {
+            this.shippingFee = shippingFee;
+        }
+    }
+
     private static void validateAmount(BigDecimal saleAmount) {
         if (saleAmount == null || saleAmount.signum() <= 0) {
             throw new BusinessException(SettlementErrorCode.INVALID_AMOUNT);
