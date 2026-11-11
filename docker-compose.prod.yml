@@ -11,6 +11,8 @@ services:
     env_file: .env
     environment:
       SPRING_PROFILES_ACTIVE: prod,perf # perf: 성능 측정(#351) 지표 설정
+      # 가설 3 분리 측정(#351): 커넥션 풀 크기. 기본 10(Hikari 기본값), 바꿀 때 PERF_POOL_SIZE=20 docker compose ... up -d app
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${PERF_POOL_SIZE:-10}
     ports:
       - "127.0.0.1:8080:8080" # Nginx만 접근
       - "127.0.0.1:8081:8081" # 성능 측정(#351) 지표. SSH 터널로만 접근
