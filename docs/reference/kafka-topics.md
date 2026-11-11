@@ -1,7 +1,7 @@
 # Kafka 토픽 · 이벤트 표
 
 > 언제 읽나: 어떤 이벤트를 누가 발행 · 구독하는지 정확히 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: Miro 9 · 10, 노션 기획안 「Kafka 이벤트」, 노션 「정책 정리」 3.10 · 8.7
+> 상태: ✅ 확정 · 마지막 수정 2026-11-11 · 관련: Miro 9 · 10, 노션 기획안 「Kafka 이벤트」, 노션 「정책 정리」 3.10 · 8.7
 
 ## 토픽 목록
 
@@ -48,4 +48,20 @@
 
 `ShipmentPickedUp`은 만들지 않습니다. 배송비 이동이 정산 지급 때로 바뀌어 받는 곳이 없고, 수거 알림은 `ShipmentStatusChanged`로 보냅니다 (노션 8.7). market → product 토픽은 서로 달라 도착 순서가 바뀔 수 있으므로, product는 "이 주문이 잡은 상품만, 바뀐 상품 0건이면 정상"으로 순서와 상관없이 처리합니다 → [product 정책](../services/product.md#정책)
 
-⬜ 이벤트별 payload 필드는 각 발행 서비스 담당이 채웁니다 (#227).
+## payload
+
+봉투(`EventEnvelope`)의 `payload`에 들어가는 칸입니다. 받는 쪽은 이 칸으로 자기 record를 만듭니다 (공유 jar 없음). 칸을 바꾸면 `version`을 올립니다.
+
+### market → product (Key `orderId`, #277)
+
+| 토픽 | eventType | payload | 비고 |
+|---|---|---|---|
+| `market.order-paid.v1` | `OrderPaid` | `orderId` (숫자) | |
+| `market.order-expired.v1` | `OrderExpired` | `orderId` (숫자) | |
+| `market.order-failed.v1` | `OrderFailed` | `orderId` (숫자) | 결제 결과를 모르는 동안은 발행 안 함 |
+| `market.order-item-cancelled.v1` | `OrderItemCancelled` | `orderId` · `orderItemId` · `productId` (숫자), `reason` (`BUYER` · `SELLER` · `AUTO`) | 환불 성공 뒤, 전체 취소도 주문상품마다. 네 칸 모두 필수 |
+| `market.order-item-returned.v1` | ⬜ | ⬜ | 반품 기능 때 |
+
+회원 이벤트(`member.events.v1`) payload → [member](../services/member.md)
+
+⬜ 나머지 이벤트 payload는 각 발행 서비스 담당이 채웁니다 (#227).
