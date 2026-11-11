@@ -39,7 +39,7 @@ public class NotificationController {
         return notificationService.subscribe(member.memberId());
     }
 
-    @GetMapping("/unread-count")
+    @GetMapping("/unreadCount")
     public ResponseEntity<UnreadCountResponse> unreadCount(@AuthenticationPrincipal AuthMember member) {
         return ResponseEntity.ok(new UnreadCountResponse(notificationService.unreadCount(member.memberId())));
     }

@@ -32,7 +32,7 @@
 
 ## 외부 API
 
-`products` (목록 · 등록 · 상세 · 수정 · 삭제) · `products/{id}/hidden` · `products/me` · `products/me/counts` · `products/images/upload-urls` · `species` · `species/{id}` · `admin/imageReviews` · ⬜ 이의 신청 → [외부 API 목록](../reference/external-apis.md)
+`products` (목록 · 등록 · 상세 · 수정 · 삭제) · `products/{id}/hidden` · `products/me` · `products/me/counts` · `products/images/uploadUrls` · `species` · `species/{id}` · `admin/imageReviews` · ⬜ 이의 신청 → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 

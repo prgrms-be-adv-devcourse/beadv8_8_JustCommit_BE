@@ -91,7 +91,7 @@ class NotificationControllerTest {
     void returnsUnreadCount() throws Exception {
         when(notificationService.unreadCount(MEMBER_ID)).thenReturn(3L);
 
-        mockMvc.perform(get("/api/v1/notifications/unread-count"))
+        mockMvc.perform(get("/api/v1/notifications/unreadCount"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").value(3));
     }
