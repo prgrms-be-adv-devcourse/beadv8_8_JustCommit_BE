@@ -32,6 +32,8 @@ COPY --from=build /app/app.jar app.jar
 USER app
 
 # 컨테이너 안에서는 서비스가 모두 8080 (docs/reference/ports.md)
+# application.yml의 server.port(8081~8086)는 로컬 실행용이라 여기서 덮어쓴다
+ENV SERVER_PORT=8080
 EXPOSE 8080
 # 메모리는 컨테이너 상한의 70%까지(docs/infra/deploy.md), 시간대는 한국
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70 -Duser.timezone=Asia/Seoul"
