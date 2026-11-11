@@ -34,7 +34,10 @@ class ScientificNameMatcherTest {
             "Aster altaicus subsp. uchiyamae, BANNED",  // 변종 표기(var. · subsp.)가 달라도 같은 변종
             "Aster altaicus, SPECIES_ONLY",             // 변종 금지인데 종까지만 답함 → 관리자 확인
             "Aster altaicus var. other, NONE",          // 같은 종의 다른 변종은 허용
-            "Monstera deliciosa, NONE"
+            "Monstera deliciosa, NONE",
+            "Sedirea ×japonica, BANNED",                // 교잡종 기호(×)는 단어로 세지 않음
+            "Sedirea x japonica, BANNED",               // 단독 x도 교잡종 기호로 봄
+            "Phalaenopsis × hybrida, NONE"              // 호접란 교잡종은 종 금지에 걸리지 않음
     })
     @DisplayName("속 · 종 · 변종 단위로 대조한다")
     void match(String candidate, Result expected) {

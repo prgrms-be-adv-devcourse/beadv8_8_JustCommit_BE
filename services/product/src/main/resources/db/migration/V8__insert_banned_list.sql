@@ -1,7 +1,7 @@
 -- product 서비스 V8: 판매 금지 목록 데이터 (#342, docs/flows/image-review.md)
 -- 원본: 자료/데이터/nongsaro/banned_species_draft.csv (118줄) · banned_keyword_draft.csv (12줄)에서 생성. 고칠 때는 원본 CSV를 같이 고치고 새 버전 파일로 바꾼다
 -- 법령 원문 대조 2026-11-06: 야생생물법 시행규칙 별표1 멸종위기 Ⅰ급 13 · Ⅱ급 79, 마약류관리법 원료 식물 8, 생태계교란 생물 고시 18
--- '자생지'는 단독으로 오탐이 있어 반려 대신 관리자 확인(REVIEW)으로 둔다 (#342 결정)
+-- '자생지' · '산채'는 일반 문장과 겹쳐 오탐이 있어("자생지와 비슷한 환경", "산 채로") 반려 대신 관리자 확인(REVIEW)으로 둔다 (#342 결정)
 
 insert into banned_species (scientific_name, taxon_rank, korean_name, basis, source, memo) values
     ('Cypripedium japonicum', 'SPECIES', '광릉요강꽃', 'KR_ENDANGERED_I', '국가법령정보센터 야생생물법 시행규칙 별표1 (2022.12.9 개정)', null),
@@ -156,7 +156,7 @@ insert into banned_keyword (keyword, keyword_type, reason) values
     ('금영화', 'EXCEPTION', '캘리포니아양귀비의 다른 이름. 지금은 금지 이름과 겹치지 않지만 별칭 추가 대비'),
     ('서양복주머니란', 'EXCEPTION', '"복주머니란"(멸종위기 Ⅱ급)이 들어 있지만 파피오페딜럼(Paphiopedilum, 금지 아님)을 부르는 시장 이름'),
     ('코카콜라', 'EXCEPTION', '"코카"(코카나무 별칭)가 들어 있는 흔한 단어. 화분·병 재활용 글에서 나옴'),
-    ('산채', 'BANNED', '야생에서 캔 식물. 품종과 상관없이 자생지 채취품'),
+    ('산채', 'REVIEW', '야생에서 캔 식물. 품종과 상관없이 자생지 채취품'),
     ('산에서 캔', 'BANNED', '야생 채취를 글로 밝힌 경우'),
     ('자생지', 'REVIEW', '"자생지에서 채취" 같은 글. 단독으로는 오탐이 있을 수 있어 관리자 확인으로 낮출지 구현 때 정함'),
     ('대마씨', 'BANNED', '대마 종자. 대마 정의에서는 빠지지만 판매 형태(씨앗) 금지와 겹쳐 글로도 잡음'),

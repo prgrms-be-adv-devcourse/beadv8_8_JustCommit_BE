@@ -13,8 +13,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class BannedTextMatcherTest {
 
     private final BannedTextMatcher matcher = new BannedTextMatcher(
-            List.of("양귀비", "아편 양귀비", "복주머니란", "코카", "풍란", "나도풍란", "산채", "삽수"),
-            List.of("자생지"),
+            List.of("양귀비", "아편 양귀비", "복주머니란", "코카", "풍란", "나도풍란", "삽수"),
+            List.of("자생지", "산채"),
             List.of("꽃양귀비", "개양귀비", "서양복주머니란", "코카콜라"));
 
     @ParameterizedTest(name = "{0} → {1}")
@@ -27,7 +27,9 @@ class BannedTextMatcherTest {
             "복주머니란 분양 | BANNED",
             "코카콜라 병에 심은 다육 | NONE",
             "코카 잎 | BANNED",
-            "산채 춘란 | BANNED",
+            "산채 춘란 | REVIEW",                        // 산채는 관리자 확인 단어
+            "뿌리가 산 채로 왔어요 | REVIEW",            // 띄어쓰기를 지워 산채로 걸림 → 반려하지 않고 사람이 확인
+            "몬스테라 삽수 | BANNED",
             "자생지와 비슷한 환경에서 키웠어요 | REVIEW",
             "몬스테라 분양합니다 | NONE"
     })

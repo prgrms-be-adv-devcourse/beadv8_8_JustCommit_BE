@@ -62,13 +62,13 @@ class BannedListDataTest {
     }
 
     @Test
-    @DisplayName("금지어 12개: 반려 4 · 관리자 확인 1(자생지) · 예외 7")
+    @DisplayName("금지어 12개: 반려 3 · 관리자 확인 2(자생지 · 산채) · 예외 7")
     void keywordsLoaded() {
         Map<BannedKeywordType, Long> counts = bannedKeywordRepository.findAll().stream()
                 .collect(Collectors.groupingBy(BannedKeyword::getKeywordType, Collectors.counting()));
 
         assertThat(counts).containsExactlyInAnyOrderEntriesOf(Map.of(
-                BannedKeywordType.BANNED, 4L, BannedKeywordType.REVIEW, 1L, BannedKeywordType.EXCEPTION, 7L));
+                BannedKeywordType.BANNED, 3L, BannedKeywordType.REVIEW, 2L, BannedKeywordType.EXCEPTION, 7L));
     }
 
     @Test

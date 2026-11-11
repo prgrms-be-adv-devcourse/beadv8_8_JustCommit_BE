@@ -2,6 +2,7 @@ package com.justcommit.backend.product.banned.domain;
 
 import com.justcommit.backend.product.banned.domain.enums.TaxonRank;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -68,13 +69,19 @@ public final class ScientificNameMatcher {
 
     // 소문자 · 공백 하나로 맞춘 학명을 속 · 종 · 변종 열쇠로 나눔
     // 변종 열쇠는 "속 종 마지막단어"라 var. · subsp. · f. 표기가 달라도 같은 변종으로 봄
+    // 교잡종 기호(× 또는 단독 x)는 단어로 세지 않음 → "Sedirea ×japonica" · "Sedirea x japonica"도 종으로 봄
     private record ParsedName(TaxonRank rank, String genus, String species, String infra) {
 
         static ParsedName of(String name) {
             if (name == null || name.isBlank()) {
                 return null;
             }
-            String[] t = name.trim().toLowerCase(Locale.ROOT).split("\\s+");
+            String[] t = Arrays.stream(name.toLowerCase(Locale.ROOT).replace('×', ' ').trim().split("\\s+"))
+                    .filter(w -> !w.isEmpty() && !w.equals("x"))
+                    .toArray(String[]::new);
+            if (t.length == 0) {
+                return null;
+            }
             if (t.length == 1) {
                 return new ParsedName(TaxonRank.GENUS, t[0], null, null);
             }
