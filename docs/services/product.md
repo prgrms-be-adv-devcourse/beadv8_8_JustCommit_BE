@@ -24,7 +24,7 @@
 | `SPECIES_ALIAS` | 별칭 · 학명 동의어 |
 | `BANNED_SPECIES` | 판매 금지 품종 (법령 학명, 속 · 종 · 변종 단위) |
 | `BANNED_SPECIES_ALIAS` | 금지 품종 최신 학명 · 한글 별칭 |
-| `BANNED_KEYWORD` | 품종이 아닌 금지어 · 예외 단어 |
+| `BANNED_KEYWORD` | 품종이 아닌 금지어 · 관리자 확인 단어 · 예외 단어 |
 | `PRODUCT_RESERVATION` | orderId별 예약 기록 (orderId 기본키, 해제되면 `RELEASED`) |
 | `IMAGE_REVIEW` | 검수 버전별 단계 결과 · 판정 · 관리자 판단 · 이의 신청 메모 |
 | `MEMBER_REPLICA` | 회원 복제본 |
