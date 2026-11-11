@@ -2,7 +2,7 @@ package com.justcommit.backend.product.messaging;
 
 import com.justcommit.backend.common.messaging.KafkaTopics;
 import com.justcommit.backend.product.ProductUseCase;
-import com.justcommit.backend.product.config.KafkaConsumerConfig;
+import com.justcommit.backend.common.messaging.consumer.MessagingConsumerAutoConfiguration;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -36,8 +36,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 // 실제 Kafka로 구독 · 제자리 재시도 · DLT를 확인 (DB 없이 ProductUseCase는 목)
-@SpringBootTest(classes = {KafkaConsumerConfig.class, EventReader.class, MarketEventListener.class})
-@ImportAutoConfiguration(KafkaAutoConfiguration.class)
+@SpringBootTest(classes = MarketEventListener.class)
+@ImportAutoConfiguration({KafkaAutoConfiguration.class, MessagingConsumerAutoConfiguration.class})
 @Testcontainers(disabledWithoutDocker = true)
 class MarketEventKafkaIntegrationTest {
 
