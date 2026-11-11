@@ -2,6 +2,7 @@ package com.justcommit.backend.product.client.member;
 
 import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.product.ProductStatus;
+import com.justcommit.backend.product.config.ClockConfig;
 import com.justcommit.backend.product.member.application.MemberReplicaService;
 import com.justcommit.backend.product.member.domain.MemberReplica;
 import com.justcommit.backend.product.member.domain.MemberRole;
@@ -36,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, MemberReplicaService.class, MemberReplicaQuery.class})
+@Import({JpaAuditingConfig.class, ClockConfig.class, MemberReplicaService.class, MemberReplicaQuery.class})
 @Testcontainers(disabledWithoutDocker = true)
 class MemberReplicaIntegrationTest {
 
@@ -136,20 +137,24 @@ class MemberReplicaIntegrationTest {
     // ── 탈퇴한 판매자의 상품 정리 ───────────────────────
 
     @Test
-    @DisplayName("판매자가 탈퇴하면 판매 중(숨김 포함) 상품만 삭제하고, 결제 대기 · 판매 완료 · 다른 판매자 상품은 그대로 둔다")
+    @DisplayName("판매자가 탈퇴하면 판매 중(숨김 포함) · 검수 중 · 반려 상품을 삭제하고, 결제 대기 · 판매 완료 · 다른 판매자 상품은 그대로 둔다")
     void withdrawalDeletesOnSaleProductsOnly() {
         Long onSale = saveProduct(SELLER_ID, ProductStatus.ACTIVE, false);
         Long hidden = saveProduct(SELLER_ID, ProductStatus.ACTIVE, true);
+        Long inReview = saveProduct(SELLER_ID, ProductStatus.REVIEW_PENDING, false);
+        Long rejected = saveProduct(SELLER_ID, ProductStatus.REJECTED, false);
         Long pending = saveProduct(SELLER_ID, ProductStatus.PAYMENT_PENDING, false);
         Long sold = saveProduct(SELLER_ID, ProductStatus.SOLD_OUT, false);
         Long others = saveProduct(8L, ProductStatus.ACTIVE, false);
 
-        assertThat(memberReplicaService.applyWithdrawn(SELLER_ID, T1)).isEqualTo(2);
+        assertThat(memberReplicaService.applyWithdrawn(SELLER_ID, T1)).isEqualTo(4);
         // 같은 탈퇴 이벤트가 다시 와도 결과가 같음
         assertThat(memberReplicaService.applyWithdrawn(SELLER_ID, T1)).isZero();
 
         assertThat(statusOf(onSale)).isEqualTo(ProductStatus.DELETED);
         assertThat(statusOf(hidden)).isEqualTo(ProductStatus.DELETED);
+        assertThat(statusOf(inReview)).isEqualTo(ProductStatus.DELETED);
+        assertThat(statusOf(rejected)).isEqualTo(ProductStatus.DELETED);
         assertThat(statusOf(pending)).isEqualTo(ProductStatus.PAYMENT_PENDING);
         assertThat(statusOf(sold)).isEqualTo(ProductStatus.SOLD_OUT);
         assertThat(statusOf(others)).isEqualTo(ProductStatus.ACTIVE);

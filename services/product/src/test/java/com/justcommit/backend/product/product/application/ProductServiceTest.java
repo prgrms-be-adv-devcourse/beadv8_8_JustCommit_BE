@@ -1,9 +1,9 @@
 package com.justcommit.backend.product.product.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.product.client.member.MemberQuery;
 import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.product.ProductStatus;
+import com.justcommit.backend.product.client.member.MemberQuery;
 import com.justcommit.backend.product.exception.ProductErrorCode;
 import com.justcommit.backend.product.image.application.ProductImageCleaner;
 import com.justcommit.backend.product.image.application.ProductImageUrlValidator;
@@ -16,9 +16,12 @@ import com.justcommit.backend.product.species.infrastructure.SpeciesRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.domain.Page;
@@ -29,6 +32,10 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -58,6 +65,10 @@ public class  ProductServiceTest {
 
     @Mock
     private ProductImageUrlValidator imageUrlValidator;
+
+    // 등록 제한의 "오늘" 기준을 고정 (2026-11-11 12:00 KST)
+    @Spy
+    private Clock clock = Clock.fixed(Instant.parse("2026-11-11T03:00:00Z"), ZoneId.of("Asia/Seoul"));
 
     @InjectMocks
     private ProductService productService;
@@ -178,6 +189,9 @@ public class  ProductServiceTest {
         assertThat(product.getGrowNote()).isNull();
         assertThat(imageUrlsOf(product))
                 .containsExactly("https://example.com/c.jpg", "https://example.com/d.jpg");
+        // 사진 · 품종이 바뀌어 다시 검수 중, 검수 버전 +1
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
+        assertThat(product.getReviewVersion()).isEqualTo(1);
     }
 
     @Test
@@ -227,7 +241,7 @@ public class  ProductServiceTest {
     }
     // 결제 대기·판매 완료 상품은 수정 불가 (정책 2.3-1)
     @Test
-    @DisplayName("판매 중이 아닌 상품을 수정하면 PRODUCT_NOT_EDITABLE, 상품은 바뀌지 않음")
+    @DisplayName("결제 대기 상품을 수정하면 PRODUCT_NOT_EDITABLE, 상품은 바뀌지 않음")
     void updateProductNotEditable() {
         Product product = product(ProductStatus.PAYMENT_PENDING);
         given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
@@ -254,7 +268,7 @@ public class  ProductServiceTest {
     }
 
     @Test
-    @DisplayName("판매 중이 아닌 상품을 삭제하면 PRODUCT_NOT_DELETABLE")
+    @DisplayName("결제 대기 상품을 삭제하면 PRODUCT_NOT_DELETABLE")
     void deleteProductNotDeletable() {
         Product product = product(ProductStatus.PAYMENT_PENDING);
         given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
@@ -542,4 +556,119 @@ public class  ProductServiceTest {
         assertThat(result.soldOut()).isEqualTo(1);
     }
 
+
+    // ── 등록 제한 (#341) ───────────────────────────
+
+    @Test
+    @DisplayName("검수 중 상품이 이미 5개면 REVIEW_PENDING_LIMIT_EXCEEDED, 사진 검사 · 저장을 하지 않음")
+    void createProductOverReviewPendingLimit() {
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
+        given(productRepository.countBySellerIdAndStatus(SELLER_ID, ProductStatus.REVIEW_PENDING)).willReturn(5L);
+
+        assertThatThrownBy(() -> productService.createProduct(SELLER_ID, createRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.REVIEW_PENDING_LIMIT_EXCEEDED);
+        verify(imageUrlValidator, never()).validate(any(), any());
+        verify(productRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("오늘(한국 시간 자정부터) 이미 20건 등록했으면 DAILY_REGISTER_LIMIT_EXCEEDED, 저장하지 않음")
+    void createProductOverDailyRegisterLimit() {
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
+        // 고정 시계가 2026-11-11 12:00 KST라 기준 시각은 그날 00:00
+        given(productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(SELLER_ID, LocalDateTime.of(2026, 11, 11, 0, 0)))
+                .willReturn(20L);
+
+        assertThatThrownBy(() -> productService.createProduct(SELLER_ID, createRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.DAILY_REGISTER_LIMIT_EXCEEDED);
+        verify(productRepository, never()).save(any());
+    }
+
+    // 하루 경계는 서버 시간대(UTC 등)가 아니라 한국 시간 자정
+    @Test
+    @DisplayName("한국 시간 자정 직후(UTC로는 전날 15시)에는 그날 00:00부터 센다")
+    void dailyLimitStartsAtKoreanMidnight() {
+        ReflectionTestUtils.setField(productService, "clock",
+                Clock.fixed(Instant.parse("2026-11-10T15:00:00Z"), ZoneId.of("Asia/Seoul")));   // 2026-11-11 00:00 KST
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
+        given(productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(SELLER_ID, LocalDateTime.of(2026, 11, 11, 0, 0)))
+                .willReturn(20L);
+
+        assertThatThrownBy(() -> productService.createProduct(SELLER_ID, createRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.DAILY_REGISTER_LIMIT_EXCEEDED);
+    }
+
+    @Test
+    @DisplayName("한국 시간 자정 직전(23:59:59)에는 아직 전날 00:00부터 센다")
+    void dailyLimitBeforeKoreanMidnight() {
+        ReflectionTestUtils.setField(productService, "clock",
+                Clock.fixed(Instant.parse("2026-11-10T14:59:59Z"), ZoneId.of("Asia/Seoul")));   // 2026-11-10 23:59:59 KST
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
+        given(productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(SELLER_ID, LocalDateTime.of(2026, 11, 10, 0, 0)))
+                .willReturn(20L);
+
+        assertThatThrownBy(() -> productService.createProduct(SELLER_ID, createRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.DAILY_REGISTER_LIMIT_EXCEEDED);
+    }
+
+    @Test
+    @DisplayName("검수 중 4개 · 오늘 19건이면 등록되고, 새 상품은 검수 중 · 검수 버전 0")
+    void createProductJustUnderLimits() {
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
+        given(productRepository.countBySellerIdAndStatus(SELLER_ID, ProductStatus.REVIEW_PENDING)).willReturn(4L);
+        given(productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(SELLER_ID, LocalDateTime.of(2026, 11, 11, 0, 0)))
+                .willReturn(19L);
+        given(speciesRepository.findById(1L)).willReturn(Optional.of(species(1L, "몬스테라")));
+        given(productRepository.save(any(Product.class))).willAnswer(invocation -> invocation.getArgument(0));
+
+        productService.createProduct(SELLER_ID, createRequest());
+
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        verify(productRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
+        assertThat(captor.getValue().getReviewVersion()).isZero();
+    }
+
+    // ── 검수 중 · 반려 상품 (#341) ──────────────────
+
+    @ParameterizedTest
+    @EnumSource(value = ProductStatus.class, names = {"REVIEW_PENDING", "REJECTED"})
+    @DisplayName("검수 중 · 반려 상품을 다른 회원 · 비회원이 열면 PRODUCT_NOT_FOUND")
+    void getInReviewProductDetailByOthers(ProductStatus status) {
+        given(productRepository.findWithDetailById(PRODUCT_ID)).willReturn(Optional.of(product(status)));
+
+        assertThatThrownBy(() -> productService.getProductDetail(PRODUCT_ID, OTHER_MEMBER_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND);
+        assertThatThrownBy(() -> productService.getProductDetail(PRODUCT_ID, null))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ProductStatus.class, names = {"REVIEW_PENDING", "REJECTED"})
+    @DisplayName("판매자 본인은 검수 중 · 반려 상품의 상세를 볼 수 있음")
+    void getInReviewProductDetailByOwner(ProductStatus status) {
+        given(productRepository.findWithDetailById(PRODUCT_ID)).willReturn(Optional.of(product(status)));
+
+        ProductDetailResponse response = productService.getProductDetail(PRODUCT_ID, SELLER_ID);
+
+        assertThat(response.productId()).isEqualTo(PRODUCT_ID);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ProductStatus.class, names = {"REVIEW_PENDING", "REJECTED"})
+    @DisplayName("검수 중 · 반려 상품도 판매자가 삭제할 수 있음")
+    void deleteInReviewProduct(ProductStatus status) {
+        Product product = product(status);
+        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
+
+        productService.deleteProduct(SELLER_ID, PRODUCT_ID);
+
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.DELETED);
+    }
 }

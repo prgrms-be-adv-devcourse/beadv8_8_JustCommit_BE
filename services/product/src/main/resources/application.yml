@@ -18,13 +18,11 @@ spring:
       group-id: product
       # 그룹이 처음 붙을 때 앞에 쌓인 이벤트부터 받음 (판매 완료 · 해제를 놓치지 않게)
       auto-offset-reset: earliest
-      # 봉투(EventEnvelope) JSON을 문자열로 받아 EventEnvelopeMapper로 바꿈
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-    producer:
-      # 처리에 실패한 메시지를 원래 문자열 그대로 원래토픽.DLT로 보냄
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # 봉투로 못 바꾸는 메시지는 재시도 없이 원래토픽.DLT, 처리 실패는 1 · 2 · 4초 재시도 뒤 DLT (common-messaging 공통 설정)
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: com.justcommit.backend.common.messaging.consumer.EventEnvelopeDeserializer
     listener:
       concurrency: 3
 
