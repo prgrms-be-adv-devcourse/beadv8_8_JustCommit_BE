@@ -562,6 +562,36 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("부분 취소는 상품 환불이 성공한 뒤 그 주문상품의 판매 재개 이벤트를 남긴다")
+    void itemCancelPublishesItemCancelledAfterRefund() {
+        stubConfirmableItem();
+        when(shipmentQuery.findBySellerOrderId(7L)).thenReturn(new ShipmentResult(8L, "READY", null));
+        when(paymentUseCase.refundCancelledItem(11L, 99L, 10L, money("10000")))
+                .thenReturn(new PaymentResult(PaymentStatus.REFUNDED, money("0")));
+
+        orderService.itemCancel(10L, 11L);
+
+        InOrder inOrder = inOrder(paymentUseCase, outboxPublisher);
+        inOrder.verify(paymentUseCase).refundCancelledItem(11L, 99L, 10L, money("10000"));
+        inOrder.verify(outboxPublisher).publish(
+                new OrderItemCancelled(99L, 11L, 101L, OrderItemCancelled.CancelReason.BUYER));
+    }
+
+    @Test
+    @DisplayName("부분 취소에서 상품 환불이 거절되면 판매 재개 이벤트를 남기지 않는다")
+    void itemCancelDoesNotPublishItemCancelledWhenRefundFails() {
+        stubConfirmableItem();
+        when(shipmentQuery.findBySellerOrderId(7L)).thenReturn(new ShipmentResult(8L, "READY", null));
+        when(paymentUseCase.refundCancelledItem(11L, 99L, 10L, money("10000")))
+                .thenReturn(new PaymentResult(PaymentStatus.WALLET_NOT_FOUND, null));
+
+        assertThatThrownBy(() -> orderService.itemCancel(10L, 11L))
+                .isInstanceOf(BusinessException.class);
+
+        verify(outboxPublisher, never()).publish(any());
+    }
+
+    @Test
     void returnsPaidOrderWithoutChargingAgainOnRepeatedRequest() {
         Orders order = pendingOrder(10L);
         order.paid();
