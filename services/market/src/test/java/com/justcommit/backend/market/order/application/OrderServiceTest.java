@@ -24,6 +24,7 @@ import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
 import com.justcommit.backend.market.order.event.OrderExpired;
 import com.justcommit.backend.market.order.event.OrderFailed;
+import com.justcommit.backend.market.order.event.OrderItemCancelled;
 import com.justcommit.backend.market.order.event.OrderPaid;
 import com.justcommit.backend.market.order.infrastructure.AutoConfirmTarget;
 import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
@@ -37,6 +38,7 @@ import com.justcommit.backend.market.shipment.application.ShipmentService;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import org.junit.jupiter.api.BeforeEach;
 import com.justcommit.backend.market.client.payment.PaymentResult;
+import com.justcommit.backend.market.client.payment.PaymentStatus;
 import com.justcommit.backend.market.client.payment.PaymentUseCase;
 import com.justcommit.backend.market.client.product.ProductResult;
 import com.justcommit.backend.market.client.product.ProductStatus;
@@ -58,6 +60,7 @@ import java.nio.ByteBuffer;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -501,6 +504,61 @@ class OrderServiceTest {
         verify(outboxPublisher).publish(new OrderFailed(99L));
         verify(outboxPublisher, never()).publish(any(OrderPaid.class));
         verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+    }
+
+    @Test
+    @DisplayName("전체 취소는 상품 · 배송비 환불이 모두 성공한 뒤 주문상품마다 판매 재개 이벤트를 남긴다")
+    void cancelPublishesItemCancelledAfterAllRefunds() {
+        Orders order = cancellableOrder();
+        when(paymentUseCase.refundCancelledItem(any(), eq(99L), eq(10L), any()))
+                .thenReturn(new PaymentResult(PaymentStatus.REFUNDED, money("0")));
+        when(paymentUseCase.refundShippingFee(eq(7L), eq(99L), eq(10L), any()))
+                .thenReturn(new PaymentResult(PaymentStatus.REFUNDED, money("0")));
+
+        orderService.cancel(10L, 99L);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        InOrder inOrder = inOrder(paymentUseCase, outboxPublisher);
+        inOrder.verify(paymentUseCase).refundCancelledItem(11L, 99L, 10L, money("10000"));
+        inOrder.verify(paymentUseCase).refundCancelledItem(12L, 99L, 10L, money("20000"));
+        inOrder.verify(paymentUseCase).refundShippingFee(7L, 99L, 10L, money("3000"));
+        inOrder.verify(outboxPublisher).publish(
+                new OrderItemCancelled(99L, 11L, 101L, OrderItemCancelled.CancelReason.BUYER));
+        inOrder.verify(outboxPublisher).publish(
+                new OrderItemCancelled(99L, 12L, 102L, OrderItemCancelled.CancelReason.BUYER));
+    }
+
+    @Test
+    @DisplayName("상품 환불이 거절되면 판매 재개 이벤트를 남기지 않는다")
+    void cancelDoesNotPublishItemCancelledWhenRefundFails() {
+        cancellableOrder();
+        when(paymentUseCase.refundCancelledItem(any(), eq(99L), eq(10L), any()))
+                .thenReturn(new PaymentResult(PaymentStatus.WALLET_NOT_FOUND, null));
+
+        assertThatThrownBy(() -> orderService.cancel(10L, 99L))
+                .isInstanceOf(BusinessException.class);
+
+        verify(outboxPublisher, never()).publish(any());
+    }
+
+    // 결제된 주문 1건 · 판매자 주문 1건 · 주문상품 2건 · 배송비 3,000원 · 배송 READY (취소 가능)
+    private Orders cancellableOrder() {
+        Orders order = pendingOrder(10L);
+        order.paid();
+        SellerOrder sellerOrder = new SellerOrder(order, 20L);
+        OrdersItem first = new OrdersItem(sellerOrder, 101L, "몬스테라", money("10000"));
+        OrdersItem second = new OrdersItem(sellerOrder, 102L, "선인장", money("20000"));
+        sellerOrder.addItems(List.of(first, second));
+        sellerOrder.setShippingFee(money("3000"));
+        order.addSellerOrders(List.of(sellerOrder));
+        ReflectionTestUtils.setField(sellerOrder, "id", 7L);
+        ReflectionTestUtils.setField(first, "id", 11L);
+        ReflectionTestUtils.setField(second, "id", 12L);
+        when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
+        when(sellerOrderRepository.findAllLockedByOrderId(99L)).thenReturn(List.of(sellerOrder));
+        when(shipmentQuery.findBySellerOrderIds(List.of(7L)))
+                .thenReturn(Map.of(7L, new ShipmentResult(8L, "READY", null)));
+        return order;
     }
 
     @Test
