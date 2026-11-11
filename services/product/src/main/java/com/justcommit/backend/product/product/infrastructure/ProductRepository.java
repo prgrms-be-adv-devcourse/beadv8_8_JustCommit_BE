@@ -2,13 +2,14 @@ package com.justcommit.backend.product.product.infrastructure;
 
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.product.domain.Product;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
-import jakarta.persistence.LockModeType;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -82,15 +83,16 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             """)
     int releaseItem(@Param("productId") Long productId, @Param("orderId") Long orderId, @Param("hide") boolean hide);
 
-    // 판매자 탈퇴: 판매 중(숨김 포함)인 상품만 소프트 삭제. 결제 대기 · 판매 완료 상품은 주문 기록 때문에 남김
-    // shortcut: 검수 중 · 반려 상태가 생기면(사진 검수) 조건에 함께 넣는다
+    // 판매자 탈퇴: 판매 중(숨김 포함) · 검수 중 · 반려 상품을 소프트 삭제. 결제 대기 · 판매 완료 상품은 주문 기록 때문에 남김
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             UPDATE Product p
             SET p.status = com.justcommit.backend.product.ProductStatus.DELETED,
                 p.updatedAt = CURRENT_TIMESTAMP
             WHERE p.sellerId = :sellerId
-              AND p.status = com.justcommit.backend.product.ProductStatus.ACTIVE
+              AND p.status IN (com.justcommit.backend.product.ProductStatus.ACTIVE,
+                               com.justcommit.backend.product.ProductStatus.REVIEW_PENDING,
+                               com.justcommit.backend.product.ProductStatus.REJECTED)
             """)
     int deleteOnSaleBySeller(@Param("sellerId") Long sellerId);
 
@@ -111,7 +113,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     // 판매자 탈퇴 전: 그 판매자의 상품 중 나중에 판매 중으로 되돌아올 수 있는 행을 잠금
     @Query(value = """
             SELECT id FROM product
-            WHERE seller_id = :sellerId AND status IN ('ACTIVE', 'PAYMENT_PENDING', 'SOLD_OUT')
+            WHERE seller_id = :sellerId AND status IN ('REVIEW_PENDING', 'REJECTED', 'ACTIVE', 'PAYMENT_PENDING', 'SOLD_OUT')
             ORDER BY id FOR UPDATE
             """, nativeQuery = true)
     List<Long> lockChangeableBySeller(@Param("sellerId") Long sellerId);
@@ -140,6 +142,12 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
         ProductStatus getStatus();
         Long getCount();
     }
+
+    // 등록 제한: 검수 중인 상품 수
+    long countBySellerIdAndStatus(Long sellerId, ProductStatus status);
+
+    // 등록 제한: 오늘 등록한 상품 수 (삭제 포함이라 상태 조건 없음)
+    long countBySellerIdAndCreatedAtGreaterThanEqual(Long sellerId, LocalDateTime from);
 
     // 판매자의 상품 상태별로 count ( 삭제 제외, hidden=null 로 들어오면 숨김 여부로 필터링 하지 않음)
     @Query("""
