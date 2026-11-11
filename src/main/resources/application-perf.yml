@@ -30,3 +30,7 @@ custom:
   payment:
     toss:
       base-url: ${PERF_FAKES_URL:http://perf-fakes:8080}
+
+# 자동 구매확정 스케줄러 주기: 1시간 → 1분 (가설 5 Soak에서 스케줄러끼리 겹치는지 보기 위함)
+perf:
+  auto-confirm-delay-ms: 60000

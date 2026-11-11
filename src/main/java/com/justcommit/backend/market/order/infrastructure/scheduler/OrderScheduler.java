@@ -18,7 +18,8 @@ public class OrderScheduler {
         orderService.expirePendingOrders();
     }
 
-    @Scheduled(fixedDelay = 3_600_000, initialDelay = 60_000)
+    // 성능 측정(#351): perf 프로필에서 주기만 짧게 (배송 완료 3일 뒤 확정 규칙은 그대로)
+    @Scheduled(fixedDelayString = "${perf.auto-confirm-delay-ms:3600000}", initialDelay = 60_000)
     public void autoConfirmDeliveredItems() {
         orderService.autoConfirmDeliveredItems();
     }
