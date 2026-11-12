@@ -72,7 +72,7 @@ class SellerRegisterServiceTest {
     // given
     Member member = member(Role.MEMBER);
     given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
-    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(member));
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(member));
     givenSellerSaved();
 
     // when
@@ -103,7 +103,7 @@ class SellerRegisterServiceTest {
   void register_admin_keepsRole() {
     Member admin = member(Role.ADMIN);
     given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
-    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(admin));
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(admin));
     givenSellerSaved();
 
     sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, null));
@@ -115,8 +115,9 @@ class SellerRegisterServiceTest {
   }
 
   @Test
-  @DisplayName("이미 판매자면 ALREADY_SELLER, 회원 조회·저장 안 함")
+  @DisplayName("이미 판매자면 ALREADY_SELLER, 저장·발행 안 함 (회원 잠금 뒤에 확인)")
   void register_alreadySeller() {
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(member(Role.SELLER)));
     given(sellerRepository.existsById(MEMBER_ID)).willReturn(true);
 
     assertThatThrownBy(() -> sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO)))
@@ -124,7 +125,6 @@ class SellerRegisterServiceTest {
             .extracting("errorCode")
             .isEqualTo(MemberErrorCode.ALREADY_SELLER);
 
-    then(memberRepository).shouldHaveNoInteractions();
     then(sellerRepository).should(never()).saveAndFlush(any());
     then(outboxPublisher).should(never()).publish(any());
   }
@@ -132,8 +132,7 @@ class SellerRegisterServiceTest {
   @Test
   @DisplayName("없는 회원이면 MEMBER_NOT_FOUND, 판매자 저장 안 함")
   void register_memberNotFound() {
-    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
-    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.empty());
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.empty());
 
     assertThatThrownBy(() -> sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO)))
             .isInstanceOf(BusinessException.class)
@@ -148,7 +147,7 @@ class SellerRegisterServiceTest {
   @DisplayName("동시 등록으로 DB PK 중복 시 ALREADY_SELLER로 변환")
   void register_duplicateKey() {
     given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
-    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(member(Role.MEMBER)));
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(member(Role.MEMBER)));
     willThrow(new DataIntegrityViolationException("could not execute statement",
             new RuntimeException("duplicate key value violates unique constraint \"seller_pkey\"")))
             .given(sellerRepository).saveAndFlush(any(Seller.class));

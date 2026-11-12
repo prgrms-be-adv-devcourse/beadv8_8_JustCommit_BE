@@ -22,22 +22,23 @@ public class SellerRegisterService {
   private final SellerRepository sellerRepository;
   private final OutboxPublisher outboxPublisher;
 
-  // 판매자 등록: 판매자 여부 확인 → 회원 조회 → 권한 변경 → 판매자 저장
+  // 판매자 등록: 회원 잠금 → 이미 판매자인지 확인 → 권한 변경 → 판매자 저장
+  // 회원 행을 먼저 잠가 같은 회원의 동시 등록은 두 번째 요청이 앞선 등록 결과를 보고 409가 됨
   @Transactional
   public SellerResult register(SellerRegisterCommand command) {
     Long memberId = command.memberId();
 
-    // 이미 판매자면 409
+    Member member = memberRepository.findByIdForUpdate(memberId)
+        .orElseThrow(() -> new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
+
+    // 이미 판매자면 409 (잠금을 얻은 뒤에 확인해야 동시 요청의 앞선 등록이 보임)
     if (sellerRepository.existsById(memberId)) {
       throw new BusinessException(MemberErrorCode.ALREADY_SELLER);
     }
 
-    Member member = memberRepository.findById(memberId)
-            .orElseThrow(() -> new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
-
     member.promoteToSeller(); // MEMBER → SELLER, ADMIN은 유지. 변경 감지로 커밋 시 UPDATE
 
-    // 동시 요청으로 위 검사를 둘 다 통과한 경우 PK 중복을 DB가 막음 -> 409로 변환
+    // 잠금으로 막히지만, 혹시 남은 PK 중복은 DB가 막음 -> 409로 변환
     Seller seller;
     try {
       seller = sellerRepository.saveAndFlush(Seller.register(member, command.intro()));

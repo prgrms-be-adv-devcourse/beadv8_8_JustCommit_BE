@@ -74,7 +74,7 @@ class AddressServiceTest {
   void addAddress_asDefault() {
     Address oldDefault = address(1L, true);
     given(addressRepository.countByMemberId(MEMBER_ID)).willReturn(1L);
-    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
     given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.of(oldDefault));
     givenSaveReturnsArgument();
 
@@ -89,7 +89,7 @@ class AddressServiceTest {
   void addAddress_notDefault() {
     Address oldDefault = address(1L, true);
     given(addressRepository.countByMemberId(MEMBER_ID)).willReturn(1L);
-    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
     given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.of(oldDefault));
     givenSaveReturnsArgument();
 
@@ -103,7 +103,7 @@ class AddressServiceTest {
   @DisplayName("기본 배송지가 없으면 선택하지 않아도 기본 배송지로 등록")
   void addAddress_noDefaultYet() {
     given(addressRepository.countByMemberId(MEMBER_ID)).willReturn(0L);
-    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
     given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.empty());
     givenSaveReturnsArgument();
 
@@ -113,9 +113,10 @@ class AddressServiceTest {
   }
 
   @Test
-  @DisplayName("배송지가 이미 10개면 등록할 수 없음")
+  @DisplayName("배송지가 이미 4개면 등록할 수 없음")
   void addAddress_limitExceeded() {
-    given(addressRepository.countByMemberId(MEMBER_ID)).willReturn(10L);
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.countByMemberId(MEMBER_ID)).willReturn(4L);
 
     assertThatThrownBy(() -> addressService.addAddress(MEMBER_ID, command(false)))
             .isInstanceOf(BusinessException.class)
@@ -129,6 +130,7 @@ class AddressServiceTest {
   void changeDefault() {
     Address oldDefault = address(1L, true);
     Address target = address(2L, false);
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
     given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
     given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.of(oldDefault));
 
@@ -142,6 +144,7 @@ class AddressServiceTest {
   @Test
   @DisplayName("내 배송지가 아니면 404 ADDRESS_NOT_FOUND")
   void changeDefault_notFound() {
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
     given(addressRepository.findByIdAndMemberId(99L, MEMBER_ID)).willReturn(Optional.empty());
 
     assertThatThrownBy(() -> addressService.changeDefault(MEMBER_ID, 99L))
