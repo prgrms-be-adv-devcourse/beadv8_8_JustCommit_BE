@@ -16,7 +16,7 @@
 | `JWT_PUBLIC_KEY` | Gateway · 모든 서비스 | 이중 검증용 공개키 |
 | `OAUTH2_STATE_SECRET` | member | 카카오 state 서명 |
 | `INTERNAL_API_KEY` | 모든 서비스 | `/internal/**` 확인 |
-| `MEMBER_ADDRESS_EVENT_KEY` | member · market (같은 값) | 주소 이벤트 전송 키 (판매자 주소 암호화, `EventFieldCipher` 키 버전 `k1`). `openssl rand -base64 32`로 생성, 서버 설정은 인프라 담당. ⬜ 서비스 적용 · `.env.example` 추가는 #233 · #275 |
+| `MEMBER_ADDRESS_EVENT_KEY` | member · market (같은 값) | 주소 이벤트 전송 키 (판매자 배송지 목록 암호화, `EventFieldCipher` 키 버전 `k1`). `openssl rand -base64 32`로 생성, 서버 설정은 인프라 담당. member 적용 · `.env.example` 추가 완료(#233), ⬜ market은 #275 |
 | `REDIS_HOST` · `REDIS_PORT` · `REDIS_PASSWORD` | member · Gateway | – |
 | `MEMBER_SERVICE_URL` · `PRODUCT_SERVICE_URL` · `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` · `NOTIFICATION_SERVICE_URL` | Gateway | 라우팅할 서비스 주소. 없으면 로컬 포트(8081 ~ 8086) |
 | `CORS_ALLOWED_ORIGINS` | Gateway | CORS 허용 출처 (쉼표로 여러 개, `*` 금지). 없으면 `http://localhost:5173` |
