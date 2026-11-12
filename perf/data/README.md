@@ -5,6 +5,20 @@
 | 파일 | 내용 |
 |---|---|
 | `seed.sql` | 구매자 · 판매자 · 지갑 · 판매 중 상품 · 배송 완료 4일 지난 주문 (개수는 실행할 때 정함) |
+| `more-products.sql` | 주문 측정용 판매 중 상품 추가 (`-v products=30000 -v tag=order1`, 출력된 id 범위를 `order.js`에 넘김) |
+| `bulk-orders.sql` | 가설 2: 구매확정 · 배송 완료된 지난 주문 대량 추가 (`-v orders=100000`, 돈은 건드리지 않음) |
+| `add-indexes.sql` | 가설 2: 목록 조회 컬럼 인덱스 3개 (되돌리는 문 포함) |
+| `delivered-orders.sql` | 가설 1 · 5: 배송 완료 4일 지난 주문 추가 → 다음 자동 구매확정이 한꺼번에 확정 · 정산 (`-v delivered=3000 -v tag=sched1`) |
+| `check-concurrent.sql` | `concurrent.js` 뒤 상품마다 결제된 주문 1건 · 지갑 출금 금액이 맞는지 확인 |
+
+다른 SQL도 넣는 방법은 아래 `seed.sql`과 같다 (`-v` 값만 다름, 비밀번호 해시는 `seed.sql`만 필요).
+
+## 측정 사이 정리 (중요)
+
+배송 진행(404-express `AUTO_PROGRESS`)을 끄고 주문을 많이 넣으면 택배 서버에 예약이 쌓인다. 그대로 진행을 켜면 한꺼번에 웹훅을 보내다 메모리 초과로 재시작을 반복한다(11/11에 18번). 진행을 켜기 전에 테스트 배송을 지운다.
+
+- 404-express: 컨테이너를 멈추고 `courier.db`에서 받는 사람이 「부하구매자 · 동시구매자」인 `shipments` · `webhook_outbox` 행 삭제 (먼저 DB 파일 백업)
+- replant: 테스트 주문의 `READY` 배송은 재예약 스케줄러가 계속 보내므로 상태를 바꿔 대상에서 뺀다
 
 ## 넣기 전에
 

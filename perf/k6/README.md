@@ -4,6 +4,12 @@
 |---|---|---|
 | `browse.js` | 로그인 없이 목록 40% · 상세 30% · 검색 20% · 품종 10%, 초당 요청 수를 단계별로 올림 (`-e STEPS=10,20,40 -e HOLD=2m`) | 한계점 측정 |
 | `smoke.js` | 1명이 로그인 → 상품 목록 · 품종 · 검색 · 상세 → 장바구니 → 주문 → 주문 목록 → 판매자 정산 조회를 한 바퀴 | 없음 (스크립트 · 서버 · 데이터 확인용) |
+| `order.js` | 미리 로그인한 구매자가 장바구니 담기 → 주문(지갑 결제), 반복마다 새 상품 (`-e FIRST_ID= -e LAST_ID=`, `perf/data/more-products.sql` 출력) | 주문 한계점 (기본 5→10→20→40→80건/초) |
+| `mixed.js` | `browse.js` 90% + `order.js` 10%를 동시에 (`-e ORDER_SHARE=0.1`) | 섞어서 한계점, Soak(`-e STEPS=10 -e HOLD=30m`) |
+| `concurrent.js` | 같은 상품 하나를 50명이 동시에 주문 × 10라운드, 끝나면 `perf/data/check-concurrent.sql`로 DB 확인 | 정합성 (1명만 결제되는가) |
+| `mypage.js` | 로그인한 구매자 · 판매자가 내 주문 · 판매 주문 · 정산 목록 첫 페이지 | 인덱스 비교 (`bulk-orders.sql` → `add-indexes.sql` 전후) |
+
+결과 해석: 단계별 표는 `python -I perf/analysis/stage_report.py --start <run.sh가 찍은 시작 시각> --steps 10,20,40 --hold 120 --ramp 10` (Prometheus에서 단계마다 서버 처리량 · p95 · CPU · Hikari · 힙 등을 뽑는다). setup(미리 로그인)이 있는 스크립트는 시작 시각에 setup 시간(약 20초)을 더한다.
 
 ## 실행
 
