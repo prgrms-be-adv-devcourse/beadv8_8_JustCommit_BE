@@ -45,6 +45,9 @@ dependencies {
     // Outbox 발행 (common-messaging을 api로 함께 가져옴)
     implementation project(':common:common-messaging-outbox')
 
+    // 사진 검수: Claude Haiku 식물 식별 (OpenAI Moderation은 RestClient로 직접 호출)
+    implementation 'com.anthropic:anthropic-java:3.3.0'
+
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 
