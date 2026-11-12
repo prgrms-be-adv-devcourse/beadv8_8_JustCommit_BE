@@ -6,6 +6,8 @@ import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
+import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,6 +37,15 @@ class AddressServiceTest {
 
   @Mock
   MemberRepository memberRepository;
+
+  @Mock
+  SellerRepository sellerRepository;
+
+  @Mock
+  SellerAddressEventFactory sellerAddressEventFactory;
+
+  @Mock
+  OutboxPublisher outboxPublisher;
 
   @InjectMocks
   AddressService addressService;
@@ -75,6 +86,7 @@ class AddressServiceTest {
     Address oldDefault = address(1L, true);
     given(addressRepository.countByMemberId(MEMBER_ID)).willReturn(1L);
     given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false); // 판매자 아님 → 발행 안 함
     given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.of(oldDefault));
     givenSaveReturnsArgument();
 
@@ -90,6 +102,7 @@ class AddressServiceTest {
     Address oldDefault = address(1L, true);
     given(addressRepository.countByMemberId(MEMBER_ID)).willReturn(1L);
     given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false); // 판매자 아님 → 발행 안 함
     given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.of(oldDefault));
     givenSaveReturnsArgument();
 
@@ -104,6 +117,7 @@ class AddressServiceTest {
   void addAddress_noDefaultYet() {
     given(addressRepository.countByMemberId(MEMBER_ID)).willReturn(0L);
     given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false); // 판매자 아님 → 발행 안 함
     given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.empty());
     givenSaveReturnsArgument();
 
@@ -132,6 +146,7 @@ class AddressServiceTest {
     Address target = address(2L, false);
     given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
     given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false); // 판매자 아님 → 발행 안 함
     given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.of(oldDefault));
 
     AddressResult result = addressService.changeDefault(MEMBER_ID, 2L);

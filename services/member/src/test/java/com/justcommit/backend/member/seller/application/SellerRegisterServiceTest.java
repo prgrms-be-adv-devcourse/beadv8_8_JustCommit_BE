@@ -1,6 +1,8 @@
 package com.justcommit.backend.member.seller.application;
 
 import com.justcommit.backend.member.event.MemberUpdated;
+import com.justcommit.backend.member.event.MemberAddressChanged;
+import com.justcommit.backend.member.address.application.SellerAddressEventFactory;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.domain.Member;
@@ -40,6 +42,9 @@ class SellerRegisterServiceTest {
   @Mock
   private OutboxPublisher outboxPublisher;
 
+  @Mock
+  private SellerAddressEventFactory sellerAddressEventFactory;
+
   @InjectMocks
   private SellerRegisterService sellerRegisterService;
 
@@ -47,6 +52,8 @@ class SellerRegisterServiceTest {
   private static final String NICKNAME = "떡볶이";
   private static final String INTRO = "다육이 전문 판매자입니다.";
   private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 10, 7, 18, 30);
+  // 팩토리가 만든 주소 이벤트 (암호문 내용은 팩토리 테스트에서 확인)
+  private static final MemberAddressChanged ADDRESS_EVENT = new MemberAddressChanged(MEMBER_ID, "v1.k1:test");
 
   // 권한별 회원 (id는 DB가 채워 주는 값이라 직접 주입)
   private Member member(Role role) {
@@ -73,6 +80,7 @@ class SellerRegisterServiceTest {
     Member member = member(Role.MEMBER);
     given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
     given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(member));
+    given(sellerAddressEventFactory.create(MEMBER_ID)).willReturn(ADDRESS_EVENT);
     givenSellerSaved();
 
     // when
@@ -96,6 +104,7 @@ class SellerRegisterServiceTest {
 
     // then: 다른 서비스에 판매자 등록을 알림
     then(outboxPublisher).should().publish(new MemberUpdated(MEMBER_ID, NICKNAME, "SELLER", true));
+    then(outboxPublisher).should().publish(ADDRESS_EVENT);
   }
 
   @Test
@@ -104,6 +113,7 @@ class SellerRegisterServiceTest {
     Member admin = member(Role.ADMIN);
     given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
     given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(admin));
+    given(sellerAddressEventFactory.create(MEMBER_ID)).willReturn(ADDRESS_EVENT);
     givenSellerSaved();
 
     sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, null));
@@ -111,6 +121,7 @@ class SellerRegisterServiceTest {
     assertThat(admin.getRole()).isEqualTo(Role.ADMIN);
     // ADMIN은 role이 그대로라 seller로 판매자임을 알림
     then(outboxPublisher).should().publish(new MemberUpdated(MEMBER_ID, NICKNAME, "ADMIN", true));
+    then(outboxPublisher).should().publish(ADDRESS_EVENT);
     then(sellerRepository).should().saveAndFlush(any(Seller.class));
   }
 
