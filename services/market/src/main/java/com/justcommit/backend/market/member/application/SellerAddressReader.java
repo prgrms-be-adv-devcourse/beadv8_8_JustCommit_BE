@@ -8,6 +8,7 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 판매자 배송지 암호문(member.address.events.v1의 encryptedAddresses)을 복호화해 읽는다
@@ -52,7 +53,8 @@ public class SellerAddressReader {
   public record SellerAddresses(Long memberId, List<SellerAddress> addresses) {
 
     public SellerAddresses {
-      if (memberId == null || addresses == null || addresses.contains(null)) {
+      // List.of로 만든 목록은 contains(null)이 NPE를 던져서 하나씩 확인한다
+      if (memberId == null || addresses == null || addresses.stream().anyMatch(Objects::isNull)) {
         throw new IllegalArgumentException("필수 칸 누락");
       }
       addresses = List.copyOf(addresses);
