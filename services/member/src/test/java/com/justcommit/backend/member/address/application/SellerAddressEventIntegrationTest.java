@@ -1,5 +1,6 @@
 package com.justcommit.backend.member.address.application;
 
+import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.messaging.IntegrationEvent;
 import com.justcommit.backend.common.messaging.crypto.EventFieldCipher;
 import com.justcommit.backend.common.messaging.outbox.OutboxEventRepository;
@@ -8,6 +9,7 @@ import com.justcommit.backend.common.messaging.outbox.OutboxRelay;
 import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.event.MemberAddressChanged;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.seller.application.SellerRegisterCommand;
@@ -26,6 +28,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
@@ -36,11 +39,20 @@ import tools.jackson.databind.json.JsonMapper;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -163,6 +175,68 @@ class SellerAddressEventIntegrationTest {
         assertThat(afterChange).extracting(a -> a.get("isDefault")).containsExactly(true, false);
     }
 
+    @Test
+    @DisplayName("배송지 3개에서 두 요청이 동시에 추가해도 4개를 넘지 않는다 (결과 검증, 겹침 보장 없음)")
+    void concurrentAdd_doesNotExceedLimit() throws Exception {
+        Long memberId = givenMember(false, 3);
+
+        List<Object> results = runTogether(
+                () -> addressService.addAddress(memberId, command("동시1")),
+                () -> addressService.addAddress(memberId, command("동시2")));
+
+        assertThat(results).filteredOn(AddressResult.class::isInstance).hasSize(1);
+        assertThat(results).filteredOn(BusinessException.class::isInstance).singleElement()
+                .extracting("errorCode").isEqualTo(MemberErrorCode.ADDRESS_LIMIT_EXCEEDED);
+        assertThat(addressIds(memberId)).hasSize(4);
+    }
+
+    @Test
+    @DisplayName("두 요청이 동시에 서로 다른 배송지를 기본으로 바꿔도 기본은 정확히 1개 (결과 검증, 겹침 보장 없음)")
+    void concurrentChangeDefault_keepsSingleDefault() throws Exception {
+        Long memberId = givenMember(false, 3);
+        List<Long> ids = addressIds(memberId);
+
+        List<Object> results = runTogether(
+                () -> addressService.changeDefault(memberId, ids.get(1)),
+                () -> addressService.changeDefault(memberId, ids.get(2)));
+
+        assertThat(results).allMatch(AddressResult.class::isInstance);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from address where member_id = ? and is_default", Long.class, memberId)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("다른 트랜잭션이 회원 잠금을 쥐고 있으면 배송지 추가는 기다렸다가, 잠금이 풀린 뒤 끝난다 (잠금 검증)")
+    void addAddress_waitsForMemberLock() throws Exception {
+        Long memberId = givenMember(false, 1);
+        assertWaitsForMemberLock(memberId, () -> addressService.addAddress(memberId, command("잠금")));
+    }
+
+    @Test
+    @DisplayName("다른 트랜잭션이 회원 잠금을 쥐고 있으면 기본 배송지 변경은 기다렸다가, 잠금이 풀린 뒤 끝난다 (잠금 검증)")
+    void changeDefault_waitsForMemberLock() throws Exception {
+        Long memberId = givenMember(false, 2);
+        Long second = addressIds(memberId).get(1);
+        assertWaitsForMemberLock(memberId, () -> addressService.changeDefault(memberId, second));
+    }
+
+    @Test
+    @DisplayName("다른 트랜잭션이 회원 잠금을 쥐고 있으면 판매자 등록은 기다렸다가, 잠금이 풀린 뒤 끝난다 (잠금 검증)")
+    void register_waitsForMemberLock() throws Exception {
+        Long memberId = givenMember(false, 1);
+        assertWaitsForMemberLock(memberId,
+                () -> sellerRegisterService.register(new SellerRegisterCommand(memberId, null)));
+    }
+
+    @Test
+    @DisplayName("주입받은 팩토리를 트랜잭션 밖에서 부르면 실행되지 않는다 (MANDATORY)")
+    void factory_requiresTransaction() {
+        Long memberId = givenMember(true, 1);
+
+        assertThatThrownBy(() -> sellerAddressEventFactory.create(memberId))
+                .isInstanceOf(IllegalTransactionStateException.class);
+    }
+
     // 회원 + 배송지를 만들어 커밋한다 (첫 배송지가 기본). seller면 판매자로 등록된 상태로 만든다
     private Long givenMember(boolean seller, int addressCount) {
         return new TransactionTemplate(transactionManager).execute(status -> {
@@ -210,6 +284,84 @@ class SellerAddressEventIntegrationTest {
 
     private List<Map<String, Object>> addresses(Map<String, Object> decrypted) {
         return (List<Map<String, Object>>) decrypted.get("addresses");
+    }
+
+    private AddressCreateCommand command(String recipientName) {
+        return new AddressCreateCommand(recipientName, "01012345678", "06236", "서울 강남구 테헤란로 1",
+                null, null, false);
+    }
+
+    // 두 요청을 같은 순간에 시작시키고 각각의 결과(성공 값 또는 예외)를 돌려준다. 실제로 겹쳐 실행된다는 보장은 없다
+    private List<Object> runTogether(Callable<?> first, Callable<?> second) throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<?>> futures = new ArrayList<>();
+        try {
+            for (Callable<?> task : List.of(first, second)) {
+                futures.add(executor.submit(() -> {
+                    start.await();
+                    return task.call();
+                }));
+            }
+            start.countDown();
+            List<Object> results = new ArrayList<>();
+            for (Future<?> future : futures) {
+                try {
+                    results.add(future.get(10, TimeUnit.SECONDS));
+                } catch (ExecutionException e) {
+                    results.add(e.getCause());
+                }
+            }
+            return results;
+        } finally {
+            // 실패 · 시간 초과여도 작업을 멈추고 스레드가 끝날 때까지 기다린 뒤 DB 정리로 넘어간다
+            futures.forEach(future -> future.cancel(true));
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    // 다른 트랜잭션이 회원 행 잠금을 쥐고 있는 동안 action이 끝나지 않고, 잠금을 풀면 끝나는지 확인한다
+    private void assertWaitsForMemberLock(Long memberId, Callable<?> action) throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        List<Future<?>> futures = new ArrayList<>();
+        try {
+            futures.add(executor.submit(() -> new TransactionTemplate(transactionManager).execute(status -> {
+                memberRepository.findByIdForUpdate(memberId).orElseThrow();
+                locked.countDown();
+                awaitQuietly(release);
+                return null;
+            })));
+            assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
+
+            Future<?> waiting = executor.submit(action);
+            futures.add(waiting);
+            // 잠금을 쥐고 있는 동안에는 끝나지 않아야 한다
+            assertThatThrownBy(() -> waiting.get(500, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+
+            release.countDown();
+            waiting.get(10, TimeUnit.SECONDS);
+            futures.get(0).get(10, TimeUnit.SECONDS);
+        } finally {
+            // 실패해도 잠금을 쥔 트랜잭션부터 끝내고, 남은 작업을 멈춘 뒤 스레드 종료를 기다린다
+            release.countDown();
+            futures.forEach(future -> future.cancel(true));
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    private static void awaitQuietly(CountDownLatch latch) {
+        try {
+            if (!latch.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("잠금 해제 신호를 기다리다 시간 초과");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
     }
 
     private static KeyPair newKeyPair() {
