@@ -1,6 +1,7 @@
 package com.justcommit.backend.market.client.member;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.market.member.application.SellerAddressReader;
 import com.justcommit.backend.market.member.domain.MemberReplica;
 import com.justcommit.backend.market.member.infrastructure.MemberReplicaRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -18,7 +19,8 @@ import static org.mockito.Mockito.when;
 class ReplicaMemberClientTest {
 
   private final MemberReplicaRepository repository = mock(MemberReplicaRepository.class);
-  private final ReplicaMemberClient client = new ReplicaMemberClient(repository);
+  private final SellerAddressReader sellerAddressReader = mock(SellerAddressReader.class);
+  private final ReplicaMemberClient client = new ReplicaMemberClient(repository, sellerAddressReader);
 
   @Test
   @DisplayName("복제본이 있으면 닉네임, 탈퇴했으면 「탈퇴한 회원」, 없으면 「알 수 없는 회원」을 빠짐없이 돌려준다")
@@ -47,9 +49,9 @@ class ReplicaMemberClientTest {
   }
 
   @Test
-  @DisplayName("판매자 기본 배송지는 복제본이 아직 없어 503 (#275 후속)")
-  void defaultAddressStillUnavailable() {
-    assertThatThrownBy(() -> client.getDefaultAddress(7L)).isInstanceOf(BusinessException.class);
+  @DisplayName("복제본이 없으면 판매자 배송지를 쓸 수 없다 (응답이면 503, 택배 예약은 보류)")
+  void defaultAddressUnavailableWithoutReplica() {
+    assertThatThrownBy(() -> client.getDefaultAddress(7L)).isInstanceOf(SellerAddressUnavailableException.class);
   }
 
   @Test

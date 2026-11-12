@@ -1,23 +1,16 @@
 package com.justcommit.backend.market.shipment.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.market.OrderQuery;
-import com.justcommit.backend.market.OrderResult;
-import com.justcommit.backend.market.OrderShippingInfo;
-import com.justcommit.backend.market.OrdersItemResult;
-import com.justcommit.backend.market.SellerOrderResult;
+import com.justcommit.backend.market.*;
+import com.justcommit.backend.market.client.member.MemberAddress;
+import com.justcommit.backend.market.client.member.MemberQuery;
+import com.justcommit.backend.market.client.member.SellerAddressUnavailableException;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.shipment.domain.Shipment;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
-import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingException;
-import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingRequest;
-import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingResponse;
-import com.justcommit.backend.market.shipment.infrastructure.courier.CourierCancelResult;
-import com.justcommit.backend.market.shipment.infrastructure.courier.CourierClient;
+import com.justcommit.backend.market.shipment.infrastructure.courier.*;
 import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
-import com.justcommit.backend.market.client.member.MemberAddress;
-import com.justcommit.backend.market.client.member.MemberQuery;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -79,6 +72,9 @@ public class ShipmentService {
         for (Shipment shipment : shipments) {
             try {
                 book(shipment);
+            } catch (SellerAddressUnavailableException e) {
+                // 이벤트 지연 · 탈퇴 등 원인은 단정하지 않는다. READY로 남아 대사 작업이 같은 courierOrderNo로 다시 시도한다
+                log.warn("판매자 배송지를 사용할 수 없어 예약을 보류합니다: shipmentId={}", shipment.getId());
             } catch (RuntimeException e) {
                 // 판매자 주소 조회 실패 등. 한 판매자의 실패가 다른 판매자 예약을 막지 않게 한다.
                 log.error("택배 예약 준비 실패: shipmentId={}", shipment.getId(), e);
