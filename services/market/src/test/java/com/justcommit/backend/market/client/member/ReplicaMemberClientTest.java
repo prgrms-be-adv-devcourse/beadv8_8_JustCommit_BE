@@ -2,6 +2,9 @@ package com.justcommit.backend.market.client.member;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.market.member.application.SellerAddressReader;
+import com.justcommit.backend.market.member.application.SellerAddressReader.InvalidSellerAddressException;
+import com.justcommit.backend.market.member.application.SellerAddressReader.SellerAddress;
+import com.justcommit.backend.market.member.application.SellerAddressReader.SellerAddresses;
 import com.justcommit.backend.market.member.domain.MemberReplica;
 import com.justcommit.backend.market.member.infrastructure.MemberReplicaRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -63,6 +66,66 @@ class ReplicaMemberClientTest {
 
     assertThat(client.isWithdrawn(7L)).isTrue();
     assertThat(client.isWithdrawn(9L)).isFalse();
+  }
+
+  @Test
+  @DisplayName("주소 암호문이 있으면 기본 주소(isDefault)를 택배 예약용 주소로 돌려준다")
+  void defaultAddressFromReplica() {
+    MemberReplica replica = replicaWithAddresses(7L, "v1.k1:addresses");
+    when(repository.findById(7L)).thenReturn(Optional.of(replica));
+    SellerAddresses addresses = new SellerAddresses(7L, List.of(
+        address(12L, false, "서울 중구 세종대로 110", null),
+        address(15L, true, "서울 강남구 테헤란로 1", "5층")));
+    when(sellerAddressReader.read("v1.k1:addresses")).thenReturn(addresses);
+
+    MemberAddress result = client.getDefaultAddress(7L);
+
+    assertThat(result.addressId()).isEqualTo(15L);
+    assertThat(result.address1()).isEqualTo("서울 강남구 테헤란로 1");
+    assertThat(result.address2()).isEqualTo("5층");
+  }
+
+  @Test
+  @DisplayName("주소 암호문이 없으면(아직 안 옴 · 탈퇴로 지움) 판매자 배송지를 쓸 수 없다")
+  void defaultAddressUnavailableWithoutCiphertext() {
+    MemberReplica replica = replicaWithAddresses(7L, null);
+    when(repository.findById(7L)).thenReturn(Optional.of(replica));
+
+    assertThatThrownBy(() -> client.getDefaultAddress(7L)).isInstanceOf(SellerAddressUnavailableException.class);
+  }
+
+  @Test
+  @DisplayName("기본 주소가 없으면 판매자 배송지를 쓸 수 없다")
+  void defaultAddressUnavailableWithoutDefault() {
+    MemberReplica replica = replicaWithAddresses(7L, "v1.k1:addresses");
+    when(repository.findById(7L)).thenReturn(Optional.of(replica));
+    SellerAddresses addresses = new SellerAddresses(7L, List.of(address(12L, false, "서울 중구 세종대로 110", null)));
+    when(sellerAddressReader.read("v1.k1:addresses")).thenReturn(addresses);
+
+    assertThatThrownBy(() -> client.getDefaultAddress(7L)).isInstanceOf(SellerAddressUnavailableException.class);
+  }
+
+  @Test
+  @DisplayName("저장된 암호문을 읽지 못하면 Reader 예외를 그대로 전달한다 (주소 없음과 구분)")
+  void storedCiphertextBrokenPropagatesReaderException() {
+    MemberReplica replica = replicaWithAddresses(7L, "v1.k1:broken");
+    when(repository.findById(7L)).thenReturn(Optional.of(replica));
+    when(sellerAddressReader.read("v1.k1:broken")).thenThrow(new InvalidSellerAddressException("판매자 배송지 복호화 실패"));
+
+    assertThatThrownBy(() -> client.getDefaultAddress(7L))
+        .isInstanceOf(InvalidSellerAddressException.class)
+        .isNotInstanceOf(SellerAddressUnavailableException.class);
+  }
+
+  private static MemberReplica replicaWithAddresses(Long memberId, String encryptedAddresses) {
+    MemberReplica replica = mock(MemberReplica.class);
+    when(replica.getMemberId()).thenReturn(memberId);
+    when(replica.getSellerAddressesEnc()).thenReturn(encryptedAddresses);
+    return replica;
+  }
+
+  private static SellerAddress address(Long addressId, boolean isDefault, String address1, String address2) {
+    return new SellerAddress(addressId, isDefault, "홍길동", "01012345678", "06236", address1, address2);
   }
 
   // MemberReplica는 저장소의 upsert로만 만들어서, 테스트에서는 값만 흉내 낸다
