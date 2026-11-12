@@ -30,12 +30,14 @@ public class SettlementService implements SettlementQuery {
     }
 
     @Transactional
-    public SettlementResult settle(Long sellerOrderId, Long sellerId, BigDecimal saleAmount, String itemSummary) {
+    public SettlementResult settle(Long sellerOrderId, Long sellerId, BigDecimal saleAmount, BigDecimal shippingFee,
+                                   String itemSummary) {
         validateRequest(sellerOrderId, sellerId);
 
-        // 이미 정산된 판매자 주문이면 기존 결과 반환
+        // 이미 정산된 판매자 주문이면 비어 있는 배송비만 채우고 기존 결과 반환 (지급은 다시 하지 않음)
         Optional<Settlement> existing = settlementRepository.findBySellerOrderId(sellerOrderId);
         if (existing.isPresent()) {
+            existing.get().updateShippingFeeIfAbsent(shippingFee);
             return toResult(existing.get());
         }
 
@@ -44,6 +46,7 @@ public class SettlementService implements SettlementQuery {
                         sellerOrderId,
                         sellerId,
                         saleAmount,
+                        shippingFee,
                         LocalDateTime.now(),
                         itemSummary
                 )

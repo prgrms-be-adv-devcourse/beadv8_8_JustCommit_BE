@@ -11,9 +11,4 @@ public interface SettlementPayoutClient {
             BigDecimal payoutAmount,
             BigDecimal fee
     );
-
-    void collectShippingFee(
-            Long sellerOrderId,
-            BigDecimal shippingFee
-    );
 }

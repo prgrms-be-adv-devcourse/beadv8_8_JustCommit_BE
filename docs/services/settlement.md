@@ -15,7 +15,7 @@
 
 | 테이블 | 설명 |
 |---|---|
-| `SETTLEMENT` | 정산 (`sellerOrderId` UK, `PENDING` / `COMPLETED` / `FAILED`, 음수 가능) |
+| `SETTLEMENT` | 정산 (`sellerOrderId` UK, `PENDING` / `COMPLETED` / `FAILED`, 음수 가능, `shipping_fee` 배송비: 옛 토픽으로만 받은 정산은 null, 같은 판매자 주문이 새 토픽으로 오면 채움) |
 | `MEMBER_REPLICA` | 회원 복제본 |
 | `OUTBOX` | 발행 대기 이벤트 |
 
@@ -52,6 +52,7 @@
 |---|---|---|
 | `market.events.v1` `PurchaseConfirmed` | 판매자 주문이 끝나면(수동 · 자동 확정 모두) 정산 생성. `shippingFee`로 배송비도 정산 때 옮김 | 정산 UK (`uk_settlement_seller_order_id`) |
 | `member.events.v1` | `MEMBER_REPLICA` 저장 · 갱신 | memberId upsert |
+| `market.purchase-confirmed.v1` (전환 중) | 옛 형식 구매 확정으로 정산 생성 (`shipping_fee` null). market 전환이 끝나면 삭제 | 정산 UK |
 
 ## 스케줄러
 

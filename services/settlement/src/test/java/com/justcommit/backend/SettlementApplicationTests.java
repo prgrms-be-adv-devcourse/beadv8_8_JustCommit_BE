@@ -38,11 +38,11 @@ class SettlementApplicationTests {
     }
 
     @Test
-    @DisplayName("빈 DB에서 Flyway V1이 적용되고 ddl-auto validate로 settlement 서비스가 뜬다")
+    @DisplayName("빈 DB에서 Flyway V1 · V2가 적용되고 ddl-auto validate로 settlement 서비스가 뜬다")
     void contextLoads(@Autowired Flyway flyway) {
         assertThat(flyway.info().applied())
                 .extracting(info -> info.getVersion().getVersion(), MigrationInfo::getState)
-                .contains(tuple("1", MigrationState.SUCCESS));
+                .contains(tuple("1", MigrationState.SUCCESS), tuple("2", MigrationState.SUCCESS));
     }
 
     private static String newPublicKey() {

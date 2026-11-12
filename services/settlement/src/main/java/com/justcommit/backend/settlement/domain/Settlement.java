@@ -35,6 +35,10 @@ public class Settlement extends BaseTimeEntity {
     @Column(name = "fee", nullable = false, precision = 19)
     private BigDecimal fee;
 
+    // 배송비: 수수료 · 정산금 계산에 넣지 않음. 옛 토픽으로 받은 정산은 null
+    @Column(name = "shipping_fee", precision = 19)
+    private BigDecimal shippingFee;
+
     @Column(name = "payout_amount", nullable = false, precision = 19)
     private BigDecimal payoutAmount;
 
@@ -49,12 +53,13 @@ public class Settlement extends BaseTimeEntity {
 
 
     private Settlement(Long sellerOrderId, Long sellerId,
-                       BigDecimal saleAmount, BigDecimal fee,
+                       BigDecimal saleAmount, BigDecimal fee, BigDecimal shippingFee,
                        LocalDateTime settledAt, String itemSummary) {
         this.sellerOrderId = sellerOrderId;
         this.sellerId = sellerId;
         this.saleAmount = saleAmount;
         this.fee = fee;
+        this.shippingFee = shippingFee;
         this.payoutAmount = saleAmount.subtract(fee);
         this.settledAt = settledAt;
         this.itemSummary = itemSummary;
@@ -64,6 +69,7 @@ public class Settlement extends BaseTimeEntity {
             Long sellerOrderId,
             Long sellerId,
             BigDecimal saleAmount,
+            BigDecimal shippingFee,
             LocalDateTime settledAt,
             String itemSummary
     ) {
@@ -76,9 +82,18 @@ public class Settlement extends BaseTimeEntity {
                 sellerId,
                 saleAmount,
                 fee,
+                shippingFee,
                 settledAt,
                 itemSummary
         );
+    }
+
+    // 옛 토픽(배송비 없음)으로 먼저 정산된 뒤 새 토픽이 오면 비어 있는 배송비만 채운다. 이미 값이 있으면 바꾸지 않음.
+    // 지금은 기록만 한다. 정산 지급 때 배송비를 REVENUE로 옮기게 되면, 지급 뒤에 채워진 배송비는 옮겨지지 않으니 그때 다시 본다
+    public void updateShippingFeeIfAbsent(BigDecimal shippingFee) {
+        if (this.shippingFee == null && shippingFee != null) {
+            this.shippingFee = shippingFee;
+        }
     }
 
     private static void validateAmount(BigDecimal saleAmount) {
