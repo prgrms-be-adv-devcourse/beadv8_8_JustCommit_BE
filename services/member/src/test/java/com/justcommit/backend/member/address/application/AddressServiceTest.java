@@ -6,6 +6,7 @@ import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.event.MemberAddressChanged;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -166,5 +167,89 @@ class AddressServiceTest {
             .isInstanceOf(BusinessException.class)
             .extracting("errorCode")
             .isEqualTo(MemberErrorCode.ADDRESS_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("판매자가 배송지를 추가하면 바뀐 뒤 배송지 목록 이벤트를 발행")
+  void addAddress_seller_publishes() {
+    MemberAddressChanged event = new MemberAddressChanged(MEMBER_ID, "v1.k1:test");
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.countByMemberId(MEMBER_ID)).willReturn(1L);
+    given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.of(address(1L, true)));
+    givenSaveReturnsArgument();
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(true);
+    given(sellerAddressEventFactory.create(MEMBER_ID)).willReturn(event);
+
+    addressService.addAddress(MEMBER_ID, command(false));
+
+    then(outboxPublisher).should().publish(event);
+  }
+
+  @Test
+  @DisplayName("판매자가 아니면 배송지를 추가해도 발행하지 않음")
+  void addAddress_notSeller_noPublish() {
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.countByMemberId(MEMBER_ID)).willReturn(1L);
+    given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.of(address(1L, true)));
+    givenSaveReturnsArgument();
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
+
+    addressService.addAddress(MEMBER_ID, command(false));
+
+    then(sellerAddressEventFactory).shouldHaveNoInteractions();
+    then(outboxPublisher).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("판매자가 기본 배송지를 바꾸면 기본이 바뀌고 발행")
+  void changeDefault_seller_publishes() {
+    MemberAddressChanged event = new MemberAddressChanged(MEMBER_ID, "v1.k1:test");
+    Address oldDefault = address(1L, true);
+    Address target = address(2L, false);
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+    given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.of(oldDefault));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(true);
+    given(sellerAddressEventFactory.create(MEMBER_ID)).willReturn(event);
+
+    addressService.changeDefault(MEMBER_ID, 2L);
+
+    assertThat(target.isDefault()).isTrue();
+    assertThat(oldDefault.isDefault()).isFalse();
+    then(outboxPublisher).should().publish(event);
+  }
+
+  @Test
+  @DisplayName("판매자가 아니어도 기본 배송지는 바뀌고, 발행만 하지 않음")
+  void changeDefault_notSeller_changesWithoutPublish() {
+    Address oldDefault = address(1L, true);
+    Address target = address(2L, false);
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+    given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.of(oldDefault));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
+
+    addressService.changeDefault(MEMBER_ID, 2L);
+
+    assertThat(target.isDefault()).isTrue();
+    assertThat(oldDefault.isDefault()).isFalse();
+    then(sellerAddressEventFactory).shouldHaveNoInteractions();
+    then(outboxPublisher).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("이미 기본인 배송지를 다시 기본으로 하면 바뀐 게 없어 판매자 확인 · 발행 없이 끝남")
+  void changeDefault_alreadyDefault_noPublish() {
+    Address target = address(2L, true);
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+
+    AddressResult result = addressService.changeDefault(MEMBER_ID, 2L);
+
+    assertThat(result.isDefault()).isTrue();
+    then(addressRepository).should(never()).findByMemberIdAndIsDefaultTrue(any());
+    then(sellerRepository).shouldHaveNoInteractions();
+    then(sellerAddressEventFactory).shouldHaveNoInteractions();
+    then(outboxPublisher).shouldHaveNoInteractions();
   }
 }

@@ -15,6 +15,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -170,5 +171,40 @@ class SellerRegisterServiceTest {
 
     // 저장이 실패했으니 판매자 등록 이벤트도 남지 않음
     then(outboxPublisher).should(never()).publish(any());
+  }
+
+  @Test
+  @DisplayName("배송지 상태가 깨져 주소 이벤트를 못 만들면 권한 변경 · 판매자 저장 · 발행을 하지 않음")
+  void register_invalidAddressState() {
+    Member member = member(Role.MEMBER);
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(member));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
+    given(sellerAddressEventFactory.create(MEMBER_ID))
+            .willThrow(new BusinessException(MemberErrorCode.INVALID_SELLER_ADDRESS_STATE));
+
+    assertThatThrownBy(() -> sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO)))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MemberErrorCode.INVALID_SELLER_ADDRESS_STATE);
+
+    assertThat(member.getRole()).isEqualTo(Role.MEMBER);
+    then(sellerRepository).should(never()).saveAndFlush(any());
+    then(outboxPublisher).should(never()).publish(any());
+  }
+
+  @Test
+  @DisplayName("판매자 등록 이벤트를 먼저, 판매자 배송지 목록 이벤트를 그다음에 발행")
+  void register_publishOrder() {
+    Member member = member(Role.MEMBER);
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(member));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
+    given(sellerAddressEventFactory.create(MEMBER_ID)).willReturn(ADDRESS_EVENT);
+    givenSellerSaved();
+
+    sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO));
+
+    InOrder inOrder = inOrder(outboxPublisher);
+    inOrder.verify(outboxPublisher).publish(new MemberUpdated(MEMBER_ID, NICKNAME, "SELLER", true));
+    inOrder.verify(outboxPublisher).publish(ADDRESS_EVENT);
   }
 }
