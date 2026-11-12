@@ -1,7 +1,7 @@
 # ai-service
 
 > 언제 읽나: ai-service 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-06 · 관련: Miro 5 · 17, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: Miro 5 · 17, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -15,7 +15,7 @@
 
 ## 소유 테이블
 
-pgvector (ai DB). 품종 벡터는 speciesId 기준. 테이블 이름은 ⬜ 미정 (Spring AI `PgVectorStore` 기본값 검토)
+DB `ai_db` · 계정 `ai_app` (pgvector 확장 `vector`, Flyway V1) → [DB · Flyway](../infra/database.md). 품종 벡터는 speciesId 기준. 테이블 이름은 ⬜ 미정 (Spring AI `PgVectorStore` 기본값 검토)
 
 ## 외부 API
 
@@ -54,6 +54,7 @@ pgvector (ai DB). 품종 벡터는 speciesId 기준. 테이블 이름은 ⬜ 미
 
 | 정책 | 내용 |
 |---|---|
+| 임베딩 모델 | OpenAI `text-embedding-3-small`, 1536차원. 차원을 바꾸면 벡터 칸과 저장된 벡터를 모두 다시 만듦 |
 | 이미지 기반 추천 | 하지 않음 |
 | 장애 시 | 추천 영역만 비고 장바구니 · 주문은 영향 없음. market이 기본 추천으로 대체 |
 

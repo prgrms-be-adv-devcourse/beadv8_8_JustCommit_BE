@@ -4,21 +4,26 @@
 
 -- 1) 서비스 계정: {service}_app
 SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', r, r)
-FROM unnest(ARRAY['member_app', 'product_app', 'market_app', 'payment_app', 'settlement_app', 'notification_app']) AS r
+FROM unnest(ARRAY['member_app', 'product_app', 'market_app', 'payment_app', 'settlement_app', 'notification_app', 'ai_app']) AS r
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r)
 \gexec
 
 -- 2) 서비스 DB: {service}_db, 소유자는 해당 서비스 계정
 SELECT format('CREATE DATABASE %I OWNER %I', s || '_db', s || '_app')
-FROM unnest(ARRAY['member', 'product', 'market', 'payment', 'settlement', 'notification']) AS s
+FROM unnest(ARRAY['member', 'product', 'market', 'payment', 'settlement', 'notification', 'ai']) AS s
 WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = s || '_db')
 \gexec
 
 -- 3) 모든 계정(PUBLIC)의 기본 접속 권한 회수 → 자기 계정만 접속
 SELECT format('REVOKE CONNECT, TEMPORARY ON DATABASE %I FROM PUBLIC', s || '_db')
-FROM unnest(ARRAY['member', 'product', 'market', 'payment', 'settlement', 'notification']) AS s
+FROM unnest(ARRAY['member', 'product', 'market', 'payment', 'settlement', 'notification', 'ai']) AS s
 \gexec
 
 SELECT format('GRANT CONNECT ON DATABASE %I TO %I', s || '_db', s || '_app')
-FROM unnest(ARRAY['member', 'product', 'market', 'payment', 'settlement', 'notification']) AS s
+FROM unnest(ARRAY['member', 'product', 'market', 'payment', 'settlement', 'notification', 'ai']) AS s
 \gexec
+
+-- 4) ai_db의 pgvector 확장 (#290): vector는 trusted 확장이 아니라 ai_app이 아닌 superuser가 만든다
+--    ai의 Flyway V1도 같은 문장(IF NOT EXISTS)이라 여기서 만들어 두면 V1은 건너뛴다
+\connect ai_db
+CREATE EXTENSION IF NOT EXISTS vector;

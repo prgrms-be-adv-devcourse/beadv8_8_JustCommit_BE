@@ -1,7 +1,7 @@
 # 환경변수
 
 > 언제 읽나: 환경변수 · 비밀값을 추가하거나 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-11 · 관련: Miro A3
+> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: Miro A3
 
 ## 변수 표
 
@@ -29,7 +29,7 @@
 | `AWS_REGION` · S3 버킷 | product | 사진 업로드 (자격 증명은 EC2 IAM 역할) |
 | ⬜ OpenAI API 키 | product | Moderation |
 | ⬜ Anthropic API 키 | product | Claude Haiku 식물 식별 |
-| 임베딩 API 키 | ai-service | 외부 임베딩 (⬜ 변수 이름) |
+| `OPENAI_API_KEY` | ai-service | 외부 임베딩 (OpenAI). 없어도 앱은 뜨고 임베딩 호출만 실패 |
 
 ## 비밀값 관리
 

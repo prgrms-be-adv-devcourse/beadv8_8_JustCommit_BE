@@ -1,0 +1,57 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot'
+    id 'io.spring.dependency-management'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+// Spring AI 2.0.x는 Spring Boot 4.1 기준 (docs/services/ai.md, ADR 0005)
+dependencyManagement {
+    imports {
+        mavenBom 'org.springframework.ai:spring-ai-bom:2.0.2'
+    }
+}
+
+dependencies {
+    implementation project(':common:common-core')
+    implementation project(':common:common-web')
+    implementation project(':common:common-security-servlet')
+    implementation project(':common:common-messaging')
+
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-kafka'
+
+    // 벡터 검색 · 스냅샷은 JDBC로 직접 다룬다 (JPA 없음)
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    // 임베딩: OpenAI 임베딩 모델 자동 설정. 벡터 저장소는 품종 · 상품을 나눠 쓰려고 starter 대신 라이브러리만 넣고 빈은 직접 등록한다 (#292)
+    implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+    implementation 'org.springframework.ai:spring-ai-pgvector-store'
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    // 임베딩 API 스텁 (OpenAI 대신 로컬 HTTP 응답)
+    testImplementation 'org.wiremock:wiremock-standalone:3.13.1'
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
