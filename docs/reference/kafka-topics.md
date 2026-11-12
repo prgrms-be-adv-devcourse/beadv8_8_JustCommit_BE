@@ -86,7 +86,9 @@
 | `ProductRegistered` | `productId` (숫자) | 상품 등록 |
 | `ProductUpdated` | `productId` (숫자) | 제목 · 가격 · 사진 · 품종 등 수정 |
 | `ProductStatusChanged` | `productId` (숫자) | 예약 · 판매 완료 · 예약 해제 · 판매 재개 · 숨김 · 삭제 · 판매자 탈퇴 정리 |
-| `ProductApproved` · `ProductRejected` · `ProductReviewRequested`(`product.review.v1`) | ⬜ | 사진 검수 때(#345) |
+| `ProductApproved` · `ProductRejected` | ⬜ | 사진 검수 때(#345) |
+
+검수 요청 `ProductReviewRequested`는 이 토픽이 아니라 `product.review.v1`(Key `productId`)로 보냅니다. payload는 사진 검수 때(#345) 정합니다.
 
 받는 쪽은 상품 ID로 DB에서 최신 상품을 다시 읽습니다 (같은 이벤트가 두 번 와도 결과가 같음). 주문 번호 · 판매자 기준으로 여러 상품을 한 번에 바꿀 때는 잠근 상품마다 보내므로, 실제로 바뀌지 않은 상품이 섞일 수 있습니다.
 
