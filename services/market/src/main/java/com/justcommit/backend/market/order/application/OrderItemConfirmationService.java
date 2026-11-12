@@ -124,7 +124,7 @@ public class OrderItemConfirmationService {
                 i.getStatus().equals(OrderItemStatus.NORMAL) || i.getStatus().equals(OrderItemStatus.REFUND_REQUESTED))) {
             sellerOrder.confirmed();
             purchaseConfirmedEventPublisher.publishAfterCommit(new PurchaseConfirmedEvent(
-                    sellerOrder.getId(), sellerOrder.getSellerId(), sellerOrder.getSettlementBaseAmount(),
+                    sellerOrder.getId(), sellerOrder.getSellerId(), sellerOrder.getSettlementBaseAmount(), sellerOrder.getShippingFee(),
                     sellerOrder.getConfirmedAt(), itemSummary(sellerOrder)));
         }
     }

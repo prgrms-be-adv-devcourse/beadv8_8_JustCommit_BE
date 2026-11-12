@@ -8,6 +8,11 @@
 ## 기록
 
 - 2026-11-11 · services/settlement.md · reference/kafka-topics.md · settlement 구매 확정 수신을 `market.events.v1` 봉투로 전환, 소유 테이블 `SETTLEMENT`에 `shipping_fee`(옛 토픽은 null), 옛 토픽 `market.purchase-confirmed.v1`은 전환 중 함께 구독, `ShipmentPickedUp` 수신 삭제 (#364)
+- 2026-11-11 · reference/kafka-topics.md · services/market.md · services/settlement.md · market 도메인 이벤트를 `market.events.v1` + Outbox로 전환(이벤트마다 다른 토픽 → 하나), `PurchaseConfirmed`에 `shippingFee` 추가 · `ShipmentPickedUp` 삭제(정산 담당과 합의), `OrderItemAutoConfirmed`는 알림 전용(정산 구독 제외), 일부 취소 알림 `OrderItemCancelled` 다시 발행, 도메인 이벤트 payload 표 추가 (#277)
+- 2026-11-11 · reference/kafka-topics.md · 파티션 3을 브로커 기본값 `KAFKA_NUM_PARTITIONS: 3`으로 적용(로컬 · 운영 compose), 토픽 코드 선언 · 운영 자동 생성 끄기는 다음 단계 (#369)
+- 2026-11-11 · reference/env-vars.md · DB 접속 변수를 코드에 맞춤: `DB_HOST` · `DB_PORT` · `DB_NAME` → `DB_URL`(JDBC 주소 전체) (#291)
+- 2026-11-11 · infra/deploy.md · 서비스 공통 `Dockerfile`(`MODULE` 인자) · 이미지 이름 `ghcr.io/prgrms-be-adv-devcourse/replant-{서비스}` · 태그 커밋 해시 7자리 + `latest` 규칙 추가 (#291)
+- 2026-11-11 · reference/external-apis.md · services/notification.md · services/product.md · 케밥 경로를 camelCase로: `notifications/unread-count` → `notifications/unreadCount`, `products/images/upload-urls` → `products/images/uploadUrls` (product 코드는 담당 반영 전까지 옛 경로) (#353)
 - 2026-11-11 · flows/image-review.md · services/product.md · 판매 금지 목록 반영: `banned_species` 118줄 · 별칭 22 · `banned_keyword` 12 (Flyway V7 · V8), 금지어에 관리자 확인 단어(`REVIEW`, 자생지 · 산채) 추가, 글 대조 정규화(띄어쓰기 · 문장부호 제거) (#342)
 - 2026-11-11 · glossary.md · 「결과 불명」 코드 이름을 `last_error` → `InternalApiResultUnknownException`(common-web 내부 API 클라이언트 예외)으로 (#330)
 - 2026-11-11 · services/product.md · 등록 제한의 하루는 한국 시간 자정 기준, 검수 중 · 반려 상품은 판매자 본인 외에는 404 `PRODUCT_NOT_FOUND` (#341)

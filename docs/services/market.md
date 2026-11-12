@@ -70,7 +70,7 @@ market 서비스가 발행하는 Kafka 이벤트입니다. 모두 Outbox로 발�
 
 | 토픽 | 이벤트 | 발행 방식 |
 |---|---|---|
-| `market.events.v1` | `SellerOrderPaid` · `SellerOrderAccepted` · `SellerOrderRejected` · `SellerOrderCancelled` · `OrderItemCancelled` · `PurchaseConfirmed` · `OrderItemAutoConfirmed` · `ShipmentStatusChanged` · `ReturnRequested` · `ReturnApproved` · `ReturnRejected` · `OrderItemReturned` | ⬜ 아직 이벤트마다 다른 토픽으로 Kafka 직접 발행. `market.events.v1` + Outbox 전환은 #277 B (정산 · 알림 담당과 맞춘 뒤) |
+| `market.events.v1` | `SellerOrderPaid` · `SellerOrderAccepted` · `SellerOrderRejected` · `SellerOrderCancelled` · `OrderItemCancelled` · `PurchaseConfirmed` · `OrderItemAutoConfirmed` · `ShipmentStatusChanged` · `ReturnRequested` · `ReturnApproved` · `ReturnRejected` · `OrderItemReturned` | ✅ Outbox (#277 B). `ShipmentPickedUp`은 삭제 (배송비는 `PurchaseConfirmed.shippingFee`로). `SellerOrderAccepted` · `SellerOrderRejected` · 반품 이벤트는 각 기능 때 |
 | `market.order-paid.v1` · `market.order-expired.v1` · `market.order-failed.v1` · `market.order-item-cancelled.v1` | product에 판매 완료 · 결제 전 예약 해제 · 판매 재개 (키 `orderId`). 판매 재개는 환불 성공 뒤, 전체 취소도 주문상품마다, `reason`은 지금 `BUYER`만 | ✅ Outbox (#277 A) |
 | `market.order-item-returned.v1` | 반품 환불 뒤 판매 재개 | ⬜ 반품 기능 때 |
 

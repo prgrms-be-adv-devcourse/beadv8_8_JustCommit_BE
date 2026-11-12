@@ -20,7 +20,7 @@
 | `species.events.v1` | `speciesId` | product |
 | `settlement.events.v1` | `sellerId` | settlement |
 
-도메인 토픽 7개 + market → product 토픽 5개 = 12개. 주문 · 배송 이벤트는 `market.events.v1` 하나입니다 → [ADR 0018](../decisions/0018-market-events-single-topic.md). market → product 토픽은 이벤트마다 하나(`market.<이름>.v1`)입니다 → [ADR 0016](../decisions/0016-product-sale-events-from-market.md). 계좌는 이벤트로 복제하지 않고 payment가 member 내부 API로 조회합니다 → [ADR 0015](../decisions/0015-member-topics-two-account-api.md). 파티션 3 · concurrency 3 · 보관 7일 (🟨 제안), 복제 1. 규칙 → [이벤트 규칙](../conventions/events.md)
+도메인 토픽 7개 + market → product 토픽 5개 = 12개. 주문 · 배송 이벤트는 `market.events.v1` 하나입니다 → [ADR 0018](../decisions/0018-market-events-single-topic.md). market → product 토픽은 이벤트마다 하나(`market.<이름>.v1`)입니다 → [ADR 0016](../decisions/0016-product-sale-events-from-market.md). 계좌는 이벤트로 복제하지 않고 payment가 member 내부 API로 조회합니다 → [ADR 0015](../decisions/0015-member-topics-two-account-api.md). 파티션 3은 브로커 기본값 `KAFKA_NUM_PARTITIONS: 3`(`docker-compose.yml` · `docker-compose.prod.yml`)으로 적용 (✅ 확정, 자동 생성되는 새 토픽 · DLT에만 적용되고 이미 있는 토픽은 그대로). concurrency 3 · 보관 7일 (🟨 제안), 복제 1. 다음 단계(⬜ 미정): 토픽을 코드로 선언(common-messaging `NewTopic`), 운영 자동 생성 끄기. 규칙 → [이벤트 규칙](../conventions/events.md)
 
 전환 중: market이 구매 확정을 `market.events.v1`로 옮기는 동안 settlement는 옛 토픽 `market.purchase-confirmed.v1`(봉투 없는 JSON, `shippingFee` 없음)도 함께 받습니다. 옛 토픽에 남은 메시지가 없으면 settlement의 옛 토픽 리스너를 지웁니다 (#364)
 
@@ -34,7 +34,8 @@
 | `market.events.v1` | `SellerOrderAccepted` (판매자 수락, `rejectedItemCount` 포함) | notification | 구매자에게 수락 알림. `rejectedItemCount`가 1 이상이면 일부 거절 알림 1건으로 |
 | `market.events.v1` | `SellerOrderRejected` (상품 전부 거절, `reason`: `SELLER` · `AUTO`) | notification | `SELLER`: 구매자에게 판매자 거절 알림. `AUTO`: 구매자에게 자동 취소 · 판매자에게 24시간 자동 거절 알림 |
 | `market.events.v1` | `SellerOrderCancelled` · `OrderItemCancelled` (구매자 취소) | notification | 판매자에게만 취소 알림 (본인 취소는 구매자에게 안 보냄) |
-| `market.events.v1` | `PurchaseConfirmed` · `OrderItemAutoConfirmed` | settlement · notification | 판매자 주문이 끝나면 정산 생성, 구매 확정 알림 |
+| `market.events.v1` | `PurchaseConfirmed` (판매자 주문이 끝나면, 수동 · 자동 확정 모두) | settlement · notification | 정산 생성(배송비 포함), 구매 확정 알림 |
+| `market.events.v1` | `OrderItemAutoConfirmed` (주문상품 단위) | notification | 자동 구매 확정 알림 (정산은 받지 않음) |
 | `market.events.v1` | `ReturnRequested` · `ReturnApproved`(자동 승인 포함) · `ReturnRejected` · `OrderItemReturned`(반품 환불 뒤) | notification | 반품 신청 · 자동 승인 · 거절 · 환불 완료 알림 |
 | `market.events.v1` | `ShipmentStatusChanged` | notification | 배송 상태 · 반품 수거 알림 |
 | `market.order-paid.v1` | 판매 완료 (`orderId`) | product | 이 주문이 잡은 `PAYMENT_PENDING` 상품만 `SOLD_OUT`. 0건이면 정상(로그만, DLT 아님) |
@@ -53,6 +54,20 @@
 ## payload
 
 봉투(`EventEnvelope`)의 `payload`에 들어가는 칸입니다. 받는 쪽은 이 칸으로 자기 record를 만듭니다 (공유 jar 없음). 칸을 바꾸면 `version`을 올립니다.
+
+### market 도메인 이벤트 (`market.events.v1`, Key `sellerOrderId`, #277)
+
+| eventType | payload | 비고 |
+|---|---|---|
+| `SellerOrderPaid` | `sellerOrderId` · `sellerId` · `buyerId` (숫자), `paidAt` (시각) | |
+| `SellerOrderCancelled` | `orderId` · `sellerOrderId` · `sellerId` · `buyerId` (숫자), `cancelledAt` (시각) | 판매자 주문 전부 취소 |
+| `OrderItemCancelled` | `orderItemId` · `orderId` · `sellerOrderId` · `sellerId` (숫자), `productName` (문자열), `cancelledAt` (시각) | 일부 취소. product용 판매 재개(`market.order-item-cancelled.v1`)와 이름은 같고 토픽이 다름 |
+| `OrderItemAutoConfirmed` | `orderItemId` · `orderId` · `sellerOrderId` · `buyerId` (숫자), `confirmedAt` (시각) | |
+| `PurchaseConfirmed` | `sellerOrderId` · `sellerId` (숫자), `saleAmount` · `shippingFee` (금액), `confirmedAt` (시각), `itemSummary` (문자열) | 정산은 `saleAmount`에만 수수료, `shippingFee`는 `REVENUE`로 |
+| `ShipmentStatusChanged` | `shipmentId` · `orderId` · `sellerOrderId` · `buyerId` · `sellerId` (숫자), `status` (`BOOKED` · `PICKED_UP` · `IN_TRANSIT` · `DELIVERED`), `occurredAt` (시각), `itemSummary` (문자열) | `occurredAt`은 배송 단계가 일어난 시각 |
+| `SellerOrderAccepted` · `SellerOrderRejected` · `Return*` · `OrderItemReturned` | ⬜ | 판매자 수락 · 거절(#283), 반품 때 |
+
+시각 칸은 market 서버 시간(서울)의 `LocalDateTime`입니다.
 
 ### market → product (Key `orderId`, #277)
 

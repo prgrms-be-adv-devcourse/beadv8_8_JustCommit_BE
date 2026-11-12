@@ -1,7 +1,7 @@
 # notification 서비스
 
 > 언제 읽나: notification 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: Miro 5 · 10, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-11 · 관련: Miro 5 · 10, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -19,7 +19,7 @@
 
 ## 외부 API
 
-`notifications` (`?read=`) · `notifications/{id}` · `notifications/unread-count` · `notifications/subscribe` (SSE) → [외부 API 목록](../reference/external-apis.md)
+`notifications` (`?read=`) · `notifications/{id}` · `notifications/unreadCount` · `notifications/subscribe` (SSE) → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 

@@ -50,7 +50,7 @@
 
 | 이벤트 | 받아서 하는 일 | 멱등 처리 |
 |---|---|---|
-| `market.events.v1` `PurchaseConfirmed` · `OrderItemAutoConfirmed` | 판매자 주문이 끝나면 정산 생성 | 정산 UK |
+| `market.events.v1` `PurchaseConfirmed` | 판매자 주문이 끝나면(수동 · 자동 확정 모두) 정산 생성. `shippingFee`로 배송비도 정산 때 옮김 | 정산 UK (`uk_settlement_seller_order_id`) |
 | `member.events.v1` | `MEMBER_REPLICA` 저장 · 갱신 | memberId upsert |
 | `market.purchase-confirmed.v1` (전환 중) | 옛 형식 구매 확정으로 정산 생성 (`shipping_fee` null). market 전환이 끝나면 삭제 | 정산 UK |
 
