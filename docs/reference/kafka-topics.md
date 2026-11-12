@@ -1,7 +1,7 @@
 # Kafka 토픽 · 이벤트 표
 
 > 언제 읽나: 어떤 이벤트를 누가 발행 · 구독하는지 정확히 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-11 · 관련: Miro 9 · 10, 노션 기획안 「Kafka 이벤트」, 노션 「정책 정리」 3.10 · 8.7
+> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: Miro 9 · 10, 노션 기획안 「Kafka 이벤트」, 노션 「정책 정리」 3.10 · 8.7
 
 ## 토픽 목록
 
@@ -78,6 +78,17 @@
 | `market.order-failed.v1` | `OrderFailed` | `orderId` (숫자) | 결제 결과를 모르는 동안은 발행 안 함 |
 | `market.order-item-cancelled.v1` | `OrderItemCancelled` | `orderId` · `orderItemId` · `productId` (숫자), `reason` (`BUYER` · `SELLER` · `AUTO`) | 환불 성공 뒤, 전체 취소도 주문상품마다. 네 칸 모두 필수 |
 | `market.order-item-returned.v1` | ⬜ | ⬜ | 반품 기능 때 |
+
+### product 상품 이벤트 (`product.events.v1`, Key `productId`, #338)
+
+| eventType | payload | 비고 |
+|---|---|---|
+| `ProductRegistered` | `productId` (숫자) | 상품 등록 |
+| `ProductUpdated` | `productId` (숫자) | 제목 · 가격 · 사진 · 품종 등 수정 |
+| `ProductStatusChanged` | `productId` (숫자) | 예약 · 판매 완료 · 예약 해제 · 판매 재개 · 숨김 · 삭제 · 판매자 탈퇴 정리 |
+| `ProductApproved` · `ProductRejected` · `ProductReviewRequested`(`product.review.v1`) | ⬜ | 사진 검수 때(#345) |
+
+받는 쪽은 상품 ID로 DB에서 최신 상품을 다시 읽습니다 (같은 이벤트가 두 번 와도 결과가 같음). 주문 번호 · 판매자 기준으로 여러 상품을 한 번에 바꿀 때는 잠근 상품마다 보내므로, 실제로 바뀌지 않은 상품이 섞일 수 있습니다.
 
 회원 이벤트(`member.events.v1`) payload → [member](../services/member.md)
 

@@ -1,7 +1,7 @@
 # product 서비스
 
 > 언제 읽나: product 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-11 · 관련: Miro 5 · 13-1 · 17, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: Miro 5 · 13-1 · 17, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -28,7 +28,7 @@
 | `PRODUCT_RESERVATION` | orderId별 예약 기록 (orderId 기본키, 해제되면 `RELEASED`) |
 | `IMAGE_REVIEW` | 검수 버전별 단계 결과 · 판정 · 관리자 판단 · 이의 신청 메모 |
 | `MEMBER_REPLICA` | 회원 복제본 |
-| `OUTBOX` | 발행 대기 이벤트 |
+| `OUTBOX_EVENT` | 발행 대기 이벤트 (`common-messaging-outbox`, Flyway V9) |
 
 ## 외부 API
 
