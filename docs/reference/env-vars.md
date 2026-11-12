@@ -1,7 +1,7 @@
 # 환경변수
 
 > 언제 읽나: 환경변수 · 비밀값을 추가하거나 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-11 · 관련: Miro A3
+> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: Miro A3
 
 ## 변수 표
 
@@ -16,7 +16,7 @@
 | `JWT_PUBLIC_KEY` | Gateway · 모든 서비스 | 이중 검증용 공개키 |
 | `OAUTH2_STATE_SECRET` | member | 카카오 state 서명 |
 | `INTERNAL_API_KEY` | 모든 서비스 | `/internal/**` 확인 |
-| 🟨 `MEMBER_ADDRESS_EVENT_KEY` | member · market | 주소 이벤트 전송 키 (판매자 주소 암호화) |
+| `MEMBER_ADDRESS_EVENT_KEY` | member · market (같은 값) | 주소 이벤트 전송 키 (판매자 주소 암호화, `EventFieldCipher` 키 버전 `k1`). `openssl rand -base64 32`로 생성, 서버 설정은 인프라 담당. ⬜ 서비스 적용 · `.env.example` 추가는 #233 · #275 |
 | `REDIS_HOST` · `REDIS_PORT` · `REDIS_PASSWORD` | member · Gateway | – |
 | `MEMBER_SERVICE_URL` · `PRODUCT_SERVICE_URL` · `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` · `NOTIFICATION_SERVICE_URL` | Gateway | 라우팅할 서비스 주소. 없으면 로컬 포트(8081 ~ 8086) |
 | `CORS_ALLOWED_ORIGINS` | Gateway | CORS 허용 출처 (쉼표로 여러 개, `*` 금지). 없으면 `http://localhost:5173` |
@@ -36,4 +36,5 @@
 - 비밀값 원본은 서버 `~/secrets/`에 두고, 레포에는 `.env.example`(이름 · 설명)만 둡니다.
 - 새 필수 환경변수는 `.env.example`에도 추가합니다 (배포 때 누락 검사).
 - DB 계정 · 암호화 키(계좌 암호화 · HMAC · 결제 키)는 한 번 정하면 바꾸지 않습니다.
+- 주소 이벤트 전송 키(`MEMBER_ADDRESS_EVENT_KEY`)는 키 버전을 지원해 유출 시 바꿀 수 있습니다. 바꿀 때는 [키 교체 절차](../conventions/events.md#민감-필드-암호화)를 따릅니다.
 - 앱은 AWS 키 없이 EC2 IAM 역할을 씁니다. 키 · `.pem`은 레포 · 채팅 · 문서에 남기지 않습니다 (유출 2OUT).
