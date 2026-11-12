@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-12 · reference/kafka-topics.md · services/product.md · product 상품 이벤트 Outbox 발행 반영: `product.events.v1` `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged` payload `productId`(받는 쪽이 DB에서 최신 상품을 읽음), 예약 · 판매 완료 · 해제 · 재개 · 숨김 · 삭제 · 판매자 탈퇴 정리는 `ProductStatusChanged`, 소유 테이블 `OUTBOX_EVENT`(Flyway V9), 검수 이벤트는 #345 · 품종 이벤트는 ai #292 때 (#338)
 - 2026-11-12 · conventions/events.md · conventions/common-modules.md · reference/env-vars.md · 이벤트 민감 필드 암호화 도구 `EventFieldCipher` 반영: 형식 `v1.{키 버전}:Base64(IV + 암호문 + 태그)`, 접두사 AAD 인증, 현재 키로 암호화 · 키 목록으로 복호화, `@Bean` 시작 시 검증, 키 교체 절차 · 이전 키 삭제 조건, `MEMBER_ADDRESS_EVENT_KEY` 확정 (#375)
 - 2026-11-11 · services/settlement.md · reference/kafka-topics.md · settlement 구매 확정 수신을 `market.events.v1` 봉투로 전환, 소유 테이블 `SETTLEMENT`에 `shipping_fee`(옛 토픽은 null), 옛 토픽 `market.purchase-confirmed.v1`은 전환 중 함께 구독, `ShipmentPickedUp` 수신 삭제 (#364)
 - 2026-11-11 · reference/kafka-topics.md · services/market.md · services/settlement.md · market 도메인 이벤트를 `market.events.v1` + Outbox로 전환(이벤트마다 다른 토픽 → 하나), `PurchaseConfirmed`에 `shippingFee` 추가 · `ShipmentPickedUp` 삭제(정산 담당과 합의), `OrderItemAutoConfirmed`는 알림 전용(정산 구독 제외), 일부 취소 알림 `OrderItemCancelled` 다시 발행, 도메인 이벤트 payload 표 추가 (#277)

@@ -1,6 +1,7 @@
 package com.justcommit.backend.product.client.member;
 
 import com.justcommit.backend.common.config.JpaAuditingConfig;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.config.ClockConfig;
 import com.justcommit.backend.product.member.application.MemberReplicaService;
@@ -21,6 +22,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -60,6 +62,9 @@ class MemberReplicaIntegrationTest {
     @Autowired MemberQuery memberQuery;
     @Autowired ProductRepository productRepository;
     @Autowired SpeciesRepository speciesRepository;
+
+    // @DataJpaTest라 Kafka가 없음: 발행은 가짜로 (Outbox 저장 · 롤백은 ProductOutboxIntegrationTest)
+    @MockitoBean OutboxPublisher outboxPublisher;
 
     private Species species;
 

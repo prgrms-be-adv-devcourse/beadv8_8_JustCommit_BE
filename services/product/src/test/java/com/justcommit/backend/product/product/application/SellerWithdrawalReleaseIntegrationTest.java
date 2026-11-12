@@ -1,6 +1,7 @@
 package com.justcommit.backend.product.product.application;
 
 import com.justcommit.backend.common.config.JpaAuditingConfig;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.ProductUseCase;
 import com.justcommit.backend.product.client.member.MemberQuery;
@@ -89,6 +90,8 @@ class SellerWithdrawalReleaseIntegrationTest {
 
     // 예약 · 해제 흐름에서 쓰지 않는 ProductService 의존성은 목으로 대체
     @MockitoBean MemberQuery memberQuery;
+    // @DataJpaTest라 Kafka가 없음: 발행은 가짜로 (Outbox 저장 · 롤백은 ProductOutboxIntegrationTest)
+    @MockitoBean OutboxPublisher outboxPublisher;
     @MockitoBean ProductImageUrlValidator imageUrlValidator;
     @MockitoBean ProductImageCleaner imageCleaner;
 
