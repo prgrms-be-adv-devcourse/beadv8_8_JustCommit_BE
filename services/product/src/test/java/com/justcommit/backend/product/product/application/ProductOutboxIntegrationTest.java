@@ -38,6 +38,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import com.justcommit.backend.product.review.application.ImageReviewService;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -94,6 +95,8 @@ class ProductOutboxIntegrationTest {
     // 예약 흐름에서 쓰지 않는 ProductService 의존성
     @MockitoBean MemberQuery memberQuery;
     @MockitoBean ProductImageUrlValidator imageUrlValidator;
+    // 사진 검수는 ImageReviewServiceIntegrationTest에서
+    @MockitoBean ImageReviewService imageReviewService;
     @MockitoBean ProductImageCleaner imageCleaner;
 
     private Species species;

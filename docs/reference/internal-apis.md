@@ -1,7 +1,7 @@
 # 내부 API 목록
 
 > 언제 읽나: 서비스 간 내부 API의 경로 · 멱등 키를 찾을 때
-> 상태: 🟨 제안 · 마지막 수정 2026-11-09 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
+> 상태: 🟨 제안 · 마지막 수정 2026-11-12 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
 
 ## 목록
 
@@ -13,7 +13,7 @@
 | market | ⬜ 탈퇴 확인 | member | `hasActiveOrders` · `activeBuyerOrderCount` · `activeSellerOrderCount` (수락 대기 주문 포함) | – | ✅ 기능 · ⬜ 경로 |
 | payment | ⬜ 탈퇴 확인 | member | `hasWithdrawalBlocker` + 차단 사유 코드 (잔액 · 진행 중 충전 · 충전 취소 · 인출 · 미수금) | – | ✅ 기능 · ⬜ 경로 |
 | settlement | ⬜ 탈퇴 확인 | member | `hasWithdrawalBlocker` + 차단 사유 코드 (미지급 정산) | – | ✅ 기능 · ⬜ 경로 |
-| product | `GET /internal/v1/products?ids=` | market · ai | 상품 정보 · 가격 · 판매 상태 일괄 | – | ✅ |
+| product | `GET /internal/v1/products?ids=` | market · ai | 상품 정보 · 가격 · 판매 상태 일괄. 검수 중 · 반려 상품은 제목 「검수 중인 상품」 · 썸네일 없음 | – | ✅ |
 | product | `POST /internal/v1/products/reservations` | market | 상품 예약 (아래 표) | orderId | ✅ |
 | payment | `POST /internal/v1/payments` | market | 잔액 차감 (`HOLDING`으로). 같은 orderId로 다시 오면 차감하지 않고 `ALREADY_PAID` | orderId | ✅ |
 | payment | `POST /internal/v1/refunds/order-items/{orderItemId}` | market | 상품 금액 환불 (취소 · 거절 · 반품). 같은 키면 `ALREADY_REFUNDED`로 처음 결과, 확정 실패는 4xx | orderItemId | ✅ |

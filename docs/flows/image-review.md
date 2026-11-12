@@ -1,7 +1,7 @@
 # 사진 검수
 
 > 언제 읽나: 상품 사진 검수 코드를 고칠 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-11 · 관련: Miro 13-1, 노션 「정책 정리」 3.3 · 3.4 · 3.16
+> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: Miro 13-1, 노션 「정책 정리」 3.3 · 3.4 · 3.16
 
 ## 흐름
 
@@ -15,12 +15,12 @@ sequenceDiagram
     participant OM as OpenAI Moderation
     participant HK as Claude Haiku
     SL->>PR: 상품 등록 · 사진 수정
-    PR->>PR: REVIEW_PENDING · review_version · Outbox
+    PR->>PR: REVIEW_PENDING · review_version · IMAGE_REVIEW(REQUESTED) · Outbox
     PR->>K: ProductReviewRequested (product.review.v1)
-    K->>PR: 검수 리스너 (REVIEW_PENDING이고 버전이 같을 때만)
+    K->>PR: 검수 리스너 (IMAGE_REVIEW가 REQUESTED이고 버전이 같을 때만)
     PR->>OM: 사진마다 · 제목 · 설명 유해 검사
-    PR->>HK: 사진 → 식물 여부 · 판매 형태 · 품종 후보 3개 (학명 · 확신도)
-    PR->>PR: 금지 품종 · 금지어 · 품종 대조 → 판정 · IMAGE_REVIEW 저장
+    PR->>HK: 사진 → 식물 여부 · 판매 형태 · 품종 후보 3개 (학명 · 확신도), 유해면 부르지 않음
+    PR->>PR: 금지 품종 · 금지어 · 품종 대조 → 판정 · 조건부 반영 · IMAGE_REVIEW(DONE)
 ```
 
 | 단계 | 내용 |
@@ -29,13 +29,13 @@ sequenceDiagram
 | 식물 식별 | Claude Haiku(`claude-haiku-5-5`), 프롬프트에 금지 품종 목록 포함 |
 | 금지 품종 대조 | 후보 학명을 `banned_species` 학명 · 학명 별칭과 비교 (속 · 종 · 변종 단위) |
 | 금지어 대조 | 제목 · 설명을 정규화(띄어쓰기 · 문장부호 제거)해 `banned_species` 한글 이름 · 별칭과 `banned_keyword`를 찾음. 예외 단어(`EXCEPTION`)는 넘어가고, 관리자 확인 단어(`REVIEW`, 예: 자생지)는 반려 대신 관리자 확인 |
-| 품종 대조 | 1순위 후보 학명 → `species.scientific_name` → `species_alias` 순, 판매자가 고른 품종과 **속까지** 같으면 일치 |
+| 품종 대조 | 1순위 후보의 학명 속, 또는 후보 한글 이름으로 `species.name` · `species_alias`에서 찾은 품종의 `scientific_name` 속이 판매자가 고른 품종과 **속까지** 같으면 일치 |
 
-글만 수정하면 사진 검수는 다시 하지 않고 글 Moderation과 금지어 대조만 합니다 (판매 중 상품도 걸리면 `REJECTED`).
+판매 중(`ACTIVE`) 상품의 글만 수정하면 사진 검수는 다시 하지 않고 글 Moderation과 금지어 대조만 합니다. 걸리면 `REJECTED`, 관리자 확인이면 판매를 멈추고 `REVIEW_PENDING`입니다. 검수 중 · 반려 상품은 글만 고쳐도 처음부터 검수합니다 (반려 사유가 사진일 수 있음).
 
 ## 결과별 처리
 
-위에서부터 처음 해당하는 줄에서 정해집니다. 기준값 0.3 · 0.7은 3차 실험 결과이고 Sprint 1에 실제 판매 사진으로 다시 확인합니다.
+위에서부터 처음 해당하는 줄에서 정해집니다. 기준값 0.3 · 0.7은 3차 실험 결과이고 Sprint 2에 실제 판매 사진으로 다시 확인합니다.
 
 | 상황 | 결과 |
 |---|---|
@@ -52,7 +52,7 @@ sequenceDiagram
 | 품종 불일치 | 관리자 확인 |
 | 외부 API 오류 (재시도 후에도) · 응답 해석 불가 | 관리자 확인 |
 
-- 결과는 "`REVIEW_PENDING`이고 검수 버전이 같을 때만" 조건을 건 UPDATE로 반영합니다. 외부 API 장애로 자동 통과도 자동 반려도 하지 않습니다.
+- 결과는 "검수 버전이 같고 사진 검수는 `REVIEW_PENDING`, 글 검사는 `ACTIVE`일 때만" 조건을 건 UPDATE로 반영합니다. 0건이면(그사이 수정 · 삭제 · 예약) 반영하지 않고 `IMAGE_REVIEW`를 `STALE`로 둡니다. 외부 API 장애로 자동 통과도 자동 반려도 하지 않습니다 (재시도: Moderation 3번, Haiku SDK 재시도 2번).
 - 반려되면 `ProductRejected` → 판매자에게 사유와 함께 알립니다. 재검수(수정 후 다시 제출)는 1회까지입니다.
 - 자동 반려가 틀렸다면 판매자는 수정하지 않고 **이의 신청**을 합니다 (메모 필수 200자, 같은 검수 버전으로 1번, 관리자가 반려하면 최종, 재검수 횟수를 쓰지 않음. 관리자가 반려한 상품은 409 `APPEAL_NOT_ALLOWED`, 두 번째는 409 `APPEAL_ALREADY_USED`. 이의 신청 중에 수정하면 이의 신청은 끝나고 엔진 검수로 가며 재검수 1회를 씀).
 

@@ -28,6 +28,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import com.justcommit.backend.product.review.application.ImageReviewService;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -93,6 +94,8 @@ class SellerWithdrawalReleaseIntegrationTest {
     // @DataJpaTest라 Kafka가 없음: 발행은 가짜로 (Outbox 저장 · 롤백은 ProductOutboxIntegrationTest)
     @MockitoBean OutboxPublisher outboxPublisher;
     @MockitoBean ProductImageUrlValidator imageUrlValidator;
+    // 사진 검수는 ImageReviewServiceIntegrationTest에서
+    @MockitoBean ImageReviewService imageReviewService;
     @MockitoBean ProductImageCleaner imageCleaner;
 
     private Species species;
