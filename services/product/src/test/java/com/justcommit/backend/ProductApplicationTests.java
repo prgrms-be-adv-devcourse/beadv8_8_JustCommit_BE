@@ -1,5 +1,11 @@
 package com.justcommit.backend;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
+
+import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationInfo;
 import org.flywaydb.core.api.MigrationState;
@@ -11,16 +17,9 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
-
-import java.security.KeyPairGenerator;
-import java.security.NoSuchAlgorithmException;
-import java.util.Base64;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.tuple;
 
 @SpringBootTest
 @Testcontainers
@@ -39,7 +38,7 @@ class ProductApplicationTests {
     }
 
     @Test
-    @DisplayName("빈 DB에서 Flyway V1 ~ V9이 적용되고 ddl-auto validate로 product 서비스가 뜬다")
+    @DisplayName("빈 DB에서 Flyway V1 ~ V9가 적용되고 ddl-auto validate로 product 서비스가 뜬다")
     void contextLoads(@Autowired Flyway flyway, @Autowired JdbcTemplate jdbc) {
         assertThat(flyway.info().applied())
                 .extracting(info -> info.getVersion().getVersion(), MigrationInfo::getState)
@@ -48,6 +47,7 @@ class ProductApplicationTests {
                         tuple("5", MigrationState.SUCCESS));
         // V5가 회원 복제본 테이블을 만듦 (없으면 이 조회가 실패)
         assertThat(jdbc.queryForObject("select count(*) from member_replica", Integer.class)).isZero();
+        // V9가 Outbox 테이블을 만듦
         assertThat(jdbc.queryForObject("select count(*) from outbox_event", Integer.class)).isZero();
     }
 

@@ -42,7 +42,12 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -85,8 +90,8 @@ class SellerWithdrawalReleaseIntegrationTest {
 
     // 예약 · 해제 흐름에서 쓰지 않는 ProductService 의존성은 목으로 대체
     @MockitoBean MemberQuery memberQuery;
-    // @DataJpaTest라 Kafka가 없음: 발행은 가짜로 (Outbox 저장 · 롤백은 따로 테스트)
-    @MockitoBean  OutboxPublisher outboxPublisher;
+    // @DataJpaTest라 Kafka가 없음: 발행은 가짜로 (Outbox 저장 · 롤백은 ProductOutboxIntegrationTest)
+    @MockitoBean OutboxPublisher outboxPublisher;
     @MockitoBean ProductImageUrlValidator imageUrlValidator;
     @MockitoBean ProductImageCleaner imageCleaner;
 

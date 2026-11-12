@@ -63,10 +63,8 @@ class MemberReplicaIntegrationTest {
     @Autowired ProductRepository productRepository;
     @Autowired SpeciesRepository speciesRepository;
 
-
-    // @DataJpaTest라 Kafka가 없음: 발행은 가짜로 (Outbox 저장 · 롤백은 따로 테스트)
-    @MockitoBean
-    OutboxPublisher outboxPublisher;
+    // @DataJpaTest라 Kafka가 없음: 발행은 가짜로 (Outbox 저장 · 롤백은 ProductOutboxIntegrationTest)
+    @MockitoBean OutboxPublisher outboxPublisher;
 
     private Species species;
 

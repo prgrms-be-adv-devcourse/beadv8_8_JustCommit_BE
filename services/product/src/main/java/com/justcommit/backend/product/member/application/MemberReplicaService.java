@@ -5,12 +5,11 @@ import com.justcommit.backend.product.member.domain.MemberRole;
 import com.justcommit.backend.product.member.infrastructure.MemberReplicaRepository;
 import com.justcommit.backend.product.product.event.ProductStatusChanged;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
+import java.time.OffsetDateTime;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.OffsetDateTime;
-import java.util.List;
 
 // member.events.v1을 회원 복제본과 상품에 반영 (docs/services/product.md 「구독 이벤트」)
 // 모든 처리가 멱등이라 같은 이벤트가 다시 와도 결과가 같다
@@ -21,6 +20,7 @@ public class MemberReplicaService {
     private final MemberReplicaRepository memberReplicaRepository;
     private final ProductRepository productRepository;
     private final OutboxPublisher outboxPublisher;
+
     /**
      * 가입 · 정보 변경을 복제본에 반영한다.
      *

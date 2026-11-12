@@ -55,6 +55,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
     private final ProductImageCleaner imageCleaner;
     private final Clock clock;
     private final OutboxPublisher outboxPublisher;
+
     // ── ProductQuery ───────────────────────────────
 
     @Override
@@ -136,8 +137,10 @@ public class ProductService implements ProductQuery, ProductUseCase {
     @Override
     @Transactional
     public boolean release(Long orderId) {
-        reservationRepository.upsertReleased(orderId);
-        List<Long> productIds = productRepository.lockByReservedOrder(orderId); // 판매자 탈퇴 처리와 순서를 맞춤
+        // 행이 없으면 RELEASED 로 만들고, 있으면 RELEASED 로 바꿈(잠금)
+        reservationRepository.upsertReleased(orderId);   // 예약 기록 행을 잠그고 RELEASED로 (늦은 예약 거절)
+        List<Long> productIds = productRepository.lockByReservedOrder(orderId);   // 판매자 탈퇴 처리와 순서를 맞춤
+        // 해당 주문이 잡은 PAYMENT_PENDING 상품만 ACTIVE 로 (판매자가 탈퇴했으면 DELETED)
         boolean released = productRepository.release(orderId) > 0;
         if (released) {
             publishStatusChanged(productIds);
@@ -254,10 +257,10 @@ public class ProductService implements ProductQuery, ProductUseCase {
         imageCleaner.deleteAfterCommit(oldImageUrls.stream()
                 .filter(url -> !imageUrls.contains(url))
                 .toList());
+
         outboxPublisher.publish(new ProductUpdated(product.getId()));
         return ProductDetailResponse.from(product, memberQuery.getNickname(product.getSellerId()));
     }
-
 
     @Transactional
     public void deleteProduct(Long memberId, Long productId) {
