@@ -15,3 +15,8 @@ account:
 custom:
   oauth2:
     state-secret: test-only-oauth2-state-secret-0123456789
+
+messaging:
+  address-event-cipher:
+    keys:
+      k1: j67s7+Xp5+E8lvE1U0Z3PPDekVxUOlBFhBp6pSuoMWg=
