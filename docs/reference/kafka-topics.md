@@ -29,7 +29,7 @@
 | 토픽 | 이벤트 | 구독 | 받아서 하는 일 |
 |---|---|---|---|
 | `member.events.v1` | `MemberCreated` · `MemberUpdated` · `MemberWithdrawn` | product · market · payment · settlement | `MEMBER_REPLICA`(닉네임 · 권한 · 판매자 여부) 저장 · 갱신 · 탈퇴 상태, `MemberCreated`면 장바구니(market) · 지갑(payment), `MemberWithdrawn`이면 상품 정리(product) |
-| `member.address.events.v1` | `MemberAddressChanged` | market | **판매자 기본 배송지**(택배 보내는 사람 주소). 이름 · 연락처 · 주소는 전송 키로 암호화 |
+| `member.address.events.v1` | `MemberAddressChanged` | market | **판매자 배송지 목록**(판매자가 주문 수락 때 택배 보내는 주소로 고름). 이름 · 연락처 · 주소는 전송 키로 암호화 |
 | `market.events.v1` | `SellerOrderPaid` (판매자에게 수락 요청) | notification | "주문이 들어왔어요. 수락해 주세요" |
 | `market.events.v1` | `SellerOrderAccepted` (판매자 수락, `rejectedItemCount` 포함) | notification | 구매자에게 수락 알림. `rejectedItemCount`가 1 이상이면 일부 거절 알림 1건으로 |
 | `market.events.v1` | `SellerOrderRejected` (상품 전부 거절, `reason`: `SELLER` · `AUTO`) | notification | `SELLER`: 구매자에게 판매자 거절 알림. `AUTO`: 구매자에게 자동 취소 · 판매자에게 24시간 자동 거절 알림 |
@@ -95,3 +95,49 @@
 회원 이벤트(`member.events.v1`) payload → [member](../services/member.md)
 
 ⬜ 나머지 이벤트 payload는 각 발행 서비스 담당이 채웁니다 (#227).
+
+
+### member 판매자 배송지 (`member.address.events.v1`, Key `memberId`, #233)
+
+판매자 등록 · 배송지 추가 · 기본 배송지 변경 때, 판매자의 **바뀐 뒤 배송지 목록 전체**를 보냅니다 (판매자가 아니면 보내지 않음).
+
+| 봉투 payload | 타입 | 내용 |
+|---|---|---|
+| `memberId` | 숫자 | 판매자 회원 id (Key와 같음) |
+| `encryptedAddresses` | 문자열 | 아래 주소 JSON을 [민감 필드 암호화](../conventions/events.md#민감-필드-암호화)로 암호화한 값 (`v1.k1:...`) |
+
+암호화 전 주소 JSON (`{ memberId, addresses: [...] }`):
+
+| 칸 | 타입 | 필수 | 규칙 |
+|---|---|---|---|
+| `memberId` | 숫자 | ✅ | 봉투 payload의 `memberId`와 같아야 함 |
+| `addresses` | 목록 | ✅ | 바뀐 뒤 전체 (1 ~ 4개), 기본 배송지 먼저 · 최신 순 |
+| `addresses[].addressId` | 숫자 | ✅ | member의 배송지 id. 판매자가 수락 때 고른 주소를 가리킴 |
+| `addresses[].isDefault` | 참/거짓 | ✅ | 목록에서 정확히 1개만 `true` |
+| `addresses[].recipientName` | 문자열 | ✅ | |
+| `addresses[].recipientPhone` | 문자열 | ✅ | 정상 등록 경로에서는 휴대폰 11자리(하이픈 없음)로 검증하며, 이벤트 발행 시에는 재검증하지 않는다 |
+| `addresses[].zipcode` | 문자열 | ✅ | 5자리, 앞자리 0을 지키려고 문자열 |
+| `addresses[].address1` | 문자열 | ✅ | 도로명 주소 |
+| `addresses[].address2` | 문자열 | ❌ | 없으면 칸을 두고 `null` |
+
+배송지 이름(`addressName`)은 넣지 않습니다 (택배 예약에 필요 없고, 복제하는 개인정보를 줄임).
+
+받는 쪽 규칙:
+- 복호화한 `memberId`가 봉투 payload의 `memberId`와 다르면 저장하지 않고 거절한다 (다른 회원 암호문 교체 방지, **필수**)
+- 받은 목록으로 그 판매자의 주소를 통째로 바꾼다 (목록에 없는 주소는 지움)
+- 기존 이벤트 재전송은 원래 `occurredAt`을 유지하며, 저장된 시각보다 새로운 이벤트만 반영한다
+- 평문 주소 · JSON은 로그에 남기지 않는다
+
+예시 (가짜 값, 암호화 전):
+
+```json
+{
+  "memberId": 7,
+  "addresses": [
+    { "addressId": 15, "isDefault": true, "recipientName": "홍길동", "recipientPhone": "01012345678",
+      "zipcode": "06236", "address1": "서울 강남구 테헤란로 1", "address2": "5층" },
+    { "addressId": 12, "isDefault": false, "recipientName": "홍길동", "recipientPhone": "01012345678",
+      "zipcode": "04524", "address1": "서울 중구 세종대로 110", "address2": null }
+  ]
+}
+```
