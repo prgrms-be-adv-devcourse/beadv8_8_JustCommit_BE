@@ -1,6 +1,7 @@
 package com.justcommit.backend.product.product.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.client.member.MemberQuery;
@@ -65,6 +66,8 @@ public class  ProductServiceTest {
 
     @Mock
     private ProductImageUrlValidator imageUrlValidator;
+
+    @Mock private OutboxPublisher outboxPublisher;
 
     // 등록 제한의 "오늘" 기준을 고정 (2026-11-11 12:00 KST)
     @Spy

@@ -42,6 +42,9 @@ dependencies {
     // 이미지 업로드 (S3 Presigned URL)
     implementation 'software.amazon.awssdk:s3'
 
+    // Outbox 발행 (common-messaging을 api로 함께 가져옴)
+    implementation project(':common:common-messaging-outbox')
+
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 
