@@ -7,7 +7,7 @@
 
 ## 기록
 
-- 2026-11-12 · conventions/events.md · conventions/common-modules.md · reference/env-vars.md · 이벤트 민감 필드 암호화 도구 `EventFieldCipher` 반영: 형식 `v1.{키 버전}:Base64(IV + 암호문 + 태그)`, 접두사 AAD 인증, 현재 키로 암호화 · 키 목록으로 복호화, `@Bean` 시작 시 검증, 키 교체 절차 · 이전 키 삭제 조건, `MEMBER_ADDRESS_EVENT_KEY` 확정 (#371)
+- 2026-11-12 · conventions/events.md · conventions/common-modules.md · reference/env-vars.md · 이벤트 민감 필드 암호화 도구 `EventFieldCipher` 반영: 형식 `v1.{키 버전}:Base64(IV + 암호문 + 태그)`, 접두사 AAD 인증, 현재 키로 암호화 · 키 목록으로 복호화, `@Bean` 시작 시 검증, 키 교체 절차 · 이전 키 삭제 조건, `MEMBER_ADDRESS_EVENT_KEY` 확정 (#375)
 - 2026-11-11 · services/settlement.md · reference/kafka-topics.md · settlement 구매 확정 수신을 `market.events.v1` 봉투로 전환, 소유 테이블 `SETTLEMENT`에 `shipping_fee`(옛 토픽은 null), 옛 토픽 `market.purchase-confirmed.v1`은 전환 중 함께 구독, `ShipmentPickedUp` 수신 삭제 (#364)
 - 2026-11-11 · reference/kafka-topics.md · services/market.md · services/settlement.md · market 도메인 이벤트를 `market.events.v1` + Outbox로 전환(이벤트마다 다른 토픽 → 하나), `PurchaseConfirmed`에 `shippingFee` 추가 · `ShipmentPickedUp` 삭제(정산 담당과 합의), `OrderItemAutoConfirmed`는 알림 전용(정산 구독 제외), 일부 취소 알림 `OrderItemCancelled` 다시 발행, 도메인 이벤트 payload 표 추가 (#277)
 - 2026-11-11 · reference/kafka-topics.md · 파티션 3을 브로커 기본값 `KAFKA_NUM_PARTITIONS: 3`으로 적용(로컬 · 운영 compose), 토픽 코드 선언 · 운영 자동 생성 끄기는 다음 단계 (#369)
