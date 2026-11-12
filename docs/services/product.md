@@ -53,7 +53,8 @@
 |---|---|
 | `product.events.v1` | `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged` · `ProductApproved` · `ProductRejected` |
 | `product.review.v1` | `ProductReviewRequested` |
-| `species.events.v1` | `SpeciesProfileUpdated` |
+
+품종 이벤트(`species.events.v1`)는 발행하지 않습니다 → [ADR 0020](../decisions/0020-species-profile-ai-seed.md)
 
 상세 → [Kafka 토픽 표](../reference/kafka-topics.md)
 

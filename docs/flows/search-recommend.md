@@ -1,7 +1,7 @@
 # 검색 · 추천
 
 > 언제 읽나: OpenSearch 색인, 임베딩, 추천 코드를 고칠 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-06 · 관련: Miro 17, 노션 기획안 「AI 추천 기능 설명」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: Miro 17, 노션 기획안 「AI 추천 기능 설명」
 
 ## 검색 색인
 
@@ -28,7 +28,7 @@
 
 ## 품종 임베딩
 
-1. 품종 · 별칭이 바뀌면 product가 `species.events.v1`(`SpeciesProfileUpdated`)을 발행합니다 (처음 전체 1회, 이후 바뀐 품종만).
+1. ai가 농사로 자료로 자기 DB에 품종 프로필을 시드합니다 (품종 ID는 product `species.id`와 같음). product는 품종 이벤트를 발행하지 않습니다 → [ADR 0020](../decisions/0020-species-profile-ai-seed.md)
 2. ai-service가 품종 문서(품종명 + 별칭 + 학명 + 생육 정보)를 외부 API로 임베딩합니다.
 3. pgvector에 speciesId 기준으로 upsert합니다.
 
