@@ -65,6 +65,7 @@ public class WithdrawalCheckService {
     }
     return evaluate(service, memberId, response);
   }
+
   // 합의한 응답 형식인지 확인한다. 정상 응답의 판단 기준은 hasWithdrawalBlocker (사유로 다시 판단하지 않음)
   private Outcome evaluate(String service, Long memberId, ApiResponse<WithdrawalCheckResponse> response) {
     WithdrawalCheckResponse data = (response == null) ? null : response.data();
