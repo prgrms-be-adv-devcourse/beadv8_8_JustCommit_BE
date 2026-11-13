@@ -1,11 +1,12 @@
 package com.justcommit.backend.gateway.auth;
 
-import java.util.List;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.server.PathContainer;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.web.util.pattern.PathPattern;
 import org.springframework.web.util.pattern.PathPatternParser;
+
+import java.util.List;
 
 /**
  * 토큰 없이 통과하는 경로 (docs/conventions/auth.md 「공개 경로」, docs/reference/external-apis.md).
@@ -29,8 +30,8 @@ class PublicPaths {
       // member: 가입 · 소셜 가입(가입 토큰은 Access가 아니라 member가 직접 확인) · 중복 확인
       rule(HttpMethod.POST, "/api/v1/users"),
       rule(HttpMethod.POST, "/api/v1/users/social"),
-      rule(HttpMethod.GET, "/api/v1/users/checkNickname"),
-      rule(HttpMethod.GET, "/api/v1/users/checkPhone"),
+      rule(HttpMethod.GET, "/api/v1/users/nicknameAvailability"),
+      rule(HttpMethod.GET, "/api/v1/users/phoneAvailability"),
       // member: 카카오 로그인 (Spring Security OAuth2가 처리)
       rule(null, "/oauth2/**"),
       rule(null, "/login/oauth2/**"),
