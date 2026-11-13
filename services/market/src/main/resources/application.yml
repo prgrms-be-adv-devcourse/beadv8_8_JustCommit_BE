@@ -42,6 +42,14 @@ internal-api:
   key: ${INTERNAL_API_KEY:}
   groups: [product, payment, settlement]
 
+messaging:
+  # 판매자 배송지 이벤트(member.address.events.v1) 복호화 키. member와 같은 값 (env-vars.md)
+  address-event-cipher:
+    current-key: k1
+    keys:
+      # 기본값 없음: 환경변수가 없으면 앱이 시작하지 않는다
+      k1: ${MEMBER_ADDRESS_EVENT_KEY}
+
 custom:
   courier:
     api-key: ${COURIER_API_KEY:}
