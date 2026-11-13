@@ -1,7 +1,7 @@
 # product 서비스
 
 > 언제 읽나: product 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: Miro 5 · 13-1 · 17, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: Miro 5 · 13-1 · 17, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -17,7 +17,7 @@
 
 | 테이블 | 설명 |
 |---|---|
-| `PRODUCT` | 상품 (`status` · `hidden` · `review_version` · 예약한 `orderId`) |
+| `PRODUCT` | 상품 (`status` · `hidden` · `review_version` · 예약한 `orderId` · 상품 버전 `version` 🟨) |
 | `PRODUCT_IMAGE` | 상품 사진 (1~10장) |
 | `SPECIES` | 품종 (학명 `scientific_name`, 금지 품종 없음) |
 | `SPECIES_IMAGE` | 품종 기준 사진 |
@@ -38,7 +38,7 @@
 
 | API | 부르는 서비스 | 멱등 키 |
 |---|---|---|
-| `GET /internal/v1/products?ids=` | market · ai | – |
+| `GET /internal/v1/products?ids=` | market | – |
 | `POST /internal/v1/products/reservations` (`expectedPrice`, 409 `PRICE_CHANGED`) | market | orderId |
 
 상세 → [내부 API 목록](../reference/internal-apis.md)
@@ -55,6 +55,8 @@
 | `product.review.v1` | `ProductReviewRequested` |
 
 품종 이벤트(`species.events.v1`)는 발행하지 않습니다 → [ADR 0020](../decisions/0020-species-profile-ai-seed.md)
+
+`ProductRegistered` · `ProductUpdated` · `ProductStatusChanged`에는 `productId` · `speciesId` · `sellerId` · `status` · `hidden` · `productVersion`을 싣고(봉투 `version` 2), 상품 행을 바꾸는 모든 UPDATE에서 `version`을 +1, 상태 · 숨김을 바꾸는 곳은 새 값이 담긴 이벤트를 보냅니다 (ai 상품 스냅샷). 초기 적재 · 복제본 재구축용 「전체 상품 이벤트 재발행」 운영 API는 🟨 제안 → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md)
 
 상세 → [Kafka 토픽 표](../reference/kafka-topics.md)
 
