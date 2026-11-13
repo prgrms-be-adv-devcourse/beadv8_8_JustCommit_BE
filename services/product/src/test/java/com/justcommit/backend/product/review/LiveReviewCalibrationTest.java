@@ -48,7 +48,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 //   monstera1.jpg;monstera2.jpg,몬스테라,APPROVED,
 //   seed.jpg,몬스테라,REJECTED,
 //   blur.jpg,기타,MANUAL,
-// species = 판매자가 고른 품종 이름(V4 품종 이름, "기타"면 기타), expected = 기대 결과(APPROVED · REJECTED · MANUAL)
+// species = 판매자가 고른 품종 이름(V4 품종 이름 또는 학명, "기타"면 기타), expected = 기대 결과(APPROVED · REJECTED · MANUAL, | 로 여러 개)
+// samples.csv가 없으면 3차 실험 폴더(드라이브 plant-test-v3: photos/ + labels_v3.csv)를 그대로 읽음
 // 결과는 콘솔 표와 build/review-calibration.csv (확신도 · 후보 · 판정 · 기대와 일치 여부)
 @DataJpaTest
 @ActiveProfiles("test")
@@ -94,20 +95,16 @@ class LiveReviewCalibrationTest {
         int total = 0;
         int matched = 0;
 
-        List<String> lines = Files.readAllLines(dir.resolve("samples.csv"), StandardCharsets.UTF_8);
-        for (String line : lines.subList(1, lines.size())) {
-            if (line.isBlank()) {
-                continue;
-            }
-            String[] col = line.split(",", -1);
-            String imagesCol = col[0].trim();
-            String speciesName = col[1].trim();
-            String expected = col.length > 2 ? col[2].trim() : "";
-            String title = col.length > 3 ? col[3].trim() : "";
+        for (String[] row : readSamples(dir)) {
+            String imagesCol = row[0];
+            String speciesName = row[1];
+            String expected = row[2];
+            String title = row[3];
+            Path photoDir = Files.isDirectory(dir.resolve("photos")) ? dir.resolve("photos") : dir;
 
             List<ImageData> images = new ArrayList<>();
             for (String file : imagesCol.split(";")) {
-                Path p = dir.resolve(file.trim());
+                Path p = photoDir.resolve(file.trim());
                 String type = file.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";
                 images.add(new ImageData(Files.readAllBytes(p), type));
             }
@@ -119,9 +116,10 @@ class LiveReviewCalibrationTest {
             boolean textFlagged = !title.isEmpty() && moderation.isTextFlagged(title);
             PlantIdentification plant = haiku.identify(images, bannedNames);
 
-            SellerSpecies seller = "기타".equals(speciesName)
+            // 한글 품종 이름이면 학명으로 바꾸고, 아니면 학명으로 그대로 씀 (3차 실험 라벨은 학명)
+            SellerSpecies seller = "기타".equals(speciesName) || "OTHER".equalsIgnoreCase(speciesName)
                     ? SellerSpecies.otherSpecies()
-                    : SellerSpecies.of(scientificByName.get(speciesName));
+                    : SellerSpecies.of(scientificByName.getOrDefault(speciesName, speciesName));
             ReviewVerdict verdict = judgeProvider.get().judge(new ModerationResult(imageFlagged, textFlagged), plant,
                     bannedListService.matchText(title, ""), seller);
 
@@ -129,7 +127,7 @@ class LiveReviewCalibrationTest {
                     ? describe(plant.candidates().get(i)) : "";
             String reason = verdict.rejectReason() != null ? verdict.rejectReason().name()
                     : verdict.manualReason() != null ? verdict.manualReason().name() : "";
-            boolean ok = expected.isEmpty() || expected.equalsIgnoreCase(verdict.decision().name());
+            boolean ok = expected.isEmpty() || List.of(expected.split("\\|")).contains(verdict.decision().name());
             total++;
             if (ok) {
                 matched++;
@@ -150,6 +148,46 @@ class LiveReviewCalibrationTest {
         System.out.println("\n=== 사진 검수 기준값 실측 (" + matched + "/" + total + " 기대와 일치) ===");
         out.forEach(System.out::println);
         System.out.println("결과 파일: " + result.toAbsolutePath());
+    }
+
+    // 표본 한 줄 = {사진들, 판매자 품종, 기대 결과(| 로 여러 개), 제목}
+    // samples.csv가 있으면 그것을, 없으면 3차 실험 라벨 labels_v3.csv를 읽고 묶음(group)으로 기대 결과를 정함
+    private static List<String[]> readSamples(Path dir) throws IOException {
+        List<String[]> rows = new ArrayList<>();
+        Path samples = dir.resolve("samples.csv");
+        if (Files.exists(samples)) {
+            List<String> lines = Files.readAllLines(samples, StandardCharsets.UTF_8);
+            for (String line : lines.subList(1, lines.size())) {
+                if (line.isBlank()) {
+                    continue;
+                }
+                String[] c = line.split(",", -1);
+                rows.add(new String[]{c[0].trim(), c[1].trim(), c.length > 2 ? c[2].trim() : "",
+                        c.length > 3 ? c[3].trim() : ""});
+            }
+            return rows;
+        }
+        // file,group,true_name,true_rank,is_plant,is_banned,true_form,seller_species
+        List<String> lines = Files.readAllLines(dir.resolve("labels_v3.csv"), StandardCharsets.UTF_8);
+        for (String line : lines.subList(1, lines.size())) {
+            if (line.isBlank()) {
+                continue;
+            }
+            String[] c = line.replace("﻿", "").split(",", -1);
+            String group = c[1].trim();
+            String seller = c[7].trim();
+            String expected = switch (group) {
+                case "market" -> "APPROVED";
+                case "bad_photo" -> "APPROVED|MANUAL";               // 흐린 · 어두운 사진은 관리자 확인도 허용
+                case "mismatch" -> "MANUAL";                          // 품종 불일치
+                case "not_plant", "form" -> "REJECTED";               // 식물 아님 · 씨앗 · 삽수 · 구근
+                case "banned", "disguise" -> "REJECTED|MANUAL";       // 금지 품종은 통과만 아니면 됨
+                case "lookalike" -> "OTHER".equals(seller) ? "MANUAL" : "APPROVED|MANUAL";
+                default -> "";
+            };
+            rows.add(new String[]{c[0].trim(), seller, expected, ""});
+        }
+        return rows;
     }
 
     private static String describe(Candidate c) {
