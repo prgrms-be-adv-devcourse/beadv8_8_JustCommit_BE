@@ -15,6 +15,8 @@
 
 ## 소유 테이블
 
+DB `ai_db` · 계정 `ai_app` (pgvector 확장 `vector`, Flyway V1) → [DB · Flyway](../infra/database.md)
+
 | 테이블 | 설명 |
 |---|---|
 | `species_profile` | 농사로 자료로 시드한 품종 프로필 (품종 ID = product `species.id`) → [ADR 0020](../decisions/0020-species-profile-ai-seed.md) |
@@ -55,6 +57,7 @@
 
 | 정책 | 내용 |
 |---|---|
+| 임베딩 모델 | OpenAI `text-embedding-3-small`, 1536차원. 차원을 바꾸면 벡터 칸과 저장된 벡터를 모두 다시 만듦 |
 | 이미지 기반 추천 | 하지 않음 |
 | 장애 시 | 추천 영역만 비고 장바구니 · 주문은 영향 없음. market이 기본 추천으로 대체 |
 

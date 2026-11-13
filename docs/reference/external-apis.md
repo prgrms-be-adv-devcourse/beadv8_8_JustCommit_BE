@@ -38,6 +38,9 @@
 | PATCH | `products/{id}/hidden` | 숨김 | SELLER |
 | GET | `products/me` · `products/me/counts` | 내 상품 · 상태별 개수 | SELLER |
 | POST | `products/images/uploadUrls` | 사진 Presigned URL | SELLER |
+| GET | `products/{id}/imageReviews` | 내 상품 검수 기록 (상태 · 반려 사유 · 남은 재검수 횟수) | SELLER |
+| POST | `products/{id}/imageReviews` | 기한 초과(`REVIEW_EXPIRED`) 상품 같은 내용으로 다시 검수 요청 | SELLER |
+| POST | `products/{id}/appeals` | 자동 반려 이의 신청 (메모 필수, 200자) | SELLER |
 | GET | `species` · `species/{id}` | 품종 목록 · 상세 (학명 · 별칭) | 공개 |
 | GET | `admin/imageReviews?status=MANUAL` | 수동 검수 대기 목록 | ADMIN |
 | PATCH | `admin/imageReviews/{id}` | 수동 검수 결과 | ADMIN |
@@ -81,7 +84,6 @@
 |---|---|---|
 | member | 아이디 찾기 · 비밀번호 재설정 · 비밀번호 변경 · 닉네임 변경 · 계좌 변경 · 배송지 수정 · 탈퇴 | 노션 2.1 ~ 2.5 |
 | member | 판매자 상점 정보 · 소개글 수정 | 공개 조회 경로는 Gateway · member 양쪽에 등록 |
-| product | 자동 반려 이의 신청 (메모 필수, 200자) | 노션 3.16 |
 | market | 판매자 수락 · 거절 (판매자 주문 › 상품 트리 체크) | 판매 기록 화면 |
 | market | 반품 신청 (사유) · 판매자 승인 · 거절 | 노션 7절 |
 | market | 리뷰 작성 · 삭제 · 판매자 리뷰 목록 (태그 집계) | 노션 6절 |

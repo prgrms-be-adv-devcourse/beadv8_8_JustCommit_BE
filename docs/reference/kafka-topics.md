@@ -43,7 +43,7 @@
 | `market.order-item-cancelled.v1` | 판매 재개 (`orderId` · `orderItemId` · `productId` · `reason`: `BUYER` · `SELLER` · `AUTO`) | product | 환불 성공 뒤 발행. `BUYER`면 `ACTIVE`, `SELLER` · `AUTO`면 `ACTIVE` + 숨김. 주문 전체 취소도 주문상품마다 |
 | `market.order-item-returned.v1` | 판매 재개 (`orderId` · `orderItemId` · `productId`) | product | 반품 환불 뒤 발행. `ACTIVE` + 숨김 |
 | `product.events.v1` | 상품 변경 — `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged` | product(색인 리스너) · ai | product: DB에서 최신 상품을 읽어 OpenSearch 문서를 덮어씀. ai: payload로 상품 스냅샷 upsert (`productVersion`이 저장값보다 클 때만) → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md) |
-| `product.events.v1` | `ProductApproved` | product(색인) | 색인 |
+| `product.events.v1` | `ProductApproved` | product(색인) · notification | 색인, 판매자에게 통과 알림 |
 | `product.events.v1` | `ProductRejected` | notification | 판매자에게 반려 사유와 함께 알림 |
 | `product.review.v1` | `ProductReviewRequested` (`review_version` 포함) | product | 사진 검수 (비동기) |
 | `settlement.events.v1` | `SettlementCompleted` | notification | 정산 알림 |
@@ -85,7 +85,8 @@
 | `ProductRegistered` | 아래 공통 칸 | 상품 등록 |
 | `ProductUpdated` | 아래 공통 칸 | 제목 · 가격 · 사진 · 품종 등 수정 |
 | `ProductStatusChanged` | 아래 공통 칸 | 예약 · 판매 완료 · 예약 해제 · 판매 재개 · 숨김 · 삭제 · 판매자 탈퇴 정리 · 검수 결과(통과 · 반려) |
-| `ProductApproved` · `ProductRejected` | ⬜ | 사진 검수 때(#345) |
+| `ProductApproved` | 🟨 `productId` · `sellerId` · `reviewVersion` (숫자), `productTitle` (문자열) | 검수 통과 알림용. 제안값, #345에서 확정 |
+| `ProductRejected` | 🟨 `ProductApproved` 칸 + `reasonCode` (반려 사유 코드, 예: `HARMFUL_IMAGE`) · `reasonMessage` (판매자 문구) | 검수 반려 알림용. 제안값, #345에서 확정 |
 
 세 이벤트의 공통 payload (`version` 2, [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md)):
 
@@ -99,6 +100,8 @@
 | `productVersion` | 숫자 | 상품 버전. 상품 행을 바꾸는 모든 UPDATE에서 +1 (봉투 `version`과 다름). 받는 쪽은 저장된 값보다 클 때만 반영, 같으면 중복 |
 
 가격 · 제목은 싣지 않습니다 (화면에 보일 값은 market이 상품 ID로 조회). payload 값은 발행하는 트랜잭션에서 상품을 다시 읽어 채우고, 상태 · 숨김을 바꾸는 곳은 반드시 새 값이 담긴 이벤트를 보냅니다. 순서는 `productVersion`으로 판단하고 봉투 `occurredAt`은 로그용입니다. 현재 이 토픽 구독자는 없고(develop 기준), 칸 추가는 공통 매퍼의 `FAIL_ON_UNKNOWN_PROPERTIES` 비활성으로 호환됩니다.
+
+`ProductApproved` · `ProductRejected`는 notification이 product를 조회하지 않고 payload만으로 알림을 만들도록 판매자 · 상품 이름 · 사유를 싣습니다. 상품 상태 동기화(ai 스냅샷)는 같은 트랜잭션에서 함께 보내는 `ProductStatusChanged`가 맡습니다.
 
 검수 요청 `ProductReviewRequested`는 이 토픽이 아니라 `product.review.v1`(Key `productId`)로 보냅니다. payload는 `productId` · `reviewVersion`(숫자)이고, 등록 · 수정 트랜잭션에서 `IMAGE_REVIEW`(REQUESTED)와 함께 저장합니다.
 
