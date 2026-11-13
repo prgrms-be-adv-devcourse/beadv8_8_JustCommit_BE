@@ -49,12 +49,12 @@ sequenceDiagram
     AI->>AI: 상품 스냅샷에서 그 품종의 판매 중 상품 고르기
     AI-->>M: 추천 상품 ID + 이유
     M->>PR: 추천 상품 ID로 상품 정보 일괄 조회
-    M->>M: 본인 상품 제외
+    M->>M: 본인 상품 · 구매할 수 없는 상품 제외
     M-->>U: 같이 키우기 좋은 식물
     Note over M,AI: 실패하면 최신 상품
 ```
 
-추천 대상은 판매 중(`ACTIVE`이고 숨김이 아님) 상품입니다. ai는 상품 이벤트(`ProductRegistered` · `ProductUpdated` · `ProductStatusChanged`)의 payload로 상품 스냅샷을 채우고(모든 상태), 추천할 때 판매 중만 고릅니다. ai는 product를 부르지 않고, 카드 정보(제목 · 가격 · 사진)는 market이 결과 ID로 조회합니다. 추천 이유는 템플릿 문장입니다 → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md)
+추천 대상은 판매 중(`ACTIVE`이고 숨김이 아님) 상품입니다. ai는 상품 이벤트(`ProductRegistered` · `ProductUpdated` · `ProductStatusChanged`)의 payload로 상품 스냅샷을 채우고(모든 상태), 추천할 때 판매 중만 고릅니다. ai는 product를 부르지 않고, 카드 정보(제목 · 가격 · 사진)는 market이 결과 ID로 조회합니다. market은 조회 결과에서 본인 상품과 함께 `isPurchasable()`이 false이거나 응답에 없는 상품도 뺍니다. 이벤트 반영이 늦어 스냅샷이 아직 판매 중이어도, 조회 시점에 판매 완료 · 숨김인 상품은 여기서 걸러집니다. 추천 이유는 템플릿 문장입니다 → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md)
 
 ## 의미 검색
 
