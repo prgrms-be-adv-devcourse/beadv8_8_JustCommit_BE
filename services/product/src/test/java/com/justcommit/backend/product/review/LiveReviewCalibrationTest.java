@@ -2,6 +2,7 @@ package com.justcommit.backend.product.review;
 
 import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.product.banned.application.BannedListService;
+import com.justcommit.backend.product.config.ClockConfig;
 import com.justcommit.backend.product.image.application.ImageData;
 import com.justcommit.backend.product.review.application.ReviewJudgeProvider;
 import com.justcommit.backend.product.review.domain.Candidate;
@@ -54,7 +55,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ReviewJudgeProvider.class, BannedListService.class})
+@Import({JpaAuditingConfig.class, ClockConfig.class, ReviewJudgeProvider.class, BannedListService.class})
 @Testcontainers(disabledWithoutDocker = true)
 @EnabledIfEnvironmentVariable(named = "REVIEW_SAMPLES_DIR", matches = ".+")
 class LiveReviewCalibrationTest {
