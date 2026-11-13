@@ -18,12 +18,13 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class AuthController {
 
+  private static final String BEARER_PREFIX = "Bearer ";
+
   private final EmailVerificationService emailVerificationService;
   private final LoginService loginService;
   private final TokenReissueService tokenReissueService;
   private final LogoutService logoutService;
   private final RefreshTokenCookieFactory refreshTokenCookieFactory;
-  private static final String BEARER_PREFIX = "Bearer ";
 
   @PostMapping("/email/send")
   public ApiResponse<EmailSendResponse> sendEmailCode(@Valid @RequestBody EmailSendRequest request) {
