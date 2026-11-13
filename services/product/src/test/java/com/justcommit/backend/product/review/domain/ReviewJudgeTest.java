@@ -101,16 +101,23 @@ class ReviewJudgeTest {
         }
 
         @Test
-        @DisplayName("2 · 3순위가 금지(0.3 이상)")
+        @DisplayName("2 · 3순위가 금지")
         void lowerCandidateBanned() {
             PlantIdentification p = plant(c("Monstera deliciosa", 0.6), c("Sedirea japonica", 0.3));
             assertManual(judge.judge(CLEAN, p, NO_WORD, MONSTERA), ManualReason.BANNED_SUSPECTED);
         }
 
         @Test
-        @DisplayName("2 · 3순위 금지라도 0.3 미만이면 의심하지 않음")
-        void lowerCandidateBelowMin() {
-            PlantIdentification p = plant(c("Monstera deliciosa", 0.9), c("Sedirea japonica", 0.29));
+        @DisplayName("2 · 3순위 금지는 확신도가 낮아도 의심 (11/13 실측: 위장 등록이 0.10~0.25로만 들어옴)")
+        void lowerCandidateLowConfidence() {
+            PlantIdentification p = plant(c("Monstera deliciosa", 0.9), c("Sedirea japonica", 0.1));
+            assertManual(judge.judge(CLEAN, p, NO_WORD, MONSTERA), ManualReason.BANNED_SUSPECTED);
+        }
+
+        @Test
+        @DisplayName("2 · 3순위에 금지 품종이 없으면 통과")
+        void lowerCandidateNotBanned() {
+            PlantIdentification p = plant(c("Monstera deliciosa", 0.9), c("Monstera adansonii", 0.1));
             assertThat(judge.judge(CLEAN, p, NO_WORD, MONSTERA).decision()).isEqualTo(ReviewDecision.APPROVED);
         }
 

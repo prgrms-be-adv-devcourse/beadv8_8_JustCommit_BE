@@ -101,14 +101,12 @@ public final class ReviewJudge {
         return ReviewVerdict.approve();
     }
 
-    // 7줄의 금지 의심: 1순위 금지인데 0.7 미만(0.7 이상은 5줄에서 반려됨) · 2 · 3순위 금지(0.3 이상)
+    // 7줄의 금지 의심: 1순위 금지인데 0.7 미만(0.7 이상은 5줄에서 반려됨) · 2 · 3순위 금지(확신도와 관계없이)
+    // 2 · 3순위는 확신도를 보지 않음: 11/13 실측에서 위장 등록 3건(나도풍란 → 호접란, 파초일엽 → 아스플레니움)이
+    // 금지 품종을 0.10~0.25로만 후보에 넣고 통과됨. 대신 합법 닮은꼴 일부가 관리자 확인으로 감
     // · 변종만 금지인데 후보가 종까지만 일치. 걸린 금지 품종의 한글 이름을 돌려줌
     private String suspectedBanned(List<Candidate> candidates) {
-        for (int i = 0; i < candidates.size(); i++) {
-            Candidate c = candidates.get(i);
-            if (i > 0 && c.confidence() < MIN_CONFIDENCE) {
-                continue;
-            }
+        for (Candidate c : candidates) {
             ScientificNameMatcher.Match match = bannedLookup.apply(c.scientificName());
             if (match.result() != ScientificNameMatcher.Result.NONE) {
                 return match.koreanName();
