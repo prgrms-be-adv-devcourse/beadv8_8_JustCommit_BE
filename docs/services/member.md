@@ -1,7 +1,7 @@
 # member 서비스
 
 > 언제 읽나: member 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: Miro 5 · 6, A1, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-14 · 관련: Miro 5 · 6, A1, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -40,7 +40,7 @@
 
 | 대상 | 용도 | 상태 |
 |---|---|---|
-| market · payment · settlement | 탈퇴 확인 (병렬, Fail-closed) | ✅ 기능 · ⬜ 경로 |
+| market · payment · settlement | 탈퇴 확인 (병렬, Fail-closed): `GET /internal/v1/{orders, payments, settlements}/members/{memberId}/withdrawalCheck`, 공통 응답 `hasWithdrawalBlocker` · `blockingReasons` · `details`, 결과 `ALLOWED` · `BLOCKED` · `UNAVAILABLE` (탈퇴는 `ALLOWED`일 때만) | ✅ member 구현 · ⬜ 각 서비스 구현 · 연동 (market #278 · payment #329 · settlement #441) |
 | 카카오 | 연결 해제 (실패하면 탈퇴 막음) | ✅ |
 
 ## 발행 이벤트
