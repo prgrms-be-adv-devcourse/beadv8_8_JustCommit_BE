@@ -11,6 +11,15 @@ spring:
       ddl-auto: validate
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+  # 내부 API 그룹 주소 (탈퇴 확인 #406). 그룹 이름은 internal-api.groups와 같음. 연결 1초 · 응답 3초는 common-web 기본값
+  http:
+    serviceclient:
+      market:
+        base-url: ${MARKET_SERVICE_URL:http://localhost:8083}
+      payment:
+        base-url: ${PAYMENT_SERVICE_URL:http://localhost:8084}
+      settlement:
+        base-url: ${SETTLEMENT_SERVICE_URL:http://localhost:8085}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -87,3 +96,9 @@ messaging:
     current-key: k1
     keys:
       k1: ${MEMBER_ADDRESS_EVENT_KEY}
+
+# 서비스 간 내부 API(/internal/**) 키와 내부 호출 그룹. 모든 서비스가 같은 키
+# 빈 기본값: 키가 없으면 받는 쪽은 /internal/** 요청을 모두 거부하고, 그룹이 있으면 common-web이 앱 시작을 막는다
+internal-api:
+  key: ${INTERNAL_API_KEY:}
+  groups: [market, payment, settlement]
