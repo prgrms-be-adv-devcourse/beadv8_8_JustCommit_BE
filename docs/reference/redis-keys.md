@@ -22,7 +22,7 @@
 | `auth:email:verified:{email}` | `true` | 30분 | member | 인증 완료 표시 |
 | `auth:blacklist:{토큰 해시}` | `1` | 토큰 남은 수명 (최대 30분) | member 씀 · Gateway 읽음 | 로그아웃한 Access 토큰 거절 |
 | `auth:revoked-member:{memberId}` | 끊은 시각 (초) | 30분 | member 씀 · Gateway 읽음 | `iat <= 끊은 시각`인 토큰 모두 거절 |
-| `auth:refresh-set:{memberId}` | Refresh 토큰 해시 Set | 1일 (토큰을 저장할 때마다 갱신) | member | 그 회원의 Refresh를 한 번에 삭제 (탈퇴 · 비밀번호 변경). 저장 · 삭제는 Refresh 키와 함께 Lua로 처리. 만료된 Refresh의 해시는 남을 수 있고, 새 토큰 발급이 계속되면 TTL도 갱신돼 오래된 해시가 장기간 누적될 수 있음 (정리 방식은 사용량을 보고 정함) |
+| `auth:refresh-set:{memberId}` | Refresh 토큰 해시 Set | 1일 (토큰을 저장할 때마다 갱신) | member | 그 회원의 Refresh를 한 번에 삭제 (탈퇴 · 비밀번호 변경). 저장 · 삭제는 Refresh 키와 함께 Lua로 처리. 만료된 Refresh의 해시는 남을 수 있고, 새 토큰 발급이 계속되면 TTL도 갱신돼 오래된 해시가 장기간 누적될 수 있음 (정리 방식은 사용량을 보고 정함). Refresh 키와 이 Set을 한 Lua 스크립트에서 함께 다루며 Redis 한 대 구성을 전제로 함 — 현재 키 구조는 Cluster의 동일 슬롯을 보장하지 않으므로, Cluster 전환 시 키 구조와 조회 방식을 함께 재설계해야 함 |
 
 ## 예외
 
