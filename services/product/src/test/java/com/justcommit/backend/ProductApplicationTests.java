@@ -38,7 +38,7 @@ class ProductApplicationTests {
     }
 
     @Test
-    @DisplayName("빈 DB에서 Flyway V1 ~ V8이 적용되고 ddl-auto validate로 product 서비스가 뜬다")
+    @DisplayName("빈 DB에서 Flyway V1 ~ V9가 적용되고 ddl-auto validate로 product 서비스가 뜬다")
     void contextLoads(@Autowired Flyway flyway, @Autowired JdbcTemplate jdbc) {
         assertThat(flyway.info().applied())
                 .extracting(info -> info.getVersion().getVersion(), MigrationInfo::getState)
@@ -47,6 +47,8 @@ class ProductApplicationTests {
                         tuple("5", MigrationState.SUCCESS));
         // V5가 회원 복제본 테이블을 만듦 (없으면 이 조회가 실패)
         assertThat(jdbc.queryForObject("select count(*) from member_replica", Integer.class)).isZero();
+        // V9가 Outbox 테이블을 만듦
+        assertThat(jdbc.queryForObject("select count(*) from outbox_event", Integer.class)).isZero();
     }
 
     @Test

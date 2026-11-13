@@ -1,7 +1,7 @@
 # member 서비스
 
 > 언제 읽나: member 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-10 · 관련: Miro 5 · 6, A1, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: Miro 5 · 6, A1, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -12,7 +12,7 @@
 | 회원 정보 | 닉네임 · 비밀번호 · 계좌(이메일 재인증) 변경, 배송지(최대 4개), 판매자 등록 · 소개글 |
 | 계좌 | AES-256-GCM 암호화, HMAC으로 중복 막음, payment에 내부 API로 제공 (복제 안 함) |
 | 탈퇴 | 3곳 병렬 확인 · 소셜 연결 해제 · 익명화 · 30일 재가입 불가 → [가입 · 탈퇴 흐름](../flows/signup-and-replica.md#탈퇴) |
-| 회원 정보 전파 | 회원 · 판매자 주소 변경을 이벤트로 발행 |
+| 회원 정보 전파 | 회원 정보 · 판매자 배송지 목록 변경을 이벤트로 발행 |
 
 ## 소유 테이블
 
@@ -26,7 +26,7 @@
 
 ## 외부 API
 
-`auth/email/send` · `auth/email/verify` · `auth/login` · `auth/logout` · `auth/reissue` · `users` · `users/social` · `users/checkNickname` · `users/checkPhone` · `users/me` · `users/me/addresses` · `users/me/addresses/{id}/default` · `sellers` + 카카오 로그인 2개 → [외부 API 목록](../reference/external-apis.md)
+`auth/email/send` · `auth/email/verify` · `auth/login` · `auth/logout` · `auth/reissue` · `users` · `users/social` · `users/nicknameAvailability` · `users/phoneAvailability` · `users/me` · `users/me/addresses` · `users/me/addresses/{id}/default` · `sellers` + 카카오 로그인 2개 → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 
@@ -52,7 +52,7 @@ Outbox(`common-messaging-outbox`)로 발행합니다. Key는 `memberId`입니다
 | `member.events.v1` | `MemberCreated` | 로컬 · 소셜 가입 | ✅ |
 | `member.events.v1` | `MemberUpdated` | 판매자 등록 (닉네임 변경 API가 생기면 그때도) | ✅ |
 | `member.events.v1` | `MemberWithdrawn` | 탈퇴 | ⬜ record만 (탈퇴 기능과 함께) |
-| `member.address.events.v1` | `MemberAddressChanged` (판매자 기본 배송지, 암호화) | 판매자 기본 배송지 변경 | ⬜ |
+| `member.address.events.v1` | `MemberAddressChanged` (판매자 배송지 목록, 암호화) | 판매자 등록 · 배송지 추가 · 기본 배송지 변경 (판매자만, 바뀐 뒤 전체 목록) | ✅ |
 
 payload (받는 쪽은 upsert, `occurredAt`이 저장된 값보다 오래되면 무시):
 
@@ -60,6 +60,7 @@ payload (받는 쪽은 upsert, `occurredAt`이 저장된 값보다 오래되면 
 |---|---|
 | `MemberCreated` · `MemberUpdated` | `{ "memberId": 7, "nickname": "초록손", "role": "MEMBER", "seller": false }` (바뀐 칸만이 아니라 바뀐 뒤 전체 값) |
 | `MemberWithdrawn` | `{ "memberId": 7 }` |
+| `MemberAddressChanged` | `{ "memberId": 7, "encryptedAddresses": "v1.k1:..." }` (암호화 전 주소 형식 → [Kafka 토픽 표](../reference/kafka-topics.md)) |
 
 - `role`: `MEMBER` · `SELLER` · `ADMIN`
 - `seller`: 판매자 등록 여부. ADMIN도 판매자가 될 수 있어 `role`과 따로 보냄 (ADMIN 변경은 지금 SQL이라 이벤트 없음)
@@ -92,7 +93,7 @@ payload (받는 쪽은 upsert, `occurredAt`이 저장된 값보다 오래되면 
 | 비밀번호 변경 | 현재 비밀번호 확인 후, 모든 기기 로그아웃 (소셜 제외) |
 | 계좌 변경 | 이메일 재인증 후 가능(소셜도 같음). 정산 대기 · 진행 중 인출이 있어도 가능하고 다른 서비스 확인 호출은 없음 (정산금은 지갑으로, 인출은 신청할 때의 계좌로 지급) |
 | 계좌 표시 | 화면은 뒤 4자리만, 로그에 원문 금지, 복호화는 member 안에서만. payment에는 member가 복호화해 응답 (⬜ 전송 구간 암호화는 결제 담당과 정함) |
-| 배송지 | 회원당 최대 4개 · 기본 1개(회원 행 잠금), 부분 수정, 남의 배송지는 404 |
+| 배송지 | 회원당 최대 4개 · 기본 1개(회원 행 잠금), 부분 수정, 남의 배송지는 404. 배송지를 바꾸는 모든 경로(추가 · 기본 변경 · 판매자 등록, 이후 수정 · 삭제 포함)가 회원 행을 먼저 잠근다 |
 | 판매자 상점 | 판매자 정보는 누구나 봄(공개 경로는 Gateway · member 양쪽에 등록), 소개글 500자는 본인만 수정 |
 | 탈퇴 | → [가입 · 탈퇴 흐름](../flows/signup-and-replica.md#탈퇴) |
 

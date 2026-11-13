@@ -12,6 +12,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.time.Instant;
 import java.time.OffsetDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -121,6 +122,102 @@ class MemberReplicaRepositoryTest {
 
     assertThat(changed).isEqualTo(1);
     assertThat(read(7L).isWithdrawn()).isTrue();
+  }
+
+  // ── 판매자 배송지 (member.address.events.v1) ──
+
+  @Test
+  @DisplayName("주소 이벤트가 먼저 오면 주소만 있는 행이 생기고(회원 칸은 비어 있음), 뒤에 온 회원 이벤트가 정상 반영된다")
+  void addressesBeforeMember() {
+    int saved = repository.upsertSellerAddresses(7L, "v1.k1:first", T2);
+
+    MemberReplica addressOnly = read(7L);
+    assertThat(saved).isEqualTo(1);
+    assertThat(addressOnly.getNickname()).isNull();
+    assertThat(addressOnly.getRole()).isNull();
+    assertThat(addressOnly.isSeller()).isFalse();
+    assertThat(addressOnly.isWithdrawn()).isFalse();
+    // 회원 이벤트를 아직 안 받았다는 표시 (1970-01-01). 회원 이벤트 시각은 항상 이보다 뒤라는 전제
+    assertThat(addressOnly.getLastEventAt().toInstant()).isEqualTo(Instant.EPOCH);
+    assertThat(addressOnly.getSellerAddressesEnc()).isEqualTo("v1.k1:first");
+
+    int changed = repository.upsertMember(7L, "초록손", "SELLER", true, T1);
+
+    MemberReplica replica = read(7L);
+    assertThat(changed).isEqualTo(1);
+    assertThat(replica.getNickname()).isEqualTo("초록손");
+    assertThat(replica.isSeller()).isTrue();
+    assertThat(replica.getSellerAddressesEnc()).isEqualTo("v1.k1:first");
+  }
+
+  @Test
+  @DisplayName("회원 이벤트가 먼저 와 있어도 주소가 저장된다")
+  void addressesAfterMember() {
+    repository.upsertMember(7L, "초록손", "SELLER", true, T1);
+
+    int changed = repository.upsertSellerAddresses(7L, "v1.k1:first", T2);
+
+    MemberReplica replica = read(7L);
+    assertThat(changed).isEqualTo(1);
+    assertThat(replica.getNickname()).isEqualTo("초록손");
+    assertThat(replica.getSellerAddressesEnc()).isEqualTo("v1.k1:first");
+    assertThat(replica.getSellerAddressesEventAt()).isAtSameInstantAs(T2);
+  }
+
+  @Test
+  @DisplayName("저장된 주소 이벤트 시각보다 새로운 경우에만 반영하고, 오래된 이벤트와 같은 시각의 이벤트는 무시한다")
+  void addressesOnlyNewer() {
+    repository.upsertSellerAddresses(7L, "v1.k1:second", T2);
+
+    int newer = repository.upsertSellerAddresses(7L, "v1.k1:third", T3);
+    int older = repository.upsertSellerAddresses(7L, "v1.k1:first", T1);
+    int sameTime = repository.upsertSellerAddresses(7L, "v1.k1:other", T3);
+
+    MemberReplica replica = read(7L);
+    assertThat(newer).isEqualTo(1);
+    assertThat(older).isZero();
+    assertThat(sameTime).isZero();
+    assertThat(replica.getSellerAddressesEnc()).isEqualTo("v1.k1:third");
+    assertThat(replica.getSellerAddressesEventAt()).isAtSameInstantAs(T3);
+  }
+
+  @Test
+  @DisplayName("회원 정보 이벤트는 주소를 유지한다")
+  void memberEventKeepsAddresses() {
+    repository.upsertSellerAddresses(7L, "v1.k1:first", T1);
+
+    repository.upsertMember(7L, "새닉네임", "SELLER", true, T2);
+
+    assertThat(read(7L).getSellerAddressesEnc()).isEqualTo("v1.k1:first");
+  }
+
+  @Test
+  @DisplayName("주소를 받은 뒤 탈퇴하면 탈퇴 표시와 함께 주소 암호문이 비워진다")
+  void withdrawnClearsAddresses() {
+    repository.upsertMember(7L, "초록손", "SELLER", true, T1);
+    repository.upsertSellerAddresses(7L, "v1.k1:first", T2);
+
+    int changed = repository.markWithdrawn(7L, T3);
+
+    MemberReplica replica = read(7L);
+    assertThat(changed).isEqualTo(1);
+    assertThat(replica.isWithdrawn()).isTrue();
+    assertThat(replica.getSellerAddressesEnc()).isNull();
+  }
+
+  @Test
+  @DisplayName("탈퇴 뒤 늦게 도착한 주소 이벤트는 시각과 관계없이 저장하지 않는다")
+  void addressesAfterWithdrawnIgnored() {
+    repository.markWithdrawn(7L, T2);
+
+    int older = repository.upsertSellerAddresses(7L, "v1.k1:late", T1);
+    int newer = repository.upsertSellerAddresses(7L, "v1.k1:late", T3);
+
+    MemberReplica replica = read(7L);
+    assertThat(older).isZero();
+    assertThat(newer).isZero();
+    assertThat(replica.isWithdrawn()).isTrue();
+    assertThat(replica.getSellerAddressesEnc()).isNull();
   }
 
   // native 쿼리는 영속성 컨텍스트를 거치지 않으므로, 캐시를 비우고 DB에서 다시 읽는다

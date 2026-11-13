@@ -1,7 +1,7 @@
 # 검색 · 추천
 
 > 언제 읽나: OpenSearch 색인, 임베딩, 추천 코드를 고칠 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-06 · 관련: Miro 17, 노션 기획안 「AI 추천 기능 설명」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: Miro 17, 노션 기획안 「AI 추천 기능 설명」
 
 ## 검색 색인
 
@@ -28,7 +28,7 @@
 
 ## 품종 임베딩
 
-1. 품종 · 별칭이 바뀌면 product가 `species.events.v1`(`SpeciesProfileUpdated`)을 발행합니다 (처음 전체 1회, 이후 바뀐 품종만).
+1. ai가 농사로 자료로 자기 DB에 품종 프로필을 시드합니다 (품종 ID는 product `species.id`와 같음). product는 품종 이벤트를 발행하지 않습니다 → [ADR 0020](../decisions/0020-species-profile-ai-seed.md)
 2. ai-service가 품종 문서(품종명 + 별칭 + 학명 + 생육 정보)를 외부 API로 임베딩합니다.
 3. pgvector에 speciesId 기준으로 upsert합니다.
 
@@ -46,14 +46,15 @@ sequenceDiagram
     U->>M: GET /api/v1/cart/recommendations
     M->>AI: 장바구니에 담은 상품의 품종 (타임아웃 1~2초)
     AI->>V: 생육 조건이 비슷한 품종 검색
-    AI->>PR: 그 품종의 상품 · 판매 상태 일괄 조회
+    AI->>AI: 상품 스냅샷에서 그 품종의 판매 중 상품 고르기
     AI-->>M: 추천 상품 ID + 이유
-    M->>M: 본인 상품 제외
+    M->>PR: 추천 상품 ID로 상품 정보 일괄 조회
+    M->>M: 본인 상품 · 구매할 수 없는 상품 제외
     M-->>U: 같이 키우기 좋은 식물
     Note over M,AI: 실패하면 최신 상품
 ```
 
-추천 대상은 검색 노출 규칙과 같습니다. `ProductApproved`를 받으면 ai가 품종별 추천 후보에 상품을 넣습니다 (⬜ 이벤트 필드는 성수 님 확인 중).
+추천 대상은 판매 중(`ACTIVE`이고 숨김이 아님) 상품입니다. ai는 상품 이벤트(`ProductRegistered` · `ProductUpdated` · `ProductStatusChanged`)의 payload로 상품 스냅샷을 채우고(모든 상태), 추천할 때 판매 중만 고릅니다. ai는 product를 부르지 않고, 카드 정보(제목 · 가격 · 사진)는 market이 결과 ID로 조회합니다. market은 조회 결과에서 본인 상품과 함께 `isPurchasable()`이 false이거나 응답에 없는 상품도 뺍니다. 이벤트 반영이 늦어 스냅샷이 아직 판매 중이어도, 조회 시점에 판매 완료 · 숨김인 상품은 여기서 걸러집니다. 추천 이유는 템플릿 문장입니다 → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md)
 
 ## 의미 검색
 

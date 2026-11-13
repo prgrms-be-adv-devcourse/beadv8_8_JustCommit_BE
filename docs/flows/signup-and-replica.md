@@ -1,7 +1,7 @@
 # 가입과 회원 복제본
 
 > 언제 읽나: 가입 · 회원 정보 변경이 다른 서비스에 퍼지는 흐름을 볼 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: Miro 5 · 9
+> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: Miro 5 · 9
 
 ## 흐름
 
@@ -24,7 +24,7 @@ sequenceDiagram
 ```
 
 - 복제본은 닉네임 · 권한 · 판매자 여부입니다.
-- **판매자 기본 배송지**는 `member.address.events.v1`로 market만 받습니다 (암호화).
+- **판매자 배송지 목록**은 `member.address.events.v1`로 market만 받습니다 (암호화). 판매자 등록 · 배송지 추가 · 기본 배송지 변경 때 바뀐 뒤 전체 목록을 보내고, 판매자는 주문 수락 때 이 중에서 보내는 주소를 고릅니다 → [payload](../reference/kafka-topics.md#payload)
 - **계좌는 복제하지 않습니다.** payment가 인출할 때 member 내부 API로 조회합니다 → [ADR 0015](../decisions/0015-member-topics-two-account-api.md)
 
 ## 복제본이 아직 없을 때
