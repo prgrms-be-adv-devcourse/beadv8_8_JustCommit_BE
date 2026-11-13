@@ -26,15 +26,12 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
-import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Date;
-import java.util.HexFormat;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -98,7 +95,7 @@ class LogoutIntegrationTest {
 
     assertThat(response.statusCode()).isEqualTo(200);
     assertRefreshCookieExpired(response);
-    assertThat(redisTemplate.hasKey("auth:refresh:" + sha256(refreshToken))).isFalse();
+    assertThat(redisTemplate.hasKey("auth:refresh:" + TokenHash.sha256Hex(refreshToken))).isFalse();
     assertThat(redisTemplate.keys("auth:blacklist:*")).isEmpty();
   }
 
@@ -112,7 +109,7 @@ class LogoutIntegrationTest {
 
     assertThat(response.statusCode()).isEqualTo(200);
     assertRefreshCookieExpired(response);
-    assertThat(redisTemplate.hasKey("auth:refresh:" + sha256(refreshToken))).isFalse();
+    assertThat(redisTemplate.hasKey("auth:refresh:" + TokenHash.sha256Hex(refreshToken))).isFalse();
     String blacklistKey = "auth:blacklist:" + TokenHash.sha256Hex(accessToken);
     assertThat(redisTemplate.opsForValue().get(blacklistKey)).isEqualTo("1");
     assertThat(redisTemplate.getExpire(blacklistKey)).isBetween(1L, Duration.ofMinutes(30).toSeconds());
@@ -159,10 +156,6 @@ class LogoutIntegrationTest {
         .expiration(Date.from(past.plusSeconds(60)))
         .signWith(JWT_KEY_PAIR.getPrivate(), Jwts.SIG.RS256)
         .compact();
-  }
-
-  private static String sha256(String value) throws Exception {
-    return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
   }
 
   private static KeyPair newKeyPair() {

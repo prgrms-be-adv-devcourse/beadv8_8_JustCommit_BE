@@ -25,6 +25,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class LogoutServiceTest {
@@ -101,6 +102,6 @@ class LogoutServiceTest {
         .isInstanceOf(RedisConnectionFailureException.class);
 
     then(jwtProvider).shouldHaveNoInteractions();
-    then(accessTokenBlacklistStore).should(org.mockito.Mockito.never()).add(anyString(), any());
+    then(accessTokenBlacklistStore).should(never()).add(anyString(), any());
   }
 }

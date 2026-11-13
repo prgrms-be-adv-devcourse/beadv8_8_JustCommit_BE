@@ -1,19 +1,17 @@
 package com.justcommit.backend.member.auth.infrastructure.redis;
 
+import com.justcommit.backend.common.security.TokenHash;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.*;
 
 /**
- * Refresh 토큰 Redis 관리 (원문은 저장하지 않고 SHA-256 해시를 키로 사용).
+ * Refresh 토큰 Redis 관리 (원문은 저장하지 않고 공통 TokenHash의 SHA-256 해시를 키로 사용, 블랙리스트와 같은 규칙).
  * - auth:refresh:{토큰 해시} → memberId (TTL 1일)
  * - auth:refresh-set:{memberId} → 그 회원의 Refresh 토큰 해시 Set (모든 기기 끊기에 사용)
  *
@@ -72,7 +70,7 @@ public class RefreshTokenRedisStore {
 
   // 새 Refresh 토큰 저장 (로그인 · 소셜 로그인 · 소셜 가입 · 재발급 모두 RefreshTokenIssuer를 거쳐 여기로)
   public void save(String refreshToken, Long memberId, Duration ttl) {
-    String hash = sha256(refreshToken);
+    String hash = TokenHash.sha256Hex(refreshToken);
     String member = String.valueOf(memberId);
     redisTemplate.execute(SAVE_SCRIPT, List.of(setKey(member), refreshKey(hash)),
         hash, member, String.valueOf(ttl.toSeconds()));
@@ -80,7 +78,7 @@ public class RefreshTokenRedisStore {
 
   // 재발급: 토큰을 꺼내며 삭제. 동시에 같은 토큰으로 두 요청이 와도 한 요청만 memberId를 얻음
   public Optional<Long> findAndDelete(String refreshToken) {
-    String hash = sha256(refreshToken);
+    String hash = TokenHash.sha256Hex(refreshToken);
     String refreshKey = refreshKey(hash);
     String memberId = redisTemplate.opsForValue().get(refreshKey);
     if (memberId == null) {
@@ -121,16 +119,5 @@ public class RefreshTokenRedisStore {
 
   private static String setKey(String memberId) {
     return String.format(REFRESH_SET_KEY, memberId);
-  }
-
-  // 토큰 원문 → SHA-256 16진수 문자열(64자)
-  private static String sha256(String value) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
-    } catch (NoSuchAlgorithmException e) {
-      // SHA-256은 모든 자바 실행 환경에 반드시 있는 알고리즘이라 실제로는 발생하지 않음
-      throw new IllegalStateException("SHA-256을 사용할 수 없습니다.", e);
-    }
   }
 }

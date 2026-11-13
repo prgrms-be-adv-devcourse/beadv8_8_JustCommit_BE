@@ -1,5 +1,6 @@
 package com.justcommit.backend.member.auth.infrastructure.redis;
 
+import com.justcommit.backend.common.security.TokenHash;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,11 +14,8 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -98,7 +96,7 @@ class RefreshTokenRedisStoreTest {
 
     assertThat(results).filteredOn(Optional::isPresent).hasSize(1);
     assertThat(results).filteredOn(Optional::isPresent).first().isEqualTo(Optional.of(4L));
-    assertThat(redisTemplate.hasKey("auth:refresh:" + sha256("token-a"))).isFalse();
+    assertThat(redisTemplate.hasKey("auth:refresh:" + TokenHash.sha256Hex("token-a"))).isFalse();
     assertThat(redisTemplate.opsForSet().members("auth:refresh-set:4")).isEmpty();
   }
 
@@ -122,9 +120,9 @@ class RefreshTokenRedisStoreTest {
     int deleted = new RefreshTokenRedisStore(racingTemplate).deleteAllByMember(7L);
 
     assertThat(deleted).isEqualTo(1);
-    assertThat(redisTemplate.hasKey("auth:refresh:" + sha256("old-token"))).isFalse();
-    assertThat(redisTemplate.opsForValue().get("auth:refresh:" + sha256("new-token"))).isEqualTo("7");
-    assertThat(redisTemplate.opsForSet().members("auth:refresh-set:7")).containsExactly(sha256("new-token"));
+    assertThat(redisTemplate.hasKey("auth:refresh:" + TokenHash.sha256Hex("old-token"))).isFalse();
+    assertThat(redisTemplate.opsForValue().get("auth:refresh:" + TokenHash.sha256Hex("new-token"))).isEqualTo("7");
+    assertThat(redisTemplate.opsForSet().members("auth:refresh-set:7")).containsExactly(TokenHash.sha256Hex("new-token"));
   }
 
   @Test
@@ -137,11 +135,11 @@ class RefreshTokenRedisStoreTest {
     int deleted = store.deleteAllByMember(7L);
 
     assertThat(deleted).isEqualTo(2);
-    assertThat(redisTemplate.hasKey("auth:refresh:" + sha256("member7-a"))).isFalse();
-    assertThat(redisTemplate.hasKey("auth:refresh:" + sha256("member7-b"))).isFalse();
+    assertThat(redisTemplate.hasKey("auth:refresh:" + TokenHash.sha256Hex("member7-a"))).isFalse();
+    assertThat(redisTemplate.hasKey("auth:refresh:" + TokenHash.sha256Hex("member7-b"))).isFalse();
     assertThat(redisTemplate.opsForSet().members("auth:refresh-set:7")).isEmpty();
-    assertThat(redisTemplate.opsForValue().get("auth:refresh:" + sha256("member8-a"))).isEqualTo("8");
-    assertThat(redisTemplate.opsForSet().members("auth:refresh-set:8")).containsExactly(sha256("member8-a"));
+    assertThat(redisTemplate.opsForValue().get("auth:refresh:" + TokenHash.sha256Hex("member8-a"))).isEqualTo("8");
+    assertThat(redisTemplate.opsForSet().members("auth:refresh-set:8")).containsExactly(TokenHash.sha256Hex("member8-a"));
   }
 
   // 두 작업을 같은 순간에 시작시키고 결과를 모은다 (실제로 겹쳐 실행된다는 보장은 없음)
@@ -166,15 +164,6 @@ class RefreshTokenRedisStoreTest {
       futures.forEach(future -> future.cancel(true));
       executor.shutdownNow();
       assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
-    }
-  }
-
-  private static String sha256(String value) throws IllegalStateException {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
     }
   }
 }
