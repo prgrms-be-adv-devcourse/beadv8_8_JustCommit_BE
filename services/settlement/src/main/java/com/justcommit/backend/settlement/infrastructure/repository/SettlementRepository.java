@@ -10,5 +10,5 @@ public interface SettlementRepository extends JpaRepository<Settlement, Long> {
 
     Optional<Settlement> findBySellerOrderId(Long sellerOrderId);
 
-    List<Settlement> findBySellerIdOrderBySettledAtDesc(Long sellerId);
+    List<Settlement> findBySellerIdOrderByCreatedAtDesc(Long sellerId);
 }
