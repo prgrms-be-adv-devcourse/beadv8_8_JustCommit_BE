@@ -1,7 +1,7 @@
 # Redis 키
 
 > 언제 읽나: Redis 키를 새로 쓰거나 TTL을 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-10 · 관련: Miro A1, legacy/infrastructure-todo.md
+> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: Miro A1, legacy/infrastructure-todo.md
 
 ## 규칙
 
@@ -14,7 +14,7 @@
 
 | 키 | 값 | TTL | 쓰는 서비스 | 용도 |
 |---|---|---|---|---|
-| `auth:refresh:{토큰 해시}` | memberId | 1일 | member | Refresh 토큰. 재발급 때마다 교체 (`GETDEL`) |
+| `auth:refresh:{토큰 해시}` | memberId | 1일 | member | Refresh 토큰. 재발급 때마다 교체 (꺼내며 삭제, 회원별 목록과 함께 Lua로 처리) |
 | `auth:email:{email}` | 인증번호 (6자리) | 5분 | member | 이메일 인증번호. ⬜ 목적(가입 · 비밀번호 재설정 · 계좌 변경)별 구분 방법 |
 | 🟨 `auth:email:attempts:{email}` | 틀린 횟수 | 5분 | member | 5번 틀리면 인증번호 폐기 |
 | `auth:email:cooldown:{email}` | `1` (SET NX) | 60초 | member | 재발송 1분 1회 |
@@ -22,7 +22,7 @@
 | `auth:email:verified:{email}` | `true` | 30분 | member | 인증 완료 표시 |
 | `auth:blacklist:{토큰 해시}` | `1` | 토큰 남은 수명 (최대 30분) | member 씀 · Gateway 읽음 | 로그아웃한 Access 토큰 거절 |
 | `auth:revoked-member:{memberId}` | 끊은 시각 (초) | 30분 | member 씀 · Gateway 읽음 | `iat <= 끊은 시각`인 토큰 모두 거절 |
-| ⬜ 회원별 Refresh 목록 (이름 미정) | Refresh 해시 Set | 1일 | member | 탈퇴 · 비밀번호 변경 때 Refresh 일괄 삭제 |
+| `auth:refresh-set:{memberId}` | Refresh 토큰 해시 Set | 1일 (토큰을 저장할 때마다 갱신) | member | 그 회원의 Refresh를 한 번에 삭제 (탈퇴 · 비밀번호 변경). 저장 · 삭제는 Refresh 키와 함께 Lua로 처리. 만료된 Refresh의 해시는 남을 수 있고, 새 토큰 발급이 계속되면 TTL도 갱신돼 오래된 해시가 장기간 누적될 수 있음 (정리 방식은 사용량을 보고 정함) |
 
 ## 예외
 
