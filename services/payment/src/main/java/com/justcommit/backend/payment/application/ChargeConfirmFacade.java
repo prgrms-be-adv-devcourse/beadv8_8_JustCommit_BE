@@ -35,7 +35,12 @@ public class ChargeConfirmFacade {
             tossResponse = tossPaymentClient.confirm(
                     request.getPaymentKey(), request.getOrderId(), request.getAmount());
         } catch (TossConfirmRejectedException e) {
-            chargeService.fail(chargeId);
+            try {
+                chargeService.fail(chargeId);
+            } catch (RuntimeException failError) {
+                // FAILED 반영 실패 → PENDING으로 남고 #363이 정리. 사용자에게는 거절 사유를 그대로 돌려준다
+                log.error("토스 거절 후 FAILED 반영 실패: chargeId={}, code={}", chargeId, e.getCode(), failError);
+            }
             throw new BusinessException(PaymentErrorCode.PG_CONFIRM_FAILED, e.getMessage());
         } catch (TossConfirmResultUnknownException e) {
             // 결과 불명 → PENDING 유지, 복구 스케줄러(#363)가 확정
