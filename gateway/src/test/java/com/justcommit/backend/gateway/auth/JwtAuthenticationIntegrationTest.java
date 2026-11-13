@@ -127,6 +127,15 @@ class JwtAuthenticationIntegrationTest extends GatewayIntegrationTest {
   }
 
   @Test
+  @DisplayName("공개 경로: 닉네임 · 휴대폰 중복 확인은 토큰 없이 member까지 감, 옛 경로(checkNickname · checkPhone)는 공개 아님 → 401")
+  void availabilityPathsArePublic() {
+    get("/api/v1/users/nicknameAvailability?nickname=green", null).expectStatus().isOk();
+    get("/api/v1/users/phoneAvailability?phone=01012345678", null).expectStatus().isOk();
+    expectError(get("/api/v1/users/checkNickname?nickname=green", null), 401, "UNAUTHORIZED");
+    expectError(get("/api/v1/users/checkPhone?phone=01012345678", null), 401, "UNAUTHORIZED");
+  }
+
+  @Test
   @DisplayName("로그아웃 · 재발급은 만료 토큰이어도 member까지 감 (/api/v1/auth/** 토큰 검사 제외)")
   void logoutAndReissueWithExpiredToken() {
     String expired = expiredToken(1);

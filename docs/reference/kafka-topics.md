@@ -1,7 +1,7 @@
 # Kafka 토픽 · 이벤트 표
 
 > 언제 읽나: 어떤 이벤트를 누가 발행 · 구독하는지 정확히 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: Miro 9 · 10, 노션 기획안 「Kafka 이벤트」, 노션 「정책 정리」 3.10 · 8.7
+> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: Miro 9 · 10, 노션 기획안 「Kafka 이벤트」, 노션 「정책 정리」 3.10 · 8.7
 
 ## 토픽 목록
 
@@ -17,10 +17,10 @@
 | `market.order-item-returned.v1` | `orderId` | market |
 | `product.events.v1` | `productId` | product |
 | `product.review.v1` | `productId` | product |
-| `species.events.v1` | `speciesId` | product |
+| `species.events.v1` | `speciesId` | ⬜ 발행 안 함 → [ADR 0020](../decisions/0020-species-profile-ai-seed.md) |
 | `settlement.events.v1` | `sellerId` | settlement |
 
-도메인 토픽 7개 + market → product 토픽 5개 = 12개. 주문 · 배송 이벤트는 `market.events.v1` 하나입니다 → [ADR 0018](../decisions/0018-market-events-single-topic.md). market → product 토픽은 이벤트마다 하나(`market.<이름>.v1`)입니다 → [ADR 0016](../decisions/0016-product-sale-events-from-market.md). 계좌는 이벤트로 복제하지 않고 payment가 member 내부 API로 조회합니다 → [ADR 0015](../decisions/0015-member-topics-two-account-api.md). 파티션 3은 브로커 기본값 `KAFKA_NUM_PARTITIONS: 3`(`docker-compose.yml` · `docker-compose.prod.yml`)으로 적용 (✅ 확정, 자동 생성되는 새 토픽 · DLT에만 적용되고 이미 있는 토픽은 그대로). concurrency 3 · 보관 7일 (🟨 제안), 복제 1. 다음 단계(⬜ 미정): 토픽을 코드로 선언(common-messaging `NewTopic`), 운영 자동 생성 끄기. 규칙 → [이벤트 규칙](../conventions/events.md)
+도메인 토픽 7개 + market → product 토픽 5개 = 12개 (`species.events.v1`은 발행하지 않고, 상수 정리는 common 담당과 정함 ⬜). 주문 · 배송 이벤트는 `market.events.v1` 하나입니다 → [ADR 0018](../decisions/0018-market-events-single-topic.md). market → product 토픽은 이벤트마다 하나(`market.<이름>.v1`)입니다 → [ADR 0016](../decisions/0016-product-sale-events-from-market.md). 계좌는 이벤트로 복제하지 않고 payment가 member 내부 API로 조회합니다 → [ADR 0015](../decisions/0015-member-topics-two-account-api.md). 파티션 3은 브로커 기본값 `KAFKA_NUM_PARTITIONS: 3`(`docker-compose.yml` · `docker-compose.prod.yml`)으로 적용 (✅ 확정, 자동 생성되는 새 토픽 · DLT에만 적용되고 이미 있는 토픽은 그대로). concurrency 3 · 보관 7일 (🟨 제안), 복제 1. 다음 단계(⬜ 미정): 토픽을 코드로 선언(common-messaging `NewTopic`), 운영 자동 생성 끄기. 규칙 → [이벤트 규칙](../conventions/events.md)
 
 전환 중: market이 구매 확정을 `market.events.v1`로 옮기는 동안 settlement는 옛 토픽 `market.purchase-confirmed.v1`(봉투 없는 JSON, `shippingFee` 없음)도 함께 받습니다. 옛 토픽에 남은 메시지가 없으면 settlement의 옛 토픽 리스너를 지웁니다 (#364)
 
@@ -42,11 +42,10 @@
 | `market.order-expired.v1` · `market.order-failed.v1` | 결제 전 예약 해제 (`orderId`) | product | `PAYMENT_PENDING` → `ACTIVE`, `product_reservation`을 `RELEASED`로 (0건이어도). 만료 · 결제 확정 실패(예약 응답 타임아웃 · 지갑 없음 등) 때만, 결제 결과를 모르는 동안은 발행 안 함 |
 | `market.order-item-cancelled.v1` | 판매 재개 (`orderId` · `orderItemId` · `productId` · `reason`: `BUYER` · `SELLER` · `AUTO`) | product | 환불 성공 뒤 발행. `BUYER`면 `ACTIVE`, `SELLER` · `AUTO`면 `ACTIVE` + 숨김. 주문 전체 취소도 주문상품마다 |
 | `market.order-item-returned.v1` | 판매 재개 (`orderId` · `orderItemId` · `productId`) | product | 반품 환불 뒤 발행. `ACTIVE` + 숨김 |
-| `product.events.v1` | 상품 변경 (상품 ID) — `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged` | product(색인 리스너) | DB에서 최신 상품을 읽어 OpenSearch 문서를 덮어씀 |
-| `product.events.v1` | `ProductApproved` | product(색인) · ai · notification | 색인, 추천 후보 추가, 판매자에게 통과 알림 |
+| `product.events.v1` | 상품 변경 — `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged` | product(색인 리스너) · ai | product: DB에서 최신 상품을 읽어 OpenSearch 문서를 덮어씀. ai: payload로 상품 스냅샷 upsert (`productVersion`이 저장값보다 클 때만) → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md) |
+| `product.events.v1` | `ProductApproved` | product(색인) · notification | 색인, 판매자에게 통과 알림 |
 | `product.events.v1` | `ProductRejected` | notification | 판매자에게 반려 사유와 함께 알림 |
 | `product.review.v1` | `ProductReviewRequested` (`review_version` 포함) | product | 사진 검수 (비동기) |
-| `species.events.v1` | `SpeciesProfileUpdated` | ai | 품종 임베딩 → pgvector, speciesId upsert |
 | `settlement.events.v1` | `SettlementCompleted` | notification | 정산 알림 |
 
 `ShipmentPickedUp`은 만들지 않습니다. 배송비 이동이 정산 지급 때로 바뀌어 받는 곳이 없고, 수거 알림은 `ShipmentStatusChanged`로 보냅니다 (노션 8.7). market → product 토픽은 서로 달라 도착 순서가 바뀔 수 있으므로, product는 "이 주문이 잡은 상품만, 바뀐 상품 0건이면 정상"으로 순서와 상관없이 처리합니다 → [product 정책](../services/product.md#정책)
@@ -83,14 +82,27 @@
 
 | eventType | payload | 비고 |
 |---|---|---|
-| `ProductRegistered` | `productId` (숫자) | 상품 등록 |
-| `ProductUpdated` | `productId` (숫자) | 제목 · 가격 · 사진 · 품종 등 수정 |
-| `ProductStatusChanged` | `productId` (숫자) | 예약 · 판매 완료 · 예약 해제 · 판매 재개 · 숨김 · 삭제 · 판매자 탈퇴 정리 |
+| `ProductRegistered` | 아래 공통 칸 | 상품 등록 |
+| `ProductUpdated` | 아래 공통 칸 | 제목 · 가격 · 사진 · 품종 등 수정 |
+| `ProductStatusChanged` | 아래 공통 칸 | 예약 · 판매 완료 · 예약 해제 · 판매 재개 · 숨김 · 삭제 · 판매자 탈퇴 정리 · 검수 결과(통과 · 반려) |
 | `ProductApproved` · `ProductRejected` | ⬜ | 사진 검수 때(#345) |
+
+세 이벤트의 공통 payload (`version` 2, [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md)):
+
+| 칸 | 타입 | 내용 |
+|---|---|---|
+| `productId` | 숫자 | 상품 ID (Key와 같음) |
+| `speciesId` | 숫자 | 품종 ID |
+| `sellerId` | 숫자 | 판매자 회원 ID |
+| `status` | 문자열 | 바뀐 뒤 상품 상태 (`REVIEW_PENDING` · `REJECTED` · `ACTIVE` · `PAYMENT_PENDING` · `SOLD_OUT` · `DELETED`) |
+| `hidden` | 참/거짓 | 숨김 여부 |
+| `productVersion` | 숫자 | 상품 버전. 상품 행을 바꾸는 모든 UPDATE에서 +1 (봉투 `version`과 다름). 받는 쪽은 저장된 값보다 클 때만 반영, 같으면 중복 |
+
+가격 · 제목은 싣지 않습니다 (화면에 보일 값은 market이 상품 ID로 조회). payload 값은 발행하는 트랜잭션에서 상품을 다시 읽어 채우고, 상태 · 숨김을 바꾸는 곳은 반드시 새 값이 담긴 이벤트를 보냅니다. 순서는 `productVersion`으로 판단하고 봉투 `occurredAt`은 로그용입니다. 현재 이 토픽 구독자는 없고(develop 기준), 칸 추가는 공통 매퍼의 `FAIL_ON_UNKNOWN_PROPERTIES` 비활성으로 호환됩니다.
 
 검수 요청 `ProductReviewRequested`는 이 토픽이 아니라 `product.review.v1`(Key `productId`)로 보냅니다. payload는 사진 검수 때(#345) 정합니다.
 
-받는 쪽은 상품 ID로 DB에서 최신 상품을 다시 읽습니다 (같은 이벤트가 두 번 와도 결과가 같음). 주문 번호 · 판매자 기준으로 여러 상품을 한 번에 바꿀 때는 잠근 상품마다 보내므로, 실제로 바뀌지 않은 상품이 섞일 수 있습니다.
+product 색인 리스너는 상품 ID로 DB에서 최신 상품을 다시 읽습니다 (같은 이벤트가 두 번 와도 결과가 같음). ai는 payload로 저장하고 product를 조회하지 않습니다. 주문 번호 · 판매자 기준으로 여러 상품을 한 번에 바꿀 때는 잠근 상품마다 보내므로, 실제로 바뀌지 않은 상품이 섞일 수 있습니다.
 
 회원 이벤트(`member.events.v1`) payload → [member](../services/member.md)
 

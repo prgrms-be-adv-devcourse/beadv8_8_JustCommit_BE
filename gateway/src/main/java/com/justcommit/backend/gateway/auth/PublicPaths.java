@@ -29,8 +29,8 @@ class PublicPaths {
       // member: 가입 · 소셜 가입(가입 토큰은 Access가 아니라 member가 직접 확인) · 중복 확인
       rule(HttpMethod.POST, "/api/v1/users"),
       rule(HttpMethod.POST, "/api/v1/users/social"),
-      rule(HttpMethod.GET, "/api/v1/users/checkNickname"),
-      rule(HttpMethod.GET, "/api/v1/users/checkPhone"),
+      rule(HttpMethod.GET, "/api/v1/users/nicknameAvailability"),
+      rule(HttpMethod.GET, "/api/v1/users/phoneAvailability"),
       // member: 카카오 로그인 (Spring Security OAuth2가 처리)
       rule(null, "/oauth2/**"),
       rule(null, "/login/oauth2/**"),

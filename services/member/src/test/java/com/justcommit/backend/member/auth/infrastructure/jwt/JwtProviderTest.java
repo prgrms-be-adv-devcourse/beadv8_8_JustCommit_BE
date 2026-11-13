@@ -11,6 +11,7 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Base64;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -147,6 +148,53 @@ class JwtProviderTest {
   }
 
   // 테스트용 JwtProvider 생성 (Spring 없이 직접 생성)
+  // ── 로그아웃 블랙리스트용 만료 시각 ──
+
+  @Test
+  @DisplayName("유효한 Access 토큰은 검증 후 토큰에 기록된 실제 만료 시각(exp)을 돌려준다")
+  void verifiedAccessTokenExpiresAt() {
+    String token = jwtProvider.createAccessToken(4L, "MEMBER");
+
+    Instant expiresAt = jwtProvider.getVerifiedAccessTokenExpiresAt(token);
+
+    // 같은 토큰의 iat(공통 검증기) + 발급 수명 30분 = exp
+    long issuedAt = jwtVerifier.verifyAccessToken(token).issuedAt();
+    assertThat(expiresAt.getEpochSecond()).isEqualTo(issuedAt + Duration.ofMinutes(30).toSeconds());
+  }
+
+  @Test
+  @DisplayName("만료된 Access 토큰은 만료 시각을 돌려주지 않고 EXPIRED")
+  void expiredAccessTokenExpiresAt() {
+    String expiredToken = createProvider(KEY_PAIR, Duration.ofSeconds(-1)).createAccessToken(4L, "MEMBER");
+
+    assertThatThrownBy(() -> jwtProvider.getVerifiedAccessTokenExpiresAt(expiredToken))
+        .isInstanceOf(TokenException.class)
+        .extracting("reason").isEqualTo(TokenException.Reason.EXPIRED);
+  }
+
+  @Test
+  @DisplayName("Signup 토큰은 Access 만료 시각 조회에서 INVALID (타입 확인)")
+  void signupTokenIsNotAccessForExpiresAt() {
+    String signupToken = jwtProvider.createSignupToken("KAKAO", "12345", "user@kakao.com");
+
+    assertThatThrownBy(() -> jwtProvider.getVerifiedAccessTokenExpiresAt(signupToken))
+        .isInstanceOf(TokenException.class)
+        .extracting("reason").isEqualTo(TokenException.Reason.INVALID);
+  }
+
+  @Test
+  @DisplayName("다른 키로 서명했거나 형식이 깨진 토큰은 Access 만료 시각 조회에서 INVALID (서명 확인)")
+  void forgedOrBrokenTokenExpiresAt() {
+    String forgedToken = createProvider(OTHER_KEY_PAIR, Duration.ofMinutes(30)).createAccessToken(4L, "MEMBER");
+
+    assertThatThrownBy(() -> jwtProvider.getVerifiedAccessTokenExpiresAt(forgedToken))
+        .isInstanceOf(TokenException.class)
+        .extracting("reason").isEqualTo(TokenException.Reason.INVALID);
+    assertThatThrownBy(() -> jwtProvider.getVerifiedAccessTokenExpiresAt("not-a-jwt"))
+        .isInstanceOf(TokenException.class)
+        .extracting("reason").isEqualTo(TokenException.Reason.INVALID);
+  }
+
   private static JwtProvider createProvider(KeyPair keyPair, Duration expiration) {
     return createProvider(privateKeyOf(keyPair), publicKeyOf(keyPair), expiration);
   }

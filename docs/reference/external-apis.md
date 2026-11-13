@@ -14,12 +14,12 @@
 | POST | `auth/email/send` | 인증번호 발송 | 공개 |
 | POST | `auth/email/verify` | 인증번호 확인 | 공개 |
 | POST | `auth/login` | 로그인 | 공개 |
-| POST | `auth/logout` | 로그아웃 | 공개(Refresh 쿠키) |
+| POST | `auth/logout` | 로그아웃 | 공개(Refresh 쿠키 · 선택 `Authorization`) |
 | POST | `auth/reissue` | 토큰 재발급 | 공개(Refresh 쿠키) |
 | POST | `users` | 회원가입 | 공개 |
 | POST | `users/social` | 소셜 가입 완료 | 공개 |
-| GET | `users/checkNickname` | 닉네임 중복 확인 | 공개 |
-| GET | `users/checkPhone` | 휴대폰 중복 확인 | 공개 |
+| GET | `users/nicknameAvailability?nickname=` | 닉네임 중복 확인 | 공개 |
+| GET | `users/phoneAvailability?phone=` | 휴대폰 중복 확인 | 공개 |
 | GET | `users/me` | 내 정보 | 로그인 |
 | GET · POST | `users/me/addresses` | 배송지 목록 · 추가 | 로그인 |
 | PATCH | `users/me/addresses/{id}/default` | 기본 배송지 변경 | 로그인 |
@@ -95,8 +95,6 @@
 
 | 지금 | 개선안 |
 |---|---|
-| `GET users/checkNickname` | `GET users/nicknameAvailability?nickname=` |
-| `GET users/checkPhone` | `GET users/phoneAvailability?phone=` |
 | `POST orders/cart` | `POST orders` `{"cartItemIds":[...]}` |
 | `POST orders/{id}/pay` | `POST orders/{id}/payments` |
 | `POST orders/{id}/cancel` | `PATCH orders/{id}` `{"status":"CANCELLED"}` |

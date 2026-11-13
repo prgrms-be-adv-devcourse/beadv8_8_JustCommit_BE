@@ -26,7 +26,7 @@
 
 ## 외부 API
 
-`auth/email/send` · `auth/email/verify` · `auth/login` · `auth/logout` · `auth/reissue` · `users` · `users/social` · `users/checkNickname` · `users/checkPhone` · `users/me` · `users/me/addresses` · `users/me/addresses/{id}/default` · `sellers` + 카카오 로그인 2개 → [외부 API 목록](../reference/external-apis.md)
+`auth/email/send` · `auth/email/verify` · `auth/login` · `auth/logout` · `auth/reissue` · `users` · `users/social` · `users/nicknameAvailability` · `users/phoneAvailability` · `users/me` · `users/me/addresses` · `users/me/addresses/{id}/default` · `sellers` + 카카오 로그인 2개 → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 
