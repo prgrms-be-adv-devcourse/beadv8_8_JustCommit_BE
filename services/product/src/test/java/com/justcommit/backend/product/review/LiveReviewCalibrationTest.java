@@ -4,6 +4,7 @@ import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.product.banned.application.BannedListService;
 import com.justcommit.backend.product.config.ClockConfig;
 import com.justcommit.backend.product.image.application.ImageData;
+import com.justcommit.backend.product.review.application.ReviewEngineException;
 import com.justcommit.backend.product.review.application.ReviewJudgeProvider;
 import com.justcommit.backend.product.review.domain.Candidate;
 import com.justcommit.backend.product.review.domain.ModerationResult;
@@ -111,11 +112,21 @@ class LiveReviewCalibrationTest {
             }
 
             boolean imageFlagged = false;
-            for (ImageData image : images) {
-                imageFlagged |= moderation.isImageFlagged(image);
+            boolean textFlagged;
+            PlantIdentification plant;
+            try {
+                for (ImageData image : images) {
+                    imageFlagged |= moderation.isImageFlagged(image);
+                }
+                textFlagged = !title.isEmpty() && moderation.isTextFlagged(title);
+                plant = haiku.identify(images, bannedNames);
+            } catch (ReviewEngineException e) {
+                // 한 건 실패로 전체를 멈추지 않고 기록만 (재처리 대상인 엔진 오류)
+                total++;
+                out.add(String.join(",", imagesCol, speciesName, expected, "", "", "", "", "", "",
+                        "ENGINE_ERROR", "", e.getMessage().replace(',', ' '), "X"));
+                continue;
             }
-            boolean textFlagged = !title.isEmpty() && moderation.isTextFlagged(title);
-            PlantIdentification plant = haiku.identify(images, bannedNames);
 
             // 한글 품종 이름이면 학명으로 바꾸고, 아니면 학명으로 그대로 씀 (3차 실험 라벨은 학명)
             SellerSpecies seller = "기타".equals(speciesName) || "OTHER".equalsIgnoreCase(speciesName)

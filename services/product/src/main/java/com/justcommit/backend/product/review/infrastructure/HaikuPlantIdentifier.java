@@ -6,9 +6,11 @@ import com.anthropic.models.messages.Base64ImageSource;
 import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.MessageCreateParams;
+import com.anthropic.models.messages.OutputConfig;
 import com.anthropic.models.messages.StopReason;
 import com.anthropic.models.messages.StructuredMessage;
 import com.anthropic.models.messages.StructuredMessageCreateParams;
+import com.anthropic.models.messages.StructuredOutputConfig;
 import com.anthropic.models.messages.TextBlockParam;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import com.justcommit.backend.product.image.application.ImageData;
@@ -33,7 +35,10 @@ import java.util.List;
 public class HaikuPlantIdentifier implements PlantIdentifier {
 
     static final String MODEL = "claude-haiku-5-5";
-    private static final long MAX_TOKENS = 1024;
+    // Haiku 5.5는 생각(adaptive thinking)이 기본으로 켜져 있고 생각 토큰도 max_tokens에 들어감.
+    // 1024면 생각하다 JSON을 다 쓰기 전에 잘림(stop_reason max_tokens) → 한도는 넉넉히, 생각 깊이는 LOW로
+    static final long MAX_TOKENS = 16000;
+    static final OutputConfig.Effort EFFORT = OutputConfig.Effort.LOW;
 
     private final AnthropicClient client;   // 키가 없으면 null (로컬 · 테스트에서 앱은 뜨고 검수만 관리자 확인으로)
 
@@ -93,7 +98,7 @@ public class HaikuPlantIdentifier implements PlantIdentifier {
                 .maxTokens(MAX_TOKENS)
                 .system(systemPrompt(bannedNames))
                 .addUserMessageOfContentBlockParams(content)
-                .outputConfig(Answer.class)
+                .outputConfig(StructuredOutputConfig.<Answer>builder().format(Answer.class).effort(EFFORT).build())
                 .build();
     }
 

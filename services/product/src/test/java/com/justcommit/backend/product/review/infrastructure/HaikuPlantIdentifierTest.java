@@ -1,5 +1,6 @@
 package com.justcommit.backend.product.review.infrastructure;
 
+import com.anthropic.models.messages.OutputConfig;
 import com.justcommit.backend.product.image.application.ImageData;
 import com.justcommit.backend.product.review.application.ReviewEngineException;
 import com.justcommit.backend.product.review.domain.PlantIdentification;
@@ -36,6 +37,9 @@ class HaikuPlantIdentifierTest {
                 });
         assertThat(params.system().orElseThrow().asString()).contains("나도풍란(Sedirea japonica)", "양귀비(Papaver somniferum)");
         assertThat(params.outputConfig()).isPresent();
+        // 생각 토큰도 max_tokens에 들어가므로 한도는 넉넉히, 생각 깊이는 LOW (1024면 JSON이 잘렸음)
+        assertThat(params.maxTokens()).isEqualTo(HaikuPlantIdentifier.MAX_TOKENS).isGreaterThanOrEqualTo(8000);
+        assertThat(params.outputConfig().orElseThrow().effort()).contains(OutputConfig.Effort.LOW);
     }
 
     @Test
