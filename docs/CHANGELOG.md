@@ -1,12 +1,13 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-14 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-14 · reference/internal-apis.md · services/member.md · open-questions.md · member 계좌 조회 내부 API 반영: `GET /internal/v1/members/{memberId}/account`(`X-Internal-Key` 필수) 응답 `bankCode` · `accountNo`(member가 복호화한 원문) · `accountHolder`, 없는 회원 · 탈퇴 회원 404 `MEMBER_NOT_FOUND`, 상태 「✅ member 구현 · ⬜ payment 연동(#388)」, 미정 항목에서 계좌 조회 경로 제거(운영 전송 보호 방식은 payment · 인프라 담당과 정하는 미정으로 유지) (#453)
 - 2026-11-13 · infra/database.md · reference/env-vars.md · services/ai.md · ai DB `ai_db` · 계정 `ai_app` 추가, 로컬 postgres 이미지를 `pgvector/pgvector:pg17`로, `vector` 확장은 superuser가 서비스 DB SQL에서 생성, 임베딩 모델 `text-embedding-3-small` 1536차원 · 키 변수 `OPENAI_API_KEY`, 운영 DB도 pgvector 이미지 필요(인프라 요청) (#290)
 - 2026-11-13 · flows/image-review.md · services/product.md · reference/external-apis.md · reference/schedulers.md · services/notification.md · reference/kafka-topics.md · 사진 검수 11/11 결정 반영: 외부 API가 재시도 후에도 실패하면 `IMAGE_REVIEW` `ENGINE_ERROR`로 두고 5분 간격 최대 3회 엔진 재처리(스케줄러 추가, 횟수 · 제한에 안 셈, 12 · 24시간 기한은 관리자 확인으로 넘어간 뒤부터), 3회 실패하면 관리자 확인 · 관리자 「다시 검수」 버튼은 두지 않음, 검수 통과 알림(notification이 `ProductApproved` 구독), 판매자 API `GET products/{id}/imageReviews`(검수 기록) · `POST products/{id}/imageReviews`(기한 초과 재요청, 409 `RESUBMIT_NOT_ALLOWED`) · `POST products/{id}/appeals`(이의 신청) (#344)
 - 2026-11-13 · flows/image-review.md · reference/kafka-topics.md · testing/scenarios.md · PR #449 리뷰 반영: `ProductApproved` · `ProductRejected` payload 제안값(🟨, #345에서 확정), 통과 · 반려 알림 문장 합침, 시나리오 S-C10(엔진 오류 재처리) 추가 · S-C05에 통과 알림 (#344)
