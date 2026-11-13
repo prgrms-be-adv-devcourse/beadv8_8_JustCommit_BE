@@ -5,6 +5,8 @@ import com.justcommit.backend.product.review.domain.ImageReview;
 import com.justcommit.backend.product.review.domain.enums.RejectReason;
 import com.justcommit.backend.product.review.domain.enums.ReviewDecision;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -19,4 +21,14 @@ public interface ImageReviewRepository extends JpaRepository<ImageReview, Long> 
     // 최근 반려 수 (REVIEW_EXPIRED는 판매자 잘못이 아니라 제외)
     long countBySellerIdAndDecisionAndRejectReasonNotAndReviewedAtGreaterThanEqual(
             Long sellerId, ReviewDecision decision, RejectReason excluded, LocalDateTime from);
+
+    // 재처리할 엔진 오류 한 건을 잠금 (파드 여러 개가 동시에 돌아도 같은 건을 집지 않게 SKIP LOCKED)
+    @Query(value = """
+            SELECT id FROM image_review
+            WHERE status = 'ENGINE_ERROR' AND next_retry_at <= :now
+            ORDER BY next_retry_at, id
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+            """, nativeQuery = true)
+    Optional<Long> lockNextEngineError(@Param("now") LocalDateTime now);
 }

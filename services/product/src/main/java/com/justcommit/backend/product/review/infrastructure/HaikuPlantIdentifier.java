@@ -28,7 +28,7 @@ import java.util.Base64;
 import java.util.List;
 
 // Claude Haiku 식물 식별. 사진 전부와 금지 품종 목록을 넣고, 답은 structured output(JSON 형식 지정)으로 받음
-// SDK가 429 · 5xx · 연결 실패를 2번 다시 시도함. 그래도 실패 · 거절 · 잘린 응답이면 ReviewEngineException
+// SDK가 429 · 5xx · 연결 실패를 2번 다시 시도함(요청마다 30초 타임아웃 → 최악 약 90초). 그래도 실패 · 거절 · 잘린 응답이면 ReviewEngineException
 @Component
 public class HaikuPlantIdentifier implements PlantIdentifier {
 
@@ -40,12 +40,17 @@ public class HaikuPlantIdentifier implements PlantIdentifier {
     @Autowired
     public HaikuPlantIdentifier(@Value("${custom.review.anthropic.api-key:}") String apiKey) {
         this(StringUtils.hasText(apiKey)
-                ? AnthropicOkHttpClient.builder().apiKey(apiKey).maxRetries(2).timeout(Duration.ofSeconds(60)).build()
+                ? AnthropicOkHttpClient.builder().apiKey(apiKey).maxRetries(2).timeout(Duration.ofSeconds(30)).build()
                 : null);
     }
 
     HaikuPlantIdentifier(AnthropicClient client) {
         this.client = client;
+    }
+
+    @Override
+    public boolean isConfigured() {
+        return client != null;
     }
 
     @Override

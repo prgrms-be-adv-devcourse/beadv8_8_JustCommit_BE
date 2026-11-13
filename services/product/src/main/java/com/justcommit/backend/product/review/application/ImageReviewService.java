@@ -22,6 +22,7 @@ import com.justcommit.backend.product.review.domain.SellerSpecies;
 import com.justcommit.backend.product.review.domain.enums.ManualReason;
 import com.justcommit.backend.product.review.domain.enums.RejectReason;
 import com.justcommit.backend.product.review.domain.enums.ReviewDecision;
+import com.justcommit.backend.product.review.domain.enums.ReviewStatus;
 import com.justcommit.backend.product.review.infrastructure.ImageReviewRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +33,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -41,6 +44,8 @@ import java.util.List;
 // 1) 요청: 등록 · 수정 트랜잭션 안에서 검수 기록(REQUESTED)과 검수 요청 이벤트(Outbox → product.review.v1)를 함께 저장
 // 2) 실행: 검수 리스너가 부름. 짧은 트랜잭션으로 읽고 → 트랜잭션 밖에서 외부 API → 짧은 트랜잭션으로 조건부 반영
 //    외부 API를 기다리는 동안 DB 커넥션 · 행 잠금을 잡지 않으려고 트랜잭션을 나눔
+// 3) 엔진 오류 재처리: 외부 API가 재시도 후에도 실패하면 상품은 그대로 두고 ENGINE_ERROR,
+//    재처리 스케줄러가 5분 뒤 같은 검수 버전으로 다시 검수 (최대 3회, 그래도 실패하면 관리자 확인 ENGINE_ERROR)
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -49,6 +54,13 @@ public class ImageReviewService {
     static final int DAILY_REVIEW_LIMIT = 30;          // 판매자당 하루 사진 검수 (한국 시간 자정 기준)
     static final int RECENT_REJECTION_LIMIT = 5;       // 최근 7일 반려가 이만큼이면 자동 검수 없이 관리자 확인
     static final int RECENT_REJECTION_DAYS = 7;
+    static final int MAX_ENGINE_RETRIES = 3;           // 엔진 오류 재처리 최대 횟수
+    static final Duration ENGINE_RETRY_DELAY = Duration.ofMinutes(5);
+    static final Duration RETRY_LEASE = Duration.ofMinutes(10);   // 재처리 중인 건을 다른 파드가 다시 집지 않게 미루는 시간
+    static final int MAX_RETRIES_PER_RUN = 20;         // 스케줄러 한 번에 처리할 최대 건수
+    // 한 건 검수에 새 외부 호출을 시작할 수 있는 시간. 이미 시작한 호출(Moderation 최악 약 80초 · Haiku 약 90초)이 더해져도
+    // Kafka max.poll.interval.ms(5분) 안에 끝나게 (리스너는 max.poll.records=1)
+    static final Duration REVIEW_TIME_BUDGET = Duration.ofMinutes(2);
 
     private final ImageReviewRepository imageReviewRepository;
     private final ProductRepository productRepository;
@@ -82,19 +94,57 @@ public class ImageReviewService {
 
     // ── 실행 ───────────────────────────────
 
+    // 검수 리스너: REQUESTED인 검수 기록만 (같은 이벤트가 두 번 와도, 엔진 오류로 재처리 대기 중이어도 다시 하지 않음)
     public void review(Long productId, int reviewVersion) {
-        Target target = transactionTemplate.execute(status -> load(productId, reviewVersion));
+        process(productId, reviewVersion, ReviewStatus.REQUESTED);
+    }
+
+    // 재처리 스케줄러: 다음 시각이 지난 엔진 오류를 한 건씩 맡아 다시 검수. 처리한 건수를 돌려줌
+    // 하루 사진 검수 30회는 검수 기록을 새로 만들 때만 세므로 재처리는 세지 않음
+    public int retryEngineErrors() {
+        int processed = 0;
+        while (processed < MAX_RETRIES_PER_RUN) {
+            Claimed claimed = transactionTemplate.execute(status -> claimNextEngineError());
+            if (claimed == null) {
+                break;
+            }
+            process(claimed.productId(), claimed.reviewVersion(), ReviewStatus.ENGINE_ERROR);
+            processed++;
+        }
+        return processed;
+    }
+
+    // 외부 API 키가 둘 다 있어야 재처리할 의미가 있음 (스케줄러가 헛돌지 않게)
+    public boolean isEngineConfigured() {
+        return moderationClient.isConfigured() && plantIdentifier.isConfigured();
+    }
+
+    private Claimed claimNextEngineError() {
+        LocalDateTime now = LocalDateTime.now(clock);
+        return imageReviewRepository.lockNextEngineError(now)
+                .flatMap(imageReviewRepository::findById)
+                .map(review -> {
+                    review.startRetry(now.plus(RETRY_LEASE));
+                    log.info("엔진 오류 재처리 {}회차: productId={}, reviewVersion={}",
+                            review.getRetryCount(), review.getProductId(), review.getReviewVersion());
+                    return new Claimed(review.getProductId(), review.getReviewVersion());
+                })
+                .orElse(null);
+    }
+
+    private void process(Long productId, int reviewVersion, ReviewStatus expected) {
+        Target target = transactionTemplate.execute(status -> load(productId, reviewVersion, expected));
         if (target == null) {
             return;
         }
         Outcome outcome = target.scope() == ReviewScope.FULL ? reviewFull(target) : reviewText(target);
-        transactionTemplate.executeWithoutResult(status -> apply(target, outcome));
+        transactionTemplate.executeWithoutResult(status -> apply(target, outcome, expected));
     }
 
-    // 검수할 상품을 읽음. 이미 처리했거나 그사이 상품이 바뀌었으면 null
-    private Target load(Long productId, int reviewVersion) {
+    // 검수할 상품을 읽음. 검수 기록이 기대한 상태가 아니거나(이미 처리) 그사이 상품이 바뀌었으면 null
+    private Target load(Long productId, int reviewVersion, ReviewStatus expected) {
         ImageReview review = imageReviewRepository.findByProductIdAndReviewVersion(productId, reviewVersion).orElse(null);
-        if (review == null || !review.isRequested()) {
+        if (review == null || review.getStatus() != expected) {
             log.info("검수 건너뜀(없거나 이미 처리): productId={}, reviewVersion={}", productId, reviewVersion);
             return null;
         }
@@ -121,6 +171,7 @@ public class ImageReviewService {
         if (target.repeatedRejections()) {
             return new Outcome(ReviewVerdict.manual(ManualReason.REPEATED_REJECTIONS, null), null, null);
         }
+        Instant deadline = clock.instant().plus(REVIEW_TIME_BUDGET);
         List<String> errors = new ArrayList<>();
         List<ImageData> images = null;
         try {
@@ -135,11 +186,13 @@ public class ImageReviewService {
             try {
                 boolean imageFlagged = false;
                 for (ImageData image : images) {
+                    checkTimeBudget(deadline);
                     if (moderationClient.isImageFlagged(image)) {
                         imageFlagged = true;
                         break;   // 한 장이라도 유해면 반려라 나머지는 보지 않음
                     }
                 }
+                checkTimeBudget(deadline);
                 moderation = new ModerationResult(imageFlagged, moderationClient.isTextFlagged(text(target)));
             } catch (RuntimeException e) {
                 errors.add("Moderation: " + e.getMessage());
@@ -152,6 +205,7 @@ public class ImageReviewService {
         boolean harmful = moderation != null && (moderation.imageFlagged() || moderation.textFlagged());
         if (images != null && !harmful) {
             try {
+                checkTimeBudget(deadline);
                 plant = plantIdentifier.identify(images, bannedListService.promptNames());
             } catch (RuntimeException e) {
                 errors.add("Haiku: " + e.getMessage());
@@ -181,13 +235,25 @@ public class ImageReviewService {
     }
 
     // 판정을 상품에 반영. 검수 버전이 같고 기대한 상태일 때만 (그사이 수정 · 삭제 · 예약됐으면 반영하지 않음)
-    private void apply(Target target, Outcome outcome) {
+    private void apply(Target target, Outcome outcome, ReviewStatus expected) {
         ImageReview review = imageReviewRepository.findByProductIdAndReviewVersion(target.productId(), target.reviewVersion())
                 .orElse(null);
-        if (review == null || !review.isRequested()) {
+        if (review == null || review.getStatus() != expected) {
             return;   // 같은 요청이 동시에 두 번 처리됨. 먼저 끝난 쪽만 반영
         }
         ProductStatus from = expectedStatus(target.scope());
+        if (isEngineError(outcome.verdict()) && canRetry(review)) {
+            // 상품 상태는 그대로. 같은 조건으로 UPDATE해 그사이 버전이 바뀌지 않았는지만 확인
+            if (productRepository.applyReviewResult(target.productId(), target.reviewVersion(), from, from) == 0) {
+                review.markStale();
+                return;
+            }
+            review.markEngineError(outcome.engineResult(), outcome.errorMessage(), LocalDateTime.now(clock).plus(ENGINE_RETRY_DELAY));
+            log.warn("검수 엔진 오류, {} 뒤 재처리 (재처리 {}/{}회): productId={}, reviewVersion={}, error={}",
+                    ENGINE_RETRY_DELAY, review.getRetryCount(), MAX_ENGINE_RETRIES,
+                    target.productId(), target.reviewVersion(), outcome.errorMessage());
+            return;
+        }
         ProductStatus to = switch (outcome.verdict().decision()) {
             case APPROVED -> ProductStatus.ACTIVE;
             case REJECTED -> ProductStatus.REJECTED;
@@ -206,6 +272,21 @@ public class ImageReviewService {
         log.info("검수 완료: productId={}, reviewVersion={}, decision={}, rejectReason={}, manualReason={}",
                 target.productId(), target.reviewVersion(), outcome.verdict().decision(),
                 outcome.verdict().rejectReason(), outcome.verdict().manualReason());
+    }
+
+    private static boolean isEngineError(ReviewVerdict verdict) {
+        return verdict.decision() == ReviewDecision.MANUAL && verdict.manualReason() == ManualReason.ENGINE_ERROR;
+    }
+
+    // 재처리 횟수가 남았고 API 키가 있을 때만 (키가 없으면 다시 해도 실패하므로 바로 관리자 확인)
+    private boolean canRetry(ImageReview review) {
+        return review.getRetryCount() < MAX_ENGINE_RETRIES && isEngineConfigured();
+    }
+
+    private void checkTimeBudget(Instant deadline) {
+        if (clock.instant().isAfter(deadline)) {
+            throw new ReviewEngineException("검수 시간 상한(" + REVIEW_TIME_BUDGET + ") 초과");
+        }
     }
 
     // 사진 검수는 검수 중 상품, 글 검사는 판매 중 상품 (Product.update)
@@ -229,6 +310,9 @@ public class ImageReviewService {
     // 검수에 필요한 상품 값 (트랜잭션 밖에서 씀)
     private record Target(Long productId, int reviewVersion, ReviewScope scope, String title, String description,
                           List<String> imageUrls, String sellerScientificName, boolean repeatedRejections) {
+    }
+
+    private record Claimed(Long productId, int reviewVersion) {
     }
 
     private record Outcome(ReviewVerdict verdict, String engineResult, String errorMessage) {

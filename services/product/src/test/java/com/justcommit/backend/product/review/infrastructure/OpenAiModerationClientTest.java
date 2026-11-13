@@ -109,4 +109,20 @@ class OpenAiModerationClientTest {
 
         assertThatThrownBy(() -> client.isTextFlagged("글")).isInstanceOf(ReviewEngineException.class);
     }
+
+    @Test
+    @DisplayName("키가 있어야 설정된 것으로 봄 (없으면 엔진 오류를 재처리하지 않음)")
+    void configured() {
+        assertThat(client.isConfigured()).isTrue();
+        assertThat(new OpenAiModerationClient(RestClient.builder(), "https://api.openai.test", "", Duration.ZERO).isConfigured())
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("스프링이 쓰는 생성자는 타임아웃을 건 HTTP 클라이언트로 만듦")
+    void timeoutConstructor() {
+        OpenAiModerationClient withTimeouts = new OpenAiModerationClient(RestClient.builder(), "https://api.openai.test",
+                "key", Duration.ZERO, Duration.ofSeconds(5), Duration.ofSeconds(20));
+        assertThat(withTimeouts.isConfigured()).isTrue();
+    }
 }

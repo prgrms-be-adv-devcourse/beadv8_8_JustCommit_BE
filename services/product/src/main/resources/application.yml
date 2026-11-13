@@ -53,3 +53,7 @@ custom:
     anthropic:
       api-key: ${ANTHROPIC_API_KEY:}
     retry-backoff: 1s
+    # 엔진 오류 재처리 스케줄러 (5분마다, 최대 3회)
+    retry:
+      enabled: true
+      interval: PT5M

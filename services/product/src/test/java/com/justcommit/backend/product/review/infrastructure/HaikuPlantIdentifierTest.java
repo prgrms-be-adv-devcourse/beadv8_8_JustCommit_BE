@@ -42,6 +42,8 @@ class HaikuPlantIdentifierTest {
     @DisplayName("키가 없으면 부르지 않고 ReviewEngineException (관리자 확인으로)")
     void noKey() {
         HaikuPlantIdentifier identifier = new HaikuPlantIdentifier("");
+        assertThat(identifier.isConfigured()).isFalse();
+        assertThat(new HaikuPlantIdentifier("test-key").isConfigured()).isTrue();
         assertThatThrownBy(() -> identifier.identify(images, List.of())).isInstanceOf(ReviewEngineException.class);
     }
 

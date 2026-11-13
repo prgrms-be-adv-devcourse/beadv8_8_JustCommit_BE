@@ -25,7 +25,8 @@ import java.time.LocalDateTime;
         uniqueConstraints = @UniqueConstraint(name = "uk_image_review_product_version", columnNames = {"product_id", "review_version"}),
         indexes = {
                 @Index(name = "idx_image_review_seller_created", columnList = "seller_id, created_at"),
-                @Index(name = "idx_image_review_seller_reviewed", columnList = "seller_id, reviewed_at")
+                @Index(name = "idx_image_review_seller_reviewed", columnList = "seller_id, reviewed_at"),
+                @Index(name = "idx_image_review_status_next_retry", columnList = "status, next_retry_at")
         })
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -72,6 +73,14 @@ public class ImageReview extends BaseTimeEntity {
     @Column(name = "reviewed_at")
     private LocalDateTime reviewedAt;
 
+    // 엔진 오류 재처리 횟수 (최대 3회, 처음 검수는 세지 않음)
+    @Column(name = "retry_count", nullable = false)
+    private int retryCount;
+
+    // 이 시각이 지나면 스케줄러가 다시 검수 (ENGINE_ERROR일 때만 씀)
+    @Column(name = "next_retry_at")
+    private LocalDateTime nextRetryAt;
+
     private ImageReview(Long productId, int reviewVersion, Long sellerId, ReviewScope scope) {
         this.productId = productId;
         this.reviewVersion = reviewVersion;
@@ -88,9 +97,25 @@ public class ImageReview extends BaseTimeEntity {
         return status == ReviewStatus.REQUESTED;
     }
 
+    // 엔진 오류: 상품은 그대로 두고 nextRetryAt 뒤에 다시 검수
+    public void markEngineError(String engineResult, String errorMessage, LocalDateTime nextRetryAt) {
+        this.status = ReviewStatus.ENGINE_ERROR;
+        this.engineResult = engineResult;
+        this.errorMessage = truncate(errorMessage, 500);
+        this.nextRetryAt = nextRetryAt;
+    }
+
+    // 스케줄러가 재처리를 맡음: 횟수 +1, 처리하는 동안 다른 파드가 다시 집지 않게 다음 시각을 뒤로 미룸
+    // (도중에 서버가 죽으면 그 시각 뒤에 다시 집힘, 그 시도도 1회로 셈)
+    public void startRetry(LocalDateTime leaseUntil) {
+        this.retryCount++;
+        this.nextRetryAt = leaseUntil;
+    }
+
     // 판정을 상품에 반영한 뒤 기록
     public void complete(ReviewVerdict verdict, String engineResult, String errorMessage, LocalDateTime now) {
         this.status = ReviewStatus.DONE;
+        this.nextRetryAt = null;
         this.decision = verdict.decision();
         this.rejectReason = verdict.rejectReason();
         this.manualReason = verdict.manualReason();

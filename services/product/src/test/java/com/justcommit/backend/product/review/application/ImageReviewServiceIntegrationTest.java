@@ -62,6 +62,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willReturn;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -140,8 +141,9 @@ class ImageReviewServiceIntegrationTest {
     }
 
     private void identifyAs(String scientificName, double confidence) {
-        given(plantIdentifier.identify(anyList(), anyList())).willReturn(new PlantIdentification(true, SaleForm.PLANT,
-                List.of(new Candidate(scientificName, null, confidence))));
+        // willReturn 먼저: 앞에서 예외를 던지게 해 둔 목도 다시 정할 수 있게
+        willReturn(new PlantIdentification(true, SaleForm.PLANT, List.of(new Candidate(scientificName, null, confidence))))
+                .given(plantIdentifier).identify(anyList(), anyList());
     }
 
     // 등록처럼: 상품 저장 + 검수 요청을 한 트랜잭션에서
@@ -229,8 +231,8 @@ class ImageReviewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("Haiku 실패: 관리자 확인(ENGINE_ERROR), 상품은 검수 중 그대로, 상태 변경 이벤트 없음")
-    void engineError() {
+    @DisplayName("API 키가 없으면 엔진 오류를 재처리하지 않고 바로 관리자 확인(ENGINE_ERROR), 상품은 검수 중 그대로")
+    void engineErrorWithoutKeysGoesManual() {
         willThrow(new ReviewEngineException("timeout")).given(plantIdentifier).identify(anyList(), anyList());
         Product product = register("몬스테라 팝니다", null);
 
@@ -315,5 +317,134 @@ class ImageReviewServiceIntegrationTest {
         assertThat(reviewOf(product, 0).getManualReason()).isEqualTo(ManualReason.REPEATED_REJECTIONS);
         verify(moderationClient, never()).isImageFlagged(any());
         verify(plantIdentifier, never()).identify(anyList(), anyList());
+    }
+
+    // ── S-C10 엔진 오류 재처리 ───────────────────────
+
+    private void keysConfigured() {
+        given(moderationClient.isConfigured()).willReturn(true);
+        given(plantIdentifier.isConfigured()).willReturn(true);
+    }
+
+    // 재처리 시각을 지난 것으로 (스케줄러 5분 간격을 기다리지 않게)
+    private void makeRetryDue() {
+        jdbc.update("update image_review set next_retry_at = now() - interval '1 minute' where status = 'ENGINE_ERROR'");
+    }
+
+    @Test
+    @DisplayName("S-C10 엔진 오류: 상품은 검수 중 그대로, 검수 기록은 ENGINE_ERROR로 5분 뒤 재처리 대기")
+    void engineErrorWaitsForRetry() {
+        keysConfigured();
+        willThrow(new ReviewEngineException("timeout")).given(plantIdentifier).identify(anyList(), anyList());
+        Product product = register("몬스테라 팝니다", null);
+
+        imageReviewService.review(product.getId(), 0);
+
+        assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
+        ImageReview review = reviewOf(product, 0);
+        assertThat(review.getStatus()).isEqualTo(ReviewStatus.ENGINE_ERROR);
+        assertThat(review.getDecision()).isNull();
+        assertThat(review.getRetryCount()).isZero();
+        assertThat(review.getNextRetryAt()).isAfter(LocalDateTime.now().plusMinutes(4));
+        assertThat(review.getErrorMessage()).contains("timeout");
+        verify(outboxPublisher, never()).publish(any(ProductStatusChanged.class));
+
+        // 시각이 되기 전에는 재처리하지 않고, 같은 검수 요청이 다시 와도 검수하지 않음
+        assertThat(imageReviewService.retryEngineErrors()).isZero();
+        imageReviewService.review(product.getId(), 0);
+        verify(plantIdentifier, times(1)).identify(anyList(), anyList());
+    }
+
+    @Test
+    @DisplayName("S-C10 재처리가 성공하면 정상 판정 (통과 → ACTIVE), 하루 사진 검수 30회에 세지 않음")
+    void retrySucceeds() {
+        keysConfigured();
+        willThrow(new ReviewEngineException("timeout")).given(plantIdentifier).identify(anyList(), anyList());
+        Product product = register("몬스테라 팝니다", null);
+        imageReviewService.review(product.getId(), 0);
+
+        identifyAs(MONSTERA, 0.95);   // 엔진이 돌아옴
+        makeRetryDue();
+        assertThat(imageReviewService.retryEngineErrors()).isEqualTo(1);
+
+        assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.ACTIVE);
+        ImageReview review = reviewOf(product, 0);
+        assertThat(review.getStatus()).isEqualTo(ReviewStatus.DONE);
+        assertThat(review.getDecision()).isEqualTo(ReviewDecision.APPROVED);
+        assertThat(review.getRetryCount()).isEqualTo(1);
+        assertThat(review.getNextRetryAt()).isNull();
+        verify(outboxPublisher).publish(new ProductStatusChanged(product.getId()));
+        // 검수 기록을 새로 만들지 않아 하루 사진 검수 횟수는 그대로 1
+        assertThat(imageReviewRepository.countBySellerIdAndScopeAndCreatedAtGreaterThanEqual(
+                SELLER_ID, ReviewScope.FULL, LocalDateTime.now().minusDays(1))).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("S-C10 재처리 3회 모두 실패하면 관리자 확인(ENGINE_ERROR), 자동 통과 · 반려 없음")
+    void retryExhaustedGoesManual() {
+        keysConfigured();
+        willThrow(new ReviewEngineException("timeout")).given(plantIdentifier).identify(anyList(), anyList());
+        Product product = register("몬스테라 팝니다", null);
+        imageReviewService.review(product.getId(), 0);
+
+        for (int i = 1; i <= ImageReviewService.MAX_ENGINE_RETRIES; i++) {
+            makeRetryDue();
+            assertThat(imageReviewService.retryEngineErrors()).isEqualTo(1);
+        }
+
+        assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
+        ImageReview review = reviewOf(product, 0);
+        assertThat(review.getStatus()).isEqualTo(ReviewStatus.DONE);
+        assertThat(review.getDecision()).isEqualTo(ReviewDecision.MANUAL);
+        assertThat(review.getManualReason()).isEqualTo(ManualReason.ENGINE_ERROR);
+        assertThat(review.getRetryCount()).isEqualTo(3);
+        assertThat(review.getReviewedAt()).isNotNull();   // 관리자 확인 기한은 이때부터
+        verify(plantIdentifier, times(4)).identify(anyList(), anyList());   // 처음 1번 + 재처리 3번
+
+        makeRetryDue();
+        assertThat(imageReviewService.retryEngineErrors()).isZero();   // 더는 재처리하지 않음
+    }
+
+    @Test
+    @DisplayName("S-C10 그사이 상품이 수정돼 검수 버전이 다르면 재처리하지 않음 (STALE)")
+    void retrySkipsChangedVersion() {
+        keysConfigured();
+        willThrow(new ReviewEngineException("timeout")).given(plantIdentifier).identify(anyList(), anyList());
+        Product product = register("몬스테라 팝니다", null);
+        imageReviewService.review(product.getId(), 0);
+        tx.executeWithoutResult(status -> {
+            Product locked = productRepository.findWithLockById(product.getId()).orElseThrow();
+            ReviewScope scope = locked.update(species, "새 제목", null, new BigDecimal("10000"), null, null, null,
+                    List.of("http://localhost:9000/bucket/products/7/b.jpg"));
+            imageReviewService.request(locked, scope);
+        });
+
+        makeRetryDue();
+        imageReviewService.retryEngineErrors();
+
+        assertThat(reviewOf(product, 0).getStatus()).isEqualTo(ReviewStatus.STALE);
+        assertThat(reviewOf(product, 1).getStatus()).isEqualTo(ReviewStatus.REQUESTED);
+        verify(plantIdentifier, times(1)).identify(anyList(), anyList());
+    }
+
+    @Test
+    @DisplayName("S-C10 글 검사 엔진 오류도 재처리: 판매 중 상품은 판매 중 그대로 기다림")
+    void textOnlyEngineErrorKeepsActive() {
+        keysConfigured();
+        Product product = register("몬스테라 팝니다", null);
+        tx.executeWithoutResult(status ->
+                productRepository.applyReviewResult(product.getId(), 0, ProductStatus.REVIEW_PENDING, ProductStatus.ACTIVE));
+        tx.executeWithoutResult(status -> {
+            Product locked = productRepository.findWithLockById(product.getId()).orElseThrow();
+            ReviewScope scope = locked.update(species, "몬스테라 팝니다", "설명을 고쳤어요", new BigDecimal("10000"),
+                    null, null, null, List.of("http://localhost:9000/bucket/products/7/a.jpg"));
+            imageReviewService.request(locked, scope);
+        });
+        willThrow(new ReviewEngineException("timeout")).given(moderationClient).isTextFlagged(anyString());
+
+        imageReviewService.review(product.getId(), 1);
+
+        assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.ACTIVE);
+        assertThat(reviewOf(product, 1).getStatus()).isEqualTo(ReviewStatus.ENGINE_ERROR);
     }
 }
