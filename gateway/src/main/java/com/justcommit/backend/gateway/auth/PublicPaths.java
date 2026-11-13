@@ -1,12 +1,11 @@
 package com.justcommit.backend.gateway.auth;
 
+import java.util.List;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.server.PathContainer;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.web.util.pattern.PathPattern;
 import org.springframework.web.util.pattern.PathPatternParser;
-
-import java.util.List;
 
 /**
  * 토큰 없이 통과하는 경로 (docs/conventions/auth.md 「공개 경로」, docs/reference/external-apis.md).
