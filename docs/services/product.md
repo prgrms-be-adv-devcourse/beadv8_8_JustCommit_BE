@@ -1,7 +1,7 @@
 # product 서비스
 
 > 언제 읽나: product 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: Miro 5 · 13-1 · 17, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: Miro 5 · 13-1 · 17, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -32,7 +32,7 @@
 
 ## 외부 API
 
-`products` (목록 · 등록 · 상세 · 수정 · 삭제) · `products/{id}/hidden` · `products/me` · `products/me/counts` · `products/images/uploadUrls` · `species` · `species/{id}` · `admin/imageReviews` · ⬜ 이의 신청 → [외부 API 목록](../reference/external-apis.md)
+`products` (목록 · 등록 · 상세 · 수정 · 삭제) · `products/{id}/hidden` · `products/me` · `products/me/counts` · `products/images/uploadUrls` · `products/{id}/imageReviews`(검수 기록 · 기한 초과 재요청) · `products/{id}/appeals`(이의 신청) · `species` · `species/{id}` · `admin/imageReviews` → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 
@@ -71,7 +71,7 @@
 
 ## 스케줄러
 
-관리자 확인 지연 · Outbox 재전송 → [스케줄러 표](../reference/schedulers.md)
+검수 엔진 오류 재처리 · 관리자 확인 지연 · Outbox 재전송 → [스케줄러 표](../reference/schedulers.md)
 
 ## 정책
 
@@ -94,6 +94,7 @@
 | 수정 | 본인 · `ACTIVE` · `REJECTED` · `REVIEW_PENDING`만, 전체 교체, 검수 버전 +1. 사진이 바뀌면 처음부터 검수, 글만 바뀌면 글 검사만 (판매 중이어도 걸리면 `REJECTED`). 예약과 겹치지 않게 행 잠금 |
 | 삭제 | 본인 · `ACTIVE` · `REJECTED` · `REVIEW_PENDING`만, 소프트 삭제, 사진은 커밋 후 S3에서 삭제 |
 | 재검수 · 이의 신청 | 재검수 1회, 자동 반려는 수정 없이 이의 신청 1회 → [사진 검수](../flows/image-review.md) |
+| 엔진 오류 | 외부 API가 재시도 후에도 실패하면 5분 간격 최대 3회 재처리, 그래도 실패하면 관리자 확인. 재처리는 횟수 · 제한에 세지 않음 → [엔진 오류 재처리](../flows/image-review.md#엔진-오류-재처리) |
 | 등록 제한 | 검수 중 동시 5개(409 `REVIEW_PENDING_LIMIT_EXCEEDED`, 이의 신청 포함) · 하루 등록 20건(429 `DAILY_REGISTER_LIMIT_EXCEEDED`, 삭제 포함) · 하루 사진 검수 30회(429 `DAILY_REVIEW_LIMIT_EXCEEDED`). 하루는 한국 시간 자정 기준. 최근 7일 반려 5건 이상이면 바로 관리자 확인 (`REVIEW_EXPIRED` 제외) |
 | 예약 | market 내부 API로만, 주문서 가격(`expectedPrice`)이 하나라도 다르면 409 `PRICE_CHANGED`, 해제된 orderId의 늦은 예약은 409 → [내부 API 목록](../reference/internal-apis.md) |
 | 판매 완료 · 예약 해제 | market 이벤트로 처리. 판매 완료는 이 주문이 잡은 `PAYMENT_PENDING` 상품만 `SOLD_OUT`, 결제 전 해제(만료 · 결제 확정 실패)는 `PAYMENT_PENDING` → `ACTIVE`. 바뀐 상품이 0건이어도 정상(로그만, DLT 아님). 예약 · 판매 완료 · 해제는 모두 orderId 기준이라 다른 주문이 잡은 상품은 건드리지 않음 |
