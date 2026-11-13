@@ -87,6 +87,7 @@ public class SettlementService {
                 settlement.getFee(),
                 settlement.getPayoutAmount(),
                 settlement.getCompletedAt(),
+                settlement.getStatus(),
                 settlement.getItemSummary()
         );
     }
