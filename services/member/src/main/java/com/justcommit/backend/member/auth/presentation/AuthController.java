@@ -3,8 +3,8 @@ package com.justcommit.backend.member.auth.presentation;
 import com.justcommit.backend.common.response.ApiResponse;
 import com.justcommit.backend.member.auth.application.*;
 import com.justcommit.backend.member.auth.presentation.dto.*;
-import com.justcommit.backend.member.domain.exception.EmailCooldownException;
 import com.justcommit.backend.member.auth.presentation.support.RefreshTokenCookieFactory;
+import com.justcommit.backend.member.domain.exception.EmailCooldownException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -23,6 +23,7 @@ public class AuthController {
   private final TokenReissueService tokenReissueService;
   private final LogoutService logoutService;
   private final RefreshTokenCookieFactory refreshTokenCookieFactory;
+  private static final String BEARER_PREFIX = "Bearer ";
 
   @PostMapping("/email/send")
   public ApiResponse<EmailSendResponse> sendEmailCode(@Valid @RequestBody EmailSendRequest request) {
@@ -61,16 +62,27 @@ public class AuthController {
             .body(ApiResponse.ok("토큰이 재발급되었습니다.", TokenReissueResponse.from(result)));
   }
 
-  // 로그아웃: Refresh 토큰 폐기 + 쿠키 삭제 (Access 토큰 불필요)
-  // 쿠키가 없거나 이미 만료·삭제된 경우에도 200 (쿠키만 지움)
+  // 로그아웃: 이 기기 Refresh 폐기 + 함께 온 Access를 블랙리스트에 등록 + Refresh 쿠키 삭제
+  // 두 토큰 모두 선택 (Access는 Authorization 헤더, Refresh는 쿠키). 없거나 유효하지 않아도 200
+  // 공개 경로라 Gateway · 보안 필터가 Access를 먼저 거절하지 않음 → 검증은 LogoutService에서
+  // Redis 처리 실패는 500 (공통 오류 처리, 이때 쿠키 만료는 포함되지 않음)
   @PostMapping("/logout")
   public ResponseEntity<ApiResponse<Void>> logout(
-          @CookieValue(name = RefreshTokenCookieFactory.COOKIE_NAME, required = false) String refreshToken) {
-    logoutService.logout(refreshToken);
+      @RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authorization,
+      @CookieValue(name = RefreshTokenCookieFactory.COOKIE_NAME, required = false) String refreshToken) {
+    logoutService.logout(bearerToken(authorization), refreshToken);
 
     return ResponseEntity.ok()
             .header(HttpHeaders.SET_COOKIE, refreshTokenCookieFactory.expire().toString())
             .body(ApiResponse.ok("로그아웃되었습니다."));
+  }
+
+  // "Bearer {토큰}"에서 토큰만 꺼냄. 형식이 다르면 Access가 없는 것으로 봄 (공통 보안 필터와 같은 규칙)
+  private static String bearerToken(String authorization) {
+    if (authorization == null || !authorization.startsWith(BEARER_PREFIX)) {
+      return null;
+    }
+    return authorization.substring(BEARER_PREFIX.length());
   }
 
   // 재발송 제한: 공통 응답 형식 + Retry-After 헤더(남은 초)

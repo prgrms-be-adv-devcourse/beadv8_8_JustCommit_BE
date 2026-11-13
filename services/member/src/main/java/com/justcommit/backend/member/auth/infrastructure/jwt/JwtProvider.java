@@ -20,7 +20,8 @@ import java.util.Base64;
 import java.util.Date;
 
 // JWT 발급(개인키 RS256 서명)과 Signup 토큰 검증(공개키)
-// Access 토큰 검증은 공통 모듈의 JwtVerifier가 담당
+// Access 토큰 검증은 공통 모듈의 JwtVerifier가 담당. 단, 로그아웃 블랙리스트에 필요한 만료 시각(exp)은
+// 공통 검증 결과에 없어 여기서 같은 검증(서명 · 만료 · 타입)을 거쳐 꺼냄
 @Component
 public class JwtProvider {
 
@@ -84,6 +85,19 @@ public class JwtProvider {
     String providerId = subject.substring(provider.length() + 1);
     String email = claims.get(CLAIM_EMAIL, String.class);
     return new SignupClaims(provider, providerId, email);
+  }
+
+  // 로그아웃: 검증(서명 → 만료 → ACCESS 타입)을 통과한 Access 토큰의 만료 시각(exp)
+  // 내용만 디코딩하지 않고 parse로 검증한 뒤 꺼냄. 블랙리스트 TTL(남은 수명) 계산에 사용
+  // 만료 · 잘못된 토큰은 TokenException (호출한 쪽이 블랙리스트 저장만 건너뜀)
+  public Instant getVerifiedAccessTokenExpiresAt(String token) {
+    Claims claims = parse(token, TokenType.ACCESS);
+    Date expiration = claims.getExpiration();
+    if (expiration == null) {
+      // exp가 없으면 남은 수명을 계산할 수 없음 (member가 발급한 토큰은 항상 exp가 있음)
+      throw new TokenException(TokenException.Reason.INVALID);
+    }
+    return expiration.toInstant();
   }
 
   // 토큰 공통 검증, 서명-> 만료-> 타입
