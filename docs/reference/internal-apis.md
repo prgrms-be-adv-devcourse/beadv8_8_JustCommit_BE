@@ -10,7 +10,7 @@
 | 제공 | API | 부르는 서비스 | 용도 | 멱등 키 | 상태 |
 |---|---|---|---|---|---|
 | member | ⬜ 계좌 조회 | payment | 인출 신청 때 계좌 받기 (member가 복호화해 응답, ⬜ 전송 구간 암호화는 결제 담당과 정함) | – | ✅ 기능 · ⬜ 경로 |
-| market | ⬜ 탈퇴 확인 | member | `hasActiveOrders` · `activeBuyerOrderCount` · `activeSellerOrderCount` (수락 대기 주문 포함) | – | ✅ 기능 · ⬜ 경로 |
+| market | `GET /internal/v1/orders/members/{memberId}/withdrawalCheck` | member | `hasWithdrawalBlocker` + 차단 사유 코드 (`ACTIVE_BUYER_ORDER` 구매자로 진행 중 주문 · `ACTIVE_SELLER_ORDER` 판매자로 진행 중 주문), `details`에 `activeBuyerOrderCount` · `activeSellerOrderCount`. 진행 중: 주문 `PAYMENT_PENDING` · `PAID` 중 주문상품 `NORMAL` · `REFUND_REQUESTED`가 있는 주문 (⬜ 판매자 수락 대기는 #283에서 추가) | – | ✅ |
 | payment | ⬜ 탈퇴 확인 | member | `hasWithdrawalBlocker` + 차단 사유 코드 (잔액 · 진행 중 충전 · 충전 취소 · 인출 · 미수금) | – | ✅ 기능 · ⬜ 경로 |
 | settlement | ⬜ 탈퇴 확인 | member | `hasWithdrawalBlocker` + 차단 사유 코드 (미지급 정산) | – | ✅ 기능 · ⬜ 경로 |
 | product | `GET /internal/v1/products?ids=` | market | 상품 정보 · 가격 · 판매 상태 일괄 (장바구니 · 주문 · 추천 결과 카드) | – | ✅ |
