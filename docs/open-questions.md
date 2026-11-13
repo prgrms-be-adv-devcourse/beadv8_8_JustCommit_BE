@@ -1,7 +1,7 @@
 # 미정 항목
 
 > 언제 읽나: 아직 정하지 않은 것이 무엇이고 누가 정하는지 확인할 때
-> 상태: ⬜ 미정 · 마지막 수정 2026-11-09 · 관련: Miro 18, 노션 기획안 맨 위 「남은 미정」, 노션 「정책 정리」 2절 「아직 정하지 않은 것」
+> 상태: ⬜ 미정 · 마지막 수정 2026-11-13 · 관련: Miro 18, 노션 기획안 맨 위 「남은 미정」, 노션 「정책 정리」 2절 「아직 정하지 않은 것」
 
 ## 미정 목록
 
@@ -18,7 +18,7 @@
 | 아이디 찾기 세부 방식 | 이메일로 진행까지 정함 | member | – |
 | 탈퇴 재확인 · 소셜 연결 해제 회원 재로그인 | – | member | – |
 | 메모리 실측 · 모니터링 위치 | 약 7GB / 8GB, 넘치면 데이터 서버로 | 인프라 | Sprint 1 |
-| 회원별 Refresh Set · 인증 메일 키 이름 | 🟨 `auth:email:daily` · `auth:email:attempts` | member | Sprint 1 |
+| 인증 메일 키 이름 | 🟨 `auth:email:daily` · `auth:email:attempts` | member | Sprint 1 |
 | DLT 재처리 도구 | 🟨 `failed_event` 표 + 재처리 내부 API | 공통 (messaging) | Sprint 2 |
 | `outbox_event` 나머지 칸 | [이벤트 규칙](conventions/events.md#outbox) | 공통 (messaging) | Sprint 1 |
 | 외부 AI 약관 (학습 사용 여부) | OpenAI · Anthropic | 김환희 | – |

@@ -1,12 +1,13 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-13 · reference/redis-keys.md · open-questions.md · conventions/auth.md · reference/external-apis.md · 회원별 Refresh 목록 · 로그아웃 블랙리스트 반영: 회원별 Refresh 목록 키 `auth:refresh-set:{memberId}` 확정(Refresh 해시 Set, 1일 · 저장할 때마다 갱신, 저장 · 꺼내며 삭제 · 회원 전체 삭제를 Refresh 키와 함께 Lua로 처리, 전체 삭제는 조회한 토큰만 · 만료된 해시가 남을 수 있는 한계), 로그아웃 Access는 `Authorization: Bearer` 헤더(선택, 쿠키 아님)로 받아 검증한 토큰만 `auth:blacklist`에 저장(TTL = 남은 수명) · 토큰 오류는 블랙리스트만 건너뛰고 Redis 실패는 500, 미정 항목에서 Refresh Set 이름 정리, 회원별 목록의 Lua 처리는 Redis 한 대 구성 전제(Cluster 전환 시 키 구조 · 조회 방식 함께 재설계) (#443)
 - 2026-11-12 · services/market.md · reference/env-vars.md · market 판매자 배송지 복제본 반영: `member.address.events.v1` 구독, 복호화한 `memberId` 확인 후 받은 암호문 그대로 `MEMBER_REPLICA`에 저장(Flyway V4, 주소 이벤트 시각은 회원 이벤트와 따로 비교 · 같은 시각 무시), 탈퇴 이벤트 반영 시 주소 암호문 삭제 · 탈퇴 후 주소 저장 안 함, 택배 예약 보내는 사람은 판매자 기본 배송지(임시 연결, 수락 당시 주소 고정은 #283과 협의) · 주소를 쓸 수 없으면 예약 보류, `MEMBER_ADDRESS_EVENT_KEY` market 적용 (#424)
 - 2026-11-12 · decisions/0019 · decisions/0015 · services/member.md · reference/kafka-topics.md · flows/signup-and-replica.md · conventions/internal-api.md · reference/env-vars.md · 판매자 배송지 이벤트 반영: 기본 배송지 하나 대신 판매자 배송지 목록 전체를 `MemberAddressChanged`(`member.address.events.v1`)로 발행(판매자 등록 · 배송지 추가 · 기본 배송지 변경, 판매자만), payload `memberId` · `encryptedAddresses` · 암호화 전 JSON 칸 · `address2` null · 받는 쪽 `memberId` 일치 확인 필수, 배송지 변경 경로 회원 행 잠금, `MEMBER_ADDRESS_EVENT_KEY` member 적용, ADR 0019 추가(0015의 주소 토픽 부분 대체) (#403)
 - 2026-11-12 · reference/kafka-topics.md · services/product.md · product 상품 이벤트 Outbox 발행 반영: `product.events.v1` `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged` payload `productId`(받는 쪽이 DB에서 최신 상품을 읽음), 예약 · 판매 완료 · 해제 · 재개 · 숨김 · 삭제 · 판매자 탈퇴 정리는 `ProductStatusChanged`, 소유 테이블 `OUTBOX_EVENT`(Flyway V9), 검수 이벤트는 #345 · 품종 이벤트는 ai #292 때 (#338)
