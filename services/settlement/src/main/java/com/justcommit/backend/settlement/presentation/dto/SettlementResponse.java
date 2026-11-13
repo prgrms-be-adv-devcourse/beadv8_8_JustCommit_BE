@@ -22,7 +22,7 @@ public class SettlementResponse {
     public static SettlementResponse from(SettlementResult result) {
         return new SettlementResponse(
                 result.getSettlementId(), result.getSellerOrderId(),
-                result.getSettledAt().toLocalDate(),
+                result.getCompletedAt() == null ? null : result.getCompletedAt().toLocalDate(),
                 result.getItemSummary() == null ? "" : result.getItemSummary(),
                 result.getSaleAmount(), result.getFee(), result.getPayoutAmount());
     }

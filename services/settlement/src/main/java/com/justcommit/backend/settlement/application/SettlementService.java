@@ -1,7 +1,6 @@
 package com.justcommit.backend.settlement.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.settlement.SettlementQuery;
 import com.justcommit.backend.settlement.client.payment.SettlementPayoutClient;
 import com.justcommit.backend.settlement.SettlementResult;
 import com.justcommit.backend.settlement.domain.Settlement;
@@ -18,15 +17,15 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
-public class SettlementService implements SettlementQuery {
+public class SettlementService {
 
     private final SettlementRepository settlementRepository;
     private final SettlementPayoutClient settlementPayoutClient;
 
-    @Override
+    // 지급이 끝난 정산만 시각이 있다. 정산이 없거나 지급 전이면 empty
     @Transactional(readOnly = true)
-    public Optional<LocalDateTime> findSettledAtBySellerOrderId(Long sellerOrderId) {
-        return settlementRepository.findBySellerOrderId(sellerOrderId).map(Settlement::getSettledAt);
+    public Optional<LocalDateTime> findCompletedAtBySellerOrderId(Long sellerOrderId) {
+        return settlementRepository.findBySellerOrderId(sellerOrderId).map(Settlement::getCompletedAt);
     }
 
     @Transactional
@@ -41,23 +40,26 @@ public class SettlementService implements SettlementQuery {
             return toResult(existing.get());
         }
 
+        LocalDateTime now = LocalDateTime.now();
         Settlement settlement = settlementRepository.save(
                 Settlement.createSettlement(
                         sellerOrderId,
                         sellerId,
                         saleAmount,
                         shippingFee,
-                        LocalDateTime.now(),
+                        now,
                         itemSummary
                 )
         );
 
+        // TODO(#428): 지급 호출과 complete()는 정산 지급 스케줄러(#429)로 옮긴다. 그 전까지는 지금처럼 같은 트랜잭션에서 지급
         settlementPayoutClient.distributeSettlement(
                 settlement.getId(),
                 sellerId,
                 settlement.getPayoutAmount(),
                 settlement.getFee()
         );
+        settlement.complete(now);
 
         return toResult(settlement);
     }
@@ -65,7 +67,7 @@ public class SettlementService implements SettlementQuery {
     @Transactional(readOnly = true)
     public List<SettlementResult> getSettlements(Long sellerId) {
         return settlementRepository
-                .findBySellerIdOrderBySettledAtDesc(sellerId)
+                .findBySellerIdOrderByCreatedAtDesc(sellerId)
                 .stream()
                 .map(this::toResult)
                 .toList();
@@ -84,7 +86,7 @@ public class SettlementService implements SettlementQuery {
                 settlement.getSaleAmount(),
                 settlement.getFee(),
                 settlement.getPayoutAmount(),
-                settlement.getSettledAt(),
+                settlement.getCompletedAt(),
                 settlement.getItemSummary()
         );
     }
