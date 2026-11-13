@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-13 · open-questions.md · 미정 항목 정리: 확정된 `outbox_event` 나머지 칸(conventions/events.md 「Outbox」 표 · 공통 권장 SQL)과 DLT 재처리 도구(재처리는 수동으로 확정, 별도 도구 없음) 행 삭제 (#446)
 - 2026-11-13 · reference/external-apis.md · services/member.md · 중복 확인 경로 변경 반영: `users/checkNickname` → `users/nicknameAvailability?nickname=`, `users/checkPhone` → `users/phoneAvailability?phone=`(요청 · 응답은 그대로, 옛 경로 제거), member · Gateway 공개 경로 함께 변경, 「경로 개선안」에서 반영된 두 줄 삭제 (#445)
 - 2026-11-13 · reference/redis-keys.md · open-questions.md · conventions/auth.md · reference/external-apis.md · 회원별 Refresh 목록 · 로그아웃 블랙리스트 반영: 회원별 Refresh 목록 키 `auth:refresh-set:{memberId}` 확정(Refresh 해시 Set, 1일 · 저장할 때마다 갱신, 저장 · 꺼내며 삭제 · 회원 전체 삭제를 Refresh 키와 함께 Lua로 처리, 전체 삭제는 조회한 토큰만 · 만료된 해시가 남을 수 있는 한계), 로그아웃 Access는 `Authorization: Bearer` 헤더(선택, 쿠키 아님)로 받아 검증한 토큰만 `auth:blacklist`에 저장(TTL = 남은 수명) · 토큰 오류는 블랙리스트만 건너뛰고 Redis 실패는 500, 미정 항목에서 Refresh Set 이름 정리, 회원별 목록의 Lua 처리는 Redis 한 대 구성 전제(Cluster 전환 시 키 구조 · 조회 방식 함께 재설계) (#443)
 - 2026-11-12 · services/market.md · reference/env-vars.md · market 판매자 배송지 복제본 반영: `member.address.events.v1` 구독, 복호화한 `memberId` 확인 후 받은 암호문 그대로 `MEMBER_REPLICA`에 저장(Flyway V4, 주소 이벤트 시각은 회원 이벤트와 따로 비교 · 같은 시각 무시), 탈퇴 이벤트 반영 시 주소 암호문 삭제 · 탈퇴 후 주소 저장 안 함, 택배 예약 보내는 사람은 판매자 기본 배송지(임시 연결, 수락 당시 주소 고정은 #283과 협의) · 주소를 쓸 수 없으면 예약 보류, `MEMBER_ADDRESS_EVENT_KEY` market 적용 (#424)
