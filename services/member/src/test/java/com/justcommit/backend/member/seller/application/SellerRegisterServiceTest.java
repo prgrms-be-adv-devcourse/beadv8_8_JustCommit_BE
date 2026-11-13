@@ -1,6 +1,8 @@
 package com.justcommit.backend.member.seller.application;
 
 import com.justcommit.backend.member.event.MemberUpdated;
+import com.justcommit.backend.member.event.MemberAddressChanged;
+import com.justcommit.backend.member.address.application.SellerAddressEventFactory;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.domain.Member;
@@ -13,6 +15,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -40,6 +43,9 @@ class SellerRegisterServiceTest {
   @Mock
   private OutboxPublisher outboxPublisher;
 
+  @Mock
+  private SellerAddressEventFactory sellerAddressEventFactory;
+
   @InjectMocks
   private SellerRegisterService sellerRegisterService;
 
@@ -47,6 +53,8 @@ class SellerRegisterServiceTest {
   private static final String NICKNAME = "떡볶이";
   private static final String INTRO = "다육이 전문 판매자입니다.";
   private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 10, 7, 18, 30);
+  // 팩토리가 만든 주소 이벤트 (암호문 내용은 팩토리 테스트에서 확인)
+  private static final MemberAddressChanged ADDRESS_EVENT = new MemberAddressChanged(MEMBER_ID, "v1.k1:test");
 
   // 권한별 회원 (id는 DB가 채워 주는 값이라 직접 주입)
   private Member member(Role role) {
@@ -72,7 +80,8 @@ class SellerRegisterServiceTest {
     // given
     Member member = member(Role.MEMBER);
     given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
-    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(member));
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(member));
+    given(sellerAddressEventFactory.create(MEMBER_ID)).willReturn(ADDRESS_EVENT);
     givenSellerSaved();
 
     // when
@@ -96,6 +105,7 @@ class SellerRegisterServiceTest {
 
     // then: 다른 서비스에 판매자 등록을 알림
     then(outboxPublisher).should().publish(new MemberUpdated(MEMBER_ID, NICKNAME, "SELLER", true));
+    then(outboxPublisher).should().publish(ADDRESS_EVENT);
   }
 
   @Test
@@ -103,7 +113,8 @@ class SellerRegisterServiceTest {
   void register_admin_keepsRole() {
     Member admin = member(Role.ADMIN);
     given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
-    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(admin));
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(admin));
+    given(sellerAddressEventFactory.create(MEMBER_ID)).willReturn(ADDRESS_EVENT);
     givenSellerSaved();
 
     sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, null));
@@ -111,12 +122,14 @@ class SellerRegisterServiceTest {
     assertThat(admin.getRole()).isEqualTo(Role.ADMIN);
     // ADMIN은 role이 그대로라 seller로 판매자임을 알림
     then(outboxPublisher).should().publish(new MemberUpdated(MEMBER_ID, NICKNAME, "ADMIN", true));
+    then(outboxPublisher).should().publish(ADDRESS_EVENT);
     then(sellerRepository).should().saveAndFlush(any(Seller.class));
   }
 
   @Test
-  @DisplayName("이미 판매자면 ALREADY_SELLER, 회원 조회·저장 안 함")
+  @DisplayName("이미 판매자면 ALREADY_SELLER, 저장·발행 안 함 (회원 잠금 뒤에 확인)")
   void register_alreadySeller() {
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(member(Role.SELLER)));
     given(sellerRepository.existsById(MEMBER_ID)).willReturn(true);
 
     assertThatThrownBy(() -> sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO)))
@@ -124,7 +137,6 @@ class SellerRegisterServiceTest {
             .extracting("errorCode")
             .isEqualTo(MemberErrorCode.ALREADY_SELLER);
 
-    then(memberRepository).shouldHaveNoInteractions();
     then(sellerRepository).should(never()).saveAndFlush(any());
     then(outboxPublisher).should(never()).publish(any());
   }
@@ -132,8 +144,7 @@ class SellerRegisterServiceTest {
   @Test
   @DisplayName("없는 회원이면 MEMBER_NOT_FOUND, 판매자 저장 안 함")
   void register_memberNotFound() {
-    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
-    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.empty());
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.empty());
 
     assertThatThrownBy(() -> sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO)))
             .isInstanceOf(BusinessException.class)
@@ -148,7 +159,7 @@ class SellerRegisterServiceTest {
   @DisplayName("동시 등록으로 DB PK 중복 시 ALREADY_SELLER로 변환")
   void register_duplicateKey() {
     given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
-    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(member(Role.MEMBER)));
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(member(Role.MEMBER)));
     willThrow(new DataIntegrityViolationException("could not execute statement",
             new RuntimeException("duplicate key value violates unique constraint \"seller_pkey\"")))
             .given(sellerRepository).saveAndFlush(any(Seller.class));
@@ -160,5 +171,40 @@ class SellerRegisterServiceTest {
 
     // 저장이 실패했으니 판매자 등록 이벤트도 남지 않음
     then(outboxPublisher).should(never()).publish(any());
+  }
+
+  @Test
+  @DisplayName("배송지 상태가 깨져 주소 이벤트를 못 만들면 권한 변경 · 판매자 저장 · 발행을 하지 않음")
+  void register_invalidAddressState() {
+    Member member = member(Role.MEMBER);
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(member));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
+    given(sellerAddressEventFactory.create(MEMBER_ID))
+            .willThrow(new BusinessException(MemberErrorCode.INVALID_SELLER_ADDRESS_STATE));
+
+    assertThatThrownBy(() -> sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO)))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MemberErrorCode.INVALID_SELLER_ADDRESS_STATE);
+
+    assertThat(member.getRole()).isEqualTo(Role.MEMBER);
+    then(sellerRepository).should(never()).saveAndFlush(any());
+    then(outboxPublisher).should(never()).publish(any());
+  }
+
+  @Test
+  @DisplayName("판매자 등록 이벤트를 먼저, 판매자 배송지 목록 이벤트를 그다음에 발행")
+  void register_publishOrder() {
+    Member member = member(Role.MEMBER);
+    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(member));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
+    given(sellerAddressEventFactory.create(MEMBER_ID)).willReturn(ADDRESS_EVENT);
+    givenSellerSaved();
+
+    sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO));
+
+    InOrder inOrder = inOrder(outboxPublisher);
+    inOrder.verify(outboxPublisher).publish(new MemberUpdated(MEMBER_ID, NICKNAME, "SELLER", true));
+    inOrder.verify(outboxPublisher).publish(ADDRESS_EVENT);
   }
 }

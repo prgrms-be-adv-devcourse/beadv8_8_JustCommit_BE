@@ -1,7 +1,7 @@
 # 내부 API 목록
 
 > 언제 읽나: 서비스 간 내부 API의 경로 · 멱등 키를 찾을 때
-> 상태: 🟨 제안 · 마지막 수정 2026-11-12 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
+> 상태: 🟨 제안 · 마지막 수정 2026-11-13 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
 
 ## 목록
 
@@ -13,7 +13,7 @@
 | market | ⬜ 탈퇴 확인 | member | `hasActiveOrders` · `activeBuyerOrderCount` · `activeSellerOrderCount` (수락 대기 주문 포함) | – | ✅ 기능 · ⬜ 경로 |
 | payment | ⬜ 탈퇴 확인 | member | `hasWithdrawalBlocker` + 차단 사유 코드 (잔액 · 진행 중 충전 · 충전 취소 · 인출 · 미수금) | – | ✅ 기능 · ⬜ 경로 |
 | settlement | ⬜ 탈퇴 확인 | member | `hasWithdrawalBlocker` + 차단 사유 코드 (미지급 정산) | – | ✅ 기능 · ⬜ 경로 |
-| product | `GET /internal/v1/products?ids=` | market · ai | 상품 정보 · 가격 · 판매 상태 일괄. 검수 중 · 반려 상품은 제목 「검수 중인 상품」 · 썸네일 없음 | – | ✅ |
+| product | `GET /internal/v1/products?ids=` | market | 상품 정보 · 가격 · 판매 상태 일괄 (장바구니 · 주문 · 추천 결과 카드). 검수 중 · 반려 상품은 제목 「검수 중인 상품」 · 썸네일 없음 | – | ✅ |
 | product | `POST /internal/v1/products/reservations` | market | 상품 예약 (아래 표) | orderId | ✅ |
 | payment | `POST /internal/v1/payments` | market | 잔액 차감 (`HOLDING`으로). 같은 orderId로 다시 오면 차감하지 않고 `ALREADY_PAID` | orderId | ✅ |
 | payment | `POST /internal/v1/refunds/order-items/{orderItemId}` | market | 상품 금액 환불 (취소 · 거절 · 반품). 같은 키면 `ALREADY_REFUNDED`로 처음 결과, 확정 실패는 4xx | orderItemId | ✅ |
@@ -21,9 +21,9 @@
 | payment | `POST /internal/v1/settlement-payouts` | settlement | 정산 지급 (양수: 지급 · 음수: 회수 후 미수금) | settlementId | ✅ |
 | settlement | `GET /internal/v1/settlements/seller-orders/{sellerOrderId}` | market | 정산 완료 시각 | – | 🟨 |
 | market | `GET /internal/v1/shipments?sellerOrderIds=` | notification | 알림 문구용 배송 정보 | – | 🟨 |
-| ai | `/internal/v1/recommendations` | market | 장바구니 추천 | – | 🟨 |
+| ai | `/internal/v1/recommendations` | market | 장바구니 추천. 요청에 장바구니 상품 ID와 최근 구매 확정 상품 ID(`orders_item.status = CONFIRMED`, 개수 · 기간 ⬜) → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md) | – | 🟨 |
 
-판매 완료 · 결제 전 예약 해제 · 판매 재개는 내부 API가 아니라 market 이벤트입니다 → [Kafka 토픽 표](kafka-topics.md), [ADR 0016](../decisions/0016-product-sale-events-from-market.md). 상품 의미 검색은 범위 밖이라 product → ai 호출이 없습니다 (의미 검색은 챗봇이 맡음). 계좌 변경 때 다른 서비스 확인 호출은 없습니다 (노션 2.3).
+판매 완료 · 결제 전 예약 해제 · 판매 재개는 내부 API가 아니라 market 이벤트입니다 → [Kafka 토픽 표](kafka-topics.md), [ADR 0016](../decisions/0016-product-sale-events-from-market.md). 상품 의미 검색은 범위 밖이라 product → ai 호출이 없습니다 (의미 검색은 챗봇이 맡음). ai는 상품 정보를 이벤트로 받아 ai → product 호출도 없습니다 → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md). 계좌 변경 때 다른 서비스 확인 호출은 없습니다 (노션 2.3).
 
 **상품 예약** `POST /internal/v1/products/reservations` 규칙 (노션 3.10):
 

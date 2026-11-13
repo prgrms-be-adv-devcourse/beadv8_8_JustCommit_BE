@@ -51,13 +51,13 @@ public class MemberController {
             .body(ApiResponse.created("회원가입이 완료되었습니다.", LoginResponse.from(result)));
   }
 
-  @GetMapping("/checkNickname")
+  @GetMapping("/nicknameAvailability")
   public ApiResponse<NicknameCheckResponse> checkNickname(@RequestParam String nickname) {
     boolean available = signupService.isNicknameAvailable(nickname);
     return ApiResponse.ok("닉네임 사용 가능 여부를 확인했습니다.", new NicknameCheckResponse(available));
   }
 
-  @GetMapping("/checkPhone")
+  @GetMapping("/phoneAvailability")
   public ApiResponse<PhoneCheckResponse> checkPhone(@RequestParam String phone) {
     boolean available = signupService.isPhoneAvailable(phone);
     return ApiResponse.ok("휴대폰 번호 사용 가능 여부를 확인했습니다.", new PhoneCheckResponse(available));

@@ -1,7 +1,7 @@
 # 미정 항목
 
 > 언제 읽나: 아직 정하지 않은 것이 무엇이고 누가 정하는지 확인할 때
-> 상태: ⬜ 미정 · 마지막 수정 2026-11-09 · 관련: Miro 18, 노션 기획안 맨 위 「남은 미정」, 노션 「정책 정리」 2절 「아직 정하지 않은 것」
+> 상태: ⬜ 미정 · 마지막 수정 2026-11-13 · 관련: Miro 18, 노션 기획안 맨 위 「남은 미정」, 노션 「정책 정리」 2절 「아직 정하지 않은 것」
 
 ## 미정 목록
 
@@ -18,11 +18,11 @@
 | 아이디 찾기 세부 방식 | 이메일로 진행까지 정함 | member | – |
 | 탈퇴 재확인 · 소셜 연결 해제 회원 재로그인 | – | member | – |
 | 메모리 실측 · 모니터링 위치 | 약 7GB / 8GB, 넘치면 데이터 서버로 | 인프라 | Sprint 1 |
-| 회원별 Refresh Set · 인증 메일 키 이름 | 🟨 `auth:email:daily` · `auth:email:attempts` | member | Sprint 1 |
-| DLT 재처리 도구 | 🟨 `failed_event` 표 + 재처리 내부 API | 공통 (messaging) | Sprint 2 |
-| `outbox_event` 나머지 칸 | [이벤트 규칙](conventions/events.md#outbox) | 공통 (messaging) | Sprint 1 |
+| 인증 메일 키 이름 | 🟨 `auth:email:daily` · `auth:email:attempts` | member | Sprint 1 |
 | 외부 AI 약관 (학습 사용 여부) | OpenAI · Anthropic | 김환희 | – |
-| `ProductApproved` 추천용 필드 | – | 성수 | Sprint 2 |
+| 상품 스냅샷 초기 적재 | 세미 프로젝트 상품을 옮기면 필요, 비우면 불필요. 방법은 전체 상품 이벤트 재발행 → [ADR 0021](decisions/0021-product-event-payload-ai-snapshot.md) | 팀 | 운영 전 |
+| 추천 요청의 최근 구매 상품 개수 · 기간 | `CONFIRMED` 주문상품만 → [ADR 0021](decisions/0021-product-event-payload-ai-snapshot.md) | market · ai 담당 | #294 |
+| 검색 임베딩 (상품 의미 검색) | 범위 밖([ADR 0005](decisions/0005-opensearch-pgvector-external-embedding.md)). 넣는다면 product 색인 리스너가 임베딩 API를 직접 부르는 안, 별도 ADR 필요 | 팀 | – |
 | 챗봇 범위 | 보류 (AI 담당 부재) | AI | – |
 | 탈퇴 잔액 정리 중 지갑 잠금 방식 | – | 결제 | – |
 | 토스 대사에서 잔액을 줄여야 하는 불일치 처리 | 노션 4.10에서 「기록 · 팀 알림만」 문장이 지워짐 | 결제 | – |

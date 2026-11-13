@@ -1,7 +1,6 @@
 package com.justcommit.backend.market.client.member;
 
-import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.common.exception.CommonErrorCode;
+import com.justcommit.backend.market.member.application.SellerAddressReader;
 import com.justcommit.backend.market.member.domain.MemberReplica;
 import com.justcommit.backend.market.member.infrastructure.MemberReplicaRepository;
 import lombok.RequiredArgsConstructor;
@@ -23,11 +22,25 @@ class ReplicaMemberClient implements MemberQuery {
   static final String UNKNOWN_NICKNAME = "알 수 없는 회원";
 
   private final MemberReplicaRepository memberReplicaRepository;
+  private final SellerAddressReader sellerAddressReader;
 
-  // shortcut: 판매자 기본 배송지 복제본(member.address.events.v1)이 생기기 전이라 503, #275 후속에서 교체
+  // 판매자 기본 배송지: 복제본의 주소 암호문을 읽어 기본 주소를 돌려준다 (#275).
+  // 임시 연결: 재예약 때마다 그 시점의 최신 기본 주소를 읽는다. 수락 당시 고른 주소 고정(스냅샷)은 아직 아니며,
+  // #283 · 배송 담당과 주소 스냅샷 연결을 마쳐야 한다.
+  // 주소를 쓸 수 없으면(복제본 · 암호문 · 기본 주소 없음) 예외만 던지고, 기록은 택배 예약 쪽이 한다.
+  // 저장된 암호문을 못 읽는 경우는 Reader 예외를 그대로 둔다 (메시지 · 원인에 평문 없음)
   @Override
   public MemberAddress getDefaultAddress(Long memberId) {
-    throw new BusinessException(CommonErrorCode.INTERNAL_API_UNAVAILABLE);
+    String encryptedAddresses = memberReplicaRepository.findById(memberId)
+        .map(MemberReplica::getSellerAddressesEnc)
+        .orElseThrow(SellerAddressUnavailableException::new);
+
+    return sellerAddressReader.read(encryptedAddresses).addresses().stream()
+        .filter(SellerAddressReader.SellerAddress::isDefault)
+        .findFirst()
+        .map(address -> new MemberAddress(address.addressId(), address.recipientName(), address.recipientPhone(),
+            address.zipcode(), address.address1(), address.address2()))
+        .orElseThrow(SellerAddressUnavailableException::new);
   }
 
   // 복제본이 아직 없으면(이벤트가 안 옴) 503 대신 기본 문구. 닉네임은 화면 표시용이라 장바구니 · 주문을 막지 않게
@@ -58,7 +71,7 @@ class ReplicaMemberClient implements MemberQuery {
     if (replica.isWithdrawn()) {
       return WITHDRAWN_NICKNAME;
     }
-    // 탈퇴 표시 없이 닉네임만 빈 경우는 정상 흐름에선 없지만, 빈칸으로 보이지 않게
+    // 주소 이벤트가 먼저 와 회원 칸이 아직 비어 있을 수 있어, 빈칸으로 보이지 않게
     return replica.getNickname() != null ? replica.getNickname() : UNKNOWN_NICKNAME;
   }
 }
