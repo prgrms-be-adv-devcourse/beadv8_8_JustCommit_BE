@@ -200,6 +200,25 @@ class RefreshTokenRedisStoreTest {
     assertThat(redisTemplate.opsForSet().members("auth:refresh-set:4")).isEmpty();
   }
 
+  @Test
+  @DisplayName("주인 읽기: 값만 읽고 키와 Set은 그대로 둔다")
+  void findOwnerDoesNotDelete() {
+    store.save("token-e", 4L, 1, TTL);
+
+    assertThat(store.findOwner("token-e")).isEqualTo(Optional.of(new RefreshTokenOwner(4L, 1)));
+    assertThat(redisTemplate.hasKey("auth:refresh:" + TokenHash.sha256Hex("token-e"))).isTrue();
+    assertThat(redisTemplate.opsForSet().members("auth:refresh-set:4")).containsExactly(TokenHash.sha256Hex("token-e"));
+  }
+
+  @Test
+  @DisplayName("주인 읽기: 없는 토큰 · 옛 형식은 없음")
+  void findOwnerEmptyForMissingOrOldFormat() {
+    assertThat(store.findOwner("missing")).isEmpty();
+
+    redisTemplate.opsForValue().set("auth:refresh:" + TokenHash.sha256Hex("token-old"), "4", TTL);
+    assertThat(store.findOwner("token-old")).isEmpty();
+  }
+
   // 두 작업을 같은 순간에 시작시키고 결과를 모은다 (실제로 겹쳐 실행된다는 보장은 없음)
   private static <T> List<T> runTogether(Callable<T> first, Callable<T> second) throws Exception {
     ExecutorService executor = Executors.newFixedThreadPool(2);

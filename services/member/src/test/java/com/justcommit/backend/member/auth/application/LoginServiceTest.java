@@ -3,6 +3,7 @@ package com.justcommit.backend.member.auth.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,7 +66,7 @@ class LoginServiceTest {
   @Test
   @DisplayName("로그인 성공: 정규화한 이메일로 조회하고 Access토큰과 Refresh토큰을 발급")
   void login_success() {
-    given(memberRepository.findByEmail(EMAIL)).willReturn(Optional.of(member()));
+    given(memberRepository.findByEmailForUpdate(EMAIL)).willReturn(Optional.of(member()));
     given(passwordEncoder.matches(PASSWORD, ENCODED_PASSWORD)).willReturn(true);
     given(jwtProvider.createAccessToken(MEMBER_ID, "MEMBER")).willReturn("access-token");
     given(refreshTokenIssuer.issue(MEMBER_ID, 0)).willReturn("refresh-token");
@@ -87,7 +88,7 @@ class LoginServiceTest {
   @Test
   @DisplayName("없는 이메일이면 LOGIN_FAILED, 토큰을 발급하지 않음")
   void login_emailNotFound() {
-    given(memberRepository.findByEmail(EMAIL)).willReturn(Optional.empty());
+    given(memberRepository.findByEmailForUpdate(EMAIL)).willReturn(Optional.empty());
 
     assertThatThrownBy(() -> loginService.login(new LoginCommand(EMAIL, PASSWORD)))
             .isInstanceOf(BusinessException.class)
@@ -101,7 +102,7 @@ class LoginServiceTest {
   @Test
   @DisplayName("비밀번호가 틀리면 없는 이메일과 같은 LOGIN_FAILED, 토큰을 발급하지 않음")
   void login_wrongPassword() {
-    given(memberRepository.findByEmail(EMAIL)).willReturn(Optional.of(member()));
+    given(memberRepository.findByEmailForUpdate(EMAIL)).willReturn(Optional.of(member()));
     given(passwordEncoder.matches("wrong1234", ENCODED_PASSWORD)).willReturn(false);
 
     assertThatThrownBy(() -> loginService.login(new LoginCommand(EMAIL, "wrong1234")))
@@ -110,6 +111,23 @@ class LoginServiceTest {
             .isEqualTo(MemberErrorCode.LOGIN_FAILED);
 
     then(jwtProvider).should(never()).createAccessToken(anyLong(), anyString());
+    then(refreshTokenIssuer).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("탈퇴 회원이면 없는 이메일과 같은 LOGIN_FAILED, 비밀번호 확인 · 토큰 발급 없음")
+  void login_deletedMember() {
+    Member member = member();
+    ReflectionTestUtils.setField(member, "status", MemberStatus.DELETED);
+    given(memberRepository.findByEmailForUpdate(EMAIL)).willReturn(Optional.of(member));
+
+    assertThatThrownBy(() -> loginService.login(new LoginCommand(EMAIL, PASSWORD)))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MemberErrorCode.LOGIN_FAILED);
+
+    then(passwordEncoder).shouldHaveNoInteractions();
+    then(jwtProvider).shouldHaveNoInteractions();
     then(refreshTokenIssuer).shouldHaveNoInteractions();
   }
 

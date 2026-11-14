@@ -78,6 +78,13 @@ public class RefreshTokenRedisStore {
         hash, value, String.valueOf(ttl.toSeconds()));
   }
 
+  // 재발급: 잠글 회원을 찾기 위해 값을 읽기만 한다 (삭제 없음)
+  // 실제 사용 여부 · 인증 버전 판단은 잠금 뒤 findAndDelete 결과로 한다
+  public Optional<RefreshTokenOwner> findOwner(String refreshToken) {
+    String value = redisTemplate.opsForValue().get(refreshKey(TokenHash.sha256Hex(refreshToken)));
+    return RefreshTokenOwner.parse(value);
+  }
+
   // 재발급: 토큰을 꺼내며 삭제. 동시에 같은 토큰으로 두 요청이 와도 한 요청만 주인(memberId · 인증 버전)을 얻음
   // 읽은 값이 형식에 맞지 않으면(옛 형식 포함) 없음으로 보고 지우지 않음
   public Optional<RefreshTokenOwner> findAndDelete(String refreshToken) {

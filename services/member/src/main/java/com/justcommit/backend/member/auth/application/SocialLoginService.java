@@ -3,6 +3,7 @@ package com.justcommit.backend.member.auth.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
@@ -28,13 +29,19 @@ public class SocialLoginService {
   @Value("${jwt.signup-token-expiration}")
   private Duration signupTokenExpiration;
 
-  @Transactional(readOnly = true)
+  // 비밀번호 변경 · 탈퇴(같은 회원 행 잠금)와 겹치면 한쪽이 끝날 때까지 기다리고, 잠근 뒤 읽은 값으로 판단 (#409)
+  @Transactional
   public SocialLoginResult login(SocialLoginCommand command) {
-    // 기존 소셜 회원은 회원번호로 찾음 (카카오 이메일은 사용자가 바꿀 수 있지만 회원번호는 바뀌지 않음)
+    // 기존 소셜 회원은 회원번호로 찾고 회원 행을 잠금 (카카오 이메일은 사용자가 바꿀 수 있지만 회원번호는 바뀌지 않음)
+    // 행이 없을 때(신규)는 잠글 대상이 없음 → 동시 가입은 UNIQUE 제약 · 가입 처리가 막는다
     Member member = memberRepository
-            .findByProviderAndProviderId(command.provider(), command.providerId())
-            .orElse(null);
+        .findByProviderAndProviderIdForUpdate(command.provider(), command.providerId())
+        .orElse(null);
     if (member != null) {
+      // 탈퇴 회원은 토큰을 발급하지 않음 (탈퇴 · 재가입 안내는 #407)
+      if (member.getStatus() == MemberStatus.DELETED) {
+        throw new BusinessException(MemberErrorCode.SOCIAL_LOGIN_FAILED);
+      }
       return new SocialLoginResult.ExistingMember(issueTokens(member));
     }
 

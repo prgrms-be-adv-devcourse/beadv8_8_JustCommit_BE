@@ -3,6 +3,7 @@ package com.justcommit.backend.member.auth.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
@@ -29,14 +30,16 @@ public class LoginService {
   @Value("${jwt.access-token-expiration}")
   private Duration accessTokenExpiration;
 
-  // 로그인: 회원 조회 → 시스템 계정 차단 → 비밀번호 확인 → Access 발급 → Refresh 발급·Redis 저장
-  @Transactional(readOnly = true)
+  // 로그인: 회원 행 잠금 조회 → 탈퇴 회원 · 비밀번호 확인 → Access 발급 → Refresh 발급 · Redis 저장 → 커밋
+  // 비밀번호 변경 · 탈퇴(같은 회원 행 잠금)와 겹치면 한쪽이 끝날 때까지 기다리고, 잠근 뒤 읽은 값으로 판단 (#409)
+  @Transactional
   public LoginResult login(LoginCommand command) {
     String email = normalizeEmail(command.email());
 
-    // 이메일 없음과 비밀번호 불일치를 같은 에러로 처리
-    Member member = memberRepository.findByEmail(email)
-            .orElseThrow(() -> new BusinessException(MemberErrorCode.LOGIN_FAILED));
+    // 없는 이메일 · 탈퇴 회원 · 비밀번호 불일치를 같은 에러로 처리 (탈퇴 여부를 드러내지 않음)
+    Member member = memberRepository.findByEmailForUpdate(email)
+        .filter(found -> found.getStatus() != MemberStatus.DELETED)
+        .orElseThrow(() -> new BusinessException(MemberErrorCode.LOGIN_FAILED));
     if (!passwordEncoder.matches(command.password(), member.getPassword())) {
       throw new BusinessException(MemberErrorCode.LOGIN_FAILED);
     }
