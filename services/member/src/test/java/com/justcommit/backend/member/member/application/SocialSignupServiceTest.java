@@ -101,7 +101,7 @@ class SocialSignupServiceTest {
       return saved;
     });
     given(jwtProvider.createAccessToken(5L, "MEMBER")).willReturn("access-token");
-    given(refreshTokenIssuer.issue(5L)).willReturn("refresh-token");
+    given(refreshTokenIssuer.issue(5L, 0)).willReturn("refresh-token");
 
     LoginResult result = socialSignupService.signup(SIGNUP_TOKEN, command());
 

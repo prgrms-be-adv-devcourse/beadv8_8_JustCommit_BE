@@ -5,6 +5,7 @@ import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Role;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
+import com.justcommit.backend.member.auth.infrastructure.redis.RefreshTokenOwner;
 import com.justcommit.backend.member.auth.infrastructure.redis.RefreshTokenRedisStore;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -66,10 +67,10 @@ class TokenReissueServiceTest {
   @DisplayName("재발급 성공: 기존 Refresh를 폐기하고 DB의 현재 role로 새 Access·Refresh 발급")
   void reissue_success() {
     // given
-    given(refreshTokenStore.findAndDelete(REFRESH_TOKEN)).willReturn(Optional.of(MEMBER_ID));
+    given(refreshTokenStore.findAndDelete(REFRESH_TOKEN)).willReturn(Optional.of(new RefreshTokenOwner(MEMBER_ID, 0)));
     given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(seller()));
     given(jwtProvider.createAccessToken(MEMBER_ID, "SELLER")).willReturn("new-access-token");
-    given(refreshTokenIssuer.issue(MEMBER_ID)).willReturn("new-refresh-token");
+    given(refreshTokenIssuer.issue(MEMBER_ID, 0)).willReturn("new-refresh-token");
 
     // when
     TokenReissueResult result = tokenReissueService.reissue(REFRESH_TOKEN);
@@ -113,8 +114,25 @@ class TokenReissueServiceTest {
   @Test
   @DisplayName("토큰의 회원이 없으면(탈퇴 등) INVALID_REFRESH_TOKEN, 새 토큰 발급 안 함")
   void reissue_memberNotFound() {
-    given(refreshTokenStore.findAndDelete(REFRESH_TOKEN)).willReturn(Optional.of(MEMBER_ID));
+    given(refreshTokenStore.findAndDelete(REFRESH_TOKEN)).willReturn(Optional.of(new RefreshTokenOwner(MEMBER_ID, 0)));
     given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> tokenReissueService.reissue(REFRESH_TOKEN))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MemberErrorCode.INVALID_REFRESH_TOKEN);
+
+    then(jwtProvider).shouldHaveNoInteractions();
+    then(refreshTokenIssuer).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("Refresh의 인증 버전이 DB와 다르면(비밀번호 변경 · 탈퇴 후) INVALID_REFRESH_TOKEN, Access · 새 Refresh 발급 안 함")
+  void reissue_versionMismatch() {
+    Member member = seller();
+    member.increaseTokenVersion(); // DB 인증 버전 1
+    given(refreshTokenStore.findAndDelete(REFRESH_TOKEN)).willReturn(Optional.of(new RefreshTokenOwner(MEMBER_ID, 0)));
+    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(member));
 
     assertThatThrownBy(() -> tokenReissueService.reissue(REFRESH_TOKEN))
             .isInstanceOf(BusinessException.class)

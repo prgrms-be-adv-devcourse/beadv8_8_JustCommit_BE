@@ -88,7 +88,7 @@ class LogoutIntegrationTest {
   @ValueSource(strings = {"expired", "broken"})
   @DisplayName("만료 · 깨진 Bearer + 유효한 Refresh: 필터를 통과해 200, Refresh는 삭제되고 블랙리스트에는 없다")
   void invalidAccessStillLogsOut(String kind) throws Exception {
-    String refreshToken = refreshTokenIssuer.issue(4L);
+    String refreshToken = refreshTokenIssuer.issue(4L, 0);
     String accessToken = "expired".equals(kind) ? expiredAccessToken() : "not-a-jwt";
 
     HttpResponse<String> response = logout(accessToken, refreshToken);
@@ -102,7 +102,7 @@ class LogoutIntegrationTest {
   @Test
   @DisplayName("유효한 Bearer + Refresh: 200, Refresh 삭제, Access는 남은 수명 동안 블랙리스트에 들어간다")
   void validAccessIsBlacklisted() throws Exception {
-    String refreshToken = refreshTokenIssuer.issue(4L);
+    String refreshToken = refreshTokenIssuer.issue(4L, 0);
     String accessToken = jwtProvider.createAccessToken(4L, "MEMBER");
 
     HttpResponse<String> response = logout(accessToken, refreshToken);

@@ -68,7 +68,7 @@ class LoginServiceTest {
     given(memberRepository.findByEmail(EMAIL)).willReturn(Optional.of(member()));
     given(passwordEncoder.matches(PASSWORD, ENCODED_PASSWORD)).willReturn(true);
     given(jwtProvider.createAccessToken(MEMBER_ID, "MEMBER")).willReturn("access-token");
-    given(refreshTokenIssuer.issue(MEMBER_ID)).willReturn("refresh-token");
+    given(refreshTokenIssuer.issue(MEMBER_ID, 0)).willReturn("refresh-token");
 
     // when: 앞뒤 공백·대문자가 섞인 이메일로 요청
     LoginResult result = loginService.login(new LoginCommand("  Test@Gmail.com ", PASSWORD));

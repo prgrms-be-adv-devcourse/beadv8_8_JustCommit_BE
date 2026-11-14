@@ -6,10 +6,13 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -75,27 +78,27 @@ class RefreshTokenRedisStoreTest {
   }
 
   @Test
-  @DisplayName("저장: SHA-256 해시를 키로 회원 id를 저장하고, 회원별 Set에도 해시를 넣으며 둘 다 TTL이 있다")
+  @DisplayName("저장: SHA-256 해시를 키로 \"{memberId}:{인증 버전}\"을 저장하고, 회원별 Set에도 해시를 넣으며 둘 다 TTL이 있다")
   void save() {
-    store.save("abc", 4L, TTL);
+    store.save("abc", 4L, 0, TTL);
 
-    assertThat(redisTemplate.opsForValue().get("auth:refresh:" + SHA256_OF_ABC)).isEqualTo("4");
+    assertThat(redisTemplate.opsForValue().get("auth:refresh:" + SHA256_OF_ABC)).isEqualTo("4:0");
     assertThat(redisTemplate.opsForSet().members("auth:refresh-set:4")).containsExactly(SHA256_OF_ABC);
     assertThat(redisTemplate.getExpire("auth:refresh:" + SHA256_OF_ABC)).isBetween(1L, TTL.toSeconds());
     assertThat(redisTemplate.getExpire("auth:refresh-set:4")).isBetween(1L, TTL.toSeconds());
   }
 
   @Test
-  @DisplayName("같은 토큰을 동시에 꺼내며 삭제하면 한 요청만 memberId를 얻고, 키와 Set에서 모두 빠진다")
+  @DisplayName("같은 토큰을 동시에 꺼내며 삭제하면 한 요청만 주인(memberId · 인증 버전)을 얻고, 키와 Set에서 모두 빠진다")
   void concurrentTakeOnlyOneWins() throws Exception {
-    store.save("token-a", 4L, TTL);
+    store.save("token-a", 4L, 0, TTL);
 
-    List<Optional<Long>> results = runTogether(
+    List<Optional<RefreshTokenOwner>> results = runTogether(
         () -> store.findAndDelete("token-a"),
         () -> store.findAndDelete("token-a"));
 
     assertThat(results).filteredOn(Optional::isPresent).hasSize(1);
-    assertThat(results).filteredOn(Optional::isPresent).first().isEqualTo(Optional.of(4L));
+    assertThat(results).filteredOn(Optional::isPresent).first().isEqualTo(Optional.of(new RefreshTokenOwner(4L, 0)));
     assertThat(redisTemplate.hasKey("auth:refresh:" + TokenHash.sha256Hex("token-a"))).isFalse();
     assertThat(redisTemplate.opsForSet().members("auth:refresh-set:4")).isEmpty();
   }
@@ -104,14 +107,14 @@ class RefreshTokenRedisStoreTest {
   @DisplayName("전체 삭제가 목록을 읽은 뒤 새 토큰이 저장되면, 기존 토큰만 삭제되고 새 토큰은 키와 Set에 남는다")
   @SuppressWarnings("unchecked")
   void tokenSavedAfterReadSurvivesDeleteAll() {
-    store.save("old-token", 7L, TTL);
+    store.save("old-token", 7L, 0, TTL);
 
     // 목록 읽기(members)가 끝난 직후 새 토큰을 저장하도록 끼워 넣음 → 매번 같은 순서로 재현
     SetOperations<String, String> realSetOps = redisTemplate.opsForSet();
     SetOperations<String, String> setOps = mock(SetOperations.class);
     given(setOps.members(anyString())).willAnswer(invocation -> {
       Set<String> read = realSetOps.members(invocation.getArgument(0));
-      store.save("new-token", 7L, TTL);
+      store.save("new-token", 7L, 0, TTL);
       return read;
     });
     StringRedisTemplate racingTemplate = spy(redisTemplate);
@@ -121,16 +124,16 @@ class RefreshTokenRedisStoreTest {
 
     assertThat(deleted).isEqualTo(1);
     assertThat(redisTemplate.hasKey("auth:refresh:" + TokenHash.sha256Hex("old-token"))).isFalse();
-    assertThat(redisTemplate.opsForValue().get("auth:refresh:" + TokenHash.sha256Hex("new-token"))).isEqualTo("7");
+    assertThat(redisTemplate.opsForValue().get("auth:refresh:" + TokenHash.sha256Hex("new-token"))).isEqualTo("7:0");
     assertThat(redisTemplate.opsForSet().members("auth:refresh-set:7")).containsExactly(TokenHash.sha256Hex("new-token"));
   }
 
   @Test
   @DisplayName("전체 삭제는 그 회원의 조회된 토큰만 지우고 다른 회원의 토큰은 남긴다")
   void deleteAllOnlyThatMember() {
-    store.save("member7-a", 7L, TTL);
-    store.save("member7-b", 7L, TTL);
-    store.save("member8-a", 8L, TTL);
+    store.save("member7-a", 7L, 0, TTL);
+    store.save("member7-b", 7L, 0, TTL);
+    store.save("member8-a", 8L, 0, TTL);
 
     int deleted = store.deleteAllByMember(7L);
 
@@ -138,8 +141,63 @@ class RefreshTokenRedisStoreTest {
     assertThat(redisTemplate.hasKey("auth:refresh:" + TokenHash.sha256Hex("member7-a"))).isFalse();
     assertThat(redisTemplate.hasKey("auth:refresh:" + TokenHash.sha256Hex("member7-b"))).isFalse();
     assertThat(redisTemplate.opsForSet().members("auth:refresh-set:7")).isEmpty();
-    assertThat(redisTemplate.opsForValue().get("auth:refresh:" + TokenHash.sha256Hex("member8-a"))).isEqualTo("8");
+    assertThat(redisTemplate.opsForValue().get("auth:refresh:" + TokenHash.sha256Hex("member8-a"))).isEqualTo("8:0");
     assertThat(redisTemplate.opsForSet().members("auth:refresh-set:8")).containsExactly(TokenHash.sha256Hex("member8-a"));
+  }
+
+  @Test
+  @DisplayName("꺼내며 삭제: 저장한 인증 버전을 그대로 돌려준다")
+  void takeReturnsVersion() {
+    store.save("token-v", 4L, 3, TTL);
+
+    assertThat(store.findAndDelete("token-v")).isEqualTo(Optional.of(new RefreshTokenOwner(4L, 3)));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"4", "4:", ":0", "4:0:", "a:b", "0:0", "4:-1", "+4:0", "99999999999999999999:0", "4:99999999999"})
+  @DisplayName("옛 형식 · 잘못된 형식의 값은 꺼내지 않고(없음) 키도 지우지 않는다")
+  void malformedValueIsNotTaken(String value) {
+    String key = "auth:refresh:" + TokenHash.sha256Hex("token-b");
+    redisTemplate.opsForValue().set(key, value, TTL);
+
+    assertThat(store.findAndDelete("token-b")).isEmpty();
+    assertThat(redisTemplate.opsForValue().get(key)).isEqualTo(value);
+  }
+
+  @Test
+  @DisplayName("읽은 뒤 값이 바뀌면 Lua가 읽은 원문과 현재 값을 비교해 삭제하지 않는다")
+  @SuppressWarnings("unchecked")
+  void valueChangedAfterReadIsNotTaken() {
+    store.save("token-c", 4L, 0, TTL);
+    String key = "auth:refresh:" + TokenHash.sha256Hex("token-c");
+
+    // 읽기(get)가 끝난 직후 같은 키의 값을 바꿔 끼워 넣음 → 읽은 원문 "4:0"과 현재 값 "4:1"이 달라야 함
+    ValueOperations<String, String> realValueOps = redisTemplate.opsForValue();
+    ValueOperations<String, String> valueOps = mock(ValueOperations.class);
+    given(valueOps.get(anyString())).willAnswer(invocation -> {
+      String read = realValueOps.get(invocation.getArgument(0));
+      realValueOps.set(key, "4:1", TTL);
+      return read;
+    });
+    StringRedisTemplate racingTemplate = spy(redisTemplate);
+    doReturn(valueOps).when(racingTemplate).opsForValue();
+
+    Optional<RefreshTokenOwner> taken = new RefreshTokenRedisStore(racingTemplate).findAndDelete("token-c");
+
+    assertThat(taken).isEmpty();
+    assertThat(redisTemplate.opsForValue().get(key)).isEqualTo("4:1");
+    assertThat(redisTemplate.opsForSet().members("auth:refresh-set:4")).containsExactly(TokenHash.sha256Hex("token-c"));
+  }
+
+  @Test
+  @DisplayName("로그아웃 삭제: 새 형식 토큰을 키와 Set에서 모두 지운다")
+  void deleteNewFormat() {
+    store.save("token-d", 4L, 2, TTL);
+
+    store.delete("token-d");
+
+    assertThat(redisTemplate.hasKey("auth:refresh:" + TokenHash.sha256Hex("token-d"))).isFalse();
+    assertThat(redisTemplate.opsForSet().members("auth:refresh-set:4")).isEmpty();
   }
 
   // 두 작업을 같은 순간에 시작시키고 결과를 모은다 (실제로 겹쳐 실행된다는 보장은 없음)

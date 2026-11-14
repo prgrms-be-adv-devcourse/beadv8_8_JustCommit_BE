@@ -20,6 +20,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -61,7 +62,7 @@ class SocialLoginServiceTest {
     given(memberRepository.findByProviderAndProviderId(Provider.KAKAO, "123"))
             .willReturn(Optional.of(member(4L)));
     given(jwtProvider.createAccessToken(4L, "MEMBER")).willReturn("access-token");
-    given(refreshTokenIssuer.issue(4L)).willReturn("refresh-token");
+    given(refreshTokenIssuer.issue(4L, 0)).willReturn("refresh-token");
 
     SocialLoginResult result = socialLoginService.login(
             new SocialLoginCommand(Provider.KAKAO, "123", "user@kakao.com"));
@@ -92,7 +93,7 @@ class SocialLoginServiceTest {
       assertThat(newMember.signupToken()).isEqualTo("signup-token");
       assertThat(newMember.expiresIn()).isEqualTo(600);
     });
-    verify(refreshTokenIssuer, never()).issue(anyLong());
+    verify(refreshTokenIssuer, never()).issue(anyLong(), anyInt());
   }
 
   @Test

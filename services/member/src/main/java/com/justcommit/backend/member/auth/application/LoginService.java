@@ -43,7 +43,7 @@ public class LoginService {
 
     String role = member.getRole().name();
     String accessToken = jwtProvider.createAccessToken(member.getId(), role);
-    String refreshToken = refreshTokenIssuer.issue(member.getId());
+    String refreshToken = refreshTokenIssuer.issue(member.getId(), member.getTokenVersion());
 
     return new LoginResult(
             member.getId(),
