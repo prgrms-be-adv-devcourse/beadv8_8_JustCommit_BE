@@ -107,7 +107,9 @@ public class ImageReview extends BaseTimeEntity {
 
     // 스케줄러가 재처리를 맡음: 횟수 +1, 처리하는 동안 다른 파드가 다시 집지 않게 다음 시각을 뒤로 미룸
     // (도중에 서버가 죽으면 그 시각 뒤에 다시 집힘, 그 시도도 1회로 셈)
+    // 멈춘 REQUESTED도 ENGINE_ERROR로 바꿔 맡음 → 늦게 도착한 검수 요청 이벤트는 REQUESTED가 아니라서 건너뜀
     public void startRetry(LocalDateTime leaseUntil) {
+        this.status = ReviewStatus.ENGINE_ERROR;
         this.retryCount++;
         this.nextRetryAt = leaseUntil;
     }

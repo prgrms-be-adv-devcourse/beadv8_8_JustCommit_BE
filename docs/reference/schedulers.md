@@ -1,7 +1,7 @@
 # 스케줄러
 
 > 언제 읽나: 스케줄러(`@Scheduled`) 작업의 주기 · 역할, 재시도 간격, 중복 실행 방지(SKIP LOCKED · ShedLock)를 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: Miro F-7, 노션 「정책 정리」 1.4 · 11.5
+> 상태: ✅ 확정 · 마지막 수정 2026-11-14 · 관련: Miro F-7, 노션 「정책 정리」 1.4 · 11.5
 
 ## 작업 표
 
@@ -17,7 +17,7 @@
 | 택배 취소 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `CANCEL_PENDING` 배송 취소 재요청 |
 | Saga 복구 | market | 1분 | 확인 후 포기 | SKIP LOCKED | 결과 불명 결제(orderId) · 취소 · 환불(orderItemId · sellerOrderId)을 같은 멱등 키로 다시 요청, 5회 안 되면 `REVIEW_REQUIRED` → [주문 · 결제](../flows/order-payment.md#멈춘-주문-복구) |
 | 요금표 버전 대사 | market | 매일 09:30 (EC2가 켜진 시간) | – | ShedLock | 택배사(404-express) 요금표 버전과 비교, 다르면 새로 받음 |
-| 검수 엔진 오류 재처리 | product | 5분 | 확인 후 포기 (3회 → 관리자 확인) | SKIP LOCKED | `IMAGE_REVIEW`가 `ENGINE_ERROR`이고 검수 버전이 같은 건을 다시 검수, 3회 모두 실패하면 관리자 확인(`ENGINE_ERROR`) → [사진 검수](../flows/image-review.md#엔진-오류-재처리) |
+| 검수 엔진 오류 재처리 | product | 5분 | 확인 후 포기 (3회 → 관리자 확인) | SKIP LOCKED | `IMAGE_REVIEW`가 `ENGINE_ERROR`인 건과 30분이 지나도 `REQUESTED`인 건(멈춘 검수 요청)을 같은 검수 버전으로 다시 검수, 3회 모두 실패하면 관리자 확인(`ENGINE_ERROR`) → [사진 검수](../flows/image-review.md#엔진-오류-재처리) |
 | 관리자 확인 지연 | product | ⬜ | – | SKIP LOCKED | 관리자 확인으로 간 지 12시간 지나면 관리자에게 묶어서 알림, 그 뒤 12시간(모두 24시간) 지나면 `REVIEW_EXPIRED` 자동 반려. 엔진 오류 재처리 시간은 세지 않음 |
 | 토스 결과 불명 조회 | payment | ⬜ | 확인 후 포기 | SKIP LOCKED | `PENDING` 충전 조회 3회 → `REVIEW_REQUIRED` |
 | 토스 대사 | payment | 하루 1번 (⬜ 실행 시각) | – | ShedLock | 토스 거래와 내부 충전 기록 대조, 잔액을 늘리는 보정(토스 승인 · 내부 미승인)은 자동. ⬜ 잔액을 줄여야 하는 불일치 처리 |

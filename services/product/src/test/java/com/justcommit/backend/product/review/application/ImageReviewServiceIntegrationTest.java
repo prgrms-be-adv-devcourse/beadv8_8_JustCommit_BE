@@ -497,4 +497,39 @@ class ImageReviewServiceIntegrationTest {
         verify(outboxPublisher, never()).publish(any(ProductApproved.class));
         verify(outboxPublisher, never()).publish(any(ProductRejected.class));
     }
+
+    // ── 멈춘 검수 요청 (DB 오류로 DLT · 이벤트 유실) ───────────────────────
+
+    @Test
+    @DisplayName("30분이 지나도 REQUESTED인 검수는 재처리 스케줄러가 맡아 검수하고, 늦게 온 검수 요청은 건너뜀")
+    void staleRequestIsRetried() {
+        keysConfigured();
+        identifyAs(MONSTERA, 0.95);
+        Product product = register("몬스테라 팝니다", null);
+        // 검수 요청 이벤트가 리스너에서 처리되지 못한 채 31분이 지남
+        jdbc.update("update image_review set created_at = now() - interval '31 minutes' where status = 'REQUESTED'");
+
+        assertThat(imageReviewService.retryEngineErrors()).isEqualTo(1);
+
+        assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.ACTIVE);
+        ImageReview review = reviewOf(product, 0);
+        assertThat(review.getStatus()).isEqualTo(ReviewStatus.DONE);
+        assertThat(review.getRetryCount()).isEqualTo(1);   // 재처리 3회 안에서 셈
+
+        // DLT 재처리 등으로 같은 검수 요청이 늦게 와도 다시 검수하지 않음
+        imageReviewService.review(product.getId(), 0);
+        verify(plantIdentifier, times(1)).identify(anyList(), anyList());
+    }
+
+    @Test
+    @DisplayName("만든 지 30분이 안 된 REQUESTED는 리스너 몫이라 재처리 스케줄러가 집지 않음")
+    void freshRequestIsLeftToListener() {
+        keysConfigured();
+        Product product = register("몬스테라 팝니다", null);
+        jdbc.update("update image_review set created_at = now() - interval '29 minutes' where status = 'REQUESTED'");
+
+        assertThat(imageReviewService.retryEngineErrors()).isZero();
+        assertThat(reviewOf(product, 0).getStatus()).isEqualTo(ReviewStatus.REQUESTED);
+        verify(plantIdentifier, never()).identify(anyList(), anyList());
+    }
 }
