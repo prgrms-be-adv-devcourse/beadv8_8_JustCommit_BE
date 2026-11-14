@@ -28,8 +28,8 @@
 | `TOSS_SECRET_KEY` · `PAYMENT_KEY_ENCRYPTION_KEY` | payment | 토스페이먼츠 |
 | `COURIER_BASE_URL` · `COURIER_API_KEY` · `WEBHOOK_API_KEY` | market | 모의 택배사 · 웹훅 |
 | `AWS_REGION` · S3 버킷 | product | 사진 업로드 (자격 증명은 EC2 IAM 역할) |
-| ⬜ OpenAI API 키 | product | Moderation |
-| ⬜ Anthropic API 키 | product | Claude Haiku 식물 식별 |
+| `OPENAI_API_KEY` | product | OpenAI Moderation (사진 · 글 유해 검사). 없으면 검수가 관리자 확인으로 |
+| `ANTHROPIC_API_KEY` | product | Claude Haiku 식물 식별. 없으면 검수가 관리자 확인으로 |
 | `OPENAI_API_KEY` | ai-service | 외부 임베딩 (OpenAI). 없어도 앱은 뜨고 임베딩 호출만 실패 |
 
 ## 비밀값 관리

@@ -25,6 +25,7 @@ ProductErrorCode implements ErrorCode {
     PRODUCT_NOT_DELETABLE(HttpStatus.CONFLICT, "판매 중 · 검수 중 · 반려된 상품만 삭제할 수 있습니다."),
     REVIEW_PENDING_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "검수 중인 상품은 동시에 5개까지 둘 수 있습니다."),
     DAILY_REGISTER_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "상품은 하루 20건까지 등록할 수 있습니다."),
+    DAILY_REVIEW_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "사진 검수는 하루 30회까지 할 수 있습니다."),
     RESERVATION_RELEASED(HttpStatus.CONFLICT, "이미 해제된 주문이라 예약할 수 없습니다.");
 
     private final HttpStatus status;

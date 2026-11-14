@@ -92,13 +92,13 @@
 | 주제 | 규칙 |
 |---|---|
 | 숨김 | 상태와 별개. 판매자 본인만 봄, 남이 상세를 열면 403 `PRODUCT_HIDDEN`(삭제 404와 구분), 새 주문 불가, 장바구니에는 "숨긴 상품" |
-| 검수 중 · 반려 노출 | `REVIEW_PENDING` · `REJECTED`는 판매자 본인만 봄(내 상품 목록 · 상세), 남이 상세를 열면 404 `PRODUCT_NOT_FOUND`(검색에도 안 나와 없는 상품처럼), 예약 불가(409 `PRODUCT_NOT_RESERVABLE`) |
+| 검수 중 · 반려 노출 | `REVIEW_PENDING` · `REJECTED`는 판매자 본인만 봄(내 상품 목록 · 상세), 남이 상세를 열면 404 `PRODUCT_NOT_FOUND`(검색에도 안 나와 없는 상품처럼), 예약 불가(409 `PRODUCT_NOT_RESERVABLE`). 내부 API(`ProductResult`)는 제목을 「검수 중인 상품」으로 가리고 썸네일을 비움(장바구니에 반려 사진 · 글이 보이지 않게) |
 | 등록 | SELLER만 (403 `NOT_SELLER`). 품종 · 제목 · 설명 · 가격 · 사진 필수. 사진은 본인이 Presigned URL로 올린 JPEG · PNG, 10MB 이하, 1~10장 |
-| 수정 | 본인 · `ACTIVE` · `REJECTED` · `REVIEW_PENDING`만, 전체 교체, 검수 버전 +1. 사진이 바뀌면 처음부터 검수, 글만 바뀌면 글 검사만 (판매 중이어도 걸리면 `REJECTED`). 예약과 겹치지 않게 행 잠금 |
+| 수정 | 본인 · `ACTIVE` · `REJECTED` · `REVIEW_PENDING`만, 전체 교체, 검수 버전 +1. 판매 중 상품의 글만 바뀌면 판매를 이어 가며 글 검사만 (걸리면 `REJECTED`, 관리자 확인이면 `REVIEW_PENDING`), 그 밖에는 처음부터 검수(사진 · 품종이 바뀜, 검수 중 · 반려 상품). 예약과 겹치지 않게 행 잠금 |
 | 삭제 | 본인 · `ACTIVE` · `REJECTED` · `REVIEW_PENDING`만, 소프트 삭제, 사진은 커밋 후 S3에서 삭제 |
 | 재검수 · 이의 신청 | 재검수 1회, 자동 반려는 수정 없이 이의 신청 1회 → [사진 검수](../flows/image-review.md) |
 | 엔진 오류 | 외부 API가 재시도 후에도 실패하면 5분 간격 최대 3회 재처리, 그래도 실패하면 관리자 확인. 재처리는 횟수 · 제한에 세지 않음 → [엔진 오류 재처리](../flows/image-review.md#엔진-오류-재처리) |
-| 등록 제한 | 검수 중 동시 5개(409 `REVIEW_PENDING_LIMIT_EXCEEDED`, 이의 신청 포함) · 하루 등록 20건(429 `DAILY_REGISTER_LIMIT_EXCEEDED`, 삭제 포함) · 하루 사진 검수 30회(429 `DAILY_REVIEW_LIMIT_EXCEEDED`). 하루는 한국 시간 자정 기준. 최근 7일 반려 5건 이상이면 바로 관리자 확인 (`REVIEW_EXPIRED` 제외) |
+| 등록 제한 | 검수 중 동시 5개(409 `REVIEW_PENDING_LIMIT_EXCEEDED`, 이의 신청 포함) · 하루 등록 20건(429 `DAILY_REGISTER_LIMIT_EXCEEDED`, 삭제 포함) · 하루 사진 검수 30회(429 `DAILY_REVIEW_LIMIT_EXCEEDED`, 등록 · 사진 검수가 필요한 수정마다 `IMAGE_REVIEW` 행으로 셈, 글 검사는 제외). 하루는 한국 시간 자정 기준. 최근 7일 반려 5건 이상이면 사진 검수를 외부 API 없이 바로 관리자 확인 (`REVIEW_EXPIRED` 제외) |
 | 예약 | market 내부 API로만, 주문서 가격(`expectedPrice`)이 하나라도 다르면 409 `PRICE_CHANGED`, 해제된 orderId의 늦은 예약은 409 → [내부 API 목록](../reference/internal-apis.md) |
 | 판매 완료 · 예약 해제 | market 이벤트로 처리. 판매 완료는 이 주문이 잡은 `PAYMENT_PENDING` 상품만 `SOLD_OUT`, 결제 전 해제(만료 · 결제 확정 실패)는 `PAYMENT_PENDING` → `ACTIVE`. 바뀐 상품이 0건이어도 정상(로그만, DLT 아님). 예약 · 판매 완료 · 해제는 모두 orderId 기준이라 다른 주문이 잡은 상품은 건드리지 않음 |
 | 판매 재개 | 환불 성공 뒤 market 이벤트로. 이 주문이 잡은 상품(`reservedOrderId = orderId`)이 `PAYMENT_PENDING` 또는 `SOLD_OUT`일 때만 `ACTIVE`로 되돌리고 `reservedOrderId`를 비움 (취소가 판매 완료보다 먼저 와도 맞게). 구매자 취소(`BUYER`)는 숨기지 않음, 판매자 거절 · 자동 거절(`SELLER` · `AUTO`) · 반품이면 `ACTIVE` + **숨김**. 해제 메서드는 `releaseItem(productId, orderId, hidden)` 하나. 이미 다른 사람에게 다시 팔린 상품은 그대로. 숨김을 풀 때 재검수 없음 |
