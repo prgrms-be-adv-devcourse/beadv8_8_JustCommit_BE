@@ -28,7 +28,6 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import com.justcommit.backend.product.review.application.ImageReviewService;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -95,7 +94,7 @@ class SellerWithdrawalReleaseIntegrationTest {
     @MockitoBean OutboxPublisher outboxPublisher;
     @MockitoBean ProductImageUrlValidator imageUrlValidator;
     // 사진 검수는 ImageReviewServiceIntegrationTest에서
-    @MockitoBean ImageReviewService imageReviewService;
+    @MockitoBean ReviewRequester reviewRequester;
     @MockitoBean ProductImageCleaner imageCleaner;
 
     private Species species;

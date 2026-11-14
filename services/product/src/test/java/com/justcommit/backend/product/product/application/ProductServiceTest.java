@@ -35,7 +35,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.test.util.ReflectionTestUtils;
-import com.justcommit.backend.product.review.application.ImageReviewService;
 import com.justcommit.backend.product.product.domain.ReviewScope;
 
 import java.math.BigDecimal;
@@ -81,7 +80,7 @@ public class  ProductServiceTest {
     private OutboxPublisher outboxPublisher;
 
     @Mock
-    private ImageReviewService imageReviewService;
+    private ReviewRequester reviewRequester;
 
     // 등록 제한의 "오늘" 기준을 고정 (2026-11-11 12:00 KST)
     @Spy
@@ -158,7 +157,7 @@ public class  ProductServiceTest {
         assertThat(response.sellerName()).isEqualTo("판매자1");
         assertThat(response.title()).isEqualTo("몬스테라 분양합니다");
         // 등록하면 사진 검수부터 요청
-        verify(imageReviewService).request(any(Product.class), eq(ReviewScope.FULL));
+        verify(reviewRequester).request(any(Product.class), eq(ReviewScope.FULL));
     }
 
     @Test
@@ -211,7 +210,7 @@ public class  ProductServiceTest {
         // 사진 · 품종이 바뀌어 다시 검수 중, 검수 버전 +1
         assertThat(product.getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
         assertThat(product.getReviewVersion()).isEqualTo(1);
-        verify(imageReviewService).request(product, ReviewScope.FULL);
+        verify(reviewRequester).request(product, ReviewScope.FULL);
     }
 
     @Test

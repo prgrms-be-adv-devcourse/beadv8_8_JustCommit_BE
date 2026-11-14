@@ -8,6 +8,7 @@ import com.justcommit.backend.product.banned.domain.BannedTextMatcher;
 import com.justcommit.backend.product.exception.ProductErrorCode;
 import com.justcommit.backend.product.image.application.ImageData;
 import com.justcommit.backend.product.image.application.ImageReader;
+import com.justcommit.backend.product.product.application.ReviewRequester;
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.product.domain.ProductImage;
 import com.justcommit.backend.product.product.domain.ReviewScope;
@@ -49,7 +50,7 @@ import java.util.List;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ImageReviewService {
+public class ImageReviewService implements ReviewRequester {
 
     static final int DAILY_REVIEW_LIMIT = 30;          // 판매자당 하루 사진 검수 (한국 시간 자정 기준)
     static final int RECENT_REJECTION_LIMIT = 5;       // 최근 7일 반려가 이만큼이면 자동 검수 없이 관리자 확인
@@ -77,6 +78,7 @@ public class ImageReviewService {
     // ── 요청 ───────────────────────────────
 
     // 등록 · 수정 트랜잭션 안에서만 부름 (상품 저장과 검수 요청이 함께 커밋 · 롤백)
+    @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void request(Product product, ReviewScope scope) {
         // 사진 검수만 셈. 동시에 요청하면 확인과 저장 사이에 끼어 1~2회 넘을 수 있다 (비용 보호용이라 허용, 등록 제한과 같음)

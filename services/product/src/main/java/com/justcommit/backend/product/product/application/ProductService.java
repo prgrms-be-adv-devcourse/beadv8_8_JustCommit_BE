@@ -21,7 +21,6 @@ import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import com.justcommit.backend.product.product.infrastructure.ProductSpecifications;
 import com.justcommit.backend.product.product.presentation.dto.*;
 import com.justcommit.backend.product.reservation.domain.ProductReservation;
-import com.justcommit.backend.product.review.application.ImageReviewService;
 import com.justcommit.backend.product.reservation.infrastructure.ProductReservationRepository;
 import com.justcommit.backend.product.species.domain.Species;
 import com.justcommit.backend.product.species.infrastructure.SpeciesRepository;
@@ -58,7 +57,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
     private final ProductImageCleaner imageCleaner;
     private final Clock clock;
     private final OutboxPublisher outboxPublisher;
-    private final ImageReviewService imageReviewService;
+    private final ReviewRequester reviewRequester;
 
     // ── ProductQuery ───────────────────────────────
 
@@ -207,7 +206,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
         // 상품 ID는 저장한 뒤에야 생김
         outboxPublisher.publish(new ProductRegistered(saved.getId()));
         // 검수 기록 + 검수 요청 이벤트 (하루 사진 검수 30회를 넘으면 429로 등록까지 롤백)
-        imageReviewService.request(saved, ReviewScope.FULL);
+        reviewRequester.request(saved, ReviewScope.FULL);
 
         return ProductDetailResponse.from(saved, memberQuery.getNickname(sellerId));
     }
@@ -268,7 +267,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
                 .toList());
 
         outboxPublisher.publish(new ProductUpdated(product.getId()));
-        imageReviewService.request(product, reviewScope);
+        reviewRequester.request(product, reviewScope);
         return ProductDetailResponse.from(product, memberQuery.getNickname(product.getSellerId()));
     }
 
