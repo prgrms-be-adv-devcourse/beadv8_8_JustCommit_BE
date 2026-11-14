@@ -24,6 +24,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -93,7 +94,7 @@ class MemberInternalApiIntegrationTest {
   @DisplayName("유효한 회원 Access 토큰만 있고 내부 키가 없으면 401 (로그인한 회원도 부를 수 없음)")
   void memberTokenWithoutInternalKey() throws Exception {
     Long memberId = saveMember();
-    String accessToken = jwtProvider.createAccessToken(memberId, "MEMBER");
+    String accessToken = jwtProvider.createAccessToken(memberId, "MEMBER", Instant.now());
 
     // 같은 토큰으로 회원 API가 200 → 토큰 자체는 유효함 (아래 401은 토큰 문제가 아님)
     HttpRequest me = HttpRequest.newBuilder(uri("/api/v1/users/me"))
