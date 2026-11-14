@@ -7,6 +7,8 @@
 
 ## 기록
 
+- 2026-11-14 · flows/image-review.md · 엔진 오류 재처리 「상태」에 판매 중 상품의 글 검사(`TEXT_ONLY`)는 재처리 동안 `ACTIVE` 그대로(판매 유지, 🟨 팀 확인 중) 추가 (#451)
+- 2026-11-14 · flows/image-review.md · services/product.md · reference/internal-apis.md · reference/kafka-topics.md · reference/env-vars.md · 자동 사진 검수 반영: 결과 반영 조건을 "검수 버전이 같고 사진 검수는 `REVIEW_PENDING` · 글 검사는 `ACTIVE`"로(어긋난 두 줄 수정), 판매 중 상품 글 검사가 관리자 확인이면 `REVIEW_PENDING`, 검수 중 · 반려 상품은 글만 고쳐도 처음부터 검수, 하루 사진 검수 30회는 `IMAGE_REVIEW` 행으로 셈, `ProductReviewRequested` payload `productId` · `reviewVersion`, 내부 API는 검수 중 · 반려 상품 제목 · 썸네일을 가림, 환경변수 `OPENAI_API_KEY` · `ANTHROPIC_API_KEY` (#451)
 - 2026-11-13 · infra/database.md · reference/env-vars.md · services/ai.md · ai DB `ai_db` · 계정 `ai_app` 추가, 로컬 postgres 이미지를 `pgvector/pgvector:pg17`로, `vector` 확장은 superuser가 서비스 DB SQL에서 생성, 임베딩 모델 `text-embedding-3-small` 1536차원 · 키 변수 `OPENAI_API_KEY`, 운영 DB도 pgvector 이미지 필요(인프라 요청) (#290)
 - 2026-11-13 · flows/image-review.md · services/product.md · reference/external-apis.md · reference/schedulers.md · services/notification.md · reference/kafka-topics.md · 사진 검수 11/11 결정 반영: 외부 API가 재시도 후에도 실패하면 `IMAGE_REVIEW` `ENGINE_ERROR`로 두고 5분 간격 최대 3회 엔진 재처리(스케줄러 추가, 횟수 · 제한에 안 셈, 12 · 24시간 기한은 관리자 확인으로 넘어간 뒤부터), 3회 실패하면 관리자 확인 · 관리자 「다시 검수」 버튼은 두지 않음, 검수 통과 알림(notification이 `ProductApproved` 구독), 판매자 API `GET products/{id}/imageReviews`(검수 기록) · `POST products/{id}/imageReviews`(기한 초과 재요청, 409 `RESUBMIT_NOT_ALLOWED`) · `POST products/{id}/appeals`(이의 신청) (#344)
 - 2026-11-13 · flows/image-review.md · reference/kafka-topics.md · testing/scenarios.md · PR #449 리뷰 반영: `ProductApproved` · `ProductRejected` payload 제안값(🟨, #345에서 확정), 통과 · 반려 알림 문장 합침, 시나리오 S-C10(엔진 오류 재처리) 추가 · S-C05에 통과 알림 (#344)
