@@ -146,6 +146,35 @@ class RefreshTokenRedisStoreTest {
   }
 
   @Test
+  @DisplayName("옛 버전 삭제는 기준 버전보다 작은 토큰만 지우고 같거나 새 버전 토큰은 남긴다 (늦게 온 옛 폐기 작업이 새 Refresh를 건드리지 않음)")
+  void deleteOlderKeepsCurrentAndNewerVersions() {
+    store.save("v0", 7L, 0, TTL);
+    store.save("v1", 7L, 1, TTL);
+    store.save("v2", 7L, 2, TTL);
+
+    int deleted = store.deleteOlderVersions(7L, 1);
+
+    assertThat(deleted).isEqualTo(1);
+    assertThat(redisTemplate.hasKey("auth:refresh:" + TokenHash.sha256Hex("v0"))).isFalse();
+    assertThat(redisTemplate.opsForValue().get("auth:refresh:" + TokenHash.sha256Hex("v1"))).isEqualTo("7:1");
+    assertThat(redisTemplate.opsForValue().get("auth:refresh:" + TokenHash.sha256Hex("v2"))).isEqualTo("7:2");
+    assertThat(redisTemplate.opsForSet().members("auth:refresh-set:7"))
+        .containsExactlyInAnyOrder(TokenHash.sha256Hex("v1"), TokenHash.sha256Hex("v2"));
+  }
+
+  @Test
+  @DisplayName("옛 버전 삭제는 형식이 맞지 않는 값(옛 형식)을 건드리지 않는다")
+  void deleteOlderSkipsMalformedValue() {
+    String hash = TokenHash.sha256Hex("legacy");
+    redisTemplate.opsForValue().set("auth:refresh:" + hash, "7", TTL);
+    redisTemplate.opsForSet().add("auth:refresh-set:7", hash);
+
+    assertThat(store.deleteOlderVersions(7L, 1)).isZero();
+
+    assertThat(redisTemplate.opsForValue().get("auth:refresh:" + hash)).isEqualTo("7");
+  }
+
+  @Test
   @DisplayName("꺼내며 삭제: 저장한 인증 버전을 그대로 돌려준다")
   void takeReturnsVersion() {
     store.save("token-v", 4L, 3, TTL);
