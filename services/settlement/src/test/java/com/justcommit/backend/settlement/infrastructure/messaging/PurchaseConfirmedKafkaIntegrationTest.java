@@ -6,6 +6,7 @@ import com.justcommit.backend.common.messaging.KafkaTopics;
 import com.justcommit.backend.settlement.application.SettlementService;
 import com.justcommit.backend.settlement.client.payment.SettlementPayoutClient;
 import com.justcommit.backend.settlement.domain.Settlement;
+import com.justcommit.backend.settlement.domain.SettlementStatus;
 import com.justcommit.backend.settlement.infrastructure.repository.SettlementRepository;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -89,6 +90,10 @@ class PurchaseConfirmedKafkaIntegrationTest {
         // 수수료 5%는 판매액에만, 배송비는 정산금에 넣지 않음
         assertThat(settlement.getFee()).isEqualByComparingTo("1500");
         assertThat(settlement.getPayoutAmount()).isEqualByComparingTo("28500");
+        // 아직 같은 트랜잭션에서 지급하므로(#428 전) 지급이 끝난 정산으로 저장됨 (V3 체크 제약도 통과)
+        assertThat(settlement.getStatus()).isEqualTo(SettlementStatus.COMPLETED);
+        assertThat(settlement.getCompletedAt()).isNotNull();
+        assertThat(settlement.getNextAttemptAt()).isNull();
     }
 
     @Test
