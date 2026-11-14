@@ -44,9 +44,9 @@ public final class ReviewJudge {
             if (plant.saleForm() != null && plant.saleForm().isProhibited()) {
                 return ReviewVerdict.reject(RejectReason.PROHIBITED_FORM, plant.saleForm().name());
             }
-            // 5) 1순위가 금지 품종, 확신도 0.7 이상
+            // 5) 1순위가 금지 품종, 확신도 0.7 이상 (판매자가 고른 품종과 같은 속이면 반려하지 않고 7줄 금지 의심으로)
             Candidate top = top(plant);
-            if (top != null && top.confidence() >= BANNED_CONFIDENCE) {
+            if (top != null && top.confidence() >= BANNED_CONFIDENCE && !sameGenusAsSeller(top, seller)) {
                 ScientificNameMatcher.Match match = bannedLookup.apply(top.scientificName());
                 if (match.result() == ScientificNameMatcher.Result.BANNED) {
                     return ReviewVerdict.reject(RejectReason.BANNED_SPECIES, match.koreanName());
@@ -119,6 +119,17 @@ public final class ReviewJudge {
             }
         }
         return null;
+    }
+
+    // 1순위 금지 품종이 판매자가 고른 품종과 같은 속인지 (「기타」면 아님)
+    // 11/14 실판매 실측: Haiku가 덴드로비움 교배종을 석곡(D. moniliforme), 아비스를 파초일엽(A. antiquum)으로 0.8 안팎에 답해
+    // 합법 상품 19건이 반려됨. 같은 속 안의 금지 · 합법은 사진으로 가르기 어려워 사람이 봄. 진짜 금지 9건이 반려 → 관리자 확인
+    private static boolean sameGenusAsSeller(Candidate top, SellerSpecies seller) {
+        if (seller.other()) {
+            return false;
+        }
+        String sellerGenus = SpeciesMatcher.genus(seller.scientificName());
+        return sellerGenus != null && sellerGenus.equals(SpeciesMatcher.genus(top.scientificName()));
     }
 
     private static Candidate top(PlantIdentification plant) {
