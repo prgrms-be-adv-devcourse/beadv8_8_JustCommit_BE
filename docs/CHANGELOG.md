@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-14 · flows/image-review.md · 엔진 오류 재처리에 「결과 반영 중 DB 오류」 행 추가: 공통 재시도(3회) 뒤 DLT, 재시도마다 외부 API 다시 호출, DLT로 가면 `IMAGE_REVIEW` `REQUESTED`로 남아 수동 재처리 필요 (#345)
 - 2026-11-14 · reference/internal-apis.md · services/member.md · open-questions.md · member 계좌 조회 내부 API 반영: `GET /internal/v1/members/{memberId}/account`(`X-Internal-Key` 필수) 응답 `bankCode` · `accountNo`(member가 복호화한 원문) · `accountHolder`, 없는 회원 · 탈퇴 회원 404 `MEMBER_NOT_FOUND`, 상태 「✅ member 구현 · ⬜ payment 연동(#388)」, 미정 항목에서 계좌 조회 경로 제거(운영 전송 보호 방식은 payment · 인프라 담당과 정하는 미정으로 유지) (#453)
 - 2026-11-14 · flows/image-review.md · 엔진 오류 재처리 「상태」에 판매 중 상품의 글 검사(`TEXT_ONLY`)는 재처리 동안 `ACTIVE` 그대로(판매 유지, 🟨 팀 확인 중) 추가 (#451)
 - 2026-11-14 · flows/image-review.md · services/product.md · reference/internal-apis.md · reference/kafka-topics.md · reference/env-vars.md · 자동 사진 검수 반영: 결과 반영 조건을 "검수 버전이 같고 사진 검수는 `REVIEW_PENDING` · 글 검사는 `ACTIVE`"로(어긋난 두 줄 수정), 판매 중 상품 글 검사가 관리자 확인이면 `REVIEW_PENDING`, 검수 중 · 반려 상품은 글만 고쳐도 처음부터 검수, 하루 사진 검수 30회는 `IMAGE_REVIEW` 행으로 셈, `ProductReviewRequested` payload `productId` · `reviewVersion`, 내부 API는 검수 중 · 반려 상품 제목 · 썸네일을 가림, 환경변수 `OPENAI_API_KEY` · `ANTHROPIC_API_KEY` (#451)
