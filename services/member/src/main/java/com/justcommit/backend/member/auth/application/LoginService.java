@@ -6,6 +6,7 @@ import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Locale;
 
 // 이메일·비밀번호 로그인
@@ -24,6 +26,7 @@ public class LoginService {
   private final PasswordEncoder passwordEncoder;
   private final JwtProvider jwtProvider;
   private final RefreshTokenIssuer refreshTokenIssuer;
+  private final DatabaseClock databaseClock;
 
   // Access 토큰 유효 시간
   // application.yml의 jwt.access-token-expiration: 30m → Duration으로 자동 변환
@@ -44,8 +47,10 @@ public class LoginService {
       throw new BusinessException(MemberErrorCode.LOGIN_FAILED);
     }
 
+    // 회원 잠금과 검사를 마친 뒤 DB 시각을 읽어 Access 발급 시각으로 (#409)
+    Instant issuedAt = databaseClock.now();
     String role = member.getRole().name();
-    String accessToken = jwtProvider.createAccessToken(member.getId(), role);
+    String accessToken = jwtProvider.createAccessToken(member.getId(), role, issuedAt);
     String refreshToken = refreshTokenIssuer.issue(member.getId(), member.getTokenVersion());
 
     return new LoginResult(

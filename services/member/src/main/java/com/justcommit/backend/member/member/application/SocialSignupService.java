@@ -15,6 +15,7 @@ import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.event.MemberCreated;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -22,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Locale;
 
 // 소셜 회원가입: 가입 토큰 검증 → 중복 검사 → 회원·기본 배송지 저장 → 바로 로그인(토큰 발급)
@@ -35,6 +37,7 @@ public class SocialSignupService {
   private final JwtProvider jwtProvider;
   private final RefreshTokenIssuer refreshTokenIssuer;
   private final OutboxPublisher outboxPublisher;
+  private final DatabaseClock databaseClock;
 
   @Value("${jwt.access-token-expiration}")
   private Duration accessTokenExpiration;
@@ -147,8 +150,10 @@ public class SocialSignupService {
 
   // Access·Refresh 발급
   private LoginResult issueTokens(Member member) {
+    // 새 회원 저장 후 같은 가입 트랜잭션에서 DB 시각을 읽어 Access 발급 시각으로 (#409)
+    Instant issuedAt = databaseClock.now();
     String role = member.getRole().name();
-    String accessToken = jwtProvider.createAccessToken(member.getId(), role);
+    String accessToken = jwtProvider.createAccessToken(member.getId(), role, issuedAt);
     String refreshToken = refreshTokenIssuer.issue(member.getId(), member.getTokenVersion());
 
     return new LoginResult(

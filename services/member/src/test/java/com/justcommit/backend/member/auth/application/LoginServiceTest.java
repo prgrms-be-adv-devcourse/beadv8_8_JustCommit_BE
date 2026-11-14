@@ -6,6 +6,7 @@ import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,6 +18,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,6 +44,9 @@ class LoginServiceTest {
   @Mock
   private RefreshTokenIssuer refreshTokenIssuer;
 
+  @Mock
+  private DatabaseClock databaseClock;
+
   @InjectMocks
   private LoginService loginService;
 
@@ -49,6 +54,7 @@ class LoginServiceTest {
   private static final String PASSWORD = "plant1234";
   private static final String ENCODED_PASSWORD = "encoded-password";
   private static final Long MEMBER_ID = 1L;
+  private static final Instant NOW = Instant.parse("2026-11-14T01:00:00Z");
 
   // @Value 필드는 Spring없이 채워지지 않아서 직접 주입
   @BeforeEach
@@ -68,7 +74,8 @@ class LoginServiceTest {
   void login_success() {
     given(memberRepository.findByEmailForUpdate(EMAIL)).willReturn(Optional.of(member()));
     given(passwordEncoder.matches(PASSWORD, ENCODED_PASSWORD)).willReturn(true);
-    given(jwtProvider.createAccessToken(MEMBER_ID, "MEMBER")).willReturn("access-token");
+    given(databaseClock.now()).willReturn(NOW);
+    given(jwtProvider.createAccessToken(MEMBER_ID, "MEMBER", NOW)).willReturn("access-token");
     given(refreshTokenIssuer.issue(MEMBER_ID, 0)).willReturn("refresh-token");
 
     // when: 앞뒤 공백·대문자가 섞인 이메일로 요청
@@ -110,7 +117,8 @@ class LoginServiceTest {
             .extracting("errorCode")
             .isEqualTo(MemberErrorCode.LOGIN_FAILED);
 
-    then(jwtProvider).should(never()).createAccessToken(anyLong(), anyString());
+    then(jwtProvider).shouldHaveNoInteractions();
+    then(databaseClock).shouldHaveNoInteractions();
     then(refreshTokenIssuer).shouldHaveNoInteractions();
   }
 
@@ -127,6 +135,7 @@ class LoginServiceTest {
             .isEqualTo(MemberErrorCode.LOGIN_FAILED);
 
     then(passwordEncoder).shouldHaveNoInteractions();
+    then(databaseClock).shouldHaveNoInteractions();
     then(jwtProvider).shouldHaveNoInteractions();
     then(refreshTokenIssuer).shouldHaveNoInteractions();
   }

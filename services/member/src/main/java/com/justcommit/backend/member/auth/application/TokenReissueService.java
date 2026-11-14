@@ -8,12 +8,14 @@ import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.Instant;
 
 // 토큰 재발급 (Refresh Token Rotation)
 @Service
@@ -24,6 +26,7 @@ public class TokenReissueService {
   private final RefreshTokenIssuer refreshTokenIssuer;
   private final MemberRepository memberRepository;
   private final JwtProvider jwtProvider;
+  private final DatabaseClock databaseClock;
 
   @Value("${jwt.access-token-expiration}")
   private Duration accessTokenExpiration;
@@ -59,8 +62,10 @@ public class TokenReissueService {
     if (owner.tokenVersion() != member.getTokenVersion()) {
       throw new BusinessException(MemberErrorCode.INVALID_REFRESH_TOKEN);
     }
+    // 회원 잠금과 모든 확인을 마친 뒤 DB 시각을 읽어 Access 발급 시각으로 (#409)
+    Instant issuedAt = databaseClock.now();
     // role은 토큰이 아니라 DB에서 다시 조회(판매자 등록 후 SELLER 반영)
-    String accessToken = jwtProvider.createAccessToken(member.getId(), member.getRole().name());
+    String accessToken = jwtProvider.createAccessToken(member.getId(), member.getRole().name(), issuedAt);
     String newRefreshToken = refreshTokenIssuer.issue(member.getId(), member.getTokenVersion());
 
     return new TokenReissueResult(

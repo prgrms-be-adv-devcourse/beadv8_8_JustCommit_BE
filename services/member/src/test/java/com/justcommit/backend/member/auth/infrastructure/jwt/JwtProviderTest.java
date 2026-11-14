@@ -31,7 +31,7 @@ class JwtProviderTest {
   @Test
   @DisplayName("발급한 Access 토큰은 공통 JwtVerifier가 공개키로 검증하고 회원 ID와 권한을 꺼낼 수 있음")
   void accessToken_verifiedByCommonVerifier() {
-    String token = jwtProvider.createAccessToken(1L, "MEMBER");
+    String token = jwtProvider.createAccessToken(1L, "MEMBER", Instant.now());
 
     AuthMember authMember = jwtVerifier.parseAccessToken(token);
 
@@ -64,7 +64,7 @@ class JwtProviderTest {
   @Test
   @DisplayName("Access 토큰을 Signup 토큰으로 검증하면 INVALID")
   void accessTokenCannotBeUsedAsSignupToken() {
-    String accessToken = jwtProvider.createAccessToken(1L, "MEMBER");
+    String accessToken = jwtProvider.createAccessToken(1L, "MEMBER", Instant.now());
 
     assertThatThrownBy(() -> jwtProvider.parseSignupToken(accessToken))
         .isInstanceOf(TokenException.class)
@@ -148,12 +148,25 @@ class JwtProviderTest {
   }
 
   // 테스트용 JwtProvider 생성 (Spring 없이 직접 생성)
+  @Test
+  @DisplayName("Access 토큰의 iat는 넘긴 시각의 초(밀리초 이하 버림), exp는 그 초 + 발급 수명 (#409)")
+  void accessTokenTimesComeFromGivenInstant() {
+    long second = Instant.now().getEpochSecond();
+    Instant issuedAt = Instant.ofEpochSecond(second, 999_000_000);
+
+    String token = jwtProvider.createAccessToken(4L, "MEMBER", issuedAt);
+
+    assertThat(jwtVerifier.verifyAccessToken(token).issuedAt()).isEqualTo(second);
+    assertThat(jwtProvider.getVerifiedAccessTokenExpiresAt(token).getEpochSecond())
+        .isEqualTo(second + Duration.ofMinutes(30).toSeconds());
+  }
+
   // ── 로그아웃 블랙리스트용 만료 시각 ──
 
   @Test
   @DisplayName("유효한 Access 토큰은 검증 후 토큰에 기록된 실제 만료 시각(exp)을 돌려준다")
   void verifiedAccessTokenExpiresAt() {
-    String token = jwtProvider.createAccessToken(4L, "MEMBER");
+    String token = jwtProvider.createAccessToken(4L, "MEMBER", Instant.now());
 
     Instant expiresAt = jwtProvider.getVerifiedAccessTokenExpiresAt(token);
 
@@ -165,7 +178,7 @@ class JwtProviderTest {
   @Test
   @DisplayName("만료된 Access 토큰은 만료 시각을 돌려주지 않고 EXPIRED")
   void expiredAccessTokenExpiresAt() {
-    String expiredToken = createProvider(KEY_PAIR, Duration.ofSeconds(-1)).createAccessToken(4L, "MEMBER");
+    String expiredToken = createProvider(KEY_PAIR, Duration.ofSeconds(-1)).createAccessToken(4L, "MEMBER", Instant.now());
 
     assertThatThrownBy(() -> jwtProvider.getVerifiedAccessTokenExpiresAt(expiredToken))
         .isInstanceOf(TokenException.class)
@@ -185,7 +198,7 @@ class JwtProviderTest {
   @Test
   @DisplayName("다른 키로 서명했거나 형식이 깨진 토큰은 Access 만료 시각 조회에서 INVALID (서명 확인)")
   void forgedOrBrokenTokenExpiresAt() {
-    String forgedToken = createProvider(OTHER_KEY_PAIR, Duration.ofMinutes(30)).createAccessToken(4L, "MEMBER");
+    String forgedToken = createProvider(OTHER_KEY_PAIR, Duration.ofMinutes(30)).createAccessToken(4L, "MEMBER", Instant.now());
 
     assertThatThrownBy(() -> jwtProvider.getVerifiedAccessTokenExpiresAt(forgedToken))
         .isInstanceOf(TokenException.class)

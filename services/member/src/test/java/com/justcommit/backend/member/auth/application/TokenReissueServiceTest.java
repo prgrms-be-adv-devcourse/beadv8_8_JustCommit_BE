@@ -9,6 +9,7 @@ import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Role;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -52,12 +54,16 @@ class TokenReissueServiceTest {
   @Mock
   private JwtProvider jwtProvider;
 
+  @Mock
+  private DatabaseClock databaseClock;
+
   @InjectMocks
   private TokenReissueService tokenReissueService;
 
   private static final String REFRESH_TOKEN = "old-refresh-token";
   private static final Long MEMBER_ID = 1L;
   private static final RefreshTokenOwner OWNER_V0 = new RefreshTokenOwner(MEMBER_ID, 0);
+  private static final Instant NOW = Instant.parse("2026-11-14T01:00:00Z");
 
   @BeforeEach
   void setUp() {
@@ -91,7 +97,8 @@ class TokenReissueServiceTest {
   void reissue_success() {
     givenFoundAndLocked(seller());
     given(refreshTokenStore.findAndDelete(REFRESH_TOKEN)).willReturn(Optional.of(OWNER_V0));
-    given(jwtProvider.createAccessToken(MEMBER_ID, "SELLER")).willReturn("new-access-token");
+    given(databaseClock.now()).willReturn(NOW);
+    given(jwtProvider.createAccessToken(MEMBER_ID, "SELLER", NOW)).willReturn("new-access-token");
     given(refreshTokenIssuer.issue(MEMBER_ID, 0)).willReturn("new-refresh-token");
 
     TokenReissueResult result = tokenReissueService.reissue(REFRESH_TOKEN);
@@ -102,10 +109,11 @@ class TokenReissueServiceTest {
     assertThat(result.refreshTokenTtl()).isEqualTo(Duration.ofDays(1));
 
     // 호출 순서 (실제 잠금 획득은 실제 DB 테스트에서 확인)
-    InOrder order = inOrder(refreshTokenStore, memberRepository);
+    InOrder order = inOrder(refreshTokenStore, memberRepository, databaseClock);
     order.verify(refreshTokenStore).findOwner(REFRESH_TOKEN);
     order.verify(memberRepository).findByIdForUpdate(MEMBER_ID);
     order.verify(refreshTokenStore).findAndDelete(REFRESH_TOKEN);
+    order.verify(databaseClock).now(); // 잠금 · 모든 확인이 끝난 뒤 시각을 읽음
   }
 
   @ParameterizedTest
@@ -199,6 +207,7 @@ class TokenReissueServiceTest {
 
     then(jwtProvider).shouldHaveNoInteractions();
     then(refreshTokenIssuer).should(never()).issue(anyLong(), org.mockito.ArgumentMatchers.anyInt());
+    then(databaseClock).shouldHaveNoInteractions();
   }
 
   @Test

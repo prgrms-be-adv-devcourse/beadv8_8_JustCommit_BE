@@ -103,7 +103,7 @@ class LogoutIntegrationTest {
   @DisplayName("유효한 Bearer + Refresh: 200, Refresh 삭제, Access는 남은 수명 동안 블랙리스트에 들어간다")
   void validAccessIsBlacklisted() throws Exception {
     String refreshToken = refreshTokenIssuer.issue(4L, 0);
-    String accessToken = jwtProvider.createAccessToken(4L, "MEMBER");
+    String accessToken = jwtProvider.createAccessToken(4L, "MEMBER", Instant.now());
 
     HttpResponse<String> response = logout(accessToken, refreshToken);
 

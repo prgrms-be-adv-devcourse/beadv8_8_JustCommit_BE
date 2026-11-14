@@ -6,12 +6,14 @@ import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Locale;
 
 // 소셜 로그인: 기존 회원이면 토큰 발급, 신규 회원이면 가입 토큰 발급
@@ -22,6 +24,7 @@ public class SocialLoginService {
   private final MemberRepository memberRepository;
   private final JwtProvider jwtProvider;
   private final RefreshTokenIssuer refreshTokenIssuer;
+  private final DatabaseClock databaseClock;
 
   @Value("${jwt.access-token-expiration}")
   private Duration accessTokenExpiration;
@@ -56,10 +59,12 @@ public class SocialLoginService {
     return new SocialLoginResult.NewMember(signupToken, signupTokenExpiration.toSeconds());
   }
 
-  // LoginService와 같은 방식으로 Access·Refresh 발급
+  // LoginService와 같은 방식으로 Access·Refresh 발급 (기존 회원: 잠금 · 상태 확인 뒤 호출됨)
   private LoginResult issueTokens(Member member) {
+    // 회원 잠금과 검사를 마친 뒤 DB 시각을 읽어 Access 발급 시각으로 (#409)
+    Instant issuedAt = databaseClock.now();
     String role = member.getRole().name();
-    String accessToken = jwtProvider.createAccessToken(member.getId(), role);
+    String accessToken = jwtProvider.createAccessToken(member.getId(), role, issuedAt);
     String refreshToken = refreshTokenIssuer.issue(member.getId(), member.getTokenVersion());
 
     return new LoginResult(

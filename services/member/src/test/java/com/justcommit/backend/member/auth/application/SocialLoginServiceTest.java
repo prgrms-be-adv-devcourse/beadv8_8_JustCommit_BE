@@ -7,6 +7,7 @@ import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,10 +18,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -40,8 +43,13 @@ class SocialLoginServiceTest {
   @Mock
   private RefreshTokenIssuer refreshTokenIssuer;
 
+  @Mock
+  private DatabaseClock databaseClock;
+
   @InjectMocks
   private SocialLoginService socialLoginService;
+
+  private static final Instant NOW = Instant.parse("2026-11-14T01:00:00Z");
 
   @BeforeEach
   void setUp() {
@@ -62,7 +70,8 @@ class SocialLoginServiceTest {
   void existingMember() {
     given(memberRepository.findByProviderAndProviderIdForUpdate(Provider.KAKAO, "123"))
             .willReturn(Optional.of(member(4L)));
-    given(jwtProvider.createAccessToken(4L, "MEMBER")).willReturn("access-token");
+    given(databaseClock.now()).willReturn(NOW);
+    given(jwtProvider.createAccessToken(4L, "MEMBER", NOW)).willReturn("access-token");
     given(refreshTokenIssuer.issue(4L, 0)).willReturn("refresh-token");
 
     SocialLoginResult result = socialLoginService.login(
@@ -92,7 +101,8 @@ class SocialLoginServiceTest {
             .isInstanceOf(BusinessException.class)
             .extracting("errorCode")
             .isEqualTo(MemberErrorCode.SOCIAL_LOGIN_FAILED);
-    verify(jwtProvider, never()).createAccessToken(anyLong(), anyString());
+    verify(jwtProvider, never()).createAccessToken(anyLong(), anyString(), any());
+    verify(databaseClock, never()).now();
     verify(jwtProvider, never()).createSignupToken(anyString(), anyString(), anyString());
     verify(refreshTokenIssuer, never()).issue(anyLong(), anyInt());
   }
