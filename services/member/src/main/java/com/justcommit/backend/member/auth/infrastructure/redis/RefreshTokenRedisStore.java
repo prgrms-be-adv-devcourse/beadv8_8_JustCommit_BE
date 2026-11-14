@@ -56,16 +56,20 @@ public class RefreshTokenRedisStore {
       return current
       """, String.class);
 
-  // KEYS[1] = Set 키, KEYS[2..] = 조회한 해시들의 Refresh 키 / ARGV = 조회한 해시들 (KEYS[2..]와 같은 순서)
-  // Set을 통째로 지우지 않고 조회한 해시만 제거 (조회 이후 저장된 토큰은 Set에 남김)
-  private static final RedisScript<Long> DELETE_ALL_SCRIPT = new DefaultRedisScript<>("""
+  // KEYS[1] = Set 키, KEYS[2..] = 삭제 후보의 Refresh 키 / ARGV = 후보마다 (해시, 밖에서 읽은 값 원문) 순서
+  // 읽은 뒤 값이 바뀌었으면(그 사이 꺼내졌거나 다른 값) 건드리지 않는다
+  private static final RedisScript<Long> DELETE_OLDER_SCRIPT = new DefaultRedisScript<>("""
+      local deleted = 0
       for i = 2, #KEYS do
-        redis.call('DEL', KEYS[i])
+        local hash = ARGV[(i - 1) * 2 - 1]
+        local value = ARGV[(i - 1) * 2]
+        if redis.call('GET', KEYS[i]) == value then
+          redis.call('DEL', KEYS[i])
+          redis.call('SREM', KEYS[1], hash)
+          deleted = deleted + 1
+        end
       end
-      for i = 1, #ARGV do
-        redis.call('SREM', KEYS[1], ARGV[i])
-      end
-      return #ARGV
+      return deleted
       """, Long.class);
 
   private final StringRedisTemplate redisTemplate;
@@ -107,22 +111,39 @@ public class RefreshTokenRedisStore {
 
 
   /**
-   * 조회한 회원별 Refresh 토큰을 삭제한다. 조회 이후 발급된 토큰은 삭제 대상에 포함되지 않는다.
-   * (탈퇴 #407 · 비밀번호 변경 #411에서 사용. 인증 버전 비교 삭제는 #409 폐기 처리에서 바꿈)
+   * 그 회원의 Refresh 중 인증 버전이 tokenVersion보다 작은 것만 삭제한다 (#409 폐기 처리).
+   * 폐기 직후 새 버전으로 발급된 Refresh는 남는다. 조회 이후 저장된 토큰은 대상에 포함되지 않는다.
+   * 형식이 맞지 않는 값(옛 형식 포함)은 건드리지 않는다: 재발급에서 이미 거절되고 TTL로 만료된다.
+   * 1회만 시도한다. 실패해도 재발급의 버전 비교가 옛 Refresh를 막으므로 남은 키는 TTL로 만료된다.
    *
-   * @return 삭제 대상으로 조회한 토큰 수
+   * @return 삭제한 토큰 수
    */
-  public int deleteAllByMember(Long memberId) {
+  public int deleteOlderVersions(Long memberId, int tokenVersion) {
     String setKey = setKey(memberId);
     Set<String> hashes = redisTemplate.opsForSet().members(setKey);
     if (hashes == null || hashes.isEmpty()) {
       return 0;
     }
     List<String> hashList = List.copyOf(hashes);
-    List<String> keys = new ArrayList<>(hashList.size() + 1);
+    List<String> values = redisTemplate.opsForValue()
+        .multiGet(hashList.stream().map(RefreshTokenRedisStore::refreshKey).toList());
+
+    List<String> keys = new ArrayList<>();
+    List<String> args = new ArrayList<>();
     keys.add(setKey);
-    hashList.forEach(hash -> keys.add(refreshKey(hash)));
-    Long count = redisTemplate.execute(DELETE_ALL_SCRIPT, keys, hashList.toArray());
+    for (int i = 0; i < hashList.size(); i++) {
+      String value = values == null ? null : values.get(i);
+      Optional<RefreshTokenOwner> owner = RefreshTokenOwner.parse(value);
+      if (owner.isPresent() && owner.get().memberId() == memberId && owner.get().tokenVersion() < tokenVersion) {
+        keys.add(refreshKey(hashList.get(i)));
+        args.add(hashList.get(i));
+        args.add(value);
+      }
+    }
+    if (args.isEmpty()) {
+      return 0;
+    }
+    Long count = redisTemplate.execute(DELETE_OLDER_SCRIPT, keys, args.toArray());
     return count == null ? 0 : count.intValue();
   }
 

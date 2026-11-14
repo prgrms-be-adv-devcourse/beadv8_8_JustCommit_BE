@@ -104,9 +104,9 @@ class RefreshTokenRedisStoreTest {
   }
 
   @Test
-  @DisplayName("전체 삭제가 목록을 읽은 뒤 새 토큰이 저장되면, 기존 토큰만 삭제되고 새 토큰은 키와 Set에 남는다")
+  @DisplayName("옛 버전 삭제가 목록을 읽은 뒤 새 토큰이 저장되면, 기존 토큰만 삭제되고 새 토큰은 키와 Set에 남는다")
   @SuppressWarnings("unchecked")
-  void tokenSavedAfterReadSurvivesDeleteAll() {
+  void tokenSavedAfterReadSurvivesDeleteOlder() {
     store.save("old-token", 7L, 0, TTL);
 
     // 목록 읽기(members)가 끝난 직후 새 토큰을 저장하도록 끼워 넣음 → 매번 같은 순서로 재현
@@ -120,7 +120,7 @@ class RefreshTokenRedisStoreTest {
     StringRedisTemplate racingTemplate = spy(redisTemplate);
     doReturn(setOps).when(racingTemplate).opsForSet();
 
-    int deleted = new RefreshTokenRedisStore(racingTemplate).deleteAllByMember(7L);
+    int deleted = new RefreshTokenRedisStore(racingTemplate).deleteOlderVersions(7L, 1);
 
     assertThat(deleted).isEqualTo(1);
     assertThat(redisTemplate.hasKey("auth:refresh:" + TokenHash.sha256Hex("old-token"))).isFalse();
@@ -129,13 +129,13 @@ class RefreshTokenRedisStoreTest {
   }
 
   @Test
-  @DisplayName("전체 삭제는 그 회원의 조회된 토큰만 지우고 다른 회원의 토큰은 남긴다")
-  void deleteAllOnlyThatMember() {
+  @DisplayName("옛 버전 삭제는 그 회원의 조회된 토큰만 지우고 다른 회원의 토큰은 남긴다")
+  void deleteOlderOnlyThatMember() {
     store.save("member7-a", 7L, 0, TTL);
     store.save("member7-b", 7L, 0, TTL);
     store.save("member8-a", 8L, 0, TTL);
 
-    int deleted = store.deleteAllByMember(7L);
+    int deleted = store.deleteOlderVersions(7L, 1);
 
     assertThat(deleted).isEqualTo(2);
     assertThat(redisTemplate.hasKey("auth:refresh:" + TokenHash.sha256Hex("member7-a"))).isFalse();
