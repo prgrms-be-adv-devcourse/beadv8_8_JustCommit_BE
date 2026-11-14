@@ -229,6 +229,122 @@ class ImageReviewServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("반려: 식물이 아니면 REJECTED · NOT_PLANT, 반려 이벤트")
+    void rejectNotPlant() {
+        willReturn(new PlantIdentification(false, null, List.of()))
+                .given(plantIdentifier).identify(anyList(), anyList());
+        Product product = register("몬스테라 팝니다", null);
+
+        imageReviewService.review(product.getId(), 0);
+
+        assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.REJECTED);
+        assertThat(reviewOf(product, 0).getRejectReason()).isEqualTo(RejectReason.NOT_PLANT);
+        verify(outboxPublisher).publish(new ProductRejected(product.getId(), SELLER_ID, 0, "몬스테라 팝니다",
+                "NOT_PLANT", "식물 사진이 아니에요"));
+    }
+
+    @Test
+    @DisplayName("반려: 삽수 · 씨앗 · 구근이면 REJECTED · PROHIBITED_FORM, 품종이 맞아도")
+    void rejectProhibitedForm() {
+        willReturn(new PlantIdentification(true, SaleForm.CUTTING, List.of(new Candidate(MONSTERA, null, 0.95))))
+                .given(plantIdentifier).identify(anyList(), anyList());
+        Product product = register("몬스테라 팝니다", null);
+
+        imageReviewService.review(product.getId(), 0);
+
+        assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.REJECTED);
+        ImageReview review = reviewOf(product, 0);
+        assertThat(review.getRejectReason()).isEqualTo(RejectReason.PROHIBITED_FORM);
+        assertThat(review.getDetail()).isEqualTo("CUTTING");
+        verify(outboxPublisher).publish(new ProductRejected(product.getId(), SELLER_ID, 0, "몬스테라 팝니다",
+                "PROHIBITED_FORM", "씨앗 · 삽수 · 구근은 팔 수 없어요"));
+    }
+
+    // ── 사진 검수 결과가 관리자 확인: 상품은 검수 중 그대로, 사유 기록, 결과 이벤트 없음 ──
+
+    private void assertManual(Product product, ManualReason reason, String detail) {
+        assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
+        ImageReview review = reviewOf(product, 0);
+        assertThat(review.getStatus()).isEqualTo(ReviewStatus.DONE);
+        assertThat(review.getDecision()).isEqualTo(ReviewDecision.MANUAL);
+        assertThat(review.getManualReason()).isEqualTo(reason);
+        assertThat(review.getDetail()).isEqualTo(detail);
+        assertThat(review.getReviewedAt()).isNotNull();   // 관리자 확인 기한은 이때부터
+        assertThat(review.getEngineResult()).isNotNull();   // 관리자 화면에 엔진 결과를 보여 줌
+        verify(outboxPublisher, never()).publish(any(ProductStatusChanged.class));
+        assertNoResultEvent();
+    }
+
+    @Test
+    @DisplayName("관리자 확인: 1순위가 판매자 품종과 속이 다르면 SPECIES_MISMATCH (1순위 학명 기록)")
+    void manualSpeciesMismatch() {
+        identifyAs("Epipremnum aureum", 0.9);
+        Product product = register("몬스테라 팝니다", null);
+
+        imageReviewService.review(product.getId(), 0);
+
+        assertManual(product, ManualReason.SPECIES_MISMATCH, "Epipremnum aureum");
+    }
+
+    @Test
+    @DisplayName("관리자 확인: 1순위 확신도가 0.3 미만이면 LOW_CONFIDENCE")
+    void manualLowConfidence() {
+        identifyAs(MONSTERA, 0.2);
+        Product product = register("몬스테라 팝니다", null);
+
+        imageReviewService.review(product.getId(), 0);
+
+        assertManual(product, ManualReason.LOW_CONFIDENCE, null);
+    }
+
+    @Test
+    @DisplayName("관리자 확인: 후보가 없으면 LOW_CONFIDENCE")
+    void manualNoCandidate() {
+        willReturn(new PlantIdentification(true, SaleForm.PLANT, List.of()))
+                .given(plantIdentifier).identify(anyList(), anyList());
+        Product product = register("몬스테라 팝니다", null);
+
+        imageReviewService.review(product.getId(), 0);
+
+        assertManual(product, ManualReason.LOW_CONFIDENCE, null);
+    }
+
+    @Test
+    @DisplayName("관리자 확인: 1순위 금지 품종(V8)이 0.7 미만이면 반려 대신 BANNED_SUSPECTED (금지 품종 이름 기록)")
+    void manualBannedSuspected() {
+        identifyAs("Phalaenopsis japonica", 0.5);
+        Product product = register("난초 팝니다", null);
+
+        imageReviewService.review(product.getId(), 0);
+
+        assertManual(product, ManualReason.BANNED_SUSPECTED, "나도풍란");
+    }
+
+    @Test
+    @DisplayName("관리자 확인: 2순위에 금지 품종이 있으면 1순위가 판매자 품종과 맞아도 BANNED_SUSPECTED")
+    void manualBannedSecondCandidate() {
+        willReturn(new PlantIdentification(true, SaleForm.PLANT, List.of(
+                new Candidate(MONSTERA, null, 0.8), new Candidate("Phalaenopsis japonica", null, 0.15))))
+                .given(plantIdentifier).identify(anyList(), anyList());
+        Product product = register("몬스테라 팝니다", null);
+
+        imageReviewService.review(product.getId(), 0);
+
+        assertManual(product, ManualReason.BANNED_SUSPECTED, "나도풍란");
+    }
+
+    @Test
+    @DisplayName("관리자 확인: 새 등록의 설명에 관리자 확인 단어(V8)가 있으면 품종이 맞아도 REVIEW_KEYWORD")
+    void manualReviewKeyword() {
+        identifyAs(MONSTERA, 0.95);
+        Product product = register("몬스테라 팝니다", "자생지에서 캤어요");
+
+        imageReviewService.review(product.getId(), 0);
+
+        assertManual(product, ManualReason.REVIEW_KEYWORD, "자생지");
+    }
+
+    @Test
     @DisplayName("사진이 유해하면 식물 식별을 부르지 않고 반려")
     void harmfulSkipsHaiku() {
         given(moderationClient.isImageFlagged(any())).willReturn(true);
