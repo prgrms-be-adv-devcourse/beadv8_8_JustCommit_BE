@@ -11,6 +11,8 @@ import com.justcommit.backend.product.image.application.ImageData;
 import com.justcommit.backend.product.image.application.ImageReader;
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.product.domain.ReviewScope;
+import com.justcommit.backend.product.product.event.ProductApproved;
+import com.justcommit.backend.product.product.event.ProductRejected;
 import com.justcommit.backend.product.product.event.ProductReviewRequested;
 import com.justcommit.backend.product.product.event.ProductStatusChanged;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
@@ -73,7 +75,7 @@ import static org.mockito.Mockito.verify;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ClockConfig.class, ImageReviewService.class, ReviewJudgeProvider.class,
+@Import({JpaAuditingConfig.class, ClockConfig.class, ImageReviewService.class, ReviewJudgeProvider.class, ReviewResultPublisher.class,
         BannedListService.class, ImageReviewServiceIntegrationTest.Config.class})
 @Testcontainers(disabledWithoutDocker = true)
 // 서비스가 트랜잭션을 나눠 쓰므로 테스트 메서드는 트랜잭션으로 감싸지 않음
@@ -202,6 +204,9 @@ class ImageReviewServiceIntegrationTest {
         assertThat(review.getDecision()).isEqualTo(ReviewDecision.APPROVED);
         assertThat(review.getEngineResult()).contains("Monstera deliciosa");
         verify(outboxPublisher).publish(new ProductStatusChanged(product.getId()));
+        // 판매자 알림용 통과 이벤트 (#345)
+        verify(outboxPublisher).publish(new ProductApproved(product.getId(), SELLER_ID, 0, "몬스테라 팝니다"));
+        verify(outboxPublisher, never()).publish(any(ProductRejected.class));
     }
 
     @Test
@@ -216,6 +221,11 @@ class ImageReviewServiceIntegrationTest {
         ImageReview review = reviewOf(product, 0);
         assertThat(review.getRejectReason()).isEqualTo(RejectReason.BANNED_SPECIES);
         assertThat(review.getDetail()).isEqualTo("나도풍란");
+        // 판매자 알림용 반려 이벤트: 사유 코드 · 판매자 문구 (#345)
+        verify(outboxPublisher).publish(new ProductStatusChanged(product.getId()));
+        verify(outboxPublisher).publish(new ProductRejected(product.getId(), SELLER_ID, 0, "난초 팝니다",
+                "BANNED_SPECIES", "판매 금지 품종이에요"));
+        verify(outboxPublisher, never()).publish(any(ProductApproved.class));
     }
 
     @Test
@@ -244,6 +254,7 @@ class ImageReviewServiceIntegrationTest {
         assertThat(review.getManualReason()).isEqualTo(ManualReason.ENGINE_ERROR);
         assertThat(review.getErrorMessage()).contains("timeout");
         verify(outboxPublisher, never()).publish(any(ProductStatusChanged.class));
+        assertNoResultEvent();
     }
 
     @Test
@@ -264,6 +275,7 @@ class ImageReviewServiceIntegrationTest {
         assertThat(reviewOf(product, 0).getStatus()).isEqualTo(ReviewStatus.STALE);
         assertThat(reviewOf(product, 1).getStatus()).isEqualTo(ReviewStatus.REQUESTED);
         verify(plantIdentifier, never()).identify(anyList(), anyList());
+        assertNoResultEvent();
     }
 
     @Test
@@ -298,6 +310,9 @@ class ImageReviewServiceIntegrationTest {
         assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
         ImageReview review = reviewOf(product, 1);
         assertThat(review.getManualReason()).isEqualTo(ManualReason.REVIEW_KEYWORD);
+        // 판매 중 → 검수 중으로 상태만 바뀜, 결과 알림은 없음 (관리자 확인은 결과가 아님)
+        verify(outboxPublisher).publish(new ProductStatusChanged(product.getId()));
+        assertNoResultEvent();
         verify(plantIdentifier, never()).identify(anyList(), anyList());
         verify(moderationClient, never()).isImageFlagged(any());
     }
@@ -446,5 +461,75 @@ class ImageReviewServiceIntegrationTest {
 
         assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.ACTIVE);
         assertThat(reviewOf(product, 1).getStatus()).isEqualTo(ReviewStatus.ENGINE_ERROR);
+    }
+
+    @Test
+    @DisplayName("#345 판매 중 상품의 글 검사에서 반려되면 Rejected(INAPPROPRIATE_TEXT), 통과면 상태가 그대로라 아무것도 보내지 않음")
+    void textOnlyResultEvents() {
+        Product product = register("몬스테라 팝니다", null);
+        tx.executeWithoutResult(status ->
+                productRepository.applyReviewResult(product.getId(), 0, ProductStatus.REVIEW_PENDING, ProductStatus.ACTIVE));
+        updateText(product, "설명만 고쳤어요");
+        imageReviewService.review(product.getId(), 1);
+        assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.ACTIVE);
+        assertNoResultEvent();
+        verify(outboxPublisher, never()).publish(any(ProductStatusChanged.class));
+
+        given(moderationClient.isTextFlagged(anyString())).willReturn(true);
+        updateText(product, "유해한 설명");
+        imageReviewService.review(product.getId(), 2);
+
+        assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.REJECTED);
+        verify(outboxPublisher).publish(new ProductRejected(product.getId(), SELLER_ID, 2, "몬스테라 팝니다",
+                "INAPPROPRIATE_TEXT", "제목이나 설명에 부적절한 내용이 있어요"));
+    }
+
+    private void updateText(Product product, String description) {
+        tx.executeWithoutResult(status -> {
+            Product locked = productRepository.findWithLockById(product.getId()).orElseThrow();
+            ReviewScope scope = locked.update(species, "몬스테라 팝니다", description, new BigDecimal("10000"),
+                    null, null, null, List.of("http://localhost:9000/bucket/products/7/a.jpg"));
+            imageReviewService.request(locked, scope);
+        });
+    }
+
+    private void assertNoResultEvent() {
+        verify(outboxPublisher, never()).publish(any(ProductApproved.class));
+        verify(outboxPublisher, never()).publish(any(ProductRejected.class));
+    }
+
+    // ── 멈춘 검수 요청 (DB 오류로 DLT · 이벤트 유실) ───────────────────────
+
+    @Test
+    @DisplayName("30분이 지나도 REQUESTED인 검수는 재처리 스케줄러가 맡아 검수하고, 늦게 온 검수 요청은 건너뜀")
+    void staleRequestIsRetried() {
+        keysConfigured();
+        identifyAs(MONSTERA, 0.95);
+        Product product = register("몬스테라 팝니다", null);
+        // 검수 요청 이벤트가 리스너에서 처리되지 못한 채 31분이 지남
+        jdbc.update("update image_review set created_at = now() - interval '31 minutes' where status = 'REQUESTED'");
+
+        assertThat(imageReviewService.retryEngineErrors()).isEqualTo(1);
+
+        assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.ACTIVE);
+        ImageReview review = reviewOf(product, 0);
+        assertThat(review.getStatus()).isEqualTo(ReviewStatus.DONE);
+        assertThat(review.getRetryCount()).isEqualTo(1);   // 재처리 3회 안에서 셈
+
+        // DLT 재처리 등으로 같은 검수 요청이 늦게 와도 다시 검수하지 않음
+        imageReviewService.review(product.getId(), 0);
+        verify(plantIdentifier, times(1)).identify(anyList(), anyList());
+    }
+
+    @Test
+    @DisplayName("만든 지 30분이 안 된 REQUESTED는 리스너 몫이라 재처리 스케줄러가 집지 않음")
+    void freshRequestIsLeftToListener() {
+        keysConfigured();
+        Product product = register("몬스테라 팝니다", null);
+        jdbc.update("update image_review set created_at = now() - interval '29 minutes' where status = 'REQUESTED'");
+
+        assertThat(imageReviewService.retryEngineErrors()).isZero();
+        assertThat(reviewOf(product, 0).getStatus()).isEqualTo(ReviewStatus.REQUESTED);
+        verify(plantIdentifier, never()).identify(anyList(), anyList());
     }
 }

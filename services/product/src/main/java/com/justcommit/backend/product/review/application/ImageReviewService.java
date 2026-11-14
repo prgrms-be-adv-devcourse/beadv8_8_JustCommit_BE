@@ -47,6 +47,7 @@ import java.util.List;
 //    외부 API를 기다리는 동안 DB 커넥션 · 행 잠금을 잡지 않으려고 트랜잭션을 나눔
 // 3) 엔진 오류 재처리: 외부 API가 재시도 후에도 실패하면 상품은 그대로 두고 ENGINE_ERROR,
 //    재처리 스케줄러가 5분 뒤 같은 검수 버전으로 다시 검수 (최대 3회, 그래도 실패하면 관리자 확인 ENGINE_ERROR)
+// 4) 멈춘 검수 요청: 30분이 지나도 REQUESTED면(DB 오류로 DLT · 이벤트 유실) 재처리 스케줄러가 엔진 오류 재처리처럼 맡음
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -59,6 +60,8 @@ public class ImageReviewService implements ReviewRequester {
     static final Duration ENGINE_RETRY_DELAY = Duration.ofMinutes(5);
     static final Duration RETRY_LEASE = Duration.ofMinutes(10);   // 재처리 중인 건을 다른 파드가 다시 집지 않게 미루는 시간
     static final int MAX_RETRIES_PER_RUN = 20;         // 스케줄러 한 번에 처리할 최대 건수
+    // 검수 요청이 이만큼 지나도 REQUESTED면 멈춘 것으로 봄. 리스너 한 건 최대 약 3.5분 × 공통 재시도 4번(약 14분)보다 넉넉히
+    static final Duration STALE_REQUEST_AFTER = Duration.ofMinutes(30);
     // 한 건 검수에 새 외부 호출을 시작할 수 있는 시간. 이미 시작한 호출(Moderation 최악 약 80초 · Haiku 약 90초)이 더해져도
     // Kafka max.poll.interval.ms(5분) 안에 끝나게 (리스너는 max.poll.records=1)
     static final Duration REVIEW_TIME_BUDGET = Duration.ofMinutes(2);
@@ -71,6 +74,7 @@ public class ImageReviewService implements ReviewRequester {
     private final BannedListService bannedListService;
     private final ReviewJudgeProvider judgeProvider;
     private final OutboxPublisher outboxPublisher;
+    private final ReviewResultPublisher reviewResultPublisher;
     private final TransactionTemplate transactionTemplate;
     private final JsonMapper jsonMapper;
     private final Clock clock;
@@ -101,7 +105,7 @@ public class ImageReviewService implements ReviewRequester {
         process(productId, reviewVersion, ReviewStatus.REQUESTED);
     }
 
-    // 재처리 스케줄러: 다음 시각이 지난 엔진 오류를 한 건씩 맡아 다시 검수. 처리한 건수를 돌려줌
+    // 재처리 스케줄러: 다음 시각이 지난 엔진 오류와 멈춘 검수 요청(30분 넘은 REQUESTED)을 한 건씩 맡아 다시 검수. 처리한 건수를 돌려줌
     // 하루 사진 검수 30회는 검수 기록을 새로 만들 때만 세므로 재처리는 세지 않음
     public int retryEngineErrors() {
         int processed = 0;
@@ -123,9 +127,13 @@ public class ImageReviewService implements ReviewRequester {
 
     private Claimed claimNextEngineError() {
         LocalDateTime now = LocalDateTime.now(clock);
-        return imageReviewRepository.lockNextEngineError(now)
+        return imageReviewRepository.lockNextRetryTarget(now, now.minus(STALE_REQUEST_AFTER))
                 .flatMap(imageReviewRepository::findById)
                 .map(review -> {
+                    if (review.isRequested()) {
+                        log.warn("멈춘 검수 요청을 재처리로 맡음 ({} 넘게 REQUESTED): productId={}, reviewVersion={}",
+                                STALE_REQUEST_AFTER, review.getProductId(), review.getReviewVersion());
+                    }
                     review.startRetry(now.plus(RETRY_LEASE));
                     log.info("엔진 오류 재처리 {}회차: productId={}, reviewVersion={}",
                             review.getRetryCount(), review.getProductId(), review.getReviewVersion());
@@ -268,12 +276,25 @@ public class ImageReviewService implements ReviewRequester {
             return;
         }
         review.complete(outcome.verdict(), outcome.engineResult(), outcome.errorMessage(), LocalDateTime.now(clock));
-        if (from != to) {
-            outboxPublisher.publish(new ProductStatusChanged(target.productId()));
-        }
+        publishResult(target, review, outcome.verdict(), from, to);
         log.info("검수 완료: productId={}, reviewVersion={}, decision={}, rejectReason={}, manualReason={}",
                 target.productId(), target.reviewVersion(), outcome.verdict().decision(),
                 outcome.verdict().rejectReason(), outcome.verdict().manualReason());
+    }
+
+    // 상태가 바뀔 때만 이벤트. 통과 · 반려는 결과 알림까지, 관리자 확인(판매 중 → 검수 중)은 상태 변경만
+    // 판매 중 상품의 글 검사 통과는 상태가 그대로라 아무것도 보내지 않음 (판매자에게 알릴 일이 없음)
+    private void publishResult(Target target, ImageReview review, ReviewVerdict verdict, ProductStatus from, ProductStatus to) {
+        if (from == to) {
+            return;
+        }
+        switch (verdict.decision()) {
+            case APPROVED -> reviewResultPublisher.approved(
+                    target.productId(), review.getSellerId(), target.reviewVersion(), target.title());
+            case REJECTED -> reviewResultPublisher.rejected(
+                    target.productId(), review.getSellerId(), target.reviewVersion(), target.title(), verdict.rejectReason(), null);
+            case MANUAL -> outboxPublisher.publish(new ProductStatusChanged(target.productId()));
+        }
     }
 
     private static boolean isEngineError(ReviewVerdict verdict) {
