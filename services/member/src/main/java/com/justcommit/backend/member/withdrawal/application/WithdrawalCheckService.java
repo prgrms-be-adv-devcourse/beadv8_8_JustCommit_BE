@@ -22,6 +22,7 @@ import java.util.function.Supplier;
 
 // 탈퇴 가능 여부 확인 (#406): market · payment · settlement 탈퇴 확인 내부 API를 병렬로 불러 결과를 모은다
 // - 각 호출에는 공통 타임아웃 · 연결 실패 재시도가 적용된다. 전체 소요 시간은 연결 · 응답 · 재시도 상황에 따라 달라진다
+// - 사용자 Authorization은 보내지 않는다. 받는 쪽은 X-Internal-Key와 경로의 memberId만 쓴다
 // - 이 서비스는 트랜잭션을 시작하지 않는다. 호출하는 쪽(#407)도 트랜잭션 · 회원 잠금을 시작하기 전에 부른다
 // - 한계: 다른 스레드에서 호출하므로 로그의 traceId가 이어지지 않을 수 있다 (공통 관측 작업에서 다룸)
 @Slf4j
@@ -37,16 +38,15 @@ public class WithdrawalCheckService {
   private final PaymentWithdrawalApi paymentApi;
   private final SettlementWithdrawalApi settlementApi;
 
-  // authorization: 사용자 요청의 Authorization. 병렬 호출 전에 받아 각 호출에 그대로 넘긴다 (다른 스레드에서는 자동 전달이 안 됨)
-  public WithdrawalCheckResult check(Long memberId, String authorization) {
+  public WithdrawalCheckResult check(Long memberId) {
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       // 세 작업을 먼저 모두 제출한 뒤 결과를 기다린다
       Future<Outcome> market = executor.submit(
-          () -> checkOne(MARKET, memberId, () -> marketApi.check(memberId, authorization)));
+          () -> checkOne(MARKET, memberId, () -> marketApi.check(memberId)));
       Future<Outcome> payment = executor.submit(
-          () -> checkOne(PAYMENT, memberId, () -> paymentApi.check(memberId, authorization)));
+          () -> checkOne(PAYMENT, memberId, () -> paymentApi.check(memberId)));
       Future<Outcome> settlement = executor.submit(
-          () -> checkOne(SETTLEMENT, memberId, () -> settlementApi.check(memberId, authorization)));
+          () -> checkOne(SETTLEMENT, memberId, () -> settlementApi.check(memberId)));
 
       return combine(List.of(await(market), await(payment), await(settlement)));
     }

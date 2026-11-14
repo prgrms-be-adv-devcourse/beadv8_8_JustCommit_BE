@@ -32,6 +32,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.absent;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
@@ -73,7 +74,6 @@ class WithdrawalCheckServiceIntegrationTest {
   }
 
   private static final Long MEMBER_ID = 1L;
-  private static final String AUTHORIZATION = "Bearer test-token";
   private static final String MARKET = "/internal/v1/orders/members/1/withdrawalCheck";
   private static final String PAYMENT = "/internal/v1/payments/members/1/withdrawalCheck";
   private static final String SETTLEMENT = "/internal/v1/settlements/members/1/withdrawalCheck";
@@ -100,7 +100,7 @@ class WithdrawalCheckServiceIntegrationTest {
   void allowed() {
     stubAll(ok(PASS_DATA));
 
-    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID, AUTHORIZATION);
+    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID);
 
     assertThat(result.status()).isEqualTo(WithdrawalCheckStatus.ALLOWED);
     assertThat(result.isAllowed()).isTrue();
@@ -116,7 +116,7 @@ class WithdrawalCheckServiceIntegrationTest {
         {"hasWithdrawalBlocker": true, "blockingReasons": ["ACTIVE_BUYER_ORDER"],
          "details": {"activeBuyerOrderCount": 2, "activeSellerOrderCount": 0}}"""));
 
-    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID, AUTHORIZATION);
+    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID);
 
     assertThat(result.status()).isEqualTo(WithdrawalCheckStatus.BLOCKED);
     assertThat(result.isAllowed()).isFalse();
@@ -134,7 +134,7 @@ class WithdrawalCheckServiceIntegrationTest {
     stubAll(ok(PASS_DATA));
     stub(PAYMENT, aResponse().withStatus(500));
 
-    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID, AUTHORIZATION);
+    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID);
 
     assertThat(result.status()).isEqualTo(WithdrawalCheckStatus.UNAVAILABLE);
     assertThat(result.failedServices()).containsExactly("payment");
@@ -146,7 +146,7 @@ class WithdrawalCheckServiceIntegrationTest {
     stubAll(ok(PASS_DATA));
     stub(SETTLEMENT, aResponse().withStatus(404));
 
-    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID, AUTHORIZATION);
+    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID);
 
     assertThat(result.status()).isEqualTo(WithdrawalCheckStatus.UNAVAILABLE);
     assertThat(result.failedServices()).containsExactly("settlement");
@@ -158,7 +158,7 @@ class WithdrawalCheckServiceIntegrationTest {
     stubAll(ok(PASS_DATA));
     stub(SETTLEMENT, ok(PASS_DATA).withFixedDelay(3_500));
 
-    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID, AUTHORIZATION);
+    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID);
 
     assertThat(result.status()).isEqualTo(WithdrawalCheckStatus.UNAVAILABLE);
     assertThat(result.failedServices()).containsExactly("settlement");
@@ -170,7 +170,7 @@ class WithdrawalCheckServiceIntegrationTest {
     stubAll(ok(PASS_DATA));
     stub(PAYMENT, aResponse().withFault(Fault.CONNECTION_RESET_BY_PEER));
 
-    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID, AUTHORIZATION);
+    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID);
 
     assertThat(result.status()).isEqualTo(WithdrawalCheckStatus.UNAVAILABLE);
     assertThat(result.failedServices()).containsExactly("payment");
@@ -209,7 +209,7 @@ class WithdrawalCheckServiceIntegrationTest {
     }
     stub(MARKET, response);
 
-    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID, AUTHORIZATION);
+    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID);
 
     assertThat(result.status()).isEqualTo(WithdrawalCheckStatus.UNAVAILABLE);
     assertThat(result.failedServices()).containsExactly("market");
@@ -224,7 +224,7 @@ class WithdrawalCheckServiceIntegrationTest {
          "details": {"activeBuyerOrderCount": 0, "activeSellerOrderCount": 1}}"""));
     stub(PAYMENT, aResponse().withStatus(500));
 
-    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID, AUTHORIZATION);
+    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID);
 
     assertThat(result.status()).isEqualTo(WithdrawalCheckStatus.UNAVAILABLE);
     assertThat(result.failedServices()).containsExactly("payment");
@@ -239,7 +239,7 @@ class WithdrawalCheckServiceIntegrationTest {
   void callsInParallel() {
     stubAll(ok(PASS_DATA).withTransformers(ParallelGate.NAME));
 
-    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID, AUTHORIZATION);
+    WithdrawalCheckResult result = withdrawalCheckService.check(MEMBER_ID);
 
     // 요청마다 "기다리는 2초 안에 세 요청이 모두 도착했는가"를 셈. 순차 실행이면 3이 될 수 없음
     assertThat(GATE.satisfiedRequests()).isEqualTo(3);
@@ -247,16 +247,16 @@ class WithdrawalCheckServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("세 요청 모두 내부 키와 넘겨받은 Authorization을 보냄")
-  void sendsInternalKeyAndAuthorization() {
+  @DisplayName("세 요청 모두 내부 키는 보내고 사용자 Authorization은 보내지 않음")
+  void sendsInternalKeyWithoutAuthorization() {
     stubAll(ok(PASS_DATA));
 
-    withdrawalCheckService.check(MEMBER_ID, AUTHORIZATION);
+    withdrawalCheckService.check(MEMBER_ID);
 
     for (String path : new String[] {MARKET, PAYMENT, SETTLEMENT}) {
       SERVICES.verify(getRequestedFor(urlPathEqualTo(path))
           .withHeader("X-Internal-Key", equalTo("test-internal-key"))
-          .withHeader("Authorization", equalTo(AUTHORIZATION)));
+          .withHeader("Authorization", absent()));
     }
   }
 
