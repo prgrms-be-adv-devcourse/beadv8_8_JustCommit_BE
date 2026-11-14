@@ -45,6 +45,8 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.testcontainers:testcontainers-postgresql'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    // 탈퇴 확인 내부 API(market · payment · settlement) 대역 (#406)
+    testImplementation 'org.wiremock:wiremock-standalone:3.13.1'
 }
 
 tasks.named('test') {
