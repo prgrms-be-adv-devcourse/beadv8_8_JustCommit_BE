@@ -1,7 +1,7 @@
 # 환경변수
 
 > 언제 읽나: 환경변수 · 비밀값을 추가하거나 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: Miro A3
+> 상태: ✅ 확정 · 마지막 수정 2026-11-14 · 관련: Miro A3
 
 ## 변수 표
 
@@ -15,10 +15,11 @@
 | `JWT_PRIVATE_KEY` | member | RS256 개인키 |
 | `JWT_PUBLIC_KEY` | Gateway · 모든 서비스 | 이중 검증용 공개키 |
 | `OAUTH2_STATE_SECRET` | member | 카카오 state 서명 |
-| `INTERNAL_API_KEY` | 모든 서비스 | `/internal/**` 확인 |
+| `INTERNAL_API_KEY` | 모든 서비스 (같은 값) | `/internal/**` 확인. 내부 호출 그룹(`internal-api.groups`)이 있는 서비스는 키가 없으면 시작하지 않음 |
 | `MEMBER_ADDRESS_EVENT_KEY` | member · market (같은 값) | 주소 이벤트 전송 키 (판매자 배송지 목록 암호화, `EventFieldCipher` 키 버전 `k1`). `openssl rand -base64 32`로 생성, 서버 설정은 인프라 담당. member · market 적용 완료(#233 · #275), `.env.example` 추가 완료(#233) |
 | `REDIS_HOST` · `REDIS_PORT` · `REDIS_PASSWORD` | member · Gateway | – |
 | `MEMBER_SERVICE_URL` · `PRODUCT_SERVICE_URL` · `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` · `NOTIFICATION_SERVICE_URL` | Gateway | 라우팅할 서비스 주소. 없으면 로컬 포트(8081 ~ 8086) |
+| `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` | member | 탈퇴 확인 내부 API 그룹 주소. 없으면 로컬 포트(8083 · 8084 · 8085) |
 | `CORS_ALLOWED_ORIGINS` | Gateway | CORS 허용 출처 (쉼표로 여러 개, `*` 금지). 없으면 `http://localhost:5173` |
 | `KAKAO_CLIENT_ID` · `KAKAO_CLIENT_SECRET` | member | 카카오 로그인 · 연결 해제 |
 | `MAIL_USERNAME` · `MAIL_PASSWORD` | member | Gmail SMTP |

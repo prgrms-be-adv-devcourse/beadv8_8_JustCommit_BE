@@ -40,7 +40,7 @@
 
 | 대상 | 용도 | 상태 |
 |---|---|---|
-| market · payment · settlement | 탈퇴 확인 (병렬, Fail-closed) | ✅ 기능 · ⬜ 경로 |
+| market · payment · settlement | 탈퇴 확인 (병렬, Fail-closed): `GET /internal/v1/{orders, payments, settlements}/members/{memberId}/withdrawalCheck`, 공통 응답 `hasWithdrawalBlocker` · `blockingReasons` · `details`, 결과 `ALLOWED` · `BLOCKED` · `UNAVAILABLE` (탈퇴는 `ALLOWED`일 때만) | ✅ member 클라이언트 · 결과 취합 구현 · ⬜ 실제 서비스 연동 (market #278 · payment #329 · settlement #441) |
 | 카카오 | 연결 해제 (실패하면 탈퇴 막음) | ✅ |
 
 ## 발행 이벤트

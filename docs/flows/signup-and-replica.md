@@ -1,7 +1,7 @@
 # 가입과 회원 복제본
 
 > 언제 읽나: 가입 · 회원 정보 변경이 다른 서비스에 퍼지는 흐름을 볼 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: Miro 5 · 9
+> 상태: ✅ 확정 · 마지막 수정 2026-11-14 · 관련: Miro 5 · 9
 
 ## 흐름
 
@@ -36,7 +36,7 @@ sequenceDiagram
 | 단계 | 내용 |
 |---|---|
 | 막는 조건 | 구매 확정 전 주문(구매 · 판매, 결제 대기 · 판매자 수락 대기 포함), 예치금 잔액, 진행 중 충전 · 충전 취소 · 인출, 미지급 정산, 미수금 |
-| 확인 | market · payment · settlement 내부 API 3개를 **병렬** 호출. 실패하면 막음 (Fail-closed), 사유를 팝업으로 |
+| 확인 | market · payment · settlement 내부 API 3개를 **병렬** 호출 (`GET /internal/v1/{orders, payments, settlements}/members/{memberId}/withdrawalCheck`, 공통 응답 `hasWithdrawalBlocker` · `blockingReasons` · `details`). 결과는 `ALLOWED` · `BLOCKED` · `UNAVAILABLE`이고 **탈퇴는 `ALLOWED`일 때만** 진행. 호출 실패 · 응답 형식 오류(값 누락, 차단 여부와 사유 불일치)는 `UNAVAILABLE`(Fail-closed), 차단과 실패가 함께면 `UNAVAILABLE`. 사유를 팝업으로 |
 | 잔액 | 회원이 탈퇴 전에 직접 정리 (토스 취소 기한 안은 충전 취소, 나머지는 계좌 인출). 정리를 시작하면 지갑이 잠김 |
 | 소셜 회원 | 카카오 연결 해제 API를 먼저 호출, 실패하면 탈퇴 막음 |
 | 처리 | 소프트 삭제 · 개인정보 익명화 · `auth:revoked-member` · Refresh 삭제 → `MemberWithdrawn` |
