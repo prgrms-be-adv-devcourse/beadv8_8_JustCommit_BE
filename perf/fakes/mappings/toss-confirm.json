@@ -1,0 +1,16 @@
+{
+  "id": "70550000-0000-4000-8000-000000000001",
+  "name": "toss: 결제 승인 항상 성공 (요청 값을 그대로 돌려줌)",
+  "priority": 10,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/payments/confirm"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"paymentKey\":\"{{jsonPath request.body '$.paymentKey'}}\",\"orderId\":\"{{jsonPath request.body '$.orderId'}}\",\"status\":\"DONE\",\"totalAmount\":{{jsonPath request.body '$.amount'}},\"approvedAt\":\"{{now format=\"yyyy-MM-dd'T'HH:mm:ssXXX\" timezone='Asia/Seoul'}}\"}",
+    "transformers": ["response-template"],
+    "fixedDelayMilliseconds": 0
+  }
+}
