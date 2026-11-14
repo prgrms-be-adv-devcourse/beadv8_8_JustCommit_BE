@@ -107,3 +107,6 @@ internal-api:
 member:
   lock:
     timeout: 3s
+  token-revocation:
+    # 폐기 키 보관 여유 (#409). 보관 기한 = 폐기 시각 + Access 수명 + 여유. 운영 측정값이 나오기 전 초기값
+    retention-margin: 60s
