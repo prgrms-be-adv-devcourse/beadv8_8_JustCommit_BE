@@ -2,7 +2,9 @@ package com.justcommit.backend.payment.presentation.controller;
 
 import com.justcommit.backend.common.response.ApiResponse;
 import com.justcommit.backend.common.security.AuthMember;
+import com.justcommit.backend.payment.application.ChargeConfirmFacade;
 import com.justcommit.backend.payment.application.ChargeService;
+import com.justcommit.backend.payment.domain.ChargeStatus;
 import com.justcommit.backend.payment.presentation.dto.ChargeConfirmRequest;
 import com.justcommit.backend.payment.presentation.dto.ChargeConfirmResponse;
 import com.justcommit.backend.payment.presentation.dto.ChargeCreateRequest;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/wallet/charges")
 public class ChargeController {
     private final ChargeService chargeService;
+    private final ChargeConfirmFacade chargeConfirmFacade;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -35,7 +38,11 @@ public class ChargeController {
             @PathVariable Long chargeId,
             @Valid @RequestBody ChargeConfirmRequest request
     ) {
-        return ApiResponse.ok("충전이 완료되었습니다.", chargeService.confirmCharge(authMember.memberId(), chargeId, request));
+        ChargeConfirmResponse response = chargeConfirmFacade.confirmCharge(authMember.memberId(), chargeId, request);
+        String message = response.getStatus() == ChargeStatus.APPROVED
+                ? "충전이 완료되었습니다."
+                : "충전 처리 중입니다.";
+        return ApiResponse.ok(message, response);
     }
 
 }

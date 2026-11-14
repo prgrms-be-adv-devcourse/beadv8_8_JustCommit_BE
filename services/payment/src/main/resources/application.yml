@@ -26,3 +26,5 @@ custom:
       secret-key: ${TOSS_SECRET_KEY:}
       base-url: https://api.tosspayments.com
       key-encryption-key: ${PAYMENT_KEY_ENCRYPTION_KEY}
+      connect-timeout: 3s
+      read-timeout: 65s
