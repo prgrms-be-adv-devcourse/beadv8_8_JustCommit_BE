@@ -108,10 +108,23 @@ class ReviewJudgeTest {
         }
 
         @Test
-        @DisplayName("2 · 3순위 금지는 확신도가 낮아도 의심 (11/13 실측: 위장 등록이 0.10~0.25로만 들어옴)")
+        @DisplayName("2 · 3순위 금지는 0.1이어도 의심 (11/13 실측: 위장 등록이 0.10~0.25로만 들어옴)")
         void lowerCandidateLowConfidence() {
             PlantIdentification p = plant(c("Monstera deliciosa", 0.9), c("Sedirea japonica", 0.1));
             assertManual(judge.judge(CLEAN, p, NO_WORD, MONSTERA), ManualReason.BANNED_SUSPECTED);
+        }
+
+        @Test
+        @DisplayName("2 · 3순위 금지가 0.1 미만이면 무시 (11/14 실판매 실측: 호접란에 나도풍란 0.03~0.08이 습관처럼 붙음)")
+        void lowerCandidateBelowFloor() {
+            PlantIdentification p = plant(c("Monstera deliciosa", 0.9), c("Sedirea japonica", 0.09));
+            assertThat(judge.judge(CLEAN, p, NO_WORD, MONSTERA).decision()).isEqualTo(ReviewDecision.APPROVED);
+        }
+
+        @Test
+        @DisplayName("1순위 금지는 확신도가 낮아도 의심 (0.1 미만 무시는 2 · 3순위만)")
+        void topBannedVeryLow() {
+            assertManual(judge.judge(CLEAN, plant(c("Sedirea japonica", 0.05)), NO_WORD, MONSTERA), ManualReason.BANNED_SUSPECTED);
         }
 
         @Test
