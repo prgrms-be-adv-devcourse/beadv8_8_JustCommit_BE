@@ -44,14 +44,16 @@ public class JwtProvider {
     this.parser = Jwts.parser().verifyWith(publicKey).build();
   }
 
-  // AccessToken 발급
-  public String createAccessToken(Long memberId, String role) {
+  // Access 토큰 발급 (#409): 발급 시각은 호출한 쪽이 DB에서 읽어 넘김 → iat · exp를 이 값 하나로 계산
+  // 초 단위로 버림(getEpochSecond): 폐기 시각과 같은 방식으로 비교하기 위해
+  public String createAccessToken(Long memberId, String role, Instant issuedAt) {
+    Instant issuedAtSecond = Instant.ofEpochSecond(issuedAt.getEpochSecond());
     return Jwts.builder()
         .subject(String.valueOf(memberId))
         .claim(CLAIM_TYPE, TokenType.ACCESS.name())
         .claim(CLAIM_ROLE, role)
-        .issuedAt(Date.from(Instant.now()))
-        .expiration(expiresAfter(properties.accessTokenExpiration()))
+        .issuedAt(Date.from(issuedAtSecond))
+        .expiration(Date.from(issuedAtSecond.plus(properties.accessTokenExpiration())))
         .signWith(privateKey, Jwts.SIG.RS256)
         .compact();
   }

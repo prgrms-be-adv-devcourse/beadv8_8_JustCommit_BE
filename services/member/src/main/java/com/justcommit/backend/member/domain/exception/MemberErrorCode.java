@@ -30,6 +30,9 @@ public enum MemberErrorCode implements ErrorCode {
   // 회원 조회
   MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "회원을 찾을 수 없습니다."),
 
+  // 회원 잠금 (#409): 같은 회원의 다른 요청이 잠금을 잡고 있어 대기 제한 안에 처리하지 못함
+  MEMBER_BUSY(HttpStatus.CONFLICT, "같은 계정의 다른 요청을 처리하고 있습니다. 잠시 후 다시 시도해 주세요."),
+
   // 배송지
   ADDRESS_NOT_FOUND(HttpStatus.NOT_FOUND, "배송지를 찾을 수 없습니다."),
   ADDRESS_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "배송지는 최대 4개까지 등록할 수 있습니다."),

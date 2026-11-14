@@ -3,8 +3,10 @@ package com.justcommit.backend.member.auth.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
-import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
+import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,6 +18,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,7 +33,7 @@ import static org.mockito.Mockito.never;
 class LoginServiceTest {
 
   @Mock
-  private MemberRepository memberRepository;
+  private MemberLocker memberLocker;
 
   @Mock
   private PasswordEncoder passwordEncoder;
@@ -41,6 +44,9 @@ class LoginServiceTest {
   @Mock
   private RefreshTokenIssuer refreshTokenIssuer;
 
+  @Mock
+  private DatabaseClock databaseClock;
+
   @InjectMocks
   private LoginService loginService;
 
@@ -48,6 +54,7 @@ class LoginServiceTest {
   private static final String PASSWORD = "plant1234";
   private static final String ENCODED_PASSWORD = "encoded-password";
   private static final Long MEMBER_ID = 1L;
+  private static final Instant NOW = Instant.parse("2026-11-14T01:00:00Z");
 
   // @Value 필드는 Spring없이 채워지지 않아서 직접 주입
   @BeforeEach
@@ -65,10 +72,11 @@ class LoginServiceTest {
   @Test
   @DisplayName("로그인 성공: 정규화한 이메일로 조회하고 Access토큰과 Refresh토큰을 발급")
   void login_success() {
-    given(memberRepository.findByEmail(EMAIL)).willReturn(Optional.of(member()));
+    given(memberLocker.lockByEmail(EMAIL)).willReturn(Optional.of(member()));
     given(passwordEncoder.matches(PASSWORD, ENCODED_PASSWORD)).willReturn(true);
-    given(jwtProvider.createAccessToken(MEMBER_ID, "MEMBER")).willReturn("access-token");
-    given(refreshTokenIssuer.issue(MEMBER_ID)).willReturn("refresh-token");
+    given(databaseClock.now()).willReturn(NOW);
+    given(jwtProvider.createAccessToken(MEMBER_ID, "MEMBER", NOW)).willReturn("access-token");
+    given(refreshTokenIssuer.issue(MEMBER_ID, 0)).willReturn("refresh-token");
 
     // when: 앞뒤 공백·대문자가 섞인 이메일로 요청
     LoginResult result = loginService.login(new LoginCommand("  Test@Gmail.com ", PASSWORD));
@@ -87,7 +95,7 @@ class LoginServiceTest {
   @Test
   @DisplayName("없는 이메일이면 LOGIN_FAILED, 토큰을 발급하지 않음")
   void login_emailNotFound() {
-    given(memberRepository.findByEmail(EMAIL)).willReturn(Optional.empty());
+    given(memberLocker.lockByEmail(EMAIL)).willReturn(Optional.empty());
 
     assertThatThrownBy(() -> loginService.login(new LoginCommand(EMAIL, PASSWORD)))
             .isInstanceOf(BusinessException.class)
@@ -101,7 +109,7 @@ class LoginServiceTest {
   @Test
   @DisplayName("비밀번호가 틀리면 없는 이메일과 같은 LOGIN_FAILED, 토큰을 발급하지 않음")
   void login_wrongPassword() {
-    given(memberRepository.findByEmail(EMAIL)).willReturn(Optional.of(member()));
+    given(memberLocker.lockByEmail(EMAIL)).willReturn(Optional.of(member()));
     given(passwordEncoder.matches("wrong1234", ENCODED_PASSWORD)).willReturn(false);
 
     assertThatThrownBy(() -> loginService.login(new LoginCommand(EMAIL, "wrong1234")))
@@ -109,7 +117,26 @@ class LoginServiceTest {
             .extracting("errorCode")
             .isEqualTo(MemberErrorCode.LOGIN_FAILED);
 
-    then(jwtProvider).should(never()).createAccessToken(anyLong(), anyString());
+    then(jwtProvider).shouldHaveNoInteractions();
+    then(databaseClock).shouldHaveNoInteractions();
+    then(refreshTokenIssuer).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("탈퇴 회원이면 없는 이메일과 같은 LOGIN_FAILED, 비밀번호 확인 · 토큰 발급 없음")
+  void login_deletedMember() {
+    Member member = member();
+    ReflectionTestUtils.setField(member, "status", MemberStatus.DELETED);
+    given(memberLocker.lockByEmail(EMAIL)).willReturn(Optional.of(member));
+
+    assertThatThrownBy(() -> loginService.login(new LoginCommand(EMAIL, PASSWORD)))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MemberErrorCode.LOGIN_FAILED);
+
+    then(passwordEncoder).shouldHaveNoInteractions();
+    then(databaseClock).shouldHaveNoInteractions();
+    then(jwtProvider).shouldHaveNoInteractions();
     then(refreshTokenIssuer).shouldHaveNoInteractions();
   }
 

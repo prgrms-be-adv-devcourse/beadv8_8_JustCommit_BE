@@ -15,6 +15,7 @@ import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,7 @@ import static org.mockito.Mockito.*;
 class SocialSignupServiceTest {
 
   private static final String SIGNUP_TOKEN = "signup-token";
+  private static final java.time.Instant NOW = java.time.Instant.parse("2026-11-14T01:00:00Z");
 
   @Mock
   private MemberRepository memberRepository;
@@ -54,6 +56,9 @@ class SocialSignupServiceTest {
 
   @Mock
   private RefreshTokenIssuer refreshTokenIssuer;
+
+  @Mock
+  private DatabaseClock databaseClock;
 
   @Mock
   private OutboxPublisher outboxPublisher;
@@ -100,8 +105,9 @@ class SocialSignupServiceTest {
       ReflectionTestUtils.setField(saved, "id", 5L);
       return saved;
     });
-    given(jwtProvider.createAccessToken(5L, "MEMBER")).willReturn("access-token");
-    given(refreshTokenIssuer.issue(5L)).willReturn("refresh-token");
+    given(databaseClock.now()).willReturn(NOW);
+    given(jwtProvider.createAccessToken(5L, "MEMBER", NOW)).willReturn("access-token");
+    given(refreshTokenIssuer.issue(5L, 0)).willReturn("refresh-token");
 
     LoginResult result = socialSignupService.signup(SIGNUP_TOKEN, command());
 
