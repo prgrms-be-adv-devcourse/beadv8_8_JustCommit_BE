@@ -71,6 +71,7 @@ public class ImageReviewService implements ReviewRequester {
     private final BannedListService bannedListService;
     private final ReviewJudgeProvider judgeProvider;
     private final OutboxPublisher outboxPublisher;
+    private final ReviewResultPublisher reviewResultPublisher;
     private final TransactionTemplate transactionTemplate;
     private final JsonMapper jsonMapper;
     private final Clock clock;
@@ -268,12 +269,25 @@ public class ImageReviewService implements ReviewRequester {
             return;
         }
         review.complete(outcome.verdict(), outcome.engineResult(), outcome.errorMessage(), LocalDateTime.now(clock));
-        if (from != to) {
-            outboxPublisher.publish(new ProductStatusChanged(target.productId()));
-        }
+        publishResult(target, review, outcome.verdict(), from, to);
         log.info("검수 완료: productId={}, reviewVersion={}, decision={}, rejectReason={}, manualReason={}",
                 target.productId(), target.reviewVersion(), outcome.verdict().decision(),
                 outcome.verdict().rejectReason(), outcome.verdict().manualReason());
+    }
+
+    // 상태가 바뀔 때만 이벤트. 통과 · 반려는 결과 알림까지, 관리자 확인(판매 중 → 검수 중)은 상태 변경만
+    // 판매 중 상품의 글 검사 통과는 상태가 그대로라 아무것도 보내지 않음 (판매자에게 알릴 일이 없음)
+    private void publishResult(Target target, ImageReview review, ReviewVerdict verdict, ProductStatus from, ProductStatus to) {
+        if (from == to) {
+            return;
+        }
+        switch (verdict.decision()) {
+            case APPROVED -> reviewResultPublisher.approved(
+                    target.productId(), review.getSellerId(), target.reviewVersion(), target.title());
+            case REJECTED -> reviewResultPublisher.rejected(
+                    target.productId(), review.getSellerId(), target.reviewVersion(), target.title(), verdict.rejectReason(), null);
+            case MANUAL -> outboxPublisher.publish(new ProductStatusChanged(target.productId()));
+        }
     }
 
     private static boolean isEngineError(ReviewVerdict verdict) {
