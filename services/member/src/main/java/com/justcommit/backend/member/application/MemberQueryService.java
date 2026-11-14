@@ -7,6 +7,7 @@ import com.justcommit.backend.member.MemberQuery;
 import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
@@ -32,9 +33,11 @@ public class MemberQueryService implements MemberQuery {
   private final SellerRepository sellerRepository;
   private final AccountCipher accountCipher;
 
+  // 없는 회원 · 탈퇴 회원은 같은 404 (탈퇴 회원의 계좌는 내주지 않음) INACTIVE는 의미가 정해지지 않아 기존처럼 응답
   @Override
   public MemberAccount getAccount(Long memberId) {
     Member member = memberRepository.findById(memberId)
+            .filter(m -> m.getStatus() != MemberStatus.DELETED)
             .orElseThrow(() -> new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
 
     return new MemberAccount(

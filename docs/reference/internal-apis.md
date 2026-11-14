@@ -1,7 +1,7 @@
 # 내부 API 목록
 
 > 언제 읽나: 서비스 간 내부 API의 경로 · 멱등 키를 찾을 때
-> 상태: 🟨 제안 · 마지막 수정 2026-11-13 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
+> 상태: 🟨 제안 · 마지막 수정 2026-11-14 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
 
 ## 목록
 
@@ -9,7 +9,7 @@
 
 | 제공 | API | 부르는 서비스 | 용도 | 멱등 키 | 상태 |
 |---|---|---|---|---|---|
-| member | ⬜ 계좌 조회 | payment | 인출 신청 때 계좌 받기 (member가 복호화해 응답, ⬜ 전송 구간 암호화는 결제 담당과 정함) | – | ✅ 기능 · ⬜ 경로 |
+| member | `GET /internal/v1/members/{memberId}/account` | payment | 인출 신청 때 계좌 받기: `bankCode`(금융결제원 3자리) · `accountNo`(member가 복호화한 원문) · `accountHolder`. 없는 회원 · 탈퇴 회원은 404 `MEMBER_NOT_FOUND`. ⬜ 운영 전송 보호 방식(서비스 간 HTTPS 또는 응답 암호화)은 payment · 인프라 담당과 정함 | – | ✅ member 구현 · ⬜ payment 연동(#388) |
 | market | ⬜ 탈퇴 확인 | member | `hasActiveOrders` · `activeBuyerOrderCount` · `activeSellerOrderCount` (수락 대기 주문 포함) | – | ✅ 기능 · ⬜ 경로 |
 | payment | ⬜ 탈퇴 확인 | member | `hasWithdrawalBlocker` + 차단 사유 코드 (잔액 · 진행 중 충전 · 충전 취소 · 인출 · 미수금) | – | ✅ 기능 · ⬜ 경로 |
 | settlement | ⬜ 탈퇴 확인 | member | `hasWithdrawalBlocker` + 차단 사유 코드 (미지급 정산) | – | ✅ 기능 · ⬜ 경로 |

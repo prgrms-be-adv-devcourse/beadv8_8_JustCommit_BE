@@ -1,12 +1,13 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-14 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-14 · reference/internal-apis.md · services/member.md · open-questions.md · member 계좌 조회 내부 API 반영: `GET /internal/v1/members/{memberId}/account`(`X-Internal-Key` 필수) 응답 `bankCode` · `accountNo`(member가 복호화한 원문) · `accountHolder`, 없는 회원 · 탈퇴 회원 404 `MEMBER_NOT_FOUND`, 상태 「✅ member 구현 · ⬜ payment 연동(#388)」, 미정 항목에서 계좌 조회 경로 제거(운영 전송 보호 방식은 payment · 인프라 담당과 정하는 미정으로 유지) (#453)
 - 2026-11-14 · flows/image-review.md · 엔진 오류 재처리 「상태」에 판매 중 상품의 글 검사(`TEXT_ONLY`)는 재처리 동안 `ACTIVE` 그대로(판매 유지, 🟨 팀 확인 중) 추가 (#451)
 - 2026-11-14 · flows/image-review.md · services/product.md · reference/internal-apis.md · reference/kafka-topics.md · reference/env-vars.md · 자동 사진 검수 반영: 결과 반영 조건을 "검수 버전이 같고 사진 검수는 `REVIEW_PENDING` · 글 검사는 `ACTIVE`"로(어긋난 두 줄 수정), 판매 중 상품 글 검사가 관리자 확인이면 `REVIEW_PENDING`, 검수 중 · 반려 상품은 글만 고쳐도 처음부터 검수, 하루 사진 검수 30회는 `IMAGE_REVIEW` 행으로 셈, `ProductReviewRequested` payload `productId` · `reviewVersion`, 내부 API는 검수 중 · 반려 상품 제목 · 썸네일을 가림, 환경변수 `OPENAI_API_KEY` · `ANTHROPIC_API_KEY` (#451)
 - 2026-11-13 · infra/database.md · reference/env-vars.md · services/ai.md · ai DB `ai_db` · 계정 `ai_app` 추가, 로컬 postgres 이미지를 `pgvector/pgvector:pg17`로, `vector` 확장은 superuser가 서비스 DB SQL에서 생성, 임베딩 모델 `text-embedding-3-small` 1536차원 · 키 변수 `OPENAI_API_KEY`, 운영 DB도 pgvector 이미지 필요(인프라 요청) (#290)
