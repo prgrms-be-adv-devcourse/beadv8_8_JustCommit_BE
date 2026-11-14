@@ -1,6 +1,7 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    # 공식 postgres 17에 pgvector 확장을 더한 이미지 (ai 서비스 벡터 검색, #290)
+    image: pgvector/pgvector:pg17
     container_name: justcommit-postgres
     environment:
       POSTGRES_DB: justcommit
