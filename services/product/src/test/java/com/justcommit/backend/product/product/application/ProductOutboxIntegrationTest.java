@@ -94,6 +94,8 @@ class ProductOutboxIntegrationTest {
     // 예약 흐름에서 쓰지 않는 ProductService 의존성
     @MockitoBean MemberQuery memberQuery;
     @MockitoBean ProductImageUrlValidator imageUrlValidator;
+    // 사진 검수는 ImageReviewServiceIntegrationTest에서
+    @MockitoBean ReviewRequester reviewRequester;
     @MockitoBean ProductImageCleaner imageCleaner;
 
     private Species species;

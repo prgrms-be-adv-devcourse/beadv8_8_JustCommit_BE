@@ -68,11 +68,30 @@ public class Charge extends BaseTimeEntity {
         return new Charge(wallet, chargeType, generatePgOrderNo(), amount);
     }
 
-    public void approve(String encryptedPaymentKey, LocalDateTime approvedAt) {
+    // TX1: 승인 요청이 들어오면 토스 호출 전에 PENDING으로 바꾸고 paymentKey를 저장한다
+    public void startConfirm(String encryptedPaymentKey) {
         validateReady();
-        this.status = ChargeStatus.APPROVED;
+        this.status = ChargeStatus.PENDING;
         this.pgPaymentKeyEnc = encryptedPaymentKey;
+    }
+
+    // TX2: 토스 승인 성공
+    public void completeConfirm(LocalDateTime approvedAt) {
+        validatePending();
+        this.status = ChargeStatus.APPROVED;
         this.approvedAt = approvedAt;
+    }
+
+    // TX2: 토스가 승인을 명확히 거절
+    public void fail() {
+        validatePending();
+        this.status = ChargeStatus.FAILED;
+    }
+
+    private void validatePending() {
+        if (this.status != ChargeStatus.PENDING) {
+            throw new BusinessException(PaymentErrorCode.CHARGE_ALREADY_PROCESSED);
+        }
     }
 
     public void validateConfirmInfo(String pgOrderNo, BigDecimal amount) {
@@ -89,7 +108,10 @@ public class Charge extends BaseTimeEntity {
         }
     }
 
-    public void validateReady() {
+    private void validateReady() {
+        if (this.status == ChargeStatus.PENDING) {
+            throw new BusinessException(PaymentErrorCode.CHARGE_PROCESSING);
+        }
         if (this.status != ChargeStatus.READY) {
             throw new BusinessException(PaymentErrorCode.CHARGE_ALREADY_PROCESSED);
         }

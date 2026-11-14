@@ -103,7 +103,7 @@
 
 `ProductApproved` · `ProductRejected`는 notification이 product를 조회하지 않고 payload만으로 알림을 만들도록 판매자 · 상품 이름 · 사유를 싣습니다. 상품 상태 동기화(ai 스냅샷)는 같은 트랜잭션에서 함께 보내는 `ProductStatusChanged`가 맡습니다.
 
-검수 요청 `ProductReviewRequested`는 이 토픽이 아니라 `product.review.v1`(Key `productId`)로 보냅니다. payload는 사진 검수 때(#345) 정합니다.
+검수 요청 `ProductReviewRequested`는 이 토픽이 아니라 `product.review.v1`(Key `productId`)로 보냅니다. payload는 `productId` · `reviewVersion`(숫자)이고, 등록 · 수정 트랜잭션에서 `IMAGE_REVIEW`(REQUESTED)와 함께 저장합니다.
 
 product 색인 리스너는 상품 ID로 DB에서 최신 상품을 다시 읽습니다 (같은 이벤트가 두 번 와도 결과가 같음). ai는 payload로 저장하고 product를 조회하지 않습니다. 주문 번호 · 판매자 기준으로 여러 상품을 한 번에 바꿀 때는 잠근 상품마다 보내므로, 실제로 바뀌지 않은 상품이 섞일 수 있습니다.
 

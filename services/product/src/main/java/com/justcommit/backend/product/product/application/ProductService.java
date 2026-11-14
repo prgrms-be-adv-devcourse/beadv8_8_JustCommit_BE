@@ -47,6 +47,8 @@ public class ProductService implements ProductQuery, ProductUseCase {
     private static final int REVIEW_PENDING_LIMIT = 5;
     private static final int DAILY_REGISTER_LIMIT = 20;
 
+    static final String IN_REVIEW_TITLE = "검수 중인 상품";
+
     private final ProductRepository productRepository;
     private final ProductReservationRepository reservationRepository;
     private final SpeciesRepository speciesRepository;
@@ -55,6 +57,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
     private final ProductImageCleaner imageCleaner;
     private final Clock clock;
     private final OutboxPublisher outboxPublisher;
+    private final ReviewRequester reviewRequester;
 
     // ── ProductQuery ───────────────────────────────
 
@@ -160,15 +163,18 @@ public class ProductService implements ProductQuery, ProductUseCase {
         return soldOut;
     }
 
+    // 다른 서비스(market 장바구니 등)에 주는 값. 검수 중 · 반려 상품은 사진 · 제목을 가림
+    // (반려된 사진 · 글이 장바구니에 보이지 않게, 받는 쪽 코드는 그대로)
     private ProductResult toResult(Product product) {
+        boolean inReview = product.isInReview();
         return new ProductResult(
                 product.getId(),
                 product.getSellerId(),
-                product.getTitle(),
+                inReview ? IN_REVIEW_TITLE : product.getTitle(),
                 product.getPrice(),
                 product.getStatus(),
                 product.isHidden(),
-                product.getThumbnailUrl(),
+                inReview ? null : product.getThumbnailUrl(),
                 product.getSpecies().getName());
     }
 
@@ -191,7 +197,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
         Species species = speciesRepository.findById(request.speciesId())
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.SPECIES_NOT_FOUND));
 
-        // 등록하면 REVIEW_PENDING (검수는 #343)
+        // 등록하면 REVIEW_PENDING, 검수가 끝나면 ACTIVE · REJECTED
         Product product = Product.create(
                 species, sellerId, request.title(), request.description(), request.price(),
                 request.heightCm(), request.potSize(), request.growNote(), imageUrls);
@@ -199,6 +205,8 @@ public class ProductService implements ProductQuery, ProductUseCase {
         Product saved = productRepository.save(product);
         // 상품 ID는 저장한 뒤에야 생김
         outboxPublisher.publish(new ProductRegistered(saved.getId()));
+        // 검수 기록 + 검수 요청 이벤트 (하루 사진 검수 30회를 넘으면 429로 등록까지 롤백)
+        reviewRequester.request(saved, ReviewScope.FULL);
 
         return ProductDetailResponse.from(saved, memberQuery.getNickname(sellerId));
     }
@@ -249,7 +257,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
 
         List<String> oldImageUrls = imageUrlsOf(product);   // update 전에 꺼내 둠
 
-        // 상태 · 검수 버전은 update 안에서 바뀜. 검수 범위는 #345에서 검수 요청 이벤트에 싣는다
+        // 상태 · 검수 버전은 update 안에서 바뀜. 검수 범위에 따라 사진 검수부터 또는 글 검사만
         ReviewScope reviewScope = product.update(species, request.title(), request.description(), request.price(),
                 request.heightCm(), request.potSize(), request.growNote(), imageUrls);
 
@@ -259,6 +267,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
                 .toList());
 
         outboxPublisher.publish(new ProductUpdated(product.getId()));
+        reviewRequester.request(product, reviewScope);
         return ProductDetailResponse.from(product, memberQuery.getNickname(product.getSellerId()));
     }
 
