@@ -63,6 +63,11 @@ public class Member extends BaseTimeEntity  {
         @Column(nullable = false, length = 20)
         private MemberStatus status;
 
+        // 인증 버전 (#409): 비밀번호 변경 · 탈퇴 때 1 올려, 그 전에 발급한 Refresh를 재발급할 수 없게 한다
+        // JPA @Version은 인증 폐기와 무관한 회원 정보 변경에도 증가하므로 쓰지 않는다
+        @Column(name = "token_version", nullable = false)
+        private int tokenVersion;
+
         // 이메일·비밀번호 회원가입 (권한 MEMBER, 상태 ACTIVE로 고정)
         public static Member createLocal(String email, String encodedPassword, String nickname, String phone,
                                          String bankCode, String encryptedAccountNo, String accountHolder) {
@@ -110,5 +115,11 @@ public class Member extends BaseTimeEntity  {
                 if (this.role == Role.MEMBER) {
                         this.role = Role.SELLER;
                 }
+        }
+
+        // 인증 버전을 1 올린다 (비밀번호 변경 · 탈퇴). DB 값만 바꾸며, 기존 Access 폐기 기록은 별도 처리한다
+        // 올리기만 한다: 되돌리면 무효화된 Refresh를 다시 쓸 수 있게 된다
+        public void increaseTokenVersion() {
+          this.tokenVersion++;
         }
 }
