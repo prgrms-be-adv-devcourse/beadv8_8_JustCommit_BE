@@ -197,6 +197,14 @@ class ReviewJudgeTest {
     }
 
     @Test
+    @DisplayName("10. 판매자가 Dracaena를 골랐고 엔진이 옛 속명 Sansevieria로 답해도 통과 (11/14 실판매 실측)")
+    void approvedSansevieriaAsDracaena() {
+        SellerSpecies dracaena = SellerSpecies.of("Dracaena trifasciata");
+        ReviewVerdict v = judge.judge(CLEAN, plant(c("Sansevieria trifasciata", 0.9)), NO_WORD, dracaena);
+        assertThat(v.decision()).isEqualTo(ReviewDecision.APPROVED);
+    }
+
+    @Test
     @DisplayName("11. 품종이 다르면 관리자 확인")
     void mismatch() {
         ReviewVerdict v = judge.judge(CLEAN, plant(c("Ficus elastica", 0.9)), NO_WORD, MONSTERA);

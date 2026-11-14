@@ -16,6 +16,10 @@ custom:
   oauth2:
     state-secret: test-only-oauth2-state-secret-0123456789
 
+# 내부 API 키 (테스트 전용). 내부 호출 그룹이 있으면 키 없이 앱이 시작하지 않음
+internal-api:
+  key: test-internal-key
+
 messaging:
   address-event-cipher:
     keys:
