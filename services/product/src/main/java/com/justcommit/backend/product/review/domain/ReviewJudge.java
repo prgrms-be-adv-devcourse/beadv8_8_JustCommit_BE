@@ -15,6 +15,7 @@ public final class ReviewJudge {
 
     public static final double BANNED_CONFIDENCE = 0.7;   // 1순위 금지 품종을 바로 반려하는 확신도
     public static final double MIN_CONFIDENCE = 0.3;      // 이보다 낮은 후보는 믿지 않음
+    public static final double LOWER_BANNED_CONFIDENCE = 0.1;   // 2 · 3순위 금지 후보를 의심하는 최소 확신도
 
     private final Function<String, ScientificNameMatcher.Match> bannedLookup;   // 학명 → 금지 목록 대조
     private final SpeciesMatcher speciesMatcher;
@@ -43,9 +44,9 @@ public final class ReviewJudge {
             if (plant.saleForm() != null && plant.saleForm().isProhibited()) {
                 return ReviewVerdict.reject(RejectReason.PROHIBITED_FORM, plant.saleForm().name());
             }
-            // 5) 1순위가 금지 품종, 확신도 0.7 이상
+            // 5) 1순위가 금지 품종, 확신도 0.7 이상 (판매자가 고른 품종과 같은 속이면 반려하지 않고 7줄 금지 의심으로)
             Candidate top = top(plant);
-            if (top != null && top.confidence() >= BANNED_CONFIDENCE) {
+            if (top != null && top.confidence() >= BANNED_CONFIDENCE && !sameGenusAsSeller(top, seller)) {
                 ScientificNameMatcher.Match match = bannedLookup.apply(top.scientificName());
                 if (match.result() == ScientificNameMatcher.Result.BANNED) {
                     return ReviewVerdict.reject(RejectReason.BANNED_SPECIES, match.koreanName());
@@ -101,18 +102,34 @@ public final class ReviewJudge {
         return ReviewVerdict.approve();
     }
 
-    // 7줄의 금지 의심: 1순위 금지인데 0.7 미만(0.7 이상은 5줄에서 반려됨) · 2 · 3순위 금지(확신도와 관계없이)
-    // 2 · 3순위는 확신도를 보지 않음: 11/13 실측에서 위장 등록 3건(나도풍란 → 호접란, 파초일엽 → 아스플레니움)이
-    // 금지 품종을 0.10~0.25로만 후보에 넣고 통과됨. 대신 합법 닮은꼴 일부가 관리자 확인으로 감
+    // 7줄의 금지 의심: 1순위 금지인데 0.7 미만(0.7 이상은 5줄에서 반려됨) · 2 · 3순위 금지(확신도 0.1 이상)
+    // 2 · 3순위 0.1: 11/13 실측에서 위장 등록 3건(나도풍란 → 호접란, 파초일엽 → 아스플레니움)이 금지 품종을 0.10~0.25로만 넣고 통과됨.
+    // 11/14 실판매 실측(심폴 631건)에서는 Haiku가 호접란 사진에 나도풍란을 0.03~0.08로 습관처럼 붙여 정상 상품이 관리자 확인으로 몰림
+    // → 0.1 미만은 무시. 두 실측 모두 금지 · 위장 상품 통과 0건
     // · 변종만 금지인데 후보가 종까지만 일치. 걸린 금지 품종의 한글 이름을 돌려줌
     private String suspectedBanned(List<Candidate> candidates) {
-        for (Candidate c : candidates) {
+        for (int i = 0; i < candidates.size(); i++) {
+            Candidate c = candidates.get(i);
+            if (i > 0 && c.confidence() < LOWER_BANNED_CONFIDENCE) {
+                continue;
+            }
             ScientificNameMatcher.Match match = bannedLookup.apply(c.scientificName());
             if (match.result() != ScientificNameMatcher.Result.NONE) {
                 return match.koreanName();
             }
         }
         return null;
+    }
+
+    // 1순위 금지 품종이 판매자가 고른 품종과 같은 속인지 (「기타」면 아님)
+    // 11/14 실판매 실측: Haiku가 덴드로비움 교배종을 석곡(D. moniliforme), 아비스를 파초일엽(A. antiquum)으로 0.8 안팎에 답해
+    // 합법 상품 19건이 반려됨. 같은 속 안의 금지 · 합법은 사진으로 가르기 어려워 사람이 봄. 진짜 금지 9건이 반려 → 관리자 확인
+    private static boolean sameGenusAsSeller(Candidate top, SellerSpecies seller) {
+        if (seller.other()) {
+            return false;
+        }
+        String sellerGenus = SpeciesMatcher.genus(seller.scientificName());
+        return sellerGenus != null && sellerGenus.equals(SpeciesMatcher.genus(top.scientificName()));
     }
 
     private static Candidate top(PlantIdentification plant) {

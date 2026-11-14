@@ -75,10 +75,34 @@ class ReviewJudgeTest {
     @Test
     @DisplayName("5. 1순위가 금지 품종이고 확신도 0.7 이상이면 BANNED_SPECIES 반려 (옛 학명도)")
     void bannedTopCandidate() {
-        ReviewVerdict v = judge.judge(CLEAN, plant(c("Phalaenopsis japonica", 0.7)), NO_WORD,
-                SellerSpecies.of("Phalaenopsis hybrids"));
+        ReviewVerdict v = judge.judge(CLEAN, plant(c("Phalaenopsis japonica", 0.7)), NO_WORD, MONSTERA);
         assertThat(v.rejectReason()).isEqualTo(RejectReason.BANNED_SPECIES);
         assertThat(v.detail()).isEqualTo("나도풍란");
+    }
+
+    @Test
+    @DisplayName("5. 1순위 금지 품종이 판매자 품종과 같은 속이면 반려하지 않고 금지 의심 관리자 확인 (11/14 실판매 실측)")
+    void bannedTopCandidateSameGenus() {
+        ReviewVerdict v = judge.judge(CLEAN, plant(c("Phalaenopsis japonica", 0.9)), NO_WORD,
+                SellerSpecies.of("Phalaenopsis hybrids"));
+        assertManual(v, ManualReason.BANNED_SUSPECTED);
+        assertThat(v.detail()).isEqualTo("나도풍란");
+    }
+
+    @Test
+    @DisplayName("5 · 6. 같은 속이어도 제목에 금지어가 있으면 반려")
+    void bannedTopCandidateSameGenusWithBannedWord() {
+        BannedTextMatcher.Match word = new BannedTextMatcher.Match(BannedTextMatcher.Result.BANNED, "나도풍란");
+        ReviewVerdict v = judge.judge(CLEAN, plant(c("Phalaenopsis japonica", 0.9)), word,
+                SellerSpecies.of("Phalaenopsis hybrids"));
+        assertThat(v.rejectReason()).isEqualTo(RejectReason.BANNED_SPECIES);
+    }
+
+    @Test
+    @DisplayName("5. 「기타」를 고르면 같은 속 예외 없이 반려")
+    void bannedTopCandidateOtherSeller() {
+        ReviewVerdict v = judge.judge(CLEAN, plant(c("Phalaenopsis japonica", 0.9)), NO_WORD, SellerSpecies.otherSpecies());
+        assertThat(v.rejectReason()).isEqualTo(RejectReason.BANNED_SPECIES);
     }
 
     @Test
@@ -108,10 +132,23 @@ class ReviewJudgeTest {
         }
 
         @Test
-        @DisplayName("2 · 3순위 금지는 확신도가 낮아도 의심 (11/13 실측: 위장 등록이 0.10~0.25로만 들어옴)")
+        @DisplayName("2 · 3순위 금지는 0.1이어도 의심 (11/13 실측: 위장 등록이 0.10~0.25로만 들어옴)")
         void lowerCandidateLowConfidence() {
             PlantIdentification p = plant(c("Monstera deliciosa", 0.9), c("Sedirea japonica", 0.1));
             assertManual(judge.judge(CLEAN, p, NO_WORD, MONSTERA), ManualReason.BANNED_SUSPECTED);
+        }
+
+        @Test
+        @DisplayName("2 · 3순위 금지가 0.1 미만이면 무시 (11/14 실판매 실측: 호접란에 나도풍란 0.03~0.08이 습관처럼 붙음)")
+        void lowerCandidateBelowFloor() {
+            PlantIdentification p = plant(c("Monstera deliciosa", 0.9), c("Sedirea japonica", 0.09));
+            assertThat(judge.judge(CLEAN, p, NO_WORD, MONSTERA).decision()).isEqualTo(ReviewDecision.APPROVED);
+        }
+
+        @Test
+        @DisplayName("1순위 금지는 확신도가 낮아도 의심 (0.1 미만 무시는 2 · 3순위만)")
+        void topBannedVeryLow() {
+            assertManual(judge.judge(CLEAN, plant(c("Sedirea japonica", 0.05)), NO_WORD, MONSTERA), ManualReason.BANNED_SUSPECTED);
         }
 
         @Test
