@@ -7,7 +7,7 @@ import com.justcommit.backend.member.auth.infrastructure.redis.RefreshTokenRedis
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
-import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,7 +24,7 @@ public class TokenReissueService {
 
   private final RefreshTokenRedisStore refreshTokenStore;
   private final RefreshTokenIssuer refreshTokenIssuer;
-  private final MemberRepository memberRepository;
+  private final MemberLocker memberLocker;
   private final JwtProvider jwtProvider;
   private final DatabaseClock databaseClock;
 
@@ -43,7 +43,7 @@ public class TokenReissueService {
     // 잠글 회원을 찾기 위해 읽기만 (옛 형식 · 잘못된 값도 여기서 거절). 이 값으로 버전을 판단하지 않음
     RefreshTokenOwner found = refreshTokenStore.findOwner(refreshToken)
         .orElseThrow(() -> new BusinessException(MemberErrorCode.INVALID_REFRESH_TOKEN));
-    Member member = memberRepository.findByIdForUpdate(found.memberId())
+    Member member = memberLocker.lockById(found.memberId())
         .orElseThrow(() -> new BusinessException(MemberErrorCode.INVALID_REFRESH_TOKEN));
 
     // 잠근 뒤 꺼내며 삭제 → 같은 토큰으로 재발급 불가. 그 사이 다른 요청이 썼으면 없음

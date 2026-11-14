@@ -102,3 +102,8 @@ messaging:
 internal-api:
   key: ${INTERNAL_API_KEY:}
   groups: [market, payment, settlement]
+
+# 회원 행 잠금 대기 제한 (#409). 넘으면 409 MEMBER_BUSY. 잠금 한 번마다의 제한 (MemberLocker)
+member:
+  lock:
+    timeout: 3s

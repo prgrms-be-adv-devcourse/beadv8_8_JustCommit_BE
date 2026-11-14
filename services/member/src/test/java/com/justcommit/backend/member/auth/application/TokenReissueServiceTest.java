@@ -8,7 +8,7 @@ import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Role;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
-import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -49,7 +49,7 @@ class TokenReissueServiceTest {
   private RefreshTokenIssuer refreshTokenIssuer;
 
   @Mock
-  private MemberRepository memberRepository;
+  private MemberLocker memberLocker;
 
   @Mock
   private JwtProvider jwtProvider;
@@ -82,7 +82,7 @@ class TokenReissueServiceTest {
   // 읽기 → 잠금 조회까지 준비
   private void givenFoundAndLocked(Member member) {
     given(refreshTokenStore.findOwner(REFRESH_TOKEN)).willReturn(Optional.of(OWNER_V0));
-    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.of(member));
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(member));
   }
 
   private void assertInvalidRefreshToken() {
@@ -109,9 +109,9 @@ class TokenReissueServiceTest {
     assertThat(result.refreshTokenTtl()).isEqualTo(Duration.ofDays(1));
 
     // 호출 순서 (실제 잠금 획득은 실제 DB 테스트에서 확인)
-    InOrder order = inOrder(refreshTokenStore, memberRepository, databaseClock);
+    InOrder order = inOrder(refreshTokenStore, memberLocker, databaseClock);
     order.verify(refreshTokenStore).findOwner(REFRESH_TOKEN);
-    order.verify(memberRepository).findByIdForUpdate(MEMBER_ID);
+    order.verify(memberLocker).lockById(MEMBER_ID);
     order.verify(refreshTokenStore).findAndDelete(REFRESH_TOKEN);
     order.verify(databaseClock).now(); // 잠금 · 모든 확인이 끝난 뒤 시각을 읽음
   }
@@ -127,7 +127,7 @@ class TokenReissueServiceTest {
         .isEqualTo(MemberErrorCode.INVALID_REFRESH_TOKEN);
 
     then(refreshTokenStore).shouldHaveNoInteractions();
-    then(memberRepository).shouldHaveNoInteractions();
+    then(memberLocker).shouldHaveNoInteractions();
     then(refreshTokenIssuer).shouldHaveNoInteractions();
   }
 
@@ -138,7 +138,7 @@ class TokenReissueServiceTest {
 
     assertInvalidRefreshToken();
 
-    then(memberRepository).shouldHaveNoInteractions();
+    then(memberLocker).shouldHaveNoInteractions();
     then(refreshTokenStore).should(never()).findAndDelete(REFRESH_TOKEN);
     then(jwtProvider).shouldHaveNoInteractions();
     then(refreshTokenIssuer).shouldHaveNoInteractions();
@@ -148,7 +148,7 @@ class TokenReissueServiceTest {
   @DisplayName("토큰의 회원이 없으면 INVALID_REFRESH_TOKEN, 꺼내지 않고 새 토큰 발급 안 함")
   void reissue_memberNotFound() {
     given(refreshTokenStore.findOwner(REFRESH_TOKEN)).willReturn(Optional.of(OWNER_V0));
-    given(memberRepository.findByIdForUpdate(MEMBER_ID)).willReturn(Optional.empty());
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.empty());
 
     assertInvalidRefreshToken();
 

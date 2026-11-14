@@ -5,7 +5,7 @@ import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
-import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,7 +22,7 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class LoginService {
 
-  private final MemberRepository memberRepository;
+  private final MemberLocker memberLocker;
   private final PasswordEncoder passwordEncoder;
   private final JwtProvider jwtProvider;
   private final RefreshTokenIssuer refreshTokenIssuer;
@@ -40,7 +40,7 @@ public class LoginService {
     String email = normalizeEmail(command.email());
 
     // 없는 이메일 · 탈퇴 회원 · 비밀번호 불일치를 같은 에러로 처리 (탈퇴 여부를 드러내지 않음)
-    Member member = memberRepository.findByEmailForUpdate(email)
+    Member member = memberLocker.lockByEmail(email)
         .filter(found -> found.getStatus() != MemberStatus.DELETED)
         .orElseThrow(() -> new BusinessException(MemberErrorCode.LOGIN_FAILED));
     if (!passwordEncoder.matches(command.password(), member.getPassword())) {

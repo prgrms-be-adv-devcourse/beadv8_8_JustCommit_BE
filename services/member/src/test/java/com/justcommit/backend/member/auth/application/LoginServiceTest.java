@@ -5,7 +5,7 @@ import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
-import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -33,7 +33,7 @@ import static org.mockito.Mockito.never;
 class LoginServiceTest {
 
   @Mock
-  private MemberRepository memberRepository;
+  private MemberLocker memberLocker;
 
   @Mock
   private PasswordEncoder passwordEncoder;
@@ -72,7 +72,7 @@ class LoginServiceTest {
   @Test
   @DisplayName("로그인 성공: 정규화한 이메일로 조회하고 Access토큰과 Refresh토큰을 발급")
   void login_success() {
-    given(memberRepository.findByEmailForUpdate(EMAIL)).willReturn(Optional.of(member()));
+    given(memberLocker.lockByEmail(EMAIL)).willReturn(Optional.of(member()));
     given(passwordEncoder.matches(PASSWORD, ENCODED_PASSWORD)).willReturn(true);
     given(databaseClock.now()).willReturn(NOW);
     given(jwtProvider.createAccessToken(MEMBER_ID, "MEMBER", NOW)).willReturn("access-token");
@@ -95,7 +95,7 @@ class LoginServiceTest {
   @Test
   @DisplayName("없는 이메일이면 LOGIN_FAILED, 토큰을 발급하지 않음")
   void login_emailNotFound() {
-    given(memberRepository.findByEmailForUpdate(EMAIL)).willReturn(Optional.empty());
+    given(memberLocker.lockByEmail(EMAIL)).willReturn(Optional.empty());
 
     assertThatThrownBy(() -> loginService.login(new LoginCommand(EMAIL, PASSWORD)))
             .isInstanceOf(BusinessException.class)
@@ -109,7 +109,7 @@ class LoginServiceTest {
   @Test
   @DisplayName("비밀번호가 틀리면 없는 이메일과 같은 LOGIN_FAILED, 토큰을 발급하지 않음")
   void login_wrongPassword() {
-    given(memberRepository.findByEmailForUpdate(EMAIL)).willReturn(Optional.of(member()));
+    given(memberLocker.lockByEmail(EMAIL)).willReturn(Optional.of(member()));
     given(passwordEncoder.matches("wrong1234", ENCODED_PASSWORD)).willReturn(false);
 
     assertThatThrownBy(() -> loginService.login(new LoginCommand(EMAIL, "wrong1234")))
@@ -127,7 +127,7 @@ class LoginServiceTest {
   void login_deletedMember() {
     Member member = member();
     ReflectionTestUtils.setField(member, "status", MemberStatus.DELETED);
-    given(memberRepository.findByEmailForUpdate(EMAIL)).willReturn(Optional.of(member));
+    given(memberLocker.lockByEmail(EMAIL)).willReturn(Optional.of(member));
 
     assertThatThrownBy(() -> loginService.login(new LoginCommand(EMAIL, PASSWORD)))
             .isInstanceOf(BusinessException.class)

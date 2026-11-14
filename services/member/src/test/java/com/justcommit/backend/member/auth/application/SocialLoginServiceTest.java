@@ -6,6 +6,7 @@ import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
+import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +39,9 @@ class SocialLoginServiceTest {
   private MemberRepository memberRepository;
 
   @Mock
+  private MemberLocker memberLocker;
+
+  @Mock
   private JwtProvider jwtProvider;
 
   @Mock
@@ -68,7 +72,7 @@ class SocialLoginServiceTest {
   @Test
   @DisplayName("기존 소셜 회원이면 Access·Refresh 발급")
   void existingMember() {
-    given(memberRepository.findByProviderAndProviderIdForUpdate(Provider.KAKAO, "123"))
+    given(memberLocker.lockByProvider(Provider.KAKAO, "123"))
             .willReturn(Optional.of(member(4L)));
     given(databaseClock.now()).willReturn(NOW);
     given(jwtProvider.createAccessToken(4L, "MEMBER", NOW)).willReturn("access-token");
@@ -93,7 +97,7 @@ class SocialLoginServiceTest {
   void deletedMember() {
     Member member = member(4L);
     ReflectionTestUtils.setField(member, "status", MemberStatus.DELETED);
-    given(memberRepository.findByProviderAndProviderIdForUpdate(Provider.KAKAO, "123"))
+    given(memberLocker.lockByProvider(Provider.KAKAO, "123"))
             .willReturn(Optional.of(member));
 
     assertThatThrownBy(() -> socialLoginService.login(
@@ -110,7 +114,7 @@ class SocialLoginServiceTest {
   @Test
   @DisplayName("신규 회원이면 정규화한 이메일로 가입 토큰 발급")
   void newMember() {
-    given(memberRepository.findByProviderAndProviderIdForUpdate(Provider.KAKAO, "123"))
+    given(memberLocker.lockByProvider(Provider.KAKAO, "123"))
             .willReturn(Optional.empty());
     given(memberRepository.existsByEmail("user@kakao.com")).willReturn(false);
     given(jwtProvider.createSignupToken("KAKAO", "123", "user@kakao.com")).willReturn("signup-token");
@@ -128,7 +132,7 @@ class SocialLoginServiceTest {
   @Test
   @DisplayName("같은 이메일로 가입한 회원이 있으면 SOCIAL_EMAIL_CONFLICT")
   void emailConflict() {
-    given(memberRepository.findByProviderAndProviderIdForUpdate(Provider.KAKAO, "123"))
+    given(memberLocker.lockByProvider(Provider.KAKAO, "123"))
             .willReturn(Optional.empty());
     given(memberRepository.existsByEmail("user@kakao.com")).willReturn(true);
 
