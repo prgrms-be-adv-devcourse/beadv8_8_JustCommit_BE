@@ -69,24 +69,4 @@ public class TokenRevocation extends BaseTimeEntity {
     revocation.nextAttemptAt = cutoffAt;
     return revocation;
   }
-
-  public void markRecorded() {
-    this.status = RevocationStatus.RECORDED;
-    this.nextAttemptAt = null;
-    this.lastError = null;
-  }
-
-  public void markExpired() {
-    this.status = RevocationStatus.EXPIRED;
-    this.nextAttemptAt = null;
-  }
-
-  // Redis 기록 실패: 횟수 +1, 다음 시도 시각과 원인을 남긴다 (PENDING 유지)
-  public void recordFailure(String error, Instant nextAttemptAt) {
-    this.attemptCount++;
-    this.nextAttemptAt = nextAttemptAt;
-    this.lastError = (error == null || error.length() <= ERROR_MAX_LENGTH)
-        ? error
-        : error.substring(0, ERROR_MAX_LENGTH);
-  }
 }
