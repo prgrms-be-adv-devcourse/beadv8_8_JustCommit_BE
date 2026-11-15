@@ -1,12 +1,13 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-14 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-15 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-15 · reference/external-apis.md · services/member.md · 닉네임 변경 API 반영: `PATCH users/me/nickname`(로그인, 가입과 같은 입력 규칙, 지금 닉네임과 같으면 그대로 200 · 이벤트 없음, 다른 회원과 중복이면 409 `DUPLICATE_NICKNAME` · 동시에 같은 닉네임을 골라 생긴 DB `UNIQUE` 위반도 409), 회원 행 잠금으로 판매자 등록과 순서 정리, 변경과 같은 트랜잭션에 `MemberUpdated` 발행(판매자 여부 포함), 「추가 예정」에서 닉네임 변경 제거 (#459)
 - 2026-11-14 · services/member.md · flows/signup-and-replica.md · reference/env-vars.md · open-questions.md · member 탈퇴 가능 여부 확인 반영: market · payment · settlement 탈퇴 확인 내부 API(`GET /internal/v1/{orders, payments, settlements}/members/{memberId}/withdrawalCheck`, 공통 응답 `hasWithdrawalBlocker` · `blockingReasons` · `details`)를 병렬 조회해 결과 `ALLOWED` · `BLOCKED` · `UNAVAILABLE`로 모음(호출 실패 · 응답 형식 오류는 `UNAVAILABLE`, 차단과 실패가 함께면 `UNAVAILABLE`, 탈퇴 처리 #407에서 `ALLOWED`일 때만 진행), member가 쓰는 `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` 추가, 내부 호출 그룹이 있는 서비스는 `INTERNAL_API_KEY` 없으면 시작하지 않음, 미정 항목에서 탈퇴 확인 경로 제거 (#454)
 - 2026-11-14 · reference/internal-apis.md · services/member.md · open-questions.md · member 계좌 조회 내부 API 반영: `GET /internal/v1/members/{memberId}/account`(`X-Internal-Key` 필수) 응답 `bankCode` · `accountNo`(member가 복호화한 원문) · `accountHolder`, 없는 회원 · 탈퇴 회원 404 `MEMBER_NOT_FOUND`, 상태 「✅ member 구현 · ⬜ payment 연동(#388)」, 미정 항목에서 계좌 조회 경로 제거(운영 전송 보호 방식은 payment · 인프라 담당과 정하는 미정으로 유지) (#453)
 - 2026-11-14 · flows/image-review.md · 엔진 오류 재처리 「상태」에 판매 중 상품의 글 검사(`TEXT_ONLY`)는 재처리 동안 `ACTIVE` 그대로(판매 유지, 🟨 팀 확인 중) 추가 (#451)
