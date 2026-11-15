@@ -19,7 +19,8 @@ import java.util.function.Supplier;
 /**
  * 회원 행 잠금 + 대기 제한 (#409, #419). 로그인 · 소셜 로그인 · 재발급 · 폐기 · 배송지 추가 · 기본 변경 ·
  * 판매자 등록 · 닉네임 변경이 같은 회원 행 잠금으로 줄을 선다.
- * - 잠그기 직전에 같은 트랜잭션에 lock_timeout을 건다 (set_config(..., true) = SET LOCAL, 트랜잭션이 끝날 때까지 유지)
+ * - 잠그기 직전에 같은 트랜잭션에 lock_timeout을 걸고(set_config(..., true) = SET LOCAL), 잠금 조회가 정상 반환되면
+ *   이전 값으로 되돌린다. 그 뒤 저장 쿼리(UNIQUE 확인 대기 등)에는 이 제한이 걸리지 않는다
  * - 대기 제한을 넘으면 PostgreSQL이 55P03(lock_not_available)을 내고, 이것만 409 MEMBER_BUSY로 바꾼다.
  *   BusinessException은 런타임 예외라 트랜잭션은 롤백된다
  * - 잠금 한 번마다의 대기 제한이다. 더 짧은 statement_timeout이 있으면 쿼리가 먼저 끝날 수 있다
@@ -30,6 +31,7 @@ public class MemberLocker {
 
   static final String LOCK_NOT_AVAILABLE = "55P03";
   private static final String SET_LOCK_TIMEOUT_SQL = "select set_config('lock_timeout', ?, true)";
+  private static final String SHOW_LOCK_TIMEOUT_SQL = "select current_setting('lock_timeout')";
 
   private final MemberRepository memberRepository;
   private final JdbcTemplate jdbcTemplate;
@@ -63,16 +65,24 @@ public class MemberLocker {
       // 트랜잭션 밖이면 lock_timeout이 바로 사라지고 잠금도 유지되지 않는다
       throw new IllegalStateException("회원 잠금은 트랜잭션 안에서 해야 합니다.");
     }
+    String previousTimeout = jdbcTemplate.queryForObject(SHOW_LOCK_TIMEOUT_SQL, String.class);
     jdbcTemplate.queryForObject(SET_LOCK_TIMEOUT_SQL, String.class, lockTimeout.toMillis() + "ms");
+
+    Optional<Member> member;
     try {
-      return lockQuery.get();
+      member = lockQuery.get();
     } catch (RuntimeException e) {
+      // 실패한 트랜잭션은 다음 쿼리를 모두 거부하므로 복원하지 않고 그대로 던진다 (롤백)
       if (isLockNotAvailable(e)) {
         log.warn("회원 잠금 대기 제한 초과: timeout={}", lockTimeout);
         throw new BusinessException(MemberErrorCode.MEMBER_BUSY);
       }
       throw e;
     }
+
+    // 정상 반환일 때만 이전 값으로 되돌린다: 이후 저장 쿼리는 이 제한 없이 기다린다
+    jdbcTemplate.queryForObject(SET_LOCK_TIMEOUT_SQL, String.class, previousTimeout);
+    return member;
   }
 
   // 예외 원인을 따라가 SQLState 55P03(lock_not_available)인지 확인

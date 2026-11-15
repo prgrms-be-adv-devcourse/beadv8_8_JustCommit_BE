@@ -94,6 +94,9 @@ class MemberLockerIntegrationTest {
   @Autowired
   private JdbcTemplate jdbcTemplate;
 
+  @Autowired
+  private MemberLocker memberLocker;
+
   private final HttpClient httpClient = HttpClient.newHttpClient();
   private ExecutorService executor;
 
@@ -198,6 +201,21 @@ class MemberLockerIntegrationTest {
     assertThat(jdbcTemplate.queryForObject("select nickname from member where id = ?", String.class, member.getId()))
         .isEqualTo(member.getNickname());
     assertThat(outboxCount(member.getId())).isEqualTo(outboxBefore);
+  }
+
+  @Test
+  @DisplayName("잠금 조회가 정상 반환되면 lock_timeout은 이전 값으로 돌아가, 이후 저장 쿼리에는 대기 제한이 걸리지 않음")
+  void restoresLockTimeoutAfterLock() {
+    Member member = localMember();
+
+    String after = transactionTemplate.execute(status -> {
+      // 0(제한 없음)이 아닌 값을 먼저 걸어, "0으로 초기화"가 아니라 "이전 값 복원"인지 확인
+      jdbcTemplate.queryForObject("select set_config('lock_timeout', '7s', true)", String.class);
+      memberLocker.lockById(member.getId()).orElseThrow();
+      return jdbcTemplate.queryForObject("select current_setting('lock_timeout')", String.class);
+    });
+
+    assertThat(after).isEqualTo("7s");
   }
 
   // 다른 트랜잭션이 회원 행을 실제로 잠근 뒤 요청을 보낸다. 요청이 끝나면 잠금을 풀고 그 트랜잭션이 끝날 때까지 기다린다
