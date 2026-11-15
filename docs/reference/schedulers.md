@@ -19,7 +19,7 @@
 | 요금표 버전 대사 | market | 매일 09:30 (EC2가 켜진 시간) | – | ShedLock | 택배사(404-express) 요금표 버전과 비교, 다르면 새로 받음 |
 | 검수 엔진 오류 재처리 | product | 5분 | 확인 후 포기 (3회 → 관리자 확인) | SKIP LOCKED | `IMAGE_REVIEW`가 `ENGINE_ERROR`이고 검수 버전이 같은 건을 다시 검수, 3회 모두 실패하면 관리자 확인(`ENGINE_ERROR`) → [사진 검수](../flows/image-review.md#엔진-오류-재처리) |
 | 관리자 확인 지연 | product | ⬜ | – | SKIP LOCKED | 관리자 확인으로 간 지 12시간 지나면 관리자에게 묶어서 알림, 그 뒤 12시간(모두 24시간) 지나면 `REVIEW_EXPIRED` 자동 반려. 엔진 오류 재처리 시간은 세지 않음 |
-| 토스 결과 불명 조회 | payment | ⬜ | 확인 후 포기 | SKIP LOCKED | `PENDING` 충전 조회 3회 → `REVIEW_REQUIRED` |
+| 토스 결과 불명 조회 | payment | 5분 | 확인 후 포기 (조회 실패 3회 또는 충전 생성 60분 뒤 미확정 → `REVIEW_REQUIRED`) | SKIP LOCKED | 다음 조회 시각(`next_attempt_at`)이 지난 `PENDING` 충전을 토스 결제 조회(orderId)로 확정. 실행마다 최대 100건을 한 건씩 확보(다음 조회 시각을 2분 뒤로 미루는 임대)해 처리하고, 토스 조회는 임대 후 트랜잭션 밖에서 실행. 첫 조회는 `PENDING` 진입 5분 뒤. `DONE`(orderId, 금액 일치, `approvedAt` 있음)이면 적립, `ABORTED`, `EXPIRED`면 `FAILED`. `IN_PROGRESS`, `READY`, 404는 15분 뒤 다시(횟수 미포함), 충전 생성 60분 뒤에도 그대로면 `REVIEW_REQUIRED`(60분은 토스 만료 시각이 아닌 수동 확인 기준이라 `FAILED`로 보내지 않음). 401, 403은 키 설정 문제라 오류 로그 후 15분 뒤 다시(횟수 미포함, `PENDING` 유지). 조회 실패(타임아웃, 5xx, 429, 그 밖의 4xx)만 횟수로 세어 15분 → 60분 뒤 다시, 3회째 `REVIEW_REQUIRED`. `DONE` 정보 불일치, `CANCELED` 같은 예상 밖 상태는 적립하지 않고 `REVIEW_REQUIRED`. 승인은 다시 호출하지 않음 |
 | 토스 대사 | payment | 하루 1번 (⬜ 실행 시각) | – | ShedLock | 토스 거래와 내부 충전 기록 대조, 잔액을 늘리는 보정(토스 승인 · 내부 미승인)은 자동. ⬜ 잔액을 줄여야 하는 불일치 처리 |
 | 정산 지급 큐 | settlement | 10초 | 끝까지 | SKIP LOCKED | `PENDING` 정산을 건별로 payment에 지급 (`settlementId` 멱등) |
 | 토큰 폐기 재처리 | member | 10초 | 보관 기한까지 재시도 | SKIP LOCKED | Redis 기록을 확인하지 못한 폐기 작업(`PENDING`)을 다시 기록. 기본 10초 간격으로 실행하며, 한 번 실행할 때 최대 50건을 한 건씩 확보(다음 시도 시각을 30초 뒤로 미루는 임대)해 처리. Redis 호출은 임대 후 트랜잭션 밖에서 실행. 실패하면 다음 시도까지 10초 → 30초 → 1분, 보관 기한이 지나면 `EXPIRED` → [ADR 0022](../decisions/0022-token-revocation-and-retry.md) |
@@ -35,6 +35,6 @@
 | 여러 파드 | market은 파드가 2개라 스케줄러도 두 번 돈다 (Gateway는 스케줄러 없음). DB 행을 처리하는 작업은 `FOR UPDATE SKIP LOCKED`로 나눠 가져가고, 행이 아닌 한 번만 할 일은 ShedLock으로 한 인스턴스만 실행 |
 | 끝까지 | 멱등이라 계속 보내도 안전 → 포기하지 않음 (택배 예약 · 취소, 정산 지급). 알림은 건마다가 아니라 "오래 남은 건이 있다"는 상태 기준으로 한 번 (예: 10분 넘게 `READY`). 상품 판매 완료 · 예약 해제는 이벤트라 스케줄러 없이 Outbox 재전송 · 소비 재시도 · DLT를 따름 |
 | 보관 기한까지 재시도 | 토큰 폐기 기록을 보관 기한까지 재시도하고, 기한이 지나면 `EXPIRED`로 처리함 |
-| 확인 후 포기 | 정한 횟수 뒤 `REVIEW_REQUIRED` (Saga 복구 5회, 토스 조회 3회) · Outbox는 5회 뒤 `FAILED` + 팀 알림 · 검수 엔진 오류는 3회 뒤 관리자 확인 |
+| 확인 후 포기 | 정한 횟수 뒤 `REVIEW_REQUIRED` (Saga 복구 5회, 토스 조회 실패 3회) · Outbox는 5회 뒤 `FAILED` + 팀 알림 · 검수 엔진 오류는 3회 뒤 관리자 확인 |
 | – | 매 주기 그때 대상인 행만 처리하고, 재시도 개념이 없음 |
 | ai-service | 파드가 늘었다 줄어 스케줄러를 두지 않음 |
