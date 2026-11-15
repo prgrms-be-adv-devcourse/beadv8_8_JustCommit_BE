@@ -20,10 +20,11 @@ public class RefreshTokenIssuer {
 
   private final RefreshTokenRedisStore refreshTokenStore;
 
-  // 새 Refresh 토큰을 회원 id와 함께 저장하고 원문 반환 (원문은 쿠키로만 전달, Redis에는 해시만)
-  public String issue(Long memberId) {
+  // 새 Refresh 토큰을 회원 id · 인증 버전과 함께 저장하고 원문 반환 (원문은 쿠키로만 전달, Redis에는 해시만)
+  // tokenVersion: 발급할 때 읽은 회원의 인증 버전 (#409, 재발급 때 DB 버전과 비교)
+  public String issue(Long memberId, int tokenVersion) {
     String refreshToken = newRefreshToken();
-    refreshTokenStore.save(refreshToken, memberId, REFRESH_TOKEN_TTL);
+    refreshTokenStore.save(refreshToken, memberId, tokenVersion, REFRESH_TOKEN_TTL);
     return refreshToken;
   }
 
