@@ -1,12 +1,13 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-14 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-15 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-15 · decisions/0022 · decisions/0010 · conventions/auth.md · reference/redis-keys.md · reference/schedulers.md · services/member.md · 탈퇴 · 비밀번호 변경 토큰 폐기 반영: 회원 인증 버전(`member.token_version`, Flyway V3)과 Refresh 값 `{memberId}:{인증 버전}`, 로그인 · 소셜 로그인 · 재발급 · 폐기가 같은 회원 행 잠금(대기 3초, 409 `MEMBER_BUSY`), `iat` · 끊은 시각을 DB 시각으로, 폐기 작업 `MEMBER_TOKEN_REVOCATION`(Flyway V4)을 변경과 같은 트랜잭션에 저장한 뒤 Redis 기록(더 이른 끊은 시각으로 덮어쓰지 않음 · 같은 끊은 시각이면 긴 보관 기한 유지, 보관 기한 = 끊은 시각 + 30분 + 여유 60초), 결과 `COMPLETED`(기록 확인 또는 보관 기한 경과) · `PENDING`(Gateway는 기록 뒤부터 거절, `PENDING` 동안 기존 Access 통과 가능), 재처리 스케줄러(기본 10초 간격 · 실행마다 최대 50건 · 30초 임대 · 10초 → 30초 → 1분 · 보관 기한까지), 옛 인증 버전 Refresh 삭제 1회 시도(실패해도 버전 비교로 재발급 거절), ADR 0022 추가(0010 보완) (#455)
 - 2026-11-14 · services/member.md · flows/signup-and-replica.md · reference/env-vars.md · open-questions.md · member 탈퇴 가능 여부 확인 반영: market · payment · settlement 탈퇴 확인 내부 API(`GET /internal/v1/{orders, payments, settlements}/members/{memberId}/withdrawalCheck`, 공통 응답 `hasWithdrawalBlocker` · `blockingReasons` · `details`)를 병렬 조회해 결과 `ALLOWED` · `BLOCKED` · `UNAVAILABLE`로 모음(호출 실패 · 응답 형식 오류는 `UNAVAILABLE`, 차단과 실패가 함께면 `UNAVAILABLE`, 탈퇴 처리 #407에서 `ALLOWED`일 때만 진행), member가 쓰는 `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` 추가, 내부 호출 그룹이 있는 서비스는 `INTERNAL_API_KEY` 없으면 시작하지 않음, 미정 항목에서 탈퇴 확인 경로 제거 (#454)
 - 2026-11-14 · reference/internal-apis.md · services/member.md · open-questions.md · member 계좌 조회 내부 API 반영: `GET /internal/v1/members/{memberId}/account`(`X-Internal-Key` 필수) 응답 `bankCode` · `accountNo`(member가 복호화한 원문) · `accountHolder`, 없는 회원 · 탈퇴 회원 404 `MEMBER_NOT_FOUND`, 상태 「✅ member 구현 · ⬜ payment 연동(#388)」, 미정 항목에서 계좌 조회 경로 제거(운영 전송 보호 방식은 payment · 인프라 담당과 정하는 미정으로 유지) (#453)
 - 2026-11-14 · flows/image-review.md · 엔진 오류 재처리 「상태」에 판매 중 상품의 글 검사(`TEXT_ONLY`)는 재처리 동안 `ACTIVE` 그대로(판매 유지, 🟨 팀 확인 중) 추가 (#451)
