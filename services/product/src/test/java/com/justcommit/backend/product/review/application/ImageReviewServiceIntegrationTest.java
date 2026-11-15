@@ -148,6 +148,10 @@ class ImageReviewServiceIntegrationTest {
 
     // 등록처럼: 상품 저장 + 검수 요청을 한 트랜잭션에서
     private Product register(String title, String description) {
+        return register(species, title, description);
+    }
+
+    private Product register(Species species, String title, String description) {
         return tx.execute(status -> {
             Product product = productRepository.save(Product.create(species, SELLER_ID, title, description,
                     new BigDecimal("10000"), null, null, null, List.of("http://localhost:9000/bucket/products/7/a.jpg")));
@@ -216,6 +220,36 @@ class ImageReviewServiceIntegrationTest {
         ImageReview review = reviewOf(product, 0);
         assertThat(review.getRejectReason()).isEqualTo(RejectReason.BANNED_SPECIES);
         assertThat(review.getDetail()).isEqualTo("나도풍란");
+    }
+
+    @Test
+    @DisplayName("관리자 확인: 「기타」 품종(V11)이면 사진 속 식물이 무엇이든 OTHER_SPECIES, 상품은 검수 중 그대로")
+    void manualOtherSpecies() {
+        identifyAs(MONSTERA, 0.95);
+        Species other = speciesRepository.findById(Species.OTHER_ID).orElseThrow();
+        Product product = register(other, "희귀 식물 팝니다", null);
+
+        imageReviewService.review(product.getId(), 0);
+
+        assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
+        ImageReview review = reviewOf(product, 0);
+        assertThat(review.getDecision()).isEqualTo(ReviewDecision.MANUAL);
+        assertThat(review.getManualReason()).isEqualTo(ManualReason.OTHER_SPECIES);
+        assertThat(review.getEngineResult()).contains(MONSTERA);   // 관리자가 엔진이 본 품종을 참고
+        verify(outboxPublisher, never()).publish(any(ProductStatusChanged.class));
+    }
+
+    @Test
+    @DisplayName("「기타」 품종이라도 금지 품종은 그대로 반려")
+    void otherSpeciesStillRejectsBanned() {
+        identifyAs("Phalaenopsis japonica", 0.9);
+        Species other = speciesRepository.findById(Species.OTHER_ID).orElseThrow();
+        Product product = register(other, "난초 팝니다", null);
+
+        imageReviewService.review(product.getId(), 0);
+
+        assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.REJECTED);
+        assertThat(reviewOf(product, 0).getRejectReason()).isEqualTo(RejectReason.BANNED_SPECIES);
     }
 
     @Test

@@ -1,12 +1,13 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-14 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-16 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-16 · services/product.md · flows/image-review.md · 「기타」 품종 추가: `species` id 218 고정(Flyway V11, 학명 · 속성 · 카테고리 · 사진 없음, 카테고리로 찾을 때 안 나옴), 「기타」로 등록한 상품의 사진 검수는 엔진 결과와 관계없이 관리자 확인(`OTHER_SPECIES`, 유해 · 금지 품종 반려는 그대로), 추천 · 품종 통계에서는 id 218을 뺌, 상품 이벤트 payload v2(#456)의 Flyway는 V12로 (#340)
 - 2026-11-14 · services/member.md · flows/signup-and-replica.md · reference/env-vars.md · open-questions.md · member 탈퇴 가능 여부 확인 반영: market · payment · settlement 탈퇴 확인 내부 API(`GET /internal/v1/{orders, payments, settlements}/members/{memberId}/withdrawalCheck`, 공통 응답 `hasWithdrawalBlocker` · `blockingReasons` · `details`)를 병렬 조회해 결과 `ALLOWED` · `BLOCKED` · `UNAVAILABLE`로 모음(호출 실패 · 응답 형식 오류는 `UNAVAILABLE`, 차단과 실패가 함께면 `UNAVAILABLE`, 탈퇴 처리 #407에서 `ALLOWED`일 때만 진행), member가 쓰는 `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` 추가, 내부 호출 그룹이 있는 서비스는 `INTERNAL_API_KEY` 없으면 시작하지 않음, 미정 항목에서 탈퇴 확인 경로 제거 (#454)
 - 2026-11-14 · reference/internal-apis.md · services/member.md · open-questions.md · member 계좌 조회 내부 API 반영: `GET /internal/v1/members/{memberId}/account`(`X-Internal-Key` 필수) 응답 `bankCode` · `accountNo`(member가 복호화한 원문) · `accountHolder`, 없는 회원 · 탈퇴 회원 404 `MEMBER_NOT_FOUND`, 상태 「✅ member 구현 · ⬜ payment 연동(#388)」, 미정 항목에서 계좌 조회 경로 제거(운영 전송 보호 방식은 payment · 인프라 담당과 정하는 미정으로 유지) (#453)
 - 2026-11-14 · flows/image-review.md · 엔진 오류 재처리 「상태」에 판매 중 상품의 글 검사(`TEXT_ONLY`)는 재처리 동안 `ACTIVE` 그대로(판매 유지, 🟨 팀 확인 중) 추가 (#451)
