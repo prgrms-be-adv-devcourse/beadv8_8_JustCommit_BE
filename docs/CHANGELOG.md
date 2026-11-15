@@ -1,12 +1,17 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-14 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-15 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-15 · reference/internal-apis.md · payment · settlement 탈퇴 확인 내부 API 경로 · 응답 반영: `GET /internal/v1/{payments, settlements}/members/{memberId}/withdrawalCheck`, 사유 코드 · details는 (payment `WALLET_BALANCE_REMAINING` · `TRANSACTION_IN_PROGRESS` · `SELLER_DEBT_REMAINING`, settlement `INCOMPLETE_SETTLEMENT`), 구현은 #329 · #442 (#463)
+- 2026-11-15 · reference/external-apis.md · services/member.md · conventions/auth.md · 판매자 공개 정보 · 소개글 수정 반영: `GET sellers/{sellerId}`(공개, 숫자 id만, 닉네임 · 소개글 · 등록일, 판매자가 아니거나 없는 회원 · 탈퇴한 판매자는 404 `SELLER_NOT_FOUND`), `PATCH sellers/me/intro`(판매자 본인만, 판매자 행이 없으면 403 `NOT_SELLER` · 탈퇴 회원 404 `MEMBER_NOT_FOUND`, `intro` 필수 · 최대 500자 · 빈 문자열은 삭제), 공개 경로를 Gateway · member 양쪽에 등록, 「추가 예정」에서 판매자 상점 정보 · 소개글 수정 제거 (#460)
+- 2026-11-15 · reference/internal-apis.md · services/market.md · market 탈퇴 확인 내부 API 확정: `GET /internal/v1/orders/members/{memberId}/withdrawalCheck`, 응답을 `hasActiveOrders` → 공통 규격(`hasWithdrawalBlocker` · `blockingReasons` `ACTIVE_BUYER_ORDER` · `ACTIVE_SELLER_ORDER` · `details` 건수)으로, 진행 중 기준 명시, 판매자 수락 대기는 #284에서 추가 (#452)
+- 2026-11-15 · reference/external-apis.md · services/member.md · 닉네임 변경 API 반영: `PATCH users/me/nickname`(로그인, 가입과 같은 입력 규칙, 지금 닉네임과 같으면 그대로 200 · 이벤트 없음, 다른 회원과 중복이면 409 `DUPLICATE_NICKNAME` · 동시에 같은 닉네임을 골라 생긴 DB `UNIQUE` 위반도 409), 회원 행 잠금으로 판매자 등록과 순서 정리, 변경과 같은 트랜잭션에 `MemberUpdated` 발행(판매자 여부 포함), 「추가 예정」에서 닉네임 변경 제거 (#459)
+- 2026-11-15 · decisions/0022 · decisions/0010 · conventions/auth.md · reference/redis-keys.md · reference/schedulers.md · services/member.md · 탈퇴 · 비밀번호 변경 토큰 폐기 반영: 회원 인증 버전(`member.token_version`, Flyway V3)과 Refresh 값 `{memberId}:{인증 버전}`, 로그인 · 소셜 로그인 · 재발급 · 폐기가 같은 회원 행 잠금(대기 3초, 409 `MEMBER_BUSY`), `iat` · 끊은 시각을 DB 시각으로, 폐기 작업 `MEMBER_TOKEN_REVOCATION`(Flyway V4)을 변경과 같은 트랜잭션에 저장한 뒤 Redis 기록(더 이른 끊은 시각으로 덮어쓰지 않음 · 같은 끊은 시각이면 긴 보관 기한 유지, 보관 기한 = 끊은 시각 + 30분 + 여유 60초), 결과 `COMPLETED`(기록 확인 또는 보관 기한 경과) · `PENDING`(Gateway는 기록 뒤부터 거절, `PENDING` 동안 기존 Access 통과 가능), 재처리 스케줄러(기본 10초 간격 · 실행마다 최대 50건 · 30초 임대 · 10초 → 30초 → 1분 · 보관 기한까지), 옛 인증 버전 Refresh 삭제 1회 시도(실패해도 버전 비교로 재발급 거절), ADR 0022 추가(0010 보완) (#455)
 - 2026-11-14 · flows/image-review.md · 실판매 사진(심폴 631건) 실측 반영: 2 · 3순위 금지 후보는 확신도 0.1 이상만 의심(0.1 미만 무시), 품종 대조에서 Sansevieria를 Dracaena와 같은 속으로 봄, 1순위 금지 품종이 판매자 품종과 같은 속이면 반려 대신 금지 의심 관리자 확인. 0.3 · 0.7 유지 (#458)
 - 2026-11-14 · services/member.md · flows/signup-and-replica.md · reference/env-vars.md · open-questions.md · member 탈퇴 가능 여부 확인 반영: market · payment · settlement 탈퇴 확인 내부 API(`GET /internal/v1/{orders, payments, settlements}/members/{memberId}/withdrawalCheck`, 공통 응답 `hasWithdrawalBlocker` · `blockingReasons` · `details`)를 병렬 조회해 결과 `ALLOWED` · `BLOCKED` · `UNAVAILABLE`로 모음(호출 실패 · 응답 형식 오류는 `UNAVAILABLE`, 차단과 실패가 함께면 `UNAVAILABLE`, 탈퇴 처리 #407에서 `ALLOWED`일 때만 진행), member가 쓰는 `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` 추가, 내부 호출 그룹이 있는 서비스는 `INTERNAL_API_KEY` 없으면 시작하지 않음, 미정 항목에서 탈퇴 확인 경로 제거 (#454)
 - 2026-11-14 · reference/internal-apis.md · services/member.md · open-questions.md · member 계좌 조회 내부 API 반영: `GET /internal/v1/members/{memberId}/account`(`X-Internal-Key` 필수) 응답 `bankCode` · `accountNo`(member가 복호화한 원문) · `accountHolder`, 없는 회원 · 탈퇴 회원 404 `MEMBER_NOT_FOUND`, 상태 「✅ member 구현 · ⬜ payment 연동(#388)」, 미정 항목에서 계좌 조회 경로 제거(운영 전송 보호 방식은 payment · 인프라 담당과 정하는 미정으로 유지) (#453)

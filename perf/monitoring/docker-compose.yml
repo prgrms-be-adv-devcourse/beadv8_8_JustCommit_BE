@@ -1,0 +1,42 @@
+# 부하 측정용 관측 도구 — 내 PC에서 띄운다 (#351)
+# 서버 지표는 SSH 터널로 가져온다 (README 참고). 서버 보안 그룹은 새로 열지 않는다.
+# 실행: docker compose -f perf/monitoring/docker-compose.yml up -d
+name: replant-perf
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=60d
+      # k6 결과를 Prometheus로 직접 받는다 (k6 --out experimental-prometheus-rw)
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:19090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # 컨테이너에서 내 PC의 터널 포트로 접근
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.0.0
+    environment:
+      # 내 PC(127.0.0.1)에서만 열리므로 로그인 없이 쓴다
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:13000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  grafana-data:
