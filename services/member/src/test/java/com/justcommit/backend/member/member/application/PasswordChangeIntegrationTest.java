@@ -121,6 +121,25 @@ class PasswordChangeIntegrationTest {
   }
 
   @Test
+  @DisplayName("HTTP: Redis 폐기 기록에 실패해도 200 · revocationCompleted false · 지연 안내 메시지 · Refresh 쿠키 만료")
+  void pendingOverHttp() throws Exception {
+    Member member = saveMember();
+    LoginResult login = login(member, OLD_PASSWORD);
+    doThrow(new RedisConnectionFailureException("redis down"))
+        .when(revokedMemberRedisStore).recordCutoff(anyLong(), any(), any());
+
+    HttpResponse<String> response = patchPassword(login.accessToken(), OLD_PASSWORD, NEW_PASSWORD);
+
+    assertThat(response.statusCode()).isEqualTo(200);
+    assertThat(response.body())
+        .contains("\"revocationCompleted\":false")
+        .contains("비밀번호를 변경했습니다. 다른 기기의 로그아웃이 늦어질 수 있습니다.");
+    assertThat(response.headers().allValues("set-cookie"))
+        .anySatisfy(cookie -> assertThat(cookie).startsWith("refreshToken=").contains("Max-Age=0"));
+    assertThat(passwordEncoder.matches(NEW_PASSWORD, passwordOf(member.getId()))).isTrue();
+  }
+
+  @Test
   @DisplayName("바꾼 뒤: 이전 Refresh 재발급 실패, 이전 Access는 iat <= 폐기 시각, 옛 비밀번호 로그인 실패, 새 비밀번호로만 로그인")
   void afterChangeOldTokensAndPasswordRejected() {
     Member member = saveMember();
