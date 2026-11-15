@@ -3,9 +3,12 @@ package com.justcommit.backend.member.auth.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
+import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,10 +19,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -33,13 +39,21 @@ class SocialLoginServiceTest {
   private MemberRepository memberRepository;
 
   @Mock
+  private MemberLocker memberLocker;
+
+  @Mock
   private JwtProvider jwtProvider;
 
   @Mock
   private RefreshTokenIssuer refreshTokenIssuer;
 
+  @Mock
+  private DatabaseClock databaseClock;
+
   @InjectMocks
   private SocialLoginService socialLoginService;
+
+  private static final Instant NOW = Instant.parse("2026-11-14T01:00:00Z");
 
   @BeforeEach
   void setUp() {
@@ -58,10 +72,11 @@ class SocialLoginServiceTest {
   @Test
   @DisplayName("기존 소셜 회원이면 Access·Refresh 발급")
   void existingMember() {
-    given(memberRepository.findByProviderAndProviderId(Provider.KAKAO, "123"))
+    given(memberLocker.lockByProvider(Provider.KAKAO, "123"))
             .willReturn(Optional.of(member(4L)));
-    given(jwtProvider.createAccessToken(4L, "MEMBER")).willReturn("access-token");
-    given(refreshTokenIssuer.issue(4L)).willReturn("refresh-token");
+    given(databaseClock.now()).willReturn(NOW);
+    given(jwtProvider.createAccessToken(4L, "MEMBER", NOW)).willReturn("access-token");
+    given(refreshTokenIssuer.issue(4L, 0)).willReturn("refresh-token");
 
     SocialLoginResult result = socialLoginService.login(
             new SocialLoginCommand(Provider.KAKAO, "123", "user@kakao.com"));
@@ -78,9 +93,28 @@ class SocialLoginServiceTest {
   }
 
   @Test
+  @DisplayName("탈퇴 회원이면 SOCIAL_LOGIN_FAILED, Access · Refresh · 가입 토큰 발급 없음")
+  void deletedMember() {
+    Member member = member(4L);
+    ReflectionTestUtils.setField(member, "status", MemberStatus.DELETED);
+    given(memberLocker.lockByProvider(Provider.KAKAO, "123"))
+            .willReturn(Optional.of(member));
+
+    assertThatThrownBy(() -> socialLoginService.login(
+            new SocialLoginCommand(Provider.KAKAO, "123", "user@kakao.com")))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MemberErrorCode.SOCIAL_LOGIN_FAILED);
+    verify(jwtProvider, never()).createAccessToken(anyLong(), anyString(), any());
+    verify(databaseClock, never()).now();
+    verify(jwtProvider, never()).createSignupToken(anyString(), anyString(), anyString());
+    verify(refreshTokenIssuer, never()).issue(anyLong(), anyInt());
+  }
+
+  @Test
   @DisplayName("신규 회원이면 정규화한 이메일로 가입 토큰 발급")
   void newMember() {
-    given(memberRepository.findByProviderAndProviderId(Provider.KAKAO, "123"))
+    given(memberLocker.lockByProvider(Provider.KAKAO, "123"))
             .willReturn(Optional.empty());
     given(memberRepository.existsByEmail("user@kakao.com")).willReturn(false);
     given(jwtProvider.createSignupToken("KAKAO", "123", "user@kakao.com")).willReturn("signup-token");
@@ -92,13 +126,13 @@ class SocialLoginServiceTest {
       assertThat(newMember.signupToken()).isEqualTo("signup-token");
       assertThat(newMember.expiresIn()).isEqualTo(600);
     });
-    verify(refreshTokenIssuer, never()).issue(anyLong());
+    verify(refreshTokenIssuer, never()).issue(anyLong(), anyInt());
   }
 
   @Test
   @DisplayName("같은 이메일로 가입한 회원이 있으면 SOCIAL_EMAIL_CONFLICT")
   void emailConflict() {
-    given(memberRepository.findByProviderAndProviderId(Provider.KAKAO, "123"))
+    given(memberLocker.lockByProvider(Provider.KAKAO, "123"))
             .willReturn(Optional.empty());
     given(memberRepository.existsByEmail("user@kakao.com")).willReturn(true);
 

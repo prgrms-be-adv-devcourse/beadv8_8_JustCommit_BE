@@ -51,7 +51,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 //   seed.jpg,몬스테라,REJECTED,
 //   blur.jpg,기타,MANUAL,
 // species = 판매자가 고른 품종 이름(V4 품종 이름 또는 학명, "기타"면 기타), expected = 기대 결과(APPROVED · REJECTED · MANUAL, | 로 여러 개)
-// samples.csv가 없으면 3차 실험 폴더(드라이브 plant-test-v3: photos/ + labels_v3.csv)를 그대로 읽음
+// samples.csv가 없으면 실험 폴더를 그대로 읽음: 3차(드라이브 plant-test-v3: photos/ + labels_v3.csv)
+// 또는 실판매(심폴 plant-test-simpol: photos/ + labels_simpol.csv, 상품 제목도 글 검사에 넣음)
 // 결과는 콘솔 표와 build/review-calibration.csv (확신도 · 후보 · 판정 · 기대와 일치 여부)
 @DataJpaTest
 @ActiveProfiles("test")
@@ -128,7 +129,7 @@ class LiveReviewCalibrationTest {
                 continue;
             }
 
-            // 한글 품종 이름이면 학명으로 바꾸고, 아니면 학명으로 그대로 씀 (3차 실험 라벨은 학명)
+            // 한글 품종 이름이면 학명으로 바꾸고, 아니면 학명으로 그대로 씀 (실험 라벨은 학명)
             SellerSpecies seller = "기타".equals(speciesName) || "OTHER".equalsIgnoreCase(speciesName)
                     ? SellerSpecies.otherSpecies()
                     : SellerSpecies.of(scientificByName.getOrDefault(speciesName, speciesName));
@@ -163,7 +164,7 @@ class LiveReviewCalibrationTest {
     }
 
     // 표본 한 줄 = {사진들, 판매자 품종, 기대 결과(| 로 여러 개), 제목}
-    // samples.csv가 있으면 그것을, 없으면 3차 실험 라벨 labels_v3.csv를 읽고 묶음(group)으로 기대 결과를 정함
+    // samples.csv가 있으면 그것을, 없으면 실험 라벨(labels_v3.csv · labels_simpol.csv)을 읽고 묶음(group)으로 기대 결과를 정함
     private static List<String[]> readSamples(Path dir) throws IOException {
         List<String[]> rows = new ArrayList<>();
         Path samples = dir.resolve("samples.csv");
@@ -179,15 +180,22 @@ class LiveReviewCalibrationTest {
             }
             return rows;
         }
-        // file,group,true_name,true_rank,is_plant,is_banned,true_form,seller_species
-        List<String> lines = Files.readAllLines(dir.resolve("labels_v3.csv"), StandardCharsets.UTF_8);
+        // 실험 라벨: 3차(labels_v3.csv, Commons) 또는 실판매(labels_simpol.csv, 심폴 · product_title 열 있음)
+        // 머리줄 이름으로 열을 찾음. file,group,...,seller_species[,subgroup,needs_check,product_title]
+        Path labels = Files.exists(dir.resolve("labels_v3.csv")) ? dir.resolve("labels_v3.csv") : dir.resolve("labels_simpol.csv");
+        List<String> lines = Files.readAllLines(labels, StandardCharsets.UTF_8);
+        List<String> header = parseCsvLine(lines.get(0).replace("\uFEFF", ""));
+        int fileCol = header.indexOf("file");
+        int groupCol = header.indexOf("group");
+        int sellerCol = header.indexOf("seller_species");
+        int titleCol = header.indexOf("product_title");
         for (String line : lines.subList(1, lines.size())) {
             if (line.isBlank()) {
                 continue;
             }
-            String[] c = line.replace("﻿", "").split(",", -1);
-            String group = c[1].trim();
-            String seller = c[7].trim();
+            List<String> c = parseCsvLine(line);
+            String group = c.get(groupCol).trim();
+            String seller = c.get(sellerCol).trim();
             String expected = switch (group) {
                 case "market" -> "APPROVED";
                 case "bad_photo" -> "APPROVED|MANUAL";               // 흐린 · 어두운 사진은 관리자 확인도 허용
@@ -197,9 +205,39 @@ class LiveReviewCalibrationTest {
                 case "lookalike" -> "OTHER".equals(seller) ? "MANUAL" : "APPROVED|MANUAL";
                 default -> "";
             };
-            rows.add(new String[]{c[0].trim(), seller, expected, ""});
+            String title = titleCol >= 0 && titleCol < c.size() ? c.get(titleCol).trim() : "";
+            rows.add(new String[]{c.get(fileCol).trim(), seller, expected, title});
         }
         return rows;
+    }
+
+    // 따옴표로 감싼 칸(쉼표 · "" 포함)을 처리하는 CSV 한 줄 파서. 실판매 상품 제목에 쉼표가 들어 있음
+    private static List<String> parseCsvLine(String line) {
+        List<String> cells = new ArrayList<>();
+        StringBuilder cell = new StringBuilder();
+        boolean quoted = false;
+        for (int i = 0; i < line.length(); i++) {
+            char ch = line.charAt(i);
+            if (quoted) {
+                if (ch == '"' && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                    cell.append('"');
+                    i++;
+                } else if (ch == '"') {
+                    quoted = false;
+                } else {
+                    cell.append(ch);
+                }
+            } else if (ch == '"') {
+                quoted = true;
+            } else if (ch == ',') {
+                cells.add(cell.toString());
+                cell.setLength(0);
+            } else {
+                cell.append(ch);
+            }
+        }
+        cells.add(cell.toString());
+        return cells;
     }
 
     private static String describe(Candidate c) {

@@ -22,13 +22,15 @@ public interface ImageReviewRepository extends JpaRepository<ImageReview, Long> 
     long countBySellerIdAndDecisionAndRejectReasonNotAndReviewedAtGreaterThanEqual(
             Long sellerId, ReviewDecision decision, RejectReason excluded, LocalDateTime from);
 
-    // 재처리할 엔진 오류 한 건을 잠금 (파드 여러 개가 동시에 돌아도 같은 건을 집지 않게 SKIP LOCKED)
+    // 재처리할 한 건을 잠금 (파드 여러 개가 동시에 돌아도 같은 건을 집지 않게 SKIP LOCKED)
+    // 다음 시각이 지난 엔진 오류, 또는 만든 지 오래됐는데 아직 REQUESTED인 검수 (검수 요청이 DLT로 갔거나 사라짐)
     @Query(value = """
             SELECT id FROM image_review
-            WHERE status = 'ENGINE_ERROR' AND next_retry_at <= :now
-            ORDER BY next_retry_at, id
+            WHERE (status = 'ENGINE_ERROR' AND next_retry_at <= :now)
+               OR (status = 'REQUESTED' AND created_at <= :staleBefore)
+            ORDER BY COALESCE(next_retry_at, created_at), id
             LIMIT 1
             FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
-    Optional<Long> lockNextEngineError(@Param("now") LocalDateTime now);
+    Optional<Long> lockNextRetryTarget(@Param("now") LocalDateTime now, @Param("staleBefore") LocalDateTime staleBefore);
 }
