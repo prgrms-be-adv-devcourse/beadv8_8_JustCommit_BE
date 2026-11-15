@@ -111,4 +111,9 @@ public class Member extends BaseTimeEntity  {
                         this.role = Role.SELLER;
                 }
         }
+
+        // 닉네임 변경 (형식은 요청 검증, 중복은 서비스 확인 + DB UNIQUE 제약이 맡음)
+        public void changeNickname(String nickname) {
+          this.nickname = nickname;
+        }
 }
