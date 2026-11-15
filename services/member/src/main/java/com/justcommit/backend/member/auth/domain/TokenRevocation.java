@@ -24,6 +24,9 @@ public class TokenRevocation extends BaseTimeEntity {
 
   private static final int ERROR_MAX_LENGTH = 500;
 
+  // 최초 기록의 임대 시간: 커밋 직후 첫 기록 도중 앱이 죽으면 이 시간이 지난 뒤 재처리 스케줄러가 집는다
+  public static final Duration FIRST_RECORD_GRACE = Duration.ofSeconds(30);
+
   @Column(name = "member_id", nullable = false)
   private Long memberId;
 
@@ -54,7 +57,7 @@ public class TokenRevocation extends BaseTimeEntity {
   private String lastError;
 
   // cutoffAt은 초 단위로 버린다 (Access의 iat와 같은 단위로 비교하기 위해)
-  // nextAttemptAt을 cutoffAt으로 두어, 커밋 직후 기록 전에 서버가 죽어도 재처리 스케줄러가 집을 수 있게 한다
+  // nextAttemptAt은 최초 기록의 임대 기한: 첫 기록이 끝나기 전에는 재처리가 집지 않고, 앱이 죽으면 이 시각 뒤에 집힌다
   public static TokenRevocation create(Long memberId, RevocationReason reason, int tokenVersion,
                                         Instant now, Duration retention) {
     TokenRevocation revocation = new TokenRevocation();
@@ -66,7 +69,13 @@ public class TokenRevocation extends BaseTimeEntity {
     revocation.retainUntil = cutoffAt.plus(retention);
     revocation.status = RevocationStatus.PENDING;
     revocation.attemptCount = 0;
-    revocation.nextAttemptAt = cutoffAt;
+    revocation.nextAttemptAt = cutoffAt.plus(FIRST_RECORD_GRACE);
     return revocation;
+  }
+
+  // 재처리 임대: 이 시각까지 다른 실행이 집지 않는다. 처리 중 앱이 죽어도 이 시각이 지나면 다시 집힌다
+  // 이 값은 실패 UPDATE의 조건으로도 쓴다 (늦게 끝난 이전 실행이 새 임대를 덮어쓰지 못하게)
+  public void lease(Instant until) {
+    this.nextAttemptAt = until;
   }
 }

@@ -20,16 +20,14 @@ import java.util.function.ToIntFunction;
  * - Redis 기록은 RevokedMemberRedisStore의 Lua (폐기 시각이 뒤로 밀리지 않음)라 여러 번 실행해도 안전하다
  * - DB 시각 조회 · Redis 기록 중 어느 쪽이 실패해도 false(→ PENDING). 예외를 밖으로 내보내지 않는다:
  *   호출 시점에는 변경이 이미 커밋돼 있으므로, 기록을 확인하지 못한 것과 변경 실패를 구분해야 한다
- * - 상태 갱신은 별도 트랜잭션의 조건부 UPDATE (PENDING일 때만). 실패해도 Redis 기록 결과는 그대로 돌려준다
- *   (PENDING으로 남으면 재처리가 같은 Lua로 다시 기록할 뿐이다)
+ * - 상태 갱신은 별도 트랜잭션의 조건부 UPDATE (PENDING일 때만, 실패 기록은 임대가 그대로일 때만).
+ *   실패해도 Redis 기록 결과는 그대로 돌려준다 (PENDING으로 남으면 재처리가 같은 Lua로 다시 기록할 뿐이다)
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class TokenRevocationRecorder {
 
-  // 기록 실패 후 다음 시도까지 (재처리 간격은 스케줄러 작업에서 함께 정리)
-  static final Duration RETRY_DELAY = Duration.ofSeconds(10);
   private static final int ERROR_MAX_LENGTH = 500;
 
   private final RevokedMemberRedisStore revokedMemberRedisStore;
@@ -60,10 +58,11 @@ public class TokenRevocationRecorder {
     return true;
   }
 
+  // 실패 기록은 이 실행이 들고 있는 임대(작업의 nextAttemptAt)가 그대로일 때만 (늦게 끝난 실패가 새 임대를 덮어쓰지 않게)
   private boolean fail(TokenRevocation revocation, String step, RuntimeException e) {
     log.warn("폐기 기록 실패({}): revocationId={}, memberId={}", step, revocation.getId(), revocation.getMemberId(), e);
     update(revocation.getId(), id -> revocationRepository.recordFailure(
-        id, summary(e), RETRY_DELAY.toSeconds(), LocalDateTime.now()));
+        id, summary(e), revocation.getNextAttemptAt(), LocalDateTime.now()));
     return false;
   }
 
