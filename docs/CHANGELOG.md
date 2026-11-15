@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-15 · reference/internal-apis.md · payment · settlement 탈퇴 확인 내부 API 경로 · 응답 반영: `GET /internal/v1/{payments, settlements}/members/{memberId}/withdrawalCheck`, 사유 코드 · details는 (payment `WALLET_BALANCE_REMAINING` · `TRANSACTION_IN_PROGRESS` · `SELLER_DEBT_REMAINING`, settlement `INCOMPLETE_SETTLEMENT`), 구현은 #329 · #442 (#463)
 - 2026-11-15 · reference/external-apis.md · services/member.md · conventions/auth.md · 판매자 공개 정보 · 소개글 수정 반영: `GET sellers/{sellerId}`(공개, 숫자 id만, 닉네임 · 소개글 · 등록일, 판매자가 아니거나 없는 회원 · 탈퇴한 판매자는 404 `SELLER_NOT_FOUND`), `PATCH sellers/me/intro`(판매자 본인만, 판매자 행이 없으면 403 `NOT_SELLER` · 탈퇴 회원 404 `MEMBER_NOT_FOUND`, `intro` 필수 · 최대 500자 · 빈 문자열은 삭제), 공개 경로를 Gateway · member 양쪽에 등록, 「추가 예정」에서 판매자 상점 정보 · 소개글 수정 제거 (#460)
 - 2026-11-15 · reference/internal-apis.md · services/market.md · market 탈퇴 확인 내부 API 확정: `GET /internal/v1/orders/members/{memberId}/withdrawalCheck`, 응답을 `hasActiveOrders` → 공통 규격(`hasWithdrawalBlocker` · `blockingReasons` `ACTIVE_BUYER_ORDER` · `ACTIVE_SELLER_ORDER` · `details` 건수)으로, 진행 중 기준 명시, 판매자 수락 대기는 #284에서 추가 (#452)
 - 2026-11-15 · reference/external-apis.md · services/member.md · 닉네임 변경 API 반영: `PATCH users/me/nickname`(로그인, 가입과 같은 입력 규칙, 지금 닉네임과 같으면 그대로 200 · 이벤트 없음, 다른 회원과 중복이면 409 `DUPLICATE_NICKNAME` · 동시에 같은 닉네임을 골라 생긴 DB `UNIQUE` 위반도 409), 회원 행 잠금으로 판매자 등록과 순서 정리, 변경과 같은 트랜잭션에 `MemberUpdated` 발행(판매자 여부 포함), 「추가 예정」에서 닉네임 변경 제거 (#459)
