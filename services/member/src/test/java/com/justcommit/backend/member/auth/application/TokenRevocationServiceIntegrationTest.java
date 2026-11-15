@@ -1,6 +1,7 @@
 package com.justcommit.backend.member.auth.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.common.security.JwtVerifier;
 import com.justcommit.backend.member.auth.domain.RevocationReason;
 import com.justcommit.backend.member.auth.domain.RevocationStatus;
 import com.justcommit.backend.member.auth.domain.TokenRevocation;
@@ -89,6 +90,15 @@ class TokenRevocationServiceIntegrationTest {
   private TokenRevocationRecorder revocationRecorder;
 
   @Autowired
+  private LoginService loginService;
+
+  @Autowired
+  private TokenReissueService tokenReissueService;
+
+  @Autowired
+  private JwtVerifier jwtVerifier;
+
+  @Autowired
   private TokenRevocationRepository revocationRepository;
 
   @Autowired
@@ -139,6 +149,29 @@ class TokenRevocationServiceIntegrationTest {
     assertThat(redisTemplate.getExpire(revokedKey(member.getId()), TimeUnit.MILLISECONDS))
         .isGreaterThan(Duration.ofMinutes(30).toMillis());
     assertThat(refreshTokenRedisStore.findOwner("old-refresh")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("[S-A08 계약] 실제 로그인 뒤 revoke(): Redis 폐기 값은 작업의 cutoffAt(초)이고 기존 Access는 iat <= 값, 폐기 전 Refresh는 재발급 실패")
+  void revokeWritesGatewayContract() {
+    Member member = saveMember();
+    LoginResult before = loginService.login(new LoginCommand(member.getEmail(), "plant1234"));
+
+    assertThat(revocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { }))
+        .isEqualTo(RevocationResult.COMPLETED);
+
+    // Gateway TokenRevocationChecker와 같은 방식으로 값을 읽음 (Long.parseLong)
+    long cutoff = Long.parseLong(redisTemplate.opsForValue().get(revokedKey(member.getId())));
+    assertThat(cutoff).isEqualTo(onlyRevocationOf(member.getId()).getCutoffAt().getEpochSecond());
+    // Gateway와 같은 검증기로 iat(초)를 꺼냄 → Gateway 규칙(iat <= 끊은 시각이면 거절)상 거절 대상
+    assertThat(jwtVerifier.verifyAccessToken(before.accessToken()).issuedAt()).isLessThanOrEqualTo(cutoff);
+    assertThatThrownBy(() -> tokenReissueService.reissue(before.refreshToken()))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode").isEqualTo(MemberErrorCode.INVALID_REFRESH_TOKEN);
+
+    // 폐기 뒤 새 로그인: iat >= 끊은 시각. 같은 초면 거절 · 다음 초부터 통과하는 경계는 Gateway S-A08이 확인
+    LoginResult after = loginService.login(new LoginCommand(member.getEmail(), "plant1234"));
+    assertThat(jwtVerifier.verifyAccessToken(after.accessToken()).issuedAt()).isGreaterThanOrEqualTo(cutoff);
   }
 
   @Test
