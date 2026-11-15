@@ -1,7 +1,7 @@
 # market 서비스
 
 > 언제 읽나: market 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -48,6 +48,7 @@ market 서비스가 다른 서비스에 제공하는 내부 API입니다.
 
 | API | 부르는 서비스 | 상태 |
 |---|---|---|
+| `GET /internal/v1/orders/members/{memberId}/withdrawalCheck` | member (탈퇴 확인) | ✅ 확정 |
 | `GET /internal/v1/shipments?sellerOrderIds=` | notification (알림 문구용 배송 정보) | 🟨 제안 |
 
 상세 → [내부 API 목록](../reference/internal-apis.md)
