@@ -46,4 +46,9 @@ public class Seller {
   public static Seller register(Member member, String intro) {
     return new Seller(member, intro);
   }
+
+  // 소개글 변경 (null이면 삭제). 길이는 요청 검증이 맡음
+  public void changeIntro(String intro) {
+    this.intro = intro;
+  }
 }
