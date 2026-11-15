@@ -16,7 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-// 회원 API (회원가입, 소셜 회원가입, 닉네임 · 휴대폰 중복 확인, 내 정보 조회, 닉네임 변경)
+// 회원 API (회원가입, 소셜 회원가입, 닉네임 · 휴대폰 중복 확인, 내 정보 조회, 닉네임 · 비밀번호 변경)
 @RestController
 @RequestMapping("/api/v1/users")
 @RequiredArgsConstructor
@@ -28,6 +28,7 @@ public class MemberController {
   private final SocialSignupService socialSignupService;
   private final MyInfoService myInfoService;
   private final NicknameChangeService nicknameChangeService;
+  private final PasswordChangeService passwordChangeService;
   private final RefreshTokenCookieFactory refreshTokenCookieFactory;
 
   @PostMapping
@@ -76,6 +77,23 @@ public class MemberController {
                                                             @Valid @RequestBody NicknameChangeRequest request) {
     NicknameChangeResult result = nicknameChangeService.changeNickname(authMember.memberId(), request.nickname());
     return ApiResponse.ok("닉네임을 변경했습니다.", NicknameChangeResponse.from(result));
+  }
+
+  // 비밀번호 변경: 성공(200)이면 이 기기의 Refresh 쿠키를 만료. 프론트는 Access를 지우고 로그인 화면으로 이동
+  // revocationCompleted=false면 다른 기기의 로그아웃 반영이 늦어질 수 있음 (재처리가 보관 기한 안에 기록)
+  // 결과 불명(503 RESULT_UNKNOWN)이면 쿠키를 유지하고, 클라이언트는 자동으로 다시 요청하지 않음
+  @PatchMapping("/me/password")
+  public ResponseEntity<ApiResponse<PasswordChangeResponse>> changePassword(
+      @AuthenticationPrincipal AuthMember authMember,
+      @Valid @RequestBody PasswordChangeRequest request) {
+    PasswordChangeResult result = passwordChangeService.changePassword(
+        authMember.memberId(), request.currentPassword(), request.newPassword());
+    String message = result.revocationCompleted()
+        ? "비밀번호를 변경했습니다."
+        : "비밀번호를 변경했습니다. 다른 기기의 로그아웃이 늦어질 수 있습니다.";
+    return ResponseEntity.ok()
+        .header(HttpHeaders.SET_COOKIE, refreshTokenCookieFactory.expire().toString())
+        .body(ApiResponse.ok(message, PasswordChangeResponse.from(result)));
   }
 
   // Bearer {토큰}에서 토큰만 꺼냄. 형식 다르면 null → 서비스에서 401
