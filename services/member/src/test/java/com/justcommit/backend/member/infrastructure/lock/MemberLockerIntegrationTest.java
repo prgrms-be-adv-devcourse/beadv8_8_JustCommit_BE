@@ -204,7 +204,7 @@ class MemberLockerIntegrationTest {
   }
 
   @Test
-  @DisplayName("잠금 조회가 정상 반환되면 lock_timeout은 이전 값으로 돌아가, 이후 저장 쿼리에는 대기 제한이 걸리지 않음")
+  @DisplayName("잠금 조회가 정상 반환되면 lock_timeout은 이전 값으로 돌아가, 이후 저장 쿼리에는 기존 lock_timeout이 적용됨")
   void restoresLockTimeoutAfterLock() {
     Member member = localMember();
 
