@@ -39,6 +39,8 @@ public enum MemberErrorCode implements ErrorCode {
 
   // 판매자
   ALREADY_SELLER(HttpStatus.CONFLICT, "이미 판매자로 등록된 회원입니다."),
+  SELLER_NOT_FOUND(HttpStatus.NOT_FOUND, "판매자를 찾을 수 없습니다."),
+  NOT_SELLER(HttpStatus.FORBIDDEN, "판매자로 등록한 회원만 이용할 수 있습니다."),
 
   // 소셜 로그인
   SOCIAL_LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "소셜 로그인에 실패했습니다. 다시 시도해주세요."),
