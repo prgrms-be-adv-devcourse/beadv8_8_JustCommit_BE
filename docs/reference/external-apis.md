@@ -22,6 +22,7 @@
 | GET | `users/phoneAvailability?phone=` | 휴대폰 중복 확인 | 공개 |
 | GET | `users/me` | 내 정보 | 로그인 |
 | PATCH | `users/me/nickname` | 닉네임 변경 (지금 닉네임과 같으면 그대로) | 로그인 |
+| PATCH | `users/me/password` | 비밀번호 변경 → 모든 기기 로그아웃. 200이면 이 기기 Refresh 쿠키 만료 · 프론트는 Access를 지우고 로그인 화면으로, `revocationCompleted`는 서버 폐기 기록 완료 여부. 503 `RESULT_UNKNOWN`은 자동 재시도 금지 | 로그인 (로컬 회원) |
 | GET · POST | `users/me/addresses` | 배송지 목록 · 추가 | 로그인 |
 | PATCH | `users/me/addresses/{id}/default` | 기본 배송지 변경 | 로그인 |
 | POST | `sellers` | 판매자 등록 | 로그인 |
@@ -83,7 +84,7 @@
 
 | 서비스 | 기능 | 설명 |
 |---|---|---|
-| member | 아이디 찾기 · 비밀번호 재설정 · 비밀번호 변경 · 계좌 변경 · 배송지 수정 · 탈퇴 | 노션 2.1 ~ 2.5 |
+| member | 아이디 찾기 · 비밀번호 재설정 · 계좌 변경 · 배송지 수정 · 탈퇴 | 노션 2.1 ~ 2.5 |
 | member | 판매자 상점 정보 · 소개글 수정 | 공개 조회 경로는 Gateway · member 양쪽에 등록 |
 | market | 판매자 수락 · 거절 (판매자 주문 › 상품 트리 체크) | 판매 기록 화면 |
 | market | 반품 신청 (사유) · 판매자 승인 · 거절 | 노션 7절 |
