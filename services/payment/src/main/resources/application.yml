@@ -27,4 +27,16 @@ custom:
       base-url: https://api.tosspayments.com
       key-encryption-key: ${PAYMENT_KEY_ENCRYPTION_KEY}
       connect-timeout: 3s
-      read-timeout: 65s
+      read-timeout: 60s
+    # 결과 불명 충전(PENDING) 복구 스케줄러 (#363). 값의 원본은 docs/reference/schedulers.md
+    charge-recovery:
+      interval: 5m
+      batch-size: 100
+      first-delay: 5m
+      retry-delays: 15m, 60m
+      max-lookup-failures: 3
+      unconfirmed-delay: 15m
+      review-after: 60m
+      auth-error-delay: 15m
+      # 한 건을 확보한 뒤 다른 인스턴스가 다시 잡지 않게 미루는 시간 (토스 응답 타임아웃 60초보다 길게)
+      lease: 2m
