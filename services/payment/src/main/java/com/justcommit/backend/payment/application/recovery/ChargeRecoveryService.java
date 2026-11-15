@@ -22,7 +22,9 @@ import java.util.Optional;
 //
 // - 적립과 FAILED는 사용자 승인 경로와 같은 ChargeService.completeConfirm, fail을 쓴다 (잠금 순서 지갑 → 충전)
 // - 보류와 REVIEW_REQUIRED는 지갑을 잠그지 않는 조건부 update. 다른 경로가 먼저 바꿨거나 임대가 끝나
-//   다른 인스턴스가 다시 잡았으면 0건으로 무시
+//   다른 인스턴스가 다시 잡았으면 0건으로 무시 (횟수와 다음 조회 시각은 시도마다 달라 섞이면 안 됨)
+// - 승인과 실패는 임대를 검사하지 않는다. 토스 확정 결과(DONE, ABORTED, EXPIRED)라 누가 반영해도 결과가 같고,
+//   충전 행 잠금과 PENDING 확인으로 한 번만 반영된다 (사용자 승인 경로와 같은 메서드)
 // - 시각은 건마다 Clock에서 읽는다 (한 번 실행이 길어져도 임대와 판정 시각이 늦지 않게)
 @Slf4j
 @Service

@@ -37,7 +37,7 @@
 | `POST /internal/v1/refunds/order-items/{orderItemId}` | market | orderItemId |
 | `POST /internal/v1/refunds/shipping-fees/{sellerOrderId}` | market | sellerOrderId |
 | `POST /internal/v1/settlement-payouts` | settlement | settlementId |
-| ⬜ 탈퇴 확인 | member | – |
+| `GET /internal/v1/payments/members/{memberId}/withdrawalCheck` | member | – |
 
 상세 → [내부 API 목록](../reference/internal-apis.md)
 
@@ -45,7 +45,7 @@
 
 | 대상 | 용도 |
 |---|---|
-| member | ⬜ 계좌 조회 (인출 신청 때) |
+| member | `GET /internal/v1/members/{memberId}/account` 계좌 조회 (인출 신청 때) |
 | 토스페이먼츠 | 충전 승인 · 취소 · 조회 (연결 3초 · 응답 60초) |
 
 ## 발행 이벤트
