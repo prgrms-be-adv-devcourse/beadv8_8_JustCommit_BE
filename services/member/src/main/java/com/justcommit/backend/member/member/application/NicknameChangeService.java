@@ -6,6 +6,7 @@ import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.event.MemberUpdated;
+import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,13 +27,15 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class NicknameChangeService {
 
+  private final MemberLocker memberLocker;
   private final MemberRepository memberRepository;
   private final SellerRepository sellerRepository;
   private final OutboxPublisher outboxPublisher;
 
   @Transactional
   public NicknameChangeResult changeNickname(Long memberId, String nickname) {
-    Member member = memberRepository.findByIdForUpdate(memberId)
+    // 대기 제한을 넘으면 409 MEMBER_BUSY, 아무것도 저장되지 않음
+    Member member = memberLocker.lockById(memberId)
         .filter(m -> m.getStatus() != MemberStatus.DELETED)
         .orElseThrow(() -> new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
 

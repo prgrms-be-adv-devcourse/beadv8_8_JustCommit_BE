@@ -17,12 +17,12 @@ import java.util.Optional;
 import java.util.function.Supplier;
 
 /**
- * 회원 행 잠금 + 대기 제한 (#409). 로그인 · 소셜 로그인 · 재발급 · 폐기가 같은 회원 행 잠금으로 줄을 선다.
+ * 회원 행 잠금 + 대기 제한 (#409, #419). 로그인 · 소셜 로그인 · 재발급 · 폐기 · 배송지 추가 · 기본 변경 ·
+ * 판매자 등록 · 닉네임 변경이 같은 회원 행 잠금으로 줄을 선다.
  * - 잠그기 직전에 같은 트랜잭션에 lock_timeout을 건다 (set_config(..., true) = SET LOCAL, 트랜잭션이 끝날 때까지 유지)
  * - 대기 제한을 넘으면 PostgreSQL이 55P03(lock_not_available)을 내고, 이것만 409 MEMBER_BUSY로 바꾼다.
  *   BusinessException은 런타임 예외라 트랜잭션은 롤백된다
  * - 잠금 한 번마다의 대기 제한이다. 더 짧은 statement_timeout이 있으면 쿼리가 먼저 끝날 수 있다
- * - 배송지 변경 · 판매자 등록은 아직 MemberRepository 잠금을 직접 쓴다 (실패 응답이 바뀌므로 별도 작업)
  */
 @Slf4j
 @Component

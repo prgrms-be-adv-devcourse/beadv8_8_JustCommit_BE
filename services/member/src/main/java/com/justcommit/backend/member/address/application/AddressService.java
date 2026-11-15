@@ -6,7 +6,7 @@ import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
-import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -24,7 +24,7 @@ public class AddressService {
   static final int MAX_ADDRESS_COUNT = 4; // 회원당 최대 배송지 개수 (기본 배송지 포함)
 
   private final AddressRepository addressRepository;
-  private final MemberRepository memberRepository;
+  private final MemberLocker memberLocker;
   private final SellerRepository sellerRepository;
   private final SellerAddressEventFactory sellerAddressEventFactory;
   private final OutboxPublisher outboxPublisher;
@@ -87,9 +87,9 @@ public class AddressService {
   }
 
   // 배송지를 바꾸는 경로는 회원 행을 먼저 잠근다 (순서를 통일해 교착 위험을 줄임).
-  // 잠금 대기는 현재 DB 설정을 사용하고, 대기 · 실패 처리는 별도로 확인한다
+  // 대기 제한을 넘으면 MemberLocker가 409 MEMBER_BUSY로 바꾸고 트랜잭션은 롤백된다
   private Member lockMember(Long memberId) {
-    return memberRepository.findByIdForUpdate(memberId)
+    return memberLocker.lockById(memberId)
         .orElseThrow(() -> new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
   }
 }
