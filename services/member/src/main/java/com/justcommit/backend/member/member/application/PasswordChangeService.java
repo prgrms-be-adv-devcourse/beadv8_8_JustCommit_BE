@@ -30,6 +30,8 @@ public class PasswordChangeService {
   private final PasswordEncoder passwordEncoder;
 
   public PasswordChangeResult changePassword(Long memberId, String currentPassword, String newPassword) {
+    // 새 비밀번호 해시는 회원 상태와 무관해 잠금 전에 만든다 (잠금 안에서는 현재 비밀번호 확인 한 번만)
+    String encodedNewPassword = passwordEncoder.encode(newPassword);
     RevocationResult result;
     try {
       result = tokenRevocationService.revoke(memberId, RevocationReason.PASSWORD_CHANGED, member -> {
@@ -47,7 +49,7 @@ public class PasswordChangeService {
         if (currentPassword.equals(newPassword)) {
           throw new BusinessException(MemberErrorCode.SAME_AS_CURRENT_PASSWORD);
         }
-        member.changePassword(passwordEncoder.encode(newPassword));
+        member.changePassword(encodedNewPassword);
       });
     } catch (RevocationOutcomeUnknownException e) {
       throw new BusinessException(MemberErrorCode.RESULT_UNKNOWN, RESULT_UNKNOWN_MESSAGE);
