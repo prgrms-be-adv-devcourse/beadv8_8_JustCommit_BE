@@ -1,7 +1,7 @@
 # notification 서비스
 
 > 언제 읽나: notification 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: Miro 5 · 10, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-15 · 관련: Miro 5 · 10, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -45,7 +45,7 @@
 | `product.events.v1` `ProductApproved` | 검수 통과 알림 | `event_key` UK |
 | `product.events.v1` `ProductRejected` | 검수 반려 알림 (사유 포함) | `event_key` UK |
 
-회원 이벤트는 구독하지 않습니다.
+회원 이벤트는 구독하지 않습니다. 그래서 탈퇴한 회원에게 가는 알림도 거르지 않고 저장합니다 (예: 판매자가 탈퇴한 뒤, product가 `MemberWithdrawn`을 받기 전에 검수가 끝나 `ProductApproved` · `ProductRejected`가 오는 경우). 탈퇴한 회원은 알림을 조회할 수 없어 따로 막지 않습니다.
 
 ## 스케줄러
 

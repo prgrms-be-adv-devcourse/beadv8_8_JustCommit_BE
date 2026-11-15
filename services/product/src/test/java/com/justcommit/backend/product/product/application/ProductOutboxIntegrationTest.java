@@ -38,6 +38,10 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import com.justcommit.backend.product.review.application.ReviewResultPublisher;
+import com.justcommit.backend.product.review.domain.enums.RejectReason;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,7 +64,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DataJpaTest(properties = "outbox.scheduler.enabled=false")   // 재전송 스케줄러는 끔 (커밋 직후 발행만 확인)
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ClockConfig.class, ProductService.class})
+@Import({JpaAuditingConfig.class, ClockConfig.class, ProductService.class, ReviewResultPublisher.class})
 @ImportAutoConfiguration({KafkaAutoConfiguration.class, MessagingConsumerAutoConfiguration.class,
         OutboxAutoConfiguration.class})
 @Testcontainers(disabledWithoutDocker = true)
@@ -90,6 +94,8 @@ class ProductOutboxIntegrationTest {
     @Autowired ProductReservationRepository reservationRepository;
     @Autowired OutboxEventRepository outboxEventRepository;
     @Autowired EventEnvelopeMapper mapper;
+    @Autowired ReviewResultPublisher reviewResultPublisher;
+    @Autowired PlatformTransactionManager transactionManager;
 
     // 예약 흐름에서 쓰지 않는 ProductService 의존성
     @MockitoBean MemberQuery memberQuery;
@@ -150,6 +156,80 @@ class ProductOutboxIntegrationTest {
         assertThat(productRepository.findById(productId).orElseThrow().getStatus())
                 .isEqualTo(ProductStatus.ACTIVE);
         assertThat(outboxEventRepository.count()).isZero();
+    }
+
+    // ── 검수 결과 이벤트 (#345) ───────────────────
+
+    @Test
+    @DisplayName("검수 반려가 커밋되면 ProductStatusChanged와 ProductRejected(사유 코드 · 판매자 문구)가 Outbox에 저장 · 발행된다")
+    void reviewRejectedPublishes() {
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                reviewResultPublisher.rejected(900L, 7L, 2, "몬스테라 중품", RejectReason.HARMFUL_IMAGE, null));
+
+        assertThat(outboxEventRepository.findAll()).extracting(row -> row.getEventType())
+                .containsExactlyInAnyOrder("ProductStatusChanged", "ProductRejected");
+
+        EventEnvelope envelope = pollEvent(KafkaTopics.PRODUCT_EVENTS, "900", "ProductRejected");
+        assertThat(envelope.payload().get("productId").asLong()).isEqualTo(900L);
+        assertThat(envelope.payload().get("sellerId").asLong()).isEqualTo(7L);
+        assertThat(envelope.payload().get("reviewVersion").asInt()).isEqualTo(2);
+        assertThat(envelope.payload().get("productTitle").asString()).isEqualTo("몬스테라 중품");
+        assertThat(envelope.payload().get("reasonCode").asString()).isEqualTo("HARMFUL_IMAGE");
+        assertThat(envelope.payload().get("reasonMessage").asString()).isEqualTo("부적절한 사진이 포함돼 있어요");
+    }
+
+    @Test
+    @DisplayName("관리자가 OTHER로 반려하면 판매자 문구는 관리자가 입력한 내용 (#344에서 사용)")
+    void reviewRejectedOtherUsesMemo() {
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                reviewResultPublisher.rejected(901L, 7L, 0, "몬스테라", RejectReason.OTHER, "가격 표기가 사진과 달라요"));
+
+        EventEnvelope envelope = pollEvent(KafkaTopics.PRODUCT_EVENTS, "901", "ProductRejected");
+        assertThat(envelope.payload().get("reasonCode").asString()).isEqualTo("OTHER");
+        assertThat(envelope.payload().get("reasonMessage").asString()).isEqualTo("가격 표기가 사진과 달라요");
+    }
+
+    @Test
+    @DisplayName("검수 통과 반영이 롤백되면 결과 이벤트 Outbox 행도 남지 않는다")
+    void reviewResultRollbackLeavesNoRow() {
+        assertThatThrownBy(() -> new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            reviewResultPublisher.approved(902L, 7L, 0, "몬스테라");
+            throw new IllegalStateException("반영 실패");
+        })).isInstanceOf(IllegalStateException.class);
+
+        assertThat(outboxEventRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("트랜잭션 밖에서 결과 이벤트를 보내면 막힘 (상태 반영과 같은 트랜잭션에서만)")
+    void reviewResultRequiresTransaction() {
+        assertThatThrownBy(() -> reviewResultPublisher.approved(903L, 7L, 0, "몬스테라"))
+                .isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);
+    }
+
+    // 같은 Key로 여러 이벤트가 오므로 이벤트 이름까지 골라 기다림
+    private EventEnvelope pollEvent(String topic, String key, String eventType) {
+        Map<String, Object> props = Map.of(
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
+                ConsumerConfig.GROUP_ID_CONFIG, "test-" + UUID.randomUUID(),
+                ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
+                ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
+                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props)) {
+            consumer.subscribe(List.of(topic));
+            long deadline = System.currentTimeMillis() + 30_000;
+            while (System.currentTimeMillis() < deadline) {
+                for (ConsumerRecord<String, String> r : consumer.poll(Duration.ofMillis(500))) {
+                    if (key.equals(r.key())) {
+                        EventEnvelope envelope = mapper.fromJson(r.value());
+                        if (eventType.equals(envelope.eventType())) {
+                            return envelope;
+                        }
+                    }
+                }
+            }
+        }
+        throw new AssertionError(eventType + " 이벤트가 오지 않음: key=" + key);
     }
 
     private Long saveActiveProduct() {
