@@ -16,7 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-// 회원 API (회원가입, 소셜 회원가입, 닉네임 중복 확인, 내 정보 조회)
+// 회원 API (회원가입, 소셜 회원가입, 닉네임 · 휴대폰 중복 확인, 내 정보 조회, 닉네임 변경)
 @RestController
 @RequestMapping("/api/v1/users")
 @RequiredArgsConstructor
@@ -27,6 +27,7 @@ public class MemberController {
   private final SignupService signupService;
   private final SocialSignupService socialSignupService;
   private final MyInfoService myInfoService;
+  private final NicknameChangeService nicknameChangeService;
   private final RefreshTokenCookieFactory refreshTokenCookieFactory;
 
   @PostMapping
@@ -67,6 +68,14 @@ public class MemberController {
   public ApiResponse<MyInfoResponse> getMyInfo(@AuthenticationPrincipal AuthMember authMember) {
     MyInfoResult result = myInfoService.getMyInfo(authMember.memberId());
     return ApiResponse.ok("내 정보를 조회했습니다.", MyInfoResponse.from(result));
+  }
+
+  // 닉네임 변경: 지금 닉네임과 같으면 그대로 200 (이벤트 없음)
+  @PatchMapping("/me/nickname")
+  public ApiResponse<NicknameChangeResponse> changeNickname(@AuthenticationPrincipal AuthMember authMember,
+                                                            @Valid @RequestBody NicknameChangeRequest request) {
+    NicknameChangeResult result = nicknameChangeService.changeNickname(authMember.memberId(), request.nickname());
+    return ApiResponse.ok("닉네임을 변경했습니다.", NicknameChangeResponse.from(result));
   }
 
   // Bearer {토큰}에서 토큰만 꺼냄. 형식 다르면 null → 서비스에서 401

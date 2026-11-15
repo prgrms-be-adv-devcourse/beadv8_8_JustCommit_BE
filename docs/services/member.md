@@ -27,7 +27,7 @@
 
 ## 외부 API
 
-`auth/email/send` · `auth/email/verify` · `auth/login` · `auth/logout` · `auth/reissue` · `users` · `users/social` · `users/nicknameAvailability` · `users/phoneAvailability` · `users/me` · `users/me/addresses` · `users/me/addresses/{id}/default` · `sellers` + 카카오 로그인 2개 → [외부 API 목록](../reference/external-apis.md)
+`auth/email/send` · `auth/email/verify` · `auth/login` · `auth/logout` · `auth/reissue` · `users` · `users/social` · `users/nicknameAvailability` · `users/phoneAvailability` · `users/me` · `users/me/nickname` · `users/me/addresses` · `users/me/addresses/{id}/default` · `sellers` + 카카오 로그인 2개 → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 
@@ -51,7 +51,7 @@ Outbox(`common-messaging-outbox`)로 발행합니다. Key는 `memberId`입니다
 | 토픽 | 이벤트 | 발행 시점 | 상태 |
 |---|---|---|---|
 | `member.events.v1` | `MemberCreated` | 로컬 · 소셜 가입 | ✅ |
-| `member.events.v1` | `MemberUpdated` | 판매자 등록 (닉네임 변경 API가 생기면 그때도) | ✅ |
+| `member.events.v1` | `MemberUpdated` | 판매자 등록 · 닉네임 변경 (바뀐 경우만) | ✅ |
 | `member.events.v1` | `MemberWithdrawn` | 탈퇴 | ⬜ record만 (탈퇴 기능과 함께) |
 | `member.address.events.v1` | `MemberAddressChanged` (판매자 배송지 목록, 암호화) | 판매자 등록 · 배송지 추가 · 기본 배송지 변경 (판매자만, 바뀐 뒤 전체 목록) | ✅ |
 

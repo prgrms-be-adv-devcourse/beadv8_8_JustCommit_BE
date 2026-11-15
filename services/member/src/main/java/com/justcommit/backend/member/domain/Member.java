@@ -117,6 +117,11 @@ public class Member extends BaseTimeEntity  {
                 }
         }
 
+        // 닉네임 변경 (형식은 요청 검증, 중복은 서비스 확인 + DB UNIQUE 제약이 맡음)
+        public void changeNickname(String nickname) {
+          this.nickname = nickname;
+        }
+
         // 인증 버전을 1 올린다 (비밀번호 변경 · 탈퇴). DB 값만 바꾸며, 기존 Access 폐기 기록은 별도 처리한다
         // 올리기만 한다: 되돌리면 무효화된 Refresh를 다시 쓸 수 있게 된다
         public void increaseTokenVersion() {
