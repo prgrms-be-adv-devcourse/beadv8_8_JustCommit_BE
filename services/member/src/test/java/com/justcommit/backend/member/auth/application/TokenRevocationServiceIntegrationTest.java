@@ -18,6 +18,7 @@ import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -36,6 +37,7 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -45,7 +47,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 
 /**
  * 토큰 폐기 공통 처리 (#409)를 실제 PostgreSQL · Redis로 확인한다.
@@ -98,7 +103,7 @@ class TokenRevocationServiceIntegrationTest {
   @Autowired
   private PasswordEncoder passwordEncoder;
 
-  @Autowired
+  @MockitoSpyBean
   private DatabaseClock databaseClock;
 
   @MockitoSpyBean
@@ -175,6 +180,48 @@ class TokenRevocationServiceIntegrationTest {
     assertThat(revocationRecorder.record(revocation)).isTrue();
     assertThat(redisTemplate.opsForValue().get(revokedKey(member.getId()))).isEqualTo(recorded);
     assertThat(onlyRevocationOf(member.getId()).getStatus()).isEqualTo(RevocationStatus.RECORDED);
+  }
+
+  @Test
+  @DisplayName("커밋 뒤 DB 시각 조회와 실패 갱신이 모두 실패해도 결과는 PENDING, 작업은 커밋된 PENDING 그대로 남는다")
+  void clockAndFailureUpdateBothFailAfterCommit() {
+    Member member = saveMember();
+    // 첫 호출(폐기 트랜잭션 안의 폐기 시각)은 실제 DB 시각, 두 번째(커밋 뒤 Recorder)는 실패
+    doCallRealMethod().doThrow(new DataAccessResourceFailureException("db down")).when(databaseClock).now();
+    doThrow(new CannotCreateTransactionException("db down"))
+        .when(transactionTemplate).executeWithoutResult(any());
+
+    RevocationResult result = revocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { });
+
+    assertThat(result).isEqualTo(RevocationResult.PENDING);
+    assertThat(memberRepository.findById(member.getId()).orElseThrow().getTokenVersion()).isEqualTo(1);
+    TokenRevocation revocation = onlyRevocationOf(member.getId());
+    assertThat(revocation.getStatus()).isEqualTo(RevocationStatus.PENDING);
+    assertThat(revocation.getAttemptCount()).isZero();
+    assertThat(revocation.getNextAttemptAt()).isEqualTo(revocation.getCutoffAt());
+    assertThat(revocation.getLastError()).isNull();
+    assertThat(redisTemplate.hasKey(revokedKey(member.getId()))).isFalse();
+    then(revokedMemberRedisStore).should(never()).recordCutoff(anyLong(), any(), any());
+  }
+
+  @Test
+  @DisplayName("이미 RECORDED인 작업에 늦게 온 실패 갱신은 0행이고 상태 · 시도 횟수 · 오류를 바꾸지 않는다")
+  void lateFailureUpdateDoesNotRevertRecorded() {
+    Member member = saveMember();
+    assertThat(revocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { }))
+        .isEqualTo(RevocationResult.COMPLETED);
+    TokenRevocation recorded = onlyRevocationOf(member.getId());
+    assertThat(recorded.getStatus()).isEqualTo(RevocationStatus.RECORDED);
+
+    Integer changed = transactionTemplate.execute(status ->
+        revocationRepository.recordFailure(recorded.getId(), "늦은 실패", 10, LocalDateTime.now()));
+
+    assertThat(changed).isZero();
+    TokenRevocation after = onlyRevocationOf(member.getId());
+    assertThat(after.getStatus()).isEqualTo(RevocationStatus.RECORDED);
+    assertThat(after.getAttemptCount()).isZero();
+    assertThat(after.getLastError()).isNull();
+    assertThat(after.getNextAttemptAt()).isNull();
   }
 
   @Test
