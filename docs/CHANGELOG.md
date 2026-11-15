@@ -7,7 +7,7 @@
 
 ## 기록
 
-- 2026-11-16 · services/member.md · 회원 행 잠금 대기 제한을 배송지 추가 · 기본 변경 · 판매자 등록 · 닉네임 변경에도 적용: 로그인 · 재발급과 같은 `MemberLocker`(대기 3초, 넘으면 409 `MEMBER_BUSY`, 저장 · 이벤트 없이 롤백), 정책 표 「로그인 · 재발급 잠금」 줄을 「회원 행 잠금」으로 (#419)
+- 2026-11-16 · services/member.md · 회원 행 잠금 대기 제한을 배송지 추가 · 기본 변경 · 판매자 등록 · 닉네임 변경에도 적용: 로그인 · 재발급과 같은 `MemberLocker`(대기 3초, 넘으면 409 `MEMBER_BUSY`, 저장 · 이벤트 없이 롤백), 대기 제한은 잠금 조회에만 걸고 정상 반환되면 이전 `lock_timeout`으로 되돌림(잠금 뒤 닉네임 UNIQUE 확인 대기가 제한에 걸려 500으로 끝나지 않게), 정책 표 「로그인 · 재발급 잠금」 줄을 「회원 행 잠금」으로 (#419)
 - 2026-11-15 · reference/internal-apis.md · payment · settlement 탈퇴 확인 내부 API 경로 · 응답 반영: `GET /internal/v1/{payments, settlements}/members/{memberId}/withdrawalCheck`, 사유 코드 · details는 (payment `WALLET_BALANCE_REMAINING` · `TRANSACTION_IN_PROGRESS` · `SELLER_DEBT_REMAINING`, settlement `INCOMPLETE_SETTLEMENT`), 구현은 #329 · #442 (#463)
 - 2026-11-15 · reference/external-apis.md · services/member.md · conventions/auth.md · 판매자 공개 정보 · 소개글 수정 반영: `GET sellers/{sellerId}`(공개, 숫자 id만, 닉네임 · 소개글 · 등록일, 판매자가 아니거나 없는 회원 · 탈퇴한 판매자는 404 `SELLER_NOT_FOUND`), `PATCH sellers/me/intro`(판매자 본인만, 판매자 행이 없으면 403 `NOT_SELLER` · 탈퇴 회원 404 `MEMBER_NOT_FOUND`, `intro` 필수 · 최대 500자 · 빈 문자열은 삭제), 공개 경로를 Gateway · member 양쪽에 등록, 「추가 예정」에서 판매자 상점 정보 · 소개글 수정 제거 (#460)
 - 2026-11-15 · reference/internal-apis.md · services/market.md · market 탈퇴 확인 내부 API 확정: `GET /internal/v1/orders/members/{memberId}/withdrawalCheck`, 응답을 `hasActiveOrders` → 공통 규격(`hasWithdrawalBlocker` · `blockingReasons` `ACTIVE_BUYER_ORDER` · `ACTIVE_SELLER_ORDER` · `details` 건수)으로, 진행 중 기준 명시, 판매자 수락 대기는 #284에서 추가 (#452)
