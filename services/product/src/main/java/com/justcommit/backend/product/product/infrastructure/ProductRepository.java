@@ -31,6 +31,20 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             """)
     int reserve(@Param("orderId") Long orderId, @Param("productIds") List<Long> productIds);
 
+    // 검수 결과 반영: 검수 버전이 같고 기대한 상태일 때만 바꿈 (그사이 수정 · 삭제 · 예약됐으면 0건 → 반영 안 함)
+    // 같은 트랜잭션에서 검수 기록(ImageReview)을 계속 고치므로 영속성 컨텍스트를 비우지 않음
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            UPDATE Product p
+            SET p.status = :to,
+                p.updatedAt = CURRENT_TIMESTAMP
+            WHERE p.id = :productId
+              AND p.reviewVersion = :reviewVersion
+              AND p.status = :from
+            """)
+    int applyReviewResult(@Param("productId") Long productId, @Param("reviewVersion") int reviewVersion,
+                          @Param("from") ProductStatus from, @Param("to") ProductStatus to);
+
     // 이 주문이 예약한 상품만 판매 중으로 되돌림. 판매자가 탈퇴했으면 DELETED (product.md 「판매자 탈퇴」)
     // 탈퇴 처리와 동시에 실행돼도 맞도록 lockByReservedOrder로 행을 먼저 잠근 뒤 부른다
     @Modifying(flushAutomatically = true, clearAutomatically = true)

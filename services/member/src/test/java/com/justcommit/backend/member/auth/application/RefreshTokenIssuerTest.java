@@ -27,13 +27,13 @@ public class RefreshTokenIssuerTest {
   private static final Long MEMBER_ID = 1L;
 
   @Test
-  @DisplayName("발급한 Refresh 토큰을 회원 id·3시간으로 Redis에 저장하고 원문을 반환")
+  @DisplayName("발급한 Refresh 토큰을 회원 id · 인증 버전 · 1일로 Redis에 저장하고 원문을 반환")
   void issue_savesTokenWithTtl() {
-    String refreshToken = refreshTokenIssuer.issue(MEMBER_ID);
+    String refreshToken = refreshTokenIssuer.issue(MEMBER_ID, 2);
 
     // then: 반환한 토큰을 그대로 저장
     ArgumentCaptor<String> tokenCaptor = ArgumentCaptor.forClass(String.class);
-    then(refreshTokenStore).should().save(tokenCaptor.capture(), eq(MEMBER_ID), eq(Duration.ofDays(1)));
+    then(refreshTokenStore).should().save(tokenCaptor.capture(), eq(MEMBER_ID), eq(2), eq(Duration.ofDays(1)));
     assertThat(tokenCaptor.getValue()).isEqualTo(refreshToken);
 
     // then: 32바이트 랜덤 → URL 안전 Base64(패딩 없음) 43자
@@ -43,8 +43,8 @@ public class RefreshTokenIssuerTest {
   @Test
   @DisplayName("발급할 때마다 서로 다른 Refresh 토큰")
   void issue_differentTokens() {
-    String first = refreshTokenIssuer.issue(MEMBER_ID);
-    String second = refreshTokenIssuer.issue(MEMBER_ID);
+    String first = refreshTokenIssuer.issue(MEMBER_ID, 2);
+    String second = refreshTokenIssuer.issue(MEMBER_ID, 2);
 
     assertThat(first).isNotEqualTo(second);
   }

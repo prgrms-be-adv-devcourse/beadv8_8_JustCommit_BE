@@ -1,7 +1,7 @@
 # 사진 검수
 
 > 언제 읽나: 상품 사진 검수 코드를 고칠 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: Miro 13-1, 노션 「정책 정리」 3.3 · 3.4 · 3.16
+> 상태: ✅ 확정 · 마지막 수정 2026-11-14 · 관련: Miro 13-1, 노션 「정책 정리」 3.3 · 3.4 · 3.16
 
 ## 흐름
 
@@ -15,12 +15,12 @@ sequenceDiagram
     participant OM as OpenAI Moderation
     participant HK as Claude Haiku
     SL->>PR: 상품 등록 · 사진 수정
-    PR->>PR: REVIEW_PENDING · review_version · Outbox
+    PR->>PR: REVIEW_PENDING · review_version · IMAGE_REVIEW(REQUESTED) · Outbox
     PR->>K: ProductReviewRequested (product.review.v1)
-    K->>PR: 검수 리스너 (REVIEW_PENDING이고 버전이 같을 때만)
+    K->>PR: 검수 리스너 (IMAGE_REVIEW가 REQUESTED이고 버전이 같을 때만)
     PR->>OM: 사진마다 · 제목 · 설명 유해 검사
-    PR->>HK: 사진 → 식물 여부 · 판매 형태 · 품종 후보 3개 (학명 · 확신도)
-    PR->>PR: 금지 품종 · 금지어 · 품종 대조 → 판정 · IMAGE_REVIEW 저장
+    PR->>HK: 사진 → 식물 여부 · 판매 형태 · 품종 후보 3개 (학명 · 확신도), 유해면 부르지 않음
+    PR->>PR: 금지 품종 · 금지어 · 품종 대조 → 판정 · 조건부 반영 · IMAGE_REVIEW(DONE)
 ```
 
 | 단계 | 내용 |
@@ -29,9 +29,9 @@ sequenceDiagram
 | 식물 식별 | Claude Haiku(`claude-haiku-5-5`), 프롬프트에 금지 품종 목록 포함 |
 | 금지 품종 대조 | 후보 학명을 `banned_species` 학명 · 학명 별칭과 비교 (속 · 종 · 변종 단위) |
 | 금지어 대조 | 제목 · 설명을 정규화(띄어쓰기 · 문장부호 제거)해 `banned_species` 한글 이름 · 별칭과 `banned_keyword`를 찾음. 예외 단어(`EXCEPTION`)는 넘어가고, 관리자 확인 단어(`REVIEW`, 예: 자생지)는 반려 대신 관리자 확인 |
-| 품종 대조 | 1순위 후보 학명 → `species.scientific_name` → `species_alias` 순, 판매자가 고른 품종과 **속까지** 같으면 일치 |
+| 품종 대조 | 1순위 후보의 학명 속, 또는 후보 한글 이름으로 `species.name` · `species_alias`에서 찾은 품종의 `scientific_name` 속이 판매자가 고른 품종과 **속까지** 같으면 일치 |
 
-글만 수정하면 사진 검수는 다시 하지 않고 글 Moderation과 금지어 대조만 합니다 (판매 중 상품도 걸리면 `REJECTED`).
+판매 중(`ACTIVE`) 상품의 글만 수정하면 사진 검수는 다시 하지 않고 글 Moderation과 금지어 대조만 합니다. 걸리면 `REJECTED`, 관리자 확인이면 판매를 멈추고 `REVIEW_PENDING`입니다. 검수 중 · 반려 상품은 글만 고쳐도 처음부터 검수합니다 (반려 사유가 사진일 수 있음).
 
 ## 결과별 처리
 
@@ -52,7 +52,7 @@ sequenceDiagram
 | 품종 불일치 | 관리자 확인 |
 | 외부 API 오류 (재시도 후에도) · 응답 해석 불가 | 엔진 오류 재처리 (5분 간격 최대 3회), 그래도 실패하면 관리자 확인 → [엔진 오류 재처리](#엔진-오류-재처리) |
 
-- 결과는 "`REVIEW_PENDING`이고 검수 버전이 같을 때만" 조건을 건 UPDATE로 반영합니다. 외부 API 장애로 자동 통과도 자동 반려도 하지 않습니다.
+- 결과는 "검수 버전이 같고 사진 검수는 `REVIEW_PENDING`, 글 검사는 `ACTIVE`일 때만" 조건을 건 UPDATE로 반영합니다. 0건이면(그사이 수정 · 삭제 · 예약) 반영하지 않고 `IMAGE_REVIEW`를 `STALE`로 둡니다. 외부 API 장애로 자동 통과도 자동 반려도 하지 않습니다 (재시도: Moderation 3번, Haiku SDK 재시도 2번).
 - 통과 · 반려(글 검사 반려 포함)로 상태가 바뀌면 새 상태가 담긴 `ProductStatusChanged`도 발행합니다 (ai 상품 스냅샷 → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md)). `ProductApproved`(통과 알림) · `ProductRejected`(반려 알림)는 notification용입니다.
 - 반려되면 `ProductRejected` → 판매자에게 사유와 함께 알립니다. 재검수(수정 후 다시 제출)는 1회까지입니다.
 - 자동 반려가 틀렸다면 판매자는 수정하지 않고 **이의 신청**을 합니다 (메모 필수 200자, 같은 검수 버전으로 1번, 관리자가 반려하면 최종, 재검수 횟수를 쓰지 않음. 관리자가 반려한 상품은 409 `APPEAL_NOT_ALLOWED`, 두 번째는 409 `APPEAL_ALREADY_USED`. 이의 신청 중에 수정하면 이의 신청은 끝나고 엔진 검수로 가며 재검수 1회를 씀).
@@ -63,7 +63,7 @@ sequenceDiagram
 
 | 주제 | 규칙 |
 |---|---|
-| 상태 | 상품은 `REVIEW_PENDING` 그대로, `IMAGE_REVIEW`는 `ENGINE_ERROR` |
+| 상태 | 사진 검수: 상품은 `REVIEW_PENDING` 그대로. 판매 중 상품의 글 검사(`TEXT_ONLY`): 상품은 `ACTIVE` 그대로, 재처리 동안 판매 유지 (🟨 팀 확인 중). 둘 다 `IMAGE_REVIEW`는 `ENGINE_ERROR` |
 | 재처리 | 스케줄러가 5분마다 `ENGINE_ERROR` 건을 같은 검수 버전으로 다시 검수, 최대 3회. 그사이 수정 · 삭제되면(버전이 다르면) 재처리하지 않음 |
 | 3회 모두 실패 | 관리자 확인으로 넘김 (사유 `ENGINE_ERROR`). 자동 통과 · 자동 반려는 하지 않음 |
 | 횟수 · 제한 | 재처리는 하루 사진 검수 30회 · 재검수 1회에 세지 않음 (판매자 잘못이 아님) |

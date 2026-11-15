@@ -1,7 +1,7 @@
 # member 서비스
 
 > 언제 읽나: member 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: Miro 5 · 6, A1, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-15 · 관련: Miro 5 · 6, A1, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -18,21 +18,22 @@
 
 | 테이블 | 설명 |
 |---|---|
-| `MEMBER` | 회원 (계좌 암호문 · HMAC 포함) |
+| `MEMBER` | 회원 (계좌 암호문 · HMAC · 인증 버전 포함) |
 | `ADDRESS` | 배송지 (최대 4개, 기본 1개) |
 | `SELLER` | 판매자 등록 정보 · 소개글 · 사진 이용 동의 |
 | ⬜ 탈퇴 기록 (이름 미정) | 이메일 · 휴대폰 HMAC + 탈퇴 시각 (30일 보관) |
 | `OUTBOX_EVENT` | 발행 대기 이벤트 (`common-messaging-outbox`, Flyway V2) |
+| `MEMBER_TOKEN_REVOCATION` | 탈퇴 · 비밀번호 변경 토큰 폐기 작업 (끊은 시각 · 보관 기한 · Redis 기록 상태, Flyway V4) |
 
 ## 외부 API
 
-`auth/email/send` · `auth/email/verify` · `auth/login` · `auth/logout` · `auth/reissue` · `users` · `users/social` · `users/nicknameAvailability` · `users/phoneAvailability` · `users/me` · `users/me/addresses` · `users/me/addresses/{id}/default` · `sellers` + 카카오 로그인 2개 → [외부 API 목록](../reference/external-apis.md)
+`auth/email/send` · `auth/email/verify` · `auth/login` · `auth/logout` · `auth/reissue` · `users` · `users/social` · `users/nicknameAvailability` · `users/phoneAvailability` · `users/me` · `users/me/nickname` · `users/me/addresses` · `users/me/addresses/{id}/default` · `sellers` + 카카오 로그인 2개 → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 
 | API | 부르는 서비스 | 상태 |
 |---|---|---|
-| ⬜ 계좌 조회 | payment (인출 신청 때) | ✅ 기능 · ⬜ 경로 |
+| `GET /internal/v1/members/{memberId}/account` 계좌 조회 | payment (인출 신청 때) | ✅ member 구현 · ⬜ payment 연동(#388) |
 
 상세 → [내부 API 목록](../reference/internal-apis.md)
 
@@ -40,7 +41,7 @@
 
 | 대상 | 용도 | 상태 |
 |---|---|---|
-| market · payment · settlement | 탈퇴 확인 (병렬, Fail-closed) | ✅ 기능 · ⬜ 경로 |
+| market · payment · settlement | 탈퇴 확인 (병렬, Fail-closed): `GET /internal/v1/{orders, payments, settlements}/members/{memberId}/withdrawalCheck`, 공통 응답 `hasWithdrawalBlocker` · `blockingReasons` · `details`, 결과 `ALLOWED` · `BLOCKED` · `UNAVAILABLE` (탈퇴는 `ALLOWED`일 때만) | ✅ member 클라이언트 · 결과 취합 구현 · ⬜ 실제 서비스 연동 (market #278 · payment #329 · settlement #441) |
 | 카카오 | 연결 해제 (실패하면 탈퇴 막음) | ✅ |
 
 ## 발행 이벤트
@@ -50,7 +51,7 @@ Outbox(`common-messaging-outbox`)로 발행합니다. Key는 `memberId`입니다
 | 토픽 | 이벤트 | 발행 시점 | 상태 |
 |---|---|---|---|
 | `member.events.v1` | `MemberCreated` | 로컬 · 소셜 가입 | ✅ |
-| `member.events.v1` | `MemberUpdated` | 판매자 등록 (닉네임 변경 API가 생기면 그때도) | ✅ |
+| `member.events.v1` | `MemberUpdated` | 판매자 등록 · 닉네임 변경 (바뀐 경우만) | ✅ |
 | `member.events.v1` | `MemberWithdrawn` | 탈퇴 | ⬜ record만 (탈퇴 기능과 함께) |
 | `member.address.events.v1` | `MemberAddressChanged` (판매자 배송지 목록, 암호화) | 판매자 등록 · 배송지 추가 · 기본 배송지 변경 (판매자만, 바뀐 뒤 전체 목록) | ✅ |
 
@@ -73,7 +74,9 @@ payload (받는 쪽은 upsert, `occurredAt`이 저장된 값보다 오래되면 
 
 ## 스케줄러
 
-없음
+| 작업 | 주기 | 하는 일 |
+|---|---|---|
+| 토큰 폐기 재처리 | 10초 | Redis 기록을 확인하지 못한 폐기 작업을 보관 기한까지 다시 기록 → [스케줄러](../reference/schedulers.md) |
 
 ## 정책
 
@@ -90,9 +93,10 @@ payload (받는 쪽은 upsert, `occurredAt`이 저장된 값보다 오래되면 
 | 로그인 실패 | 무엇이 틀렸는지 구분하지 않고 `LOGIN_FAILED` |
 | 권한 | 가입하면 `MEMBER`, 판매자 등록하면 바로 `SELLER` (사진 외부 전송 · 학습 이용 동의 필수, 내용 · 버전 · 시각 기록) |
 | 여러 기기 | 동시 로그인 허용 |
+| 로그인 · 재발급 잠금 | 로그인 · 소셜 로그인 · 재발급 · 토큰 폐기가 회원 행을 잠금 (대기 3초, 넘으면 409 `MEMBER_BUSY`). 배송지 변경 · 판매자 등록의 대기 제한은 별도 작업 → [인증 규칙](../conventions/auth.md#토큰-폐기) |
 | 비밀번호 변경 | 현재 비밀번호 확인 후, 모든 기기 로그아웃 (소셜 제외) |
 | 계좌 변경 | 이메일 재인증 후 가능(소셜도 같음). 정산 대기 · 진행 중 인출이 있어도 가능하고 다른 서비스 확인 호출은 없음 (정산금은 지갑으로, 인출은 신청할 때의 계좌로 지급) |
-| 계좌 표시 | 화면은 뒤 4자리만, 로그에 원문 금지, 복호화는 member 안에서만. payment에는 member가 복호화해 응답 (⬜ 전송 구간 암호화는 결제 담당과 정함) |
+| 계좌 표시 | 화면은 뒤 4자리만, 로그에 원문 금지, 복호화는 member 안에서만. payment에는 member가 복호화해 응답 (⬜ 운영 전송 보호 방식(서비스 간 HTTPS 또는 응답 암호화)은 payment · 인프라 담당과 정함) |
 | 배송지 | 회원당 최대 4개 · 기본 1개(회원 행 잠금), 부분 수정, 남의 배송지는 404. 배송지를 바꾸는 모든 경로(추가 · 기본 변경 · 판매자 등록, 이후 수정 · 삭제 포함)가 회원 행을 먼저 잠근다 |
 | 판매자 상점 | 판매자 정보는 누구나 봄(공개 경로는 Gateway · member 양쪽에 등록), 소개글 500자는 본인만 수정 |
 | 탈퇴 | → [가입 · 탈퇴 흐름](../flows/signup-and-replica.md#탈퇴) |

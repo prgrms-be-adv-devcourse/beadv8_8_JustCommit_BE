@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 
-// 판매 금지 목록 대조 (사진 검수 #343에서 사용)
+// 판매 금지 목록 대조 (사진 검수에서 사용)
 // 목록은 Flyway로만 바뀌고 바뀌면 재배포하므로, 처음 쓸 때 한 번 읽어 대조기를 만들어 두고 계속 쓴다
 @Service
 @RequiredArgsConstructor
@@ -37,6 +37,11 @@ public class BannedListService {
         return matchers().text().match(title, description);
     }
 
+    // Haiku 프롬프트에 넣을 금지 품종 목록 ("한글 이름(법령 학명)")
+    public List<String> promptNames() {
+        return matchers().promptNames();
+    }
+
     // 여러 스레드가 처음에 동시에 불러도 한 번만 읽도록
     private Matchers matchers() {
         Matchers loaded = matchers;
@@ -55,7 +60,9 @@ public class BannedListService {
     private Matchers load() {
         List<ScientificNameMatcher.Entry> entries = new ArrayList<>();
         List<String> banned = new ArrayList<>();
+        List<String> promptNames = new ArrayList<>();
         for (BannedSpecies s : bannedSpeciesRepository.findAllWithAliases()) {
+            promptNames.add(s.getKoreanName() + "(" + s.getScientificName() + ")");
             entries.add(new ScientificNameMatcher.Entry(s.getScientificName(), s.getScientificName(), s.getKoreanName()));
             banned.add(s.getKoreanName());
             for (BannedSpeciesAlias a : s.getAliases()) {
@@ -74,9 +81,10 @@ public class BannedListService {
                 case EXCEPTION -> exceptions.add(k.getKeyword());
             }
         }
-        return new Matchers(new ScientificNameMatcher(entries), new BannedTextMatcher(banned, review, exceptions));
+        return new Matchers(new ScientificNameMatcher(entries), new BannedTextMatcher(banned, review, exceptions),
+                List.copyOf(promptNames));
     }
 
-    private record Matchers(ScientificNameMatcher scientific, BannedTextMatcher text) {
+    private record Matchers(ScientificNameMatcher scientific, BannedTextMatcher text, List<String> promptNames) {
     }
 }

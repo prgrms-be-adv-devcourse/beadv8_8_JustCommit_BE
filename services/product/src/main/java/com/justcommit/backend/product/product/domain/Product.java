@@ -132,7 +132,7 @@ public class Product extends BaseTimeEntity {
         return status == ProductStatus.ACTIVE && !hidden;
     }
 
-    // 반환값: 다시 할 검수 범위 (#345에서 검수 요청 이벤트에 싣는다)
+    // 반환값: 다시 할 검수 범위 (검수 요청 · image_review에 기록)
     public ReviewScope update(Species species, String title, String description,
                               BigDecimal price, Integer heightCm, String potSize, String growNote,
                               List<String> imageUrls) {
@@ -141,9 +141,12 @@ public class Product extends BaseTimeEntity {
         }
 
         // 순서만 바뀐 사진은 같은 사진으로 본다. 품종이 바뀌면 품종 대조가 필요해 사진 검수부터
+        // 글 검사만 하는 건 이미 검수를 통과한 판매 중 상품뿐. 검수 중 · 반려 상품은 글만 고쳐도 처음부터 검수
+        // (반려 사유가 사진일 수 있고, 검수 중 상품은 사진 검수가 아직 끝나지 않았을 수 있음)
         boolean imagesChanged = !new HashSet<>(currentImageUrls()).equals(new HashSet<>(imageUrls));
         boolean speciesChanged = !Objects.equals(this.species.getId(), species.getId());
-        ReviewScope scope = (imagesChanged || speciesChanged) ? ReviewScope.FULL : ReviewScope.TEXT_ONLY;
+        ReviewScope scope = (status == ProductStatus.ACTIVE && !imagesChanged && !speciesChanged)
+                ? ReviewScope.TEXT_ONLY : ReviewScope.FULL;
 
         this.species = species;
         this.title = title;
@@ -155,7 +158,7 @@ public class Product extends BaseTimeEntity {
         replaceImages(imageUrls);
 
         // 판매 중 상품의 글만 고치면 판매를 멈추지 않고 글 검사만 한다. 걸리면 그때 REJECTED
-        if (!(status == ProductStatus.ACTIVE && scope == ReviewScope.TEXT_ONLY)) {
+        if (scope == ReviewScope.FULL) {
             this.status = ProductStatus.REVIEW_PENDING;
         }
         this.reviewVersion++;

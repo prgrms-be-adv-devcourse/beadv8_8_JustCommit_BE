@@ -1,0 +1,19 @@
+# 측정 중에는 5초마다 수집한다 (기본 1분이면 2분짜리 부하 단계 안에 점이 2개뿐이라 너무 성김)
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+# 대상 포트는 모두 내 PC의 SSH 터널 입구다 (README 「SSH 터널」)
+scrape_configs:
+  - job_name: app # Spring Boot: 요청 수 · 응답 시간 · 커넥션 풀 · JVM · Tomcat
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:18081"]
+
+  - job_name: node # 서버: CPU(steal 포함) · 메모리 · 디스크
+    static_configs:
+      - targets: ["host.docker.internal:19100"]
+
+  - job_name: postgres # DB: 연결 수 · 잠금 수
+    static_configs:
+      - targets: ["host.docker.internal:19187"]

@@ -46,3 +46,14 @@ custom:
     access-key: ${S3_ACCESS_KEY:}
     secret-key: ${S3_SECRET_KEY:}
     upload-url-duration: 10m
+  # 사진 검수 외부 API. 키가 없어도 앱은 뜨고, 검수는 엔진 오류로 관리자 확인
+  review:
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY:}
+    retry-backoff: 1s
+    # 엔진 오류 재처리 스케줄러 (5분마다, 최대 3회)
+    retry:
+      enabled: true
+      interval: PT5M

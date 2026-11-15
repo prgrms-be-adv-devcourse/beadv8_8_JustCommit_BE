@@ -93,6 +93,8 @@ class SellerWithdrawalReleaseIntegrationTest {
     // @DataJpaTest라 Kafka가 없음: 발행은 가짜로 (Outbox 저장 · 롤백은 ProductOutboxIntegrationTest)
     @MockitoBean OutboxPublisher outboxPublisher;
     @MockitoBean ProductImageUrlValidator imageUrlValidator;
+    // 사진 검수는 ImageReviewServiceIntegrationTest에서
+    @MockitoBean ReviewRequester reviewRequester;
     @MockitoBean ProductImageCleaner imageCleaner;
 
     private Species species;

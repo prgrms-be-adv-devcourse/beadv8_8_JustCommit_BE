@@ -140,14 +140,14 @@ class ProductTest {
     }
 
     @Test
-    @DisplayName("반려된 상품은 글만 고쳐도 다시 검수 중이 됨")
+    @DisplayName("반려된 상품은 글만 고쳐도 다시 검수 중이 되고 사진 검수부터 함 (반려 사유가 사진일 수 있음)")
     void updateRejectedGoesToReview() {
         Species species = species(1L);
         Product product = withStatus(create(species), ProductStatus.REJECTED);
 
         ReviewScope scope = update(product, species, "새 제목", List.of("https://example.com/a.jpg"));
 
-        assertThat(scope).isEqualTo(ReviewScope.TEXT_ONLY);
+        assertThat(scope).isEqualTo(ReviewScope.FULL);
         assertThat(product.getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
     }
 

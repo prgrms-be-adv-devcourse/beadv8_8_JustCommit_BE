@@ -35,6 +35,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.test.util.ReflectionTestUtils;
+import com.justcommit.backend.product.product.domain.ReviewScope;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -77,6 +78,9 @@ public class  ProductServiceTest {
 
     @Mock
     private OutboxPublisher outboxPublisher;
+
+    @Mock
+    private ReviewRequester reviewRequester;
 
     // 등록 제한의 "오늘" 기준을 고정 (2026-11-11 12:00 KST)
     @Spy
@@ -152,6 +156,8 @@ public class  ProductServiceTest {
         //then - 생성된 응답에 제대로 값이 드어갔는지 확인
         assertThat(response.sellerName()).isEqualTo("판매자1");
         assertThat(response.title()).isEqualTo("몬스테라 분양합니다");
+        // 등록하면 사진 검수부터 요청
+        verify(reviewRequester).request(any(Product.class), eq(ReviewScope.FULL));
     }
 
     @Test
@@ -204,6 +210,7 @@ public class  ProductServiceTest {
         // 사진 · 품종이 바뀌어 다시 검수 중, 검수 버전 +1
         assertThat(product.getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
         assertThat(product.getReviewVersion()).isEqualTo(1);
+        verify(reviewRequester).request(product, ReviewScope.FULL);
     }
 
     @Test
@@ -413,6 +420,19 @@ public class  ProductServiceTest {
         ProductResult result = productService.getProduct(PRODUCT_ID);
 
         assertThat(result.speciesName()).isEqualTo("몬스테라");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ProductStatus.class, names = {"REVIEW_PENDING", "REJECTED"})
+    @DisplayName("다른 모듈용 조회에서 검수 중 · 반려 상품은 썸네일을 비우고 제목을 가림 (장바구니에 반려 사진 · 글이 보이지 않게)")
+    void getProductInReviewIsMasked(ProductStatus status) {
+        given(productRepository.findById(PRODUCT_ID)).willReturn(Optional.of(product(status)));
+
+        ProductResult result = productService.getProduct(PRODUCT_ID);
+
+        assertThat(result.title()).isEqualTo("검수 중인 상품");
+        assertThat(result.thumbnailUrl()).isNull();
+        assertThat(result.status()).isEqualTo(status);
     }
 
     @Test
