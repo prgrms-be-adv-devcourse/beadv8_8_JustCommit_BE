@@ -17,8 +17,10 @@ import java.util.Set;
 public class OrderWithdrawalCheckService {
 
     // 진행 중: 결제 대기 · 결제 완료 주문 중 아직 끝나지 않은 주문상품(일반 · 반품 요청)이 있는 것
-    // 판매자 수락 대기는 #283에서 상태가 추가될 때 같이 센다
+    // 진행 중인 주문 상태
     static final Set<OrderStatus> ACTIVE_ORDER_STATUSES = Set.of(OrderStatus.PAYMENT_PENDING, OrderStatus.PAID);
+    // 진행 중인 주문상품 상태
+    // #284에서 ACCEPT_PENDING 추가 시 탈퇴 제한 대상에 포함
     static final Set<OrderItemStatus> ACTIVE_ITEM_STATUSES = Set.of(OrderItemStatus.NORMAL, OrderItemStatus.REFUND_REQUESTED);
 
     private final OrdersRepository ordersRepository;
