@@ -102,3 +102,15 @@ messaging:
 internal-api:
   key: ${INTERNAL_API_KEY:}
   groups: [market, payment, settlement]
+
+# 회원 행 잠금 대기 제한 (#409). 넘으면 409 MEMBER_BUSY. 잠금 한 번마다의 제한 (MemberLocker)
+member:
+  lock:
+    timeout: 3s
+  token-revocation:
+    # 폐기 키 보관 여유 (#409). 보관 기한 = 폐기 시각 + Access 수명 + 여유. 운영 측정값이 나오기 전 초기값
+    retention-margin: 60s
+    # 폐기 기록 재처리 (#409). 끄려면 enabled: false
+    retry:
+      enabled: true
+      interval: PT10S

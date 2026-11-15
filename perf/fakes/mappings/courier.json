@@ -1,0 +1,12 @@
+{
+  "id": "c0000000-0000-4000-8000-000000000001",
+  "name": "courier: 404-express로 중계 (지연만 추가)",
+  "priority": 10,
+  "request": {
+    "urlPattern": "/api/v1/shipments.*"
+  },
+  "response": {
+    "proxyBaseUrl": "http://404-express:3000",
+    "fixedDelayMilliseconds": 0
+  }
+}
