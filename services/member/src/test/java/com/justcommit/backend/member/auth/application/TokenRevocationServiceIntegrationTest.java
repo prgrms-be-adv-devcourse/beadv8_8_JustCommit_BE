@@ -198,7 +198,7 @@ class TokenRevocationServiceIntegrationTest {
     TokenRevocation revocation = onlyRevocationOf(member.getId());
     assertThat(revocation.getStatus()).isEqualTo(RevocationStatus.PENDING);
     assertThat(revocation.getAttemptCount()).isZero();
-    assertThat(revocation.getNextAttemptAt()).isEqualTo(revocation.getCutoffAt());
+    assertThat(revocation.getNextAttemptAt()).isEqualTo(revocation.getCutoffAt().plus(TokenRevocation.FIRST_RECORD_GRACE));
     assertThat(revocation.getLastError()).isNull();
     assertThat(redisTemplate.hasKey(revokedKey(member.getId()))).isFalse();
     then(revokedMemberRedisStore).should(never()).recordCutoff(anyLong(), any(), any());
@@ -214,7 +214,8 @@ class TokenRevocationServiceIntegrationTest {
     assertThat(recorded.getStatus()).isEqualTo(RevocationStatus.RECORDED);
 
     Integer changed = transactionTemplate.execute(status ->
-        revocationRepository.recordFailure(recorded.getId(), "늦은 실패", 10, LocalDateTime.now()));
+        revocationRepository.recordFailure(recorded.getId(), "늦은 실패",
+            recorded.getCutoffAt().plus(TokenRevocation.FIRST_RECORD_GRACE), LocalDateTime.now()));
 
     assertThat(changed).isZero();
     TokenRevocation after = onlyRevocationOf(member.getId());
