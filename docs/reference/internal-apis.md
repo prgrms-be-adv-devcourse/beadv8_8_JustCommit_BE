@@ -1,7 +1,7 @@
 # 내부 API 목록
 
 > 언제 읽나: 서비스 간 내부 API의 경로 · 멱등 키를 찾을 때
-> 상태: 🟨 제안 · 마지막 수정 2026-11-14 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
+> 상태: 🟨 제안 · 마지막 수정 2026-11-15 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
 
 ## 목록
 
@@ -11,8 +11,8 @@
 |---|---|---|---|---|---|
 | member | `GET /internal/v1/members/{memberId}/account` | payment | 인출 신청 때 계좌 받기: `bankCode`(금융결제원 3자리) · `accountNo`(member가 복호화한 원문) · `accountHolder`. 없는 회원 · 탈퇴 회원은 404 `MEMBER_NOT_FOUND`. ⬜ 운영 전송 보호 방식(서비스 간 HTTPS 또는 응답 암호화)은 payment · 인프라 담당과 정함 | – | ✅ member 구현 · ⬜ payment 연동(#388) |
 | market | `GET /internal/v1/orders/members/{memberId}/withdrawalCheck` | member | `hasWithdrawalBlocker` + 차단 사유 코드 (`ACTIVE_BUYER_ORDER` 구매자로 진행 중 주문 · `ACTIVE_SELLER_ORDER` 판매자로 진행 중 주문), `details`에 `activeBuyerOrderCount` · `activeSellerOrderCount`. 진행 중: 주문 `PAYMENT_PENDING` · `PAID` 중 주문상품 `NORMAL` · `REFUND_REQUESTED`가 있는 주문 (⬜ 판매자 수락 대기: 주문상품 `ACCEPT_PENDING`, #284에서 추가) | – | ✅ |
-| payment | ⬜ 탈퇴 확인 | member | `hasWithdrawalBlocker` + 차단 사유 코드 (잔액 · 진행 중 충전 · 충전 취소 · 인출 · 미수금) | – | ✅ 기능 · ⬜ 경로 |
-| settlement | ⬜ 탈퇴 확인 | member | `hasWithdrawalBlocker` + 차단 사유 코드 (미지급 정산) | – | ✅ 기능 · ⬜ 경로 |
+| payment | `GET /internal/v1/payments/members/{memberId}/withdrawalCheck` | member | `hasWithdrawalBlocker` + 차단 사유 코드 (`WALLET_BALANCE_REMAINING` 지갑 잔액 남음 · `TRANSACTION_IN_PROGRESS` 진행 중 충전 · 충전 취소 · 인출 · `SELLER_DEBT_REMAINING` 판매자 미수금 남음), `details`에 `walletBalance` · `hasPendingTransactions` · `outstandingDebt` | – | ✅ |
+| settlement | `GET /internal/v1/settlements/members/{memberId}/withdrawalCheck` | member | `hasWithdrawalBlocker` + 차단 사유 코드 (`INCOMPLETE_SETTLEMENT` 완료되지 않은 정산), `details`에 `incompleteSettlementCount` | – | ✅ |
 | product | `GET /internal/v1/products?ids=` | market | 상품 정보 · 가격 · 판매 상태 일괄 (장바구니 · 주문 · 추천 결과 카드). 검수 중 · 반려 상품은 제목 「검수 중인 상품」 · 썸네일 없음 | – | ✅ |
 | product | `POST /internal/v1/products/reservations` | market | 상품 예약 (아래 표) | orderId | ✅ |
 | payment | `POST /internal/v1/payments` | market | 잔액 차감 (`HOLDING`으로). 같은 orderId로 다시 오면 차감하지 않고 `ALREADY_PAID` | orderId | ✅ |
