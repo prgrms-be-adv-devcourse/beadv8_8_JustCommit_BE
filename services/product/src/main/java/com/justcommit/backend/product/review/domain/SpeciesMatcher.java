@@ -10,7 +10,11 @@ import java.util.Set;
 // 엔진 1순위 후보가 판매자가 고른 품종과 같은지 (속까지 같으면 일치)
 // 1) 후보 학명의 속 2) 후보 한글 이름 → species.name · species_alias로 찾은 품종의 scientific_name 속
 // 둘 중 하나라도 판매자 품종의 속과 같으면 일치. 엔진이 옛 학명(예: Sansevieria)을 답해도 한글 이름(산세베리아)으로 맞출 수 있게
+// 속 이름이 바뀐 경우(산세베리아 → 드라세나로 합쳐짐)는 같은 속으로 봄. 엔진이 옛 이름 · 새 이름을 섞어 답함
 public final class SpeciesMatcher {
+
+    // 옛 속 → 지금 속. 11/14 실판매 실측에서 스투키 · 산세베리아 13건이 이 차이로만 불일치
+    private static final Map<String, String> GENUS_SYNONYMS = Map.of("sansevieria", "dracaena");
 
     // 품종 하나: 이름 · 학명 · 별칭(유통명)
     public record Entry(String name, String scientificName, List<String> aliases) {
@@ -51,14 +55,15 @@ public final class SpeciesMatcher {
         }
     }
 
-    // 학명의 첫 단어(속)를 소문자로. 교잡종 기호(× · 단독 x)는 건너뜀
+    // 학명의 첫 단어(속)를 소문자로, 옛 속 이름은 지금 이름으로. 교잡종 기호(× · 단독 x)는 건너뜀
     static String genus(String scientificName) {
         if (scientificName == null) {
             return null;
         }
         for (String word : scientificName.replace('×', ' ').trim().split("\\s+")) {
             if (!word.isEmpty() && !word.equalsIgnoreCase("x")) {
-                return word.toLowerCase(Locale.ROOT);
+                String genus = word.toLowerCase(Locale.ROOT);
+                return GENUS_SYNONYMS.getOrDefault(genus, genus);
             }
         }
         return null;
