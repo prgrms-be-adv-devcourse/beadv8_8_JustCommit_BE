@@ -127,6 +127,13 @@ class JwtAuthenticationIntegrationTest extends GatewayIntegrationTest {
   }
 
   @Test
+  @DisplayName("공개 경로: 판매자 공개 정보(숫자 id)는 토큰 없이 member까지 감, sellers/me/intro 수정은 공개 아님 → 401")
+  void sellerProfileIsPublic() {
+    get("/api/v1/sellers/5", null).expectStatus().isOk();
+    expectError(client.patch().uri("/api/v1/sellers/me/intro").exchange(), 401, "UNAUTHORIZED");
+  }
+
+  @Test
   @DisplayName("공개 경로: 닉네임 · 휴대폰 중복 확인은 토큰 없이 member까지 감, 옛 경로(checkNickname · checkPhone)는 공개 아님 → 401")
   void availabilityPathsArePublic() {
     get("/api/v1/users/nicknameAvailability?nickname=green", null).expectStatus().isOk();
