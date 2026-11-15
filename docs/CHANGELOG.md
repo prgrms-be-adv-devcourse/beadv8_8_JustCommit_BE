@@ -1,12 +1,13 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-14 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-15 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-15 · reference/external-apis.md · services/member.md · conventions/auth.md · 판매자 공개 정보 · 소개글 수정 반영: `GET sellers/{sellerId}`(공개, 숫자 id만, 닉네임 · 소개글 · 등록일, 판매자가 아니거나 없는 회원 · 탈퇴한 판매자는 404 `SELLER_NOT_FOUND`), `PATCH sellers/me/intro`(판매자 본인만, 판매자 행이 없으면 403 `NOT_SELLER` · 탈퇴 회원 404 `MEMBER_NOT_FOUND`, `intro` 필수 · 최대 500자 · 빈 문자열은 삭제), 공개 경로를 Gateway · member 양쪽에 등록, 「추가 예정」에서 판매자 상점 정보 · 소개글 수정 제거 (#460)
 - 2026-11-14 · services/member.md · flows/signup-and-replica.md · reference/env-vars.md · open-questions.md · member 탈퇴 가능 여부 확인 반영: market · payment · settlement 탈퇴 확인 내부 API(`GET /internal/v1/{orders, payments, settlements}/members/{memberId}/withdrawalCheck`, 공통 응답 `hasWithdrawalBlocker` · `blockingReasons` · `details`)를 병렬 조회해 결과 `ALLOWED` · `BLOCKED` · `UNAVAILABLE`로 모음(호출 실패 · 응답 형식 오류는 `UNAVAILABLE`, 차단과 실패가 함께면 `UNAVAILABLE`, 탈퇴 처리 #407에서 `ALLOWED`일 때만 진행), member가 쓰는 `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` 추가, 내부 호출 그룹이 있는 서비스는 `INTERNAL_API_KEY` 없으면 시작하지 않음, 미정 항목에서 탈퇴 확인 경로 제거 (#454)
 - 2026-11-14 · reference/internal-apis.md · services/member.md · open-questions.md · member 계좌 조회 내부 API 반영: `GET /internal/v1/members/{memberId}/account`(`X-Internal-Key` 필수) 응답 `bankCode` · `accountNo`(member가 복호화한 원문) · `accountHolder`, 없는 회원 · 탈퇴 회원 404 `MEMBER_NOT_FOUND`, 상태 「✅ member 구현 · ⬜ payment 연동(#388)」, 미정 항목에서 계좌 조회 경로 제거(운영 전송 보호 방식은 payment · 인프라 담당과 정하는 미정으로 유지) (#453)
 - 2026-11-14 · flows/image-review.md · 엔진 오류 재처리 「상태」에 판매 중 상품의 글 검사(`TEXT_ONLY`)는 재처리 동안 `ACTIVE` 그대로(판매 유지, 🟨 팀 확인 중) 추가 (#451)
