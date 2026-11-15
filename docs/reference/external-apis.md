@@ -21,6 +21,7 @@
 | GET | `users/nicknameAvailability?nickname=` | 닉네임 중복 확인 | 공개 |
 | GET | `users/phoneAvailability?phone=` | 휴대폰 중복 확인 | 공개 |
 | GET | `users/me` | 내 정보 | 로그인 |
+| PATCH | `users/me/nickname` | 닉네임 변경 (지금 닉네임과 같으면 그대로) | 로그인 |
 | GET · POST | `users/me/addresses` | 배송지 목록 · 추가 | 로그인 |
 | PATCH | `users/me/addresses/{id}/default` | 기본 배송지 변경 | 로그인 |
 | POST | `sellers` | 판매자 등록 | 로그인 |
@@ -84,7 +85,7 @@
 
 | 서비스 | 기능 | 설명 |
 |---|---|---|
-| member | 아이디 찾기 · 비밀번호 재설정 · 비밀번호 변경 · 닉네임 변경 · 계좌 변경 · 배송지 수정 · 탈퇴 | 노션 2.1 ~ 2.5 |
+| member | 아이디 찾기 · 비밀번호 재설정 · 비밀번호 변경 · 계좌 변경 · 배송지 수정 · 탈퇴 | 노션 2.1 ~ 2.5 |
 | market | 판매자 수락 · 거절 (판매자 주문 › 상품 트리 체크) | 판매 기록 화면 |
 | market | 반품 신청 (사유) · 판매자 승인 · 거절 | 노션 7절 |
 | market | 리뷰 작성 · 삭제 · 판매자 리뷰 목록 (태그 집계) | 노션 6절 |
