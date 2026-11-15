@@ -3,7 +3,7 @@ package com.justcommit.backend.payment.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
 import com.justcommit.backend.payment.infrastructure.pg.TossConfirmRejectedException;
-import com.justcommit.backend.payment.infrastructure.pg.TossConfirmResponse;
+import com.justcommit.backend.payment.infrastructure.pg.TossPaymentResponse;
 import com.justcommit.backend.payment.infrastructure.pg.TossConfirmResultUnknownException;
 import com.justcommit.backend.payment.infrastructure.pg.TossPaymentClient;
 import com.justcommit.backend.payment.presentation.dto.ChargeConfirmRequest;
@@ -30,7 +30,7 @@ public class ChargeConfirmFacade {
         // TX1: READY → PENDING 커밋
         ChargeConfirmResponse pending = chargeService.startConfirm(memberId, chargeId, request);
 
-        TossConfirmResponse tossResponse;
+        TossPaymentResponse tossResponse;
         try {
             tossResponse = tossPaymentClient.confirm(
                     request.getPaymentKey(), request.getOrderId(), request.getAmount());
@@ -38,17 +38,17 @@ public class ChargeConfirmFacade {
             try {
                 chargeService.fail(chargeId);
             } catch (RuntimeException failError) {
-                // FAILED 반영 실패 → PENDING으로 남고 #363이 정리. 사용자에게는 거절 사유를 그대로 돌려준다
+                // FAILED 반영 실패 → PENDING으로 남고 복구 스케줄러(#363)가 토스 조회로 정리. 사용자에게는 거절 사유를 그대로 돌려준다
                 log.error("토스 거절 후 FAILED 반영 실패: chargeId={}, code={}", chargeId, e.getCode(), failError);
             }
             throw new BusinessException(PaymentErrorCode.PG_CONFIRM_FAILED, e.getMessage());
         } catch (TossConfirmResultUnknownException e) {
-            // 결과 불명 → PENDING 유지, 복구 스케줄러(#363)가 확정
+            // 결과 불명 → PENDING 유지, 복구 스케줄러(#363)가 토스 조회로 확정
             return pending;
         }
 
         if (!matches(tossResponse, pending, request.getPaymentKey())) {
-            // 토스에서는 승인됐을 수 있지만 우리 기록과 달라 반영하지 않는다 (보상 취소는 #402)
+            // 토스에서는 승인됐을 수 있지만 우리 기록과 달라 반영하지 않는다. 복구 스케줄러가 조회해 맞으면 적립, 다르면 REVIEW_REQUIRED (보상 취소는 #402)
             log.error("토스 승인 응답이 충전 기록과 다름: chargeId={}, orderId={}, 충전 금액={}, 토스 상태={}, 토스 금액={}",
                     chargeId, pending.getPgOrderNo(), pending.getAmount(),
                     tossResponse == null ? null : tossResponse.status(),
@@ -66,7 +66,7 @@ public class ChargeConfirmFacade {
         }
     }
 
-    private boolean matches(TossConfirmResponse toss, ChargeConfirmResponse charge, String paymentKey) {
+    private boolean matches(TossPaymentResponse toss, ChargeConfirmResponse charge, String paymentKey) {
         return toss != null
                 && TOSS_DONE.equals(toss.status())
                 && paymentKey.equals(toss.paymentKey())
