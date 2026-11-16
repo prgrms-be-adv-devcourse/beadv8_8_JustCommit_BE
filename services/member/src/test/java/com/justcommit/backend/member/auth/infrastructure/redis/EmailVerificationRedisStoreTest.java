@@ -3,6 +3,7 @@ package com.justcommit.backend.member.auth.infrastructure.redis;
 import com.justcommit.backend.member.auth.domain.EmailPurpose;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore.SendResult;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore.SendStatus;
+import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore.VerifyOutcome;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore.VerifyResult;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -91,11 +92,11 @@ class EmailVerificationRedisStoreTest {
   private void saveOwnCode(EmailPurpose purpose, String code, Duration ttl) {
     redisTemplate.delete(COOLDOWN_KEY);
     SendResult sent = acquire();
-    assertThat(store.saveCode(purpose, EMAIL, sent.requestId(), code, ttl)).isTrue();
+    assertThat(store.saveCode(purpose, EMAIL, sent.requestId(), code, "", ttl)).isTrue();
   }
 
   private VerifyResult verify(EmailPurpose purpose, String code) {
-    return store.verifyCode(purpose, EMAIL, code, MAX_WRONG, CODE_TTL);
+    return store.verifyCode(purpose, EMAIL, code, MAX_WRONG, CODE_TTL).result();
   }
 
   // ===== 발송 자리 =====
@@ -151,7 +152,7 @@ class EmailVerificationRedisStoreTest {
   @DisplayName("발송 실패로 되돌리면 그 요청의 인증번호 · 재발송 제한이 지워지고 하루 횟수가 1 줄어 바로 다시 보낼 수 있다")
   void release() {
     SendResult sent = acquire();
-    store.saveCode(EmailPurpose.SIGNUP, EMAIL, sent.requestId(), "123456", CODE_TTL);
+    store.saveCode(EmailPurpose.SIGNUP, EMAIL, sent.requestId(), "123456", "", CODE_TTL);
 
     store.releaseSend(EmailPurpose.SIGNUP, EMAIL, sent.requestId());
 
@@ -165,10 +166,10 @@ class EmailVerificationRedisStoreTest {
   @DisplayName("앞 요청이 늦게 실패해도 뒤 요청의 인증번호 · 재발송 제한은 그대로이고, 하루 횟수만 1 줄어든다")
   void release_doesNotTouchLaterRequest() {
     SendResult first = acquire();
-    store.saveCode(EmailPurpose.SIGNUP, EMAIL, first.requestId(), "111111", CODE_TTL);
+    store.saveCode(EmailPurpose.SIGNUP, EMAIL, first.requestId(), "111111", "", CODE_TTL);
     redisTemplate.delete(COOLDOWN_KEY); // 앞 요청의 메일 발송이 60초 넘게 걸린 상황
     SendResult second = acquire();
-    store.saveCode(EmailPurpose.SIGNUP, EMAIL, second.requestId(), "222222", CODE_TTL);
+    store.saveCode(EmailPurpose.SIGNUP, EMAIL, second.requestId(), "222222", "", CODE_TTL);
 
     store.releaseSend(EmailPurpose.SIGNUP, EMAIL, first.requestId());
 
@@ -209,9 +210,9 @@ class EmailVerificationRedisStoreTest {
     SendResult first = acquire();
     redisTemplate.delete(COOLDOWN_KEY); // 앞 요청이 저장 전에 60초 넘게 멈춘 상황
     SendResult second = acquire();
-    store.saveCode(EmailPurpose.SIGNUP, EMAIL, second.requestId(), "222222", CODE_TTL);
+    store.saveCode(EmailPurpose.SIGNUP, EMAIL, second.requestId(), "222222", "", CODE_TTL);
 
-    boolean saved = store.saveCode(EmailPurpose.SIGNUP, EMAIL, first.requestId(), "111111", CODE_TTL);
+    boolean saved = store.saveCode(EmailPurpose.SIGNUP, EMAIL, first.requestId(), "111111", "", CODE_TTL);
 
     assertThat(saved).isFalse();
     assertThat(verify(EmailPurpose.SIGNUP, "222222")).isEqualTo(VerifyResult.MATCHED);
@@ -282,6 +283,30 @@ class EmailVerificationRedisStoreTest {
 
     assertThat(results).filteredOn(r -> r == VerifyResult.MATCHED).hasSize(1);
     assertThat(results).filteredOn(r -> r == VerifyResult.EXPIRED).hasSize(9);
+  }
+
+  @Test
+  @DisplayName("일치하면 묶음 정보(회원 id · 인증 버전)를 같은 실행에서 돌려주고 번호와 함께 지운다, 틀리면 돌려주지 않는다")
+  void verify_returnsBinding() {
+    SendResult sent = acquire();
+    store.saveCode(EmailPurpose.PASSWORD_RESET, EMAIL, sent.requestId(), "123456", "7:3", CODE_TTL);
+
+    assertThat(store.verifyCode(EmailPurpose.PASSWORD_RESET, EMAIL, "000000", MAX_WRONG, CODE_TTL))
+        .isEqualTo(new VerifyOutcome(VerifyResult.MISMATCH, ""));
+    assertThat(store.verifyCode(EmailPurpose.PASSWORD_RESET, EMAIL, "123456", MAX_WRONG, CODE_TTL))
+        .isEqualTo(new VerifyOutcome(VerifyResult.MATCHED, "7:3"));
+    assertThat(redisTemplate.hasKey("auth:email:password-reset:" + EMAIL)).isFalse();
+    assertThat(store.verifyCode(EmailPurpose.PASSWORD_RESET, EMAIL, "123456", MAX_WRONG, CODE_TTL))
+        .isEqualTo(new VerifyOutcome(VerifyResult.EXPIRED, ""));
+  }
+
+  @Test
+  @DisplayName("가입 인증번호는 묶음 정보 없이 저장되어, 일치해도 빈 묶음 정보를 돌려준다")
+  void verify_signupHasNoBinding() {
+    saveOwnCode(EmailPurpose.SIGNUP, "123456", CODE_TTL);
+
+    assertThat(store.verifyCode(EmailPurpose.SIGNUP, EMAIL, "123456", MAX_WRONG, CODE_TTL))
+        .isEqualTo(new VerifyOutcome(VerifyResult.MATCHED, ""));
   }
 
   // ===== 목적 구분 =====

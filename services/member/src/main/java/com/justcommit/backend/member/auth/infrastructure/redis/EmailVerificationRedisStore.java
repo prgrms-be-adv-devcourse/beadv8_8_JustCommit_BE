@@ -84,18 +84,23 @@ public class EmailVerificationRedisStore {
       """, Long.class);
 
   // KEYS[1] = 인증번호 키, KEYS[2] = 틀린 횟수 키 / ARGV[1] = 입력한 번호, ARGV[2] = 최대 틀린 횟수, ARGV[3] = 틀린 횟수 TTL(초)
-  // 인증번호 값은 "{요청 식별자}:{번호}"라 ':' 뒤만 비교한다
-  // 반환: 0 = 없음(만료), 1 = 일치(번호 · 횟수 삭제), 2 = 불일치, 3 = 최대 횟수만큼 틀림(번호 · 횟수 삭제)
-  private static final RedisScript<Long> VERIFY_SCRIPT = new DefaultRedisScript<>("""
+  // 인증번호 값은 "{요청 식별자}:{번호}:{묶음 정보}"라 두 번째 ':' 앞의 번호만 비교한다
+  // 반환 {상태, 묶음 정보}: 0 = 없음(만료), 1 = 일치(번호 · 횟수 삭제, 묶음 정보 반환), 2 = 불일치, 3 = 최대 횟수만큼 틀림(번호 · 횟수 삭제)
+  // 일치했을 때만 묶음 정보를 돌려준다 (번호를 지우는 같은 실행에서 읽으므로, 확인과 대상 정보 사이에 끼어들 틈이 없음)
+  @SuppressWarnings("rawtypes")
+  private static final RedisScript<List> VERIFY_SCRIPT = new DefaultRedisScript<>("""
       local saved = redis.call('GET', KEYS[1])
       if not saved then
-        return 0
+        return {0, ''}
       end
-      local separator = string.find(saved, ':', 1, true)
-      local code = separator and string.sub(saved, separator + 1) or saved
+      local first = string.find(saved, ':', 1, true)
+      local rest = first and string.sub(saved, first + 1) or saved
+      local second = string.find(rest, ':', 1, true)
+      local code = second and string.sub(rest, 1, second - 1) or rest
+      local binding = second and string.sub(rest, second + 1) or ''
       if code == ARGV[1] then
         redis.call('DEL', KEYS[1], KEYS[2])
-        return 1
+        return {1, binding}
       end
       local wrong = redis.call('INCR', KEYS[2])
       if redis.call('TTL', KEYS[2]) < 0 then
@@ -103,10 +108,10 @@ public class EmailVerificationRedisStore {
       end
       if wrong >= tonumber(ARGV[2]) then
         redis.call('DEL', KEYS[1], KEYS[2])
-        return 3
+        return {3, ''}
       end
-      return 2
-      """, Long.class);
+      return {2, ''}
+      """, List.class);
 
   private final StringRedisTemplate redisTemplate;
 
@@ -118,6 +123,10 @@ public class EmailVerificationRedisStore {
   }
 
   public enum VerifyResult { MATCHED, MISMATCH, EXHAUSTED, EXPIRED }
+
+  // binding: 인증번호를 저장할 때 함께 넣은 묶음 정보 (MATCHED일 때만, 없으면 빈 문자열)
+  public record VerifyOutcome(VerifyResult result, String binding) {
+  }
 
   // ===== 발송 자리 (이메일 단위) =====
 
@@ -150,24 +159,28 @@ public class EmailVerificationRedisStore {
   // 재발송하면 같은 키에 덮어써 이전 번호는 자동으로 무효, 틀린 횟수도 새로 시작
   // 값은 "{요청 식별자}:{번호}" (되돌리기가 자기 요청의 번호인지 알아볼 수 있게)
   // 재발송 제한의 주인일 때만 저장한다. false면 그 사이 다른 요청이 자리를 잡은 것이라 메일을 보내면 안 된다
-  public boolean saveCode(EmailPurpose purpose, String email, String requestId, String code, Duration ttl) {
+  // binding: 이 번호에 묶을 정보 (재설정은 발송 당시 "{회원 id}:{인증 버전}", 가입은 빈 문자열). 확인에 성공하면 그대로 돌려준다
+  public boolean saveCode(EmailPurpose purpose, String email, String requestId, String code, String binding,
+                          Duration ttl) {
     Long saved = redisTemplate.execute(SAVE_CODE_SCRIPT,
         List.of(key(CODE_KEY, purpose, email), key(ATTEMPTS_KEY, purpose, email), key(COOLDOWN_KEY, email)),
-        requestId, requestId + ":" + code, String.valueOf(ttl.toSeconds()));
+        requestId, requestId + ":" + code + ":" + binding, String.valueOf(ttl.toSeconds()));
     return saved != null && saved == 1L;
   }
 
   // 비교 · 틀린 횟수 증가 · 폐기를 한 번에 처리 (같은 번호가 동시에 두 번 승인되지 않음)
-  public VerifyResult verifyCode(EmailPurpose purpose, String email, String code,
-                                 int maxWrongAttempts, Duration attemptsTtl) {
-    Long result = redisTemplate.execute(VERIFY_SCRIPT,
+  public VerifyOutcome verifyCode(EmailPurpose purpose, String email, String code,
+                                  int maxWrongAttempts, Duration attemptsTtl) {
+    List<?> result = redisTemplate.execute(VERIFY_SCRIPT,
         List.of(key(CODE_KEY, purpose, email), key(ATTEMPTS_KEY, purpose, email)),
         code, String.valueOf(maxWrongAttempts), String.valueOf(attemptsTtl.toSeconds()));
-    return switch (result == null ? 0 : result.intValue()) {
-      case 1 -> VerifyResult.MATCHED;
-      case 2 -> VerifyResult.MISMATCH;
-      case 3 -> VerifyResult.EXHAUSTED;
-      default -> VerifyResult.EXPIRED;
+    int status = result == null ? 0 : ((Number) result.get(0)).intValue();
+    String binding = result == null || result.get(1) == null ? "" : result.get(1).toString();
+    return switch (status) {
+      case 1 -> new VerifyOutcome(VerifyResult.MATCHED, binding);
+      case 2 -> new VerifyOutcome(VerifyResult.MISMATCH, "");
+      case 3 -> new VerifyOutcome(VerifyResult.EXHAUSTED, "");
+      default -> new VerifyOutcome(VerifyResult.EXPIRED, "");
     };
   }
 

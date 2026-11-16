@@ -1,6 +1,7 @@
 package com.justcommit.backend.member.auth.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.member.auth.application.PasswordResetService.ResetTarget;
 import com.justcommit.backend.member.auth.domain.RevocationReason;
 import com.justcommit.backend.member.auth.infrastructure.redis.PasswordResetTokenStore;
 import com.justcommit.backend.member.auth.infrastructure.redis.PasswordResetTokenStore.ResetTokenOwner;
@@ -81,15 +82,44 @@ class PasswordResetServiceTest {
     return change.getValue();
   }
 
-  // ===== 재설정 가능 여부 · 토큰 발급 =====
+  // ===== 재설정 대상 · 토큰 발급 =====
 
   @Test
-  @DisplayName("활동 중인 로컬 회원이면 32바이트 토큰을 만들어 회원 id · 인증 버전과 함께 30분 저장한다")
-  void issueToken_activeLocal() {
+  @DisplayName("재설정 대상: 활동 중인 로컬 회원이면 회원 id · 지금 인증 버전, 소셜 · 탈퇴 · 없는 이메일은 빈 값")
+  void findTarget() {
     Member active = member(MemberStatus.ACTIVE, "hash", 3);
+    Member social = member(MemberStatus.ACTIVE, null, 3);
+    Member deleted = member(MemberStatus.DELETED, "hash", 3);
     given(memberRepository.findByEmail(EMAIL)).willReturn(Optional.of(active));
+    given(memberRepository.findByEmail("social@example.com")).willReturn(Optional.of(social));
+    given(memberRepository.findByEmail("deleted@example.com")).willReturn(Optional.of(deleted));
+    given(memberRepository.findByEmail("none@example.com")).willReturn(Optional.empty());
 
-    Optional<String> token = service.issueToken(EMAIL);
+    assertThat(service.findTarget(EMAIL)).contains(new ResetTarget(MEMBER_ID, 3));
+    assertThat(service.findTarget("social@example.com")).isEmpty();
+    assertThat(service.findTarget("deleted@example.com")).isEmpty();
+    assertThat(service.findTarget("none@example.com")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("묶음 정보는 \"{회원 id}:{인증 버전}\"으로 저장하고, 비었거나 깨졌으면 빈 값")
+  void binding() {
+    assertThat(new ResetTarget(7L, 3).toBinding()).isEqualTo("7:3");
+    assertThat(ResetTarget.fromBinding("7:3")).contains(new ResetTarget(7L, 3));
+    assertThat(ResetTarget.fromBinding("")).isEmpty();
+    assertThat(ResetTarget.fromBinding(null)).isEmpty();
+    assertThat(ResetTarget.fromBinding("broken")).isEmpty();
+    assertThat(ResetTarget.fromBinding("x:3")).isEmpty();
+    assertThat(ResetTarget.fromBinding(":3")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("발송 당시와 인증 버전이 같으면 발송 당시 버전으로 32바이트 토큰을 만들어 30분 저장한다")
+  void issueToken_sameVersion() {
+    Member active = member(MemberStatus.ACTIVE, "hash", 3);
+    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(active));
+
+    Optional<String> token = service.issueToken(new ResetTarget(MEMBER_ID, 3));
 
     assertThat(token).isPresent();
     assertThat(token.get()).hasSize(43).matches("[A-Za-z0-9_-]+");
@@ -97,30 +127,28 @@ class PasswordResetServiceTest {
   }
 
   @Test
-  @DisplayName("소셜 회원(비밀번호 없음) · 탈퇴 회원 · 없는 이메일은 토큰을 만들지 않는다")
-  void issueToken_notResettable() {
-    Member social = member(MemberStatus.ACTIVE, null, 3);
-    given(memberRepository.findByEmail("social@example.com")).willReturn(Optional.of(social));
-    Member deleted = member(MemberStatus.DELETED, "hash", 3);
-    given(memberRepository.findByEmail("deleted@example.com")).willReturn(Optional.of(deleted));
-    given(memberRepository.findByEmail("none@example.com")).willReturn(Optional.empty());
+  @DisplayName("인증번호를 받은 뒤 비밀번호가 바뀌어 인증 버전이 다르면 토큰을 만들지 않고 Redis에도 저장하지 않는다")
+  void issueToken_versionChanged() {
+    Member changed = member(MemberStatus.ACTIVE, "new-hash", 4);
+    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(changed));
 
-    assertThat(service.issueToken("social@example.com")).isEmpty();
-    assertThat(service.issueToken("deleted@example.com")).isEmpty();
-    assertThat(service.issueToken("none@example.com")).isEmpty();
+    assertThat(service.issueToken(new ResetTarget(MEMBER_ID, 3))).isEmpty();
     then(tokenStore).shouldHaveNoInteractions();
   }
 
   @Test
-  @DisplayName("재설정 가능 여부: 활동 중인 로컬 회원만 true")
-  void canReset() {
-    Member active = member(MemberStatus.ACTIVE, "hash", 3);
-    given(memberRepository.findByEmail(EMAIL)).willReturn(Optional.of(active));
+  @DisplayName("그 사이 탈퇴했거나 · 소셜 회원이거나 · 회원이 없으면 토큰을 만들지 않는다")
+  void issueToken_notResettable() {
+    Member deleted = member(MemberStatus.DELETED, "hash", 3);
     Member social = member(MemberStatus.ACTIVE, null, 3);
-    given(memberRepository.findByEmail("social@example.com")).willReturn(Optional.of(social));
+    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(deleted));
+    given(memberRepository.findById(8L)).willReturn(Optional.of(social));
+    given(memberRepository.findById(9L)).willReturn(Optional.empty());
 
-    assertThat(service.canReset(EMAIL)).isTrue();
-    assertThat(service.canReset("social@example.com")).isFalse();
+    assertThat(service.issueToken(new ResetTarget(MEMBER_ID, 3))).isEmpty();
+    assertThat(service.issueToken(new ResetTarget(8L, 3))).isEmpty();
+    assertThat(service.issueToken(new ResetTarget(9L, 3))).isEmpty();
+    then(tokenStore).shouldHaveNoInteractions();
   }
 
   // ===== 재설정 =====
@@ -187,6 +215,32 @@ class PasswordResetServiceTest {
         .extracting("errorCode").isEqualTo(MemberErrorCode.INVALID_RESET_TOKEN);
     then(deleted).should(never()).changePassword(any());
     then(social).should(never()).changePassword(any());
+  }
+
+  @Test
+  @DisplayName("토큰에 기록된 회원 행이 없으면 400 INVALID_RESET_TOKEN (공통 폐기의 404를 재설정 계약으로 바꿈)")
+  void reset_memberMissing() {
+    given(tokenStore.take(TOKEN)).willReturn(Optional.of(new ResetTokenOwner(MEMBER_ID, 3)));
+    given(passwordEncoder.encode(NEW_PASSWORD)).willReturn(ENCODED);
+    given(tokenRevocationService.revoke(eq(MEMBER_ID), eq(RevocationReason.PASSWORD_RESET), any()))
+        .willThrow(new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
+
+    assertThatThrownBy(() -> service.reset(TOKEN, NEW_PASSWORD))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode").isEqualTo(MemberErrorCode.INVALID_RESET_TOKEN);
+  }
+
+  @Test
+  @DisplayName("회원 행 없음이 아닌 오류(예: 잠금 대기 409)는 바꾸지 않고 그대로 전달한다")
+  void reset_otherErrorPassesThrough() {
+    given(tokenStore.take(TOKEN)).willReturn(Optional.of(new ResetTokenOwner(MEMBER_ID, 3)));
+    given(passwordEncoder.encode(NEW_PASSWORD)).willReturn(ENCODED);
+    given(tokenRevocationService.revoke(eq(MEMBER_ID), eq(RevocationReason.PASSWORD_RESET), any()))
+        .willThrow(new BusinessException(MemberErrorCode.MEMBER_BUSY));
+
+    assertThatThrownBy(() -> service.reset(TOKEN, NEW_PASSWORD))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode").isEqualTo(MemberErrorCode.MEMBER_BUSY);
   }
 
   @Test

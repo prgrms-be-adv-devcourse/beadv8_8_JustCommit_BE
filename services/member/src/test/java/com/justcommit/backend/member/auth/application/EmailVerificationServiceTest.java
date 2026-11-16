@@ -6,6 +6,7 @@ import com.justcommit.backend.member.auth.infrastructure.mail.VerificationMailSe
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore.SendResult;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore.SendStatus;
+import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore.VerifyOutcome;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore.VerifyResult;
 import com.justcommit.backend.member.domain.exception.EmailCooldownException;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
@@ -53,7 +54,7 @@ class EmailVerificationServiceTest {
 
   // 인증번호 저장 결과를 정함 (재발송 제한의 주인이면 true)
   private void givenCodeSaved(boolean saved) {
-    given(store.saveCode(eq(SIGNUP), eq(EMAIL), eq(REQUEST_ID), anyString(), eq(EmailVerificationService.CODE_TTL)))
+    given(store.saveCode(eq(SIGNUP), eq(EMAIL), eq(REQUEST_ID), anyString(), eq(""), eq(EmailVerificationService.CODE_TTL)))
         .willReturn(saved);
   }
 
@@ -61,7 +62,7 @@ class EmailVerificationServiceTest {
   private void givenVerify(String code, VerifyResult result) {
     given(store.verifyCode(SIGNUP, EMAIL, code,
         EmailVerificationService.MAX_WRONG_ATTEMPTS, EmailVerificationService.CODE_TTL))
-        .willReturn(result);
+        .willReturn(new VerifyOutcome(result, ""));
   }
 
   // ===== 발송 =====
@@ -74,7 +75,7 @@ class EmailVerificationServiceTest {
     EmailSendResult result = service.sendCode(EMAIL, SIGNUP);
 
     ArgumentCaptor<String> code = ArgumentCaptor.forClass(String.class);
-    then(store).should().saveCode(eq(SIGNUP), eq(EMAIL), eq(REQUEST_ID), code.capture(), eq(EmailVerificationService.CODE_TTL));
+    then(store).should().saveCode(eq(SIGNUP), eq(EMAIL), eq(REQUEST_ID), code.capture(), eq(""), eq(EmailVerificationService.CODE_TTL));
     then(mailSender).should().send(EMAIL, code.getValue(), EmailVerificationService.CODE_TTL, SIGNUP);
     assertThat(code.getValue()).matches("\\d{6}");
     assertThat(result.expiresIn()).isEqualTo(300);
@@ -89,7 +90,7 @@ class EmailVerificationServiceTest {
 
     service.sendCode("  Test@Example.COM ", SIGNUP);
 
-    then(store).should().saveCode(eq(SIGNUP), eq(EMAIL), eq(REQUEST_ID), anyString(), any());
+    then(store).should().saveCode(eq(SIGNUP), eq(EMAIL), eq(REQUEST_ID), anyString(), eq(""), any());
   }
 
   @Test
@@ -103,7 +104,7 @@ class EmailVerificationServiceTest {
           assertThat(e.getRetryAfterSeconds()).isEqualTo(42L);
         });
 
-    then(store).should(never()).saveCode(any(), any(), any(), any(), any());
+    then(store).should(never()).saveCode(any(), any(), any(), any(), any(), any());
     then(mailSender).shouldHaveNoInteractions();
   }
 
@@ -118,7 +119,7 @@ class EmailVerificationServiceTest {
           assertThat(e.getRetryAfterSeconds()).isEqualTo(3600L);
         });
 
-    then(store).should(never()).saveCode(any(), any(), any(), any(), any());
+    then(store).should(never()).saveCode(any(), any(), any(), any(), any(), any());
     then(mailSender).shouldHaveNoInteractions();
   }
 

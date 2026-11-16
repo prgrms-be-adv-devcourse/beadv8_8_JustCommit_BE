@@ -47,7 +47,7 @@ public class EmailVerificationService {
     }
     EmailVerificationRedisStore.SendResult slot = acquireSendSlot(email);
     String code = generateCode();
-    if (!store.saveCode(purpose, email, slot.requestId(), code, CODE_TTL)) {
+    if (!store.saveCode(purpose, email, slot.requestId(), code, "", CODE_TTL)) {
       // 자리를 잡은 뒤 멈춘 사이 재발송 제한이 끝나 다른 요청이 새 번호를 보낸 경우:
       // 그 번호를 덮어쓰지 않고 메일도 보내지 않는다 (이 요청의 하루 횟수만 되돌림)
       store.releaseSend(purpose, email, slot.requestId());
@@ -69,7 +69,7 @@ public class EmailVerificationService {
   public void verifyCode(String rawEmail, String code, EmailPurpose purpose) {
     requireSupported(purpose);
     String email = normalize(rawEmail);
-    switch (store.verifyCode(purpose, email, code, MAX_WRONG_ATTEMPTS, CODE_TTL)) {
+    switch (store.verifyCode(purpose, email, code, MAX_WRONG_ATTEMPTS, CODE_TTL).result()) {
       case MATCHED -> store.saveVerified(purpose, email, VERIFIED_TTL);
       case MISMATCH -> throw new BusinessException(MemberErrorCode.EMAIL_CODE_MISMATCH);
       case EXHAUSTED -> throw new BusinessException(MemberErrorCode.EMAIL_CODE_ATTEMPTS_EXCEEDED);

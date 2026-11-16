@@ -18,6 +18,8 @@ public enum MemberErrorCode implements ErrorCode {
   EMAIL_SEND_DAILY_LIMIT(HttpStatus.TOO_MANY_REQUESTS, "같은 이메일로는 하루 5번까지 인증번호를 받을 수 있습니다. 나중에 다시 시도해주세요."),
   EMAIL_CODE_ATTEMPTS_EXCEEDED(HttpStatus.BAD_REQUEST, "인증번호를 5번 틀려 더 이상 사용할 수 없습니다. 인증번호를 다시 요청해주세요."),
   EMAIL_PURPOSE_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "지원하지 않는 인증 목적입니다."),
+  // 재설정 인증번호 확인 실패: 틀림 · 만료 · 폐기 · 발송 당시 인증 버전 불일치를 하나로 (계정 상태가 드러나지 않게)
+  EMAIL_CODE_INVALID(HttpStatus.BAD_REQUEST, "인증번호가 올바르지 않거나 만료되었습니다. 번호를 다시 확인하거나 새 인증번호를 요청해 주세요."),
 
   // 비밀번호 재설정 (#412): 형식 오류 · 만료 · 이미 사용 · 이전 인증 버전 모두 같은 응답
   // 401이 아닌 이유: 로그인과 무관한 요청이라, 프론트 공통 클라이언트가 401에 하는 토큰 재발급이 일어나면 안 됨
