@@ -2,6 +2,7 @@ package com.justcommit.backend.product.product.infrastructure;
 
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.product.domain.Product;
+import com.justcommit.backend.product.product.event.ProductEventSource;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -150,6 +151,16 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
 
     // 같은 orderId로 다시 온 예약인지 확인: 이 주문이 잡고 있는 결제 대기 상품 수
     long countByReservedOrderIdAndStatusAndIdIn(Long reservedOrderId, ProductStatus status, Collection<Long> ids);
+
+    // 상품 이벤트 payload (ADR 0021): 엔티티가 아니라 DB 값을 바로 읽어, 같은 트랜잭션의 일괄 UPDATE · 엔티티 수정 뒤 새 값이 나옴
+    @Query("""
+            SELECT new com.justcommit.backend.product.product.event.ProductEventSource(
+                p.id, p.species.id, p.sellerId, p.status, p.hidden, p.version)
+            FROM Product p
+            WHERE p.id IN :ids
+            ORDER BY p.id
+            """)
+    List<ProductEventSource> findEventSources(@Param("ids") Collection<Long> ids);
 
     // 다른 모듈용 다건 조회: 품종을 함께 조회해 N+1 방지
     @EntityGraph(attributePaths = "species")
