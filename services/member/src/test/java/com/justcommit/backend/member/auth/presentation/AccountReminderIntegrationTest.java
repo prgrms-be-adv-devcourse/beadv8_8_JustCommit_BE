@@ -32,7 +32,8 @@ import java.net.http.HttpResponse;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.util.Base64;
-import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,6 +51,8 @@ import static org.mockito.Mockito.times;
  *   가입 인증번호 발송으로 확인한다 (가입된 이메일은 예약 전에 409가 나므로 미가입 이메일을 쓴다)
  * - IP 기준 제한은 Gateway에서 API별로 따로 센다 (Gateway 테스트에서 확인)
  * - 두 메일 클래스를 가짜로 바꿔 실제로 보내지 않는다
+ * - 검증 범위: member 서비스(보안 필터 포함)까지이며 Gateway는 거치지 않는다 (IP 제한은 Gateway 테스트),
+ *   메일 제목 · 본문은 메일 클래스 단위 테스트에서 본다
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers(disabledWithoutDocker = true)
@@ -106,36 +109,37 @@ class AccountReminderIntegrationTest {
   @DisplayName("1. 로컬 · 카카오 · 미가입 · 탈퇴 · 네이버 · 재발송 제한 중 · SMTP 실패 모두 같은 200과 본문, 메일은 지원하는 방식의 활동 회원에게만")
   void sameResponseForEveryCase() throws Exception {
     Member local = saveMember();
-    Member kakao = saveSocial("KAKAO");
-    Member naver = saveSocial("NAVER");
+    String kakaoEmail = saveSocial(Provider.KAKAO);
+    String naverEmail = saveSocial(Provider.NAVER);
     Member deleted = saveMember();
     jdbcTemplate.update("update member set status = 'DELETED' where id = ?", deleted.getId());
     Member smtpFail = saveMember();
     willThrow(new MailSendException("smtp down")).given(reminderMailSender).send(eq(smtpFail.getEmail()), any());
     String unknownEmail = "nobody" + SEQ.incrementAndGet() + "@test.com";
 
-    List<HttpResponse<String>> responses = List.of(
-        remind(local.getEmail()),
-        remind(kakao.getEmail()),
-        remind(unknownEmail),
-        remind(deleted.getEmail()),
-        remind(naver.getEmail()),
-        remind(local.getEmail()), // 재발송 제한 중
-        remind(smtpFail.getEmail()));
+    // 경우 이름과 함께 모아, 실패하면 어느 경우인지 메시지에 나오게 한다 (넣은 순서대로 요청)
+    Map<String, HttpResponse<String>> responses = new LinkedHashMap<>();
+    responses.put("활동 중 로컬", remind(local.getEmail()));
+    responses.put("활동 중 카카오", remind(kakaoEmail));
+    responses.put("미가입", remind(unknownEmail));
+    responses.put("탈퇴", remind(deleted.getEmail()));
+    responses.put("네이버(지원 안 함)", remind(naverEmail));
+    responses.put("재발송 제한 중", remind(local.getEmail()));
+    responses.put("SMTP 실패", remind(smtpFail.getEmail()));
 
-    HttpResponse<String> first = responses.get(0);
+    HttpResponse<String> first = responses.get("활동 중 로컬");
     assertThat(first.statusCode()).isEqualTo(200);
     assertThat(first.body()).contains("가입된 계정이면 안내 메일을 보내드립니다.");
-    assertThat(responses).allSatisfy(response -> {
-      assertThat(response.statusCode()).isEqualTo(first.statusCode());
-      assertThat(response.body()).isEqualTo(first.body());
+    responses.forEach((name, response) -> {
+      assertThat(response.statusCode()).as(name).isEqualTo(first.statusCode());
+      assertThat(response.body()).as(name).isEqualTo(first.body());
     });
 
     then(reminderMailSender).should(times(1)).send(local.getEmail(), Provider.LOCAL);
-    then(reminderMailSender).should().send(kakao.getEmail(), Provider.KAKAO);
+    then(reminderMailSender).should().send(kakaoEmail, Provider.KAKAO);
     then(reminderMailSender).should(never()).send(eq(unknownEmail), any());
     then(reminderMailSender).should(never()).send(eq(deleted.getEmail()), any());
-    then(reminderMailSender).should(never()).send(eq(naver.getEmail()), any());
+    then(reminderMailSender).should(never()).send(eq(naverEmail), any());
   }
 
   @Test
@@ -222,12 +226,13 @@ class AccountReminderIntegrationTest {
         "안내" + n, String.format("014%08d", n), "004", "v1:test-account", "홍길동"));
   }
 
-  // 소셜 회원: 로컬로 저장한 뒤 비밀번호를 비우고 로그인 방식을 바꾼다 (비밀번호 변경 통합 테스트와 같은 방식)
-  private Member saveSocial(String provider) {
+  // 소셜 회원: 로컬로 저장한 뒤 DB에서 비밀번호를 비우고 로그인 방식을 바꾼다 (비밀번호 변경 통합 테스트와 같은 방식)
+  // 저장한 Member 객체는 여전히 LOCAL이라 돌려주지 않고, 테스트에 필요한 이메일만 돌려준다
+  private String saveSocial(Provider provider) {
     Member member = saveMember();
     jdbcTemplate.update("update member set password = null, provider = ?, provider_id = ? where id = ?",
-        provider, provider.toLowerCase() + "-" + member.getId(), member.getId());
-    return member;
+        provider.name(), provider.name().toLowerCase() + "-" + member.getId(), member.getId());
+    return member.getEmail();
   }
 
   private static KeyPair newKeyPair() {
