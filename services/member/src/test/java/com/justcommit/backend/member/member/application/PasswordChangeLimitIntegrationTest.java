@@ -81,6 +81,7 @@ class PasswordChangeLimitIntegrationTest {
   private static final String WRONG_PASSWORD = "wrong1234";
   private static final AtomicInteger SEQ = new AtomicInteger();
   private static final Pattern RESET_TOKEN = Pattern.compile("\"resetToken\":\"([^\"]+)\"");
+  private static final Pattern ERROR_CODE = Pattern.compile("\"code\":\"([^\"]+)\"");
 
   @DynamicPropertySource
   static void properties(DynamicPropertyRegistry registry) {
@@ -151,10 +152,12 @@ class PasswordChangeLimitIntegrationTest {
     assertThat(responses).filteredOn(response -> response.statusCode() == 400)
         .singleElement()
         .satisfies(response -> assertThat(response.body()).contains(codeOf(MemberErrorCode.INVALID_CURRENT_PASSWORD)));
+    // 나머지 한 건: 잠금 안에서 막힘(429) 또는 회원 잠금 대기 초과(409). 상태와 코드가 짝이 맞아야 한다
     assertThat(responses).filteredOn(response -> response.statusCode() != 400)
         .singleElement()
-        .satisfies(response -> assertThat(response.body())
-            .containsAnyOf(codeOf(MemberErrorCode.PASSWORD_CHANGE_LOCKED), codeOf(MemberErrorCode.MEMBER_BUSY)));
+        .satisfies(response -> assertThat(statusAndCode(response)).isIn(
+            "429 " + MemberErrorCode.PASSWORD_CHANGE_LOCKED.name(),
+            "409 " + MemberErrorCode.MEMBER_BUSY.name()));
     assertThat(passwordEncoder.matches(OLD_PASSWORD, passwordOf(member.getId()))).isTrue();
   }
 
@@ -267,6 +270,12 @@ class PasswordChangeLimitIntegrationTest {
 
   private static String codeOf(MemberErrorCode errorCode) {
     return "\"code\":\"" + errorCode.name() + "\"";
+  }
+
+  // "상태 코드 에러 코드" (예: "429 PASSWORD_CHANGE_LOCKED")
+  private static String statusAndCode(HttpResponse<String> response) {
+    Matcher matcher = ERROR_CODE.matcher(response.body());
+    return response.statusCode() + " " + (matcher.find() ? matcher.group(1) : "");
   }
 
   private static String failureKey(Member member) {
