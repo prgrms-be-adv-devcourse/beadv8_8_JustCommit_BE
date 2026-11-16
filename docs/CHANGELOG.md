@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-16 · flows/image-review.md · reference/schedulers.md · reference/external-apis.md · testing/scenarios.md · 관리자 검수 확인 · 24시간 기한: 관리자 API 요청 · 응답 · 409 `REVIEW_ALREADY_PROCESSED` · `REVIEW_OUTDATED` · 400 `INVALID_REJECT_REASON`(관리자는 `REVIEW_EXPIRED` 못 고름), 처리자 `decided_by` 기록, 기한 스케줄러 10분 · 24시간 `REVIEW_EXPIRED`, 12시간은 관리자 목록 「지연」 표시만(관리자 알림은 notification 연동 때) (#344)
 - 2026-11-16 · open-questions.md · 비밀번호 변경 시도 제한을 미정 항목에 추가: 하루 5회 실패 시 변경 제한 · 이메일 재설정(#412) 안내, 변경 · 재설정 성공 시 초기화 (#461)
 - 2026-11-16 · services/member.md · 회원 행 잠금 대기 제한을 배송지 추가 · 기본 변경 · 판매자 등록 · 닉네임 변경에도 적용: 로그인 · 재발급과 같은 `MemberLocker`(대기 3초, 넘으면 409 `MEMBER_BUSY`, 저장 · 이벤트 없이 롤백), 대기 제한은 잠금 조회에만 걸고 정상 반환되면 이전 `lock_timeout`으로 되돌림(잠금 뒤 닉네임 UNIQUE 확인 대기가 제한에 걸려 500으로 끝나지 않게), 정책 표 「로그인 · 재발급 잠금」 줄을 「회원 행 잠금」으로 (#466)
 - 2026-11-16 · services/product.md · flows/image-review.md · 「기타」 품종 추가: `species` id 218 고정(Flyway V11, 학명 · 속성 · 카테고리 · 사진 없음, 카테고리로 찾을 때 안 나옴), 「기타」로 등록한 상품의 사진 검수는 엔진 결과와 관계없이 관리자 확인(`OTHER_SPECIES`, 유해 · 금지 품종 반려는 그대로), 추천 · 품종 통계에서는 id 218을 뺌, 상품 이벤트 payload v2(#456)의 Flyway는 V12로 (#340)
