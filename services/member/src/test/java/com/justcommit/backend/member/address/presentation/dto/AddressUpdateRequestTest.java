@@ -71,6 +71,13 @@ class AddressUpdateRequestTest {
   }
 
   @Test
+  @DisplayName("받는 사람 · 주소에 줄바꿈이 있어도 내용이 있으면 통과, 공백 · 줄바꿈만 있으면 거절 (등록의 @NotBlank와 같음)")
+  void requiredMultiline() {
+    assertThat(validator.validate(request("홍\n길동", null, "06236", "서울\n강남구", null, null))).isEmpty();
+    assertThat(messages(request(" \n ", null, null, null, null, null))).contains("받는 사람 이름을 입력해주세요.");
+  }
+
+  @Test
   @DisplayName("선택 항목(상세 주소 · 배송지 이름)의 빈 문자열은 통과하고, 지우기 위해 그대로 넘긴다")
   void optionalBlankKept() {
     AddressUpdateRequest request = request(null, null, null, null, "", "");
