@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Optional;
 
-// 배송지 목록·등록·기본 배송지 변경
+// 배송지 목록·등록·기본 배송지 변경·수정·삭제
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
