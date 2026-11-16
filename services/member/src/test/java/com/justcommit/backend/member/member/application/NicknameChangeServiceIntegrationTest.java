@@ -56,12 +56,14 @@ class NicknameChangeServiceIntegrationTest {
 
   private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final Duration WAIT = Duration.ofSeconds(10);
+  private static final Duration LOCK_TIMEOUT = Duration.ofMillis(500);
   private static final AtomicInteger SEQ = new AtomicInteger();
 
   @DynamicPropertySource
   static void jwtKeys(DynamicPropertyRegistry registry) {
     registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
     registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
+    registry.add("member.lock.timeout", () -> LOCK_TIMEOUT.toMillis() + "ms");
   }
 
   // 커밋 뒤 Kafka 전송만 막는다 (Outbox 행 저장은 실제)
@@ -146,7 +148,7 @@ class NicknameChangeServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("다른 회원이 같은 닉네임을 커밋 전에 저장하고 있으면, 중복 확인은 통과해도 DB UNIQUE 위반을 409 DUPLICATE_NICKNAME으로 바꾼다")
+  @DisplayName("다른 회원이 같은 닉네임을 커밋 전에 저장하고 회원 잠금 대기 제한보다 오래 붙잡아도, 중복 확인은 통과하고 DB UNIQUE 위반을 409 DUPLICATE_NICKNAME으로 바꾼다")
   void concurrentSameNicknameBecomesDuplicate() throws Exception {
     String original = "race" + SEQ.incrementAndGet();
     Member member = saveMember(original);
@@ -167,6 +169,10 @@ class NicknameChangeServiceIntegrationTest {
       Future<NicknameChangeResult> changer = executor.submit(
           () -> nicknameChangeService.changeNickname(member.getId(), contested));
       waitUntilSomeoneWaitsForLock();
+
+      // 회원 잠금 대기 제한(500ms)보다 오래 붙잡아도 저장 단계(UNIQUE 확인)는 제한 없이 기다려야 함 (#419)
+      Thread.sleep(LOCK_TIMEOUT.multipliedBy(2).toMillis());
+      assertThat(changer).isNotDone();
 
       release.countDown();
       holder.get(WAIT.toSeconds(), TimeUnit.SECONDS);

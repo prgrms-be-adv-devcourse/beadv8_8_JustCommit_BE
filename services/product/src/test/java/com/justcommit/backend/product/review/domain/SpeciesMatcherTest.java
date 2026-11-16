@@ -29,6 +29,13 @@ class SpeciesMatcherTest {
     }
 
     @Test
+    @DisplayName("속 이름이 바뀐 경우(Sansevieria → Dracaena)는 한글 이름이 달라도 같은 속")
+    void genusSynonym() {
+        assertThat(matcher.matches(new Candidate("Sansevieria cylindrica", "스투키", 0.9), "Dracaena trifasciata")).isTrue();
+        assertThat(matcher.matches(new Candidate("Dracaena angolensis", "스투키", 0.9), "Sansevieria trifasciata")).isTrue();
+    }
+
+    @Test
     @DisplayName("속도 다르고 이름도 다르면 불일치")
     void mismatch() {
         assertThat(matcher.matches(new Candidate("Ficus elastica", "고무나무", 0.9), "Dracaena trifasciata")).isFalse();
