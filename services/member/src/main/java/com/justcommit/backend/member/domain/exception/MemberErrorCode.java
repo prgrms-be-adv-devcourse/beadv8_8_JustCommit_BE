@@ -45,6 +45,8 @@ public enum MemberErrorCode implements ErrorCode {
 
   // 비밀번호 변경 (#411)
   INVALID_CURRENT_PASSWORD(HttpStatus.BAD_REQUEST, "현재 비밀번호가 올바르지 않습니다."),
+  // 같은 인증 버전에서 현재 비밀번호를 5번 틀린 뒤의 변경 요청 (#412). Retry-After로 남은 초를 함께 내려줌
+  PASSWORD_CHANGE_LOCKED(HttpStatus.TOO_MANY_REQUESTS, "현재 비밀번호를 여러 번 틀려 비밀번호 변경이 잠시 제한되었습니다. 비밀번호 재설정을 이용해 주세요."),
   SAME_AS_CURRENT_PASSWORD(HttpStatus.BAD_REQUEST, "새 비밀번호가 현재 비밀번호와 같습니다."),
   PASSWORD_NOT_SET(HttpStatus.BAD_REQUEST, "소셜 로그인 회원은 비밀번호를 변경할 수 없습니다."),
 
