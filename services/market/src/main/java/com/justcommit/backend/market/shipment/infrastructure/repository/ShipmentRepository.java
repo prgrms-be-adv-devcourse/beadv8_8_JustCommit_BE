@@ -29,8 +29,6 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
             """, nativeQuery = true)
     Optional<Shipment> findNextBookable(@Param("now") LocalDateTime now);
 
-    List<Shipment> findTop100ByStatusAndCreatedAtBeforeOrderByIdAsc(ShipmentStatus status, LocalDateTime createdAt);
-
     List<Shipment> findTop100ByStatusAndCourierCancelledAtIsNullAndCancelledAtBeforeOrderByIdAsc(
             ShipmentStatus status, LocalDateTime cancelledAt);
 }
