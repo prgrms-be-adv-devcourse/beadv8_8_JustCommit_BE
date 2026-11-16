@@ -88,14 +88,17 @@ class AccountReminderServiceTest {
 
   @Test
   @DisplayName("미가입 · 네이버 · 비활성 · 탈퇴는 메일 없이 끝나고, 예약은 되돌리지 않는다 (제한 상태가 가입 여부와 관계없이 쌓이게)")
-  @SuppressWarnings("unchecked") // willReturn에 Optional<Member>를 여러 개(가변 인자) 넘겨서 나는 경고
   void notTarget() {
     givenSlot(SendStatus.ACQUIRED);
     Member naver = member(MemberStatus.ACTIVE, Provider.NAVER);
     Member inactive = member(MemberStatus.INACTIVE, Provider.LOCAL);
     Member deleted = member(MemberStatus.DELETED, Provider.LOCAL);
+    // 차례로: 미가입 → 네이버 → 비활성 → 탈퇴
     given(memberRepository.findByEmail(EMAIL))
-        .willReturn(Optional.empty(), Optional.of(naver), Optional.of(inactive), Optional.of(deleted));
+        .willReturn(Optional.empty())
+        .willReturn(Optional.of(naver))
+        .willReturn(Optional.of(inactive))
+        .willReturn(Optional.of(deleted));
 
     for (int i = 0; i < 4; i++) {
       service.sendReminder(EMAIL);
