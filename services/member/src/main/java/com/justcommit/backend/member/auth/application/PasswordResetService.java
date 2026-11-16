@@ -2,12 +2,14 @@ package com.justcommit.backend.member.auth.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.auth.domain.RevocationReason;
+import com.justcommit.backend.member.auth.infrastructure.redis.PasswordFailureStore;
 import com.justcommit.backend.member.auth.infrastructure.redis.PasswordResetTokenStore;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -29,6 +31,7 @@ import java.util.Optional;
  *   사용자는 이메일 인증을 다시 받으면 된다
  * - 트랜잭션을 열지 않는다: revoke()는 트랜잭션 밖에서 호출해야 커밋 결과를 판단할 수 있다
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PasswordResetService {
@@ -43,6 +46,7 @@ public class PasswordResetService {
   private final PasswordResetTokenStore tokenStore;
   private final TokenRevocationService tokenRevocationService;
   private final PasswordEncoder passwordEncoder;
+  private final PasswordFailureStore failureStore;
 
   // 재설정 대상: 인증번호를 보낼 때의 회원 id · 인증 버전. 인증번호에 묶어 저장했다가 확인에 성공하면 그대로 돌려받는다
   public record ResetTarget(Long memberId, int tokenVersion) {
@@ -114,6 +118,13 @@ public class PasswordResetService {
         throw new BusinessException(MemberErrorCode.INVALID_RESET_TOKEN);
       }
       throw e;
+    }
+    // 커밋됨(COMPLETED · PENDING): 재설정 전 버전(토큰의 버전, 잠금 안에서 검증됨)의 현재 비밀번호 실패 횟수만 지운다
+    // 지우지 못해도 새 인증 버전에는 옛 횟수가 적용되지 않으므로 성공으로 응답
+    try {
+      failureStore.clear(owner.memberId(), owner.tokenVersion());
+    } catch (RuntimeException e) {
+      log.warn("비밀번호 실패 횟수 초기화 실패 (새 인증 버전에는 적용되지 않음): memberId={}", owner.memberId(), e);
     }
     return new PasswordResetResult(result == RevocationResult.COMPLETED);
   }

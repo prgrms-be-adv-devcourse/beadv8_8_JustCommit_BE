@@ -3,6 +3,7 @@ package com.justcommit.backend.member.auth.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.auth.application.PasswordResetService.ResetTarget;
 import com.justcommit.backend.member.auth.domain.RevocationReason;
+import com.justcommit.backend.member.auth.infrastructure.redis.PasswordFailureStore;
 import com.justcommit.backend.member.auth.infrastructure.redis.PasswordResetTokenStore;
 import com.justcommit.backend.member.auth.infrastructure.redis.PasswordResetTokenStore.ResetTokenOwner;
 import com.justcommit.backend.member.domain.Member;
@@ -17,6 +18,7 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Optional;
@@ -28,6 +30,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -49,6 +52,9 @@ class PasswordResetServiceTest {
 
   @Mock
   private TokenRevocationService tokenRevocationService;
+
+  @Mock
+  private PasswordFailureStore failureStore;
 
   @Mock
   private PasswordEncoder passwordEncoder;
@@ -175,6 +181,7 @@ class PasswordResetServiceTest {
     resetChange.accept(member);
 
     then(member).should().changePassword(ENCODED);
+    then(failureStore).should().clear(MEMBER_ID, 3); // 재설정 전 버전(토큰의 버전)
   }
 
   @Test
@@ -186,6 +193,7 @@ class PasswordResetServiceTest {
         .willReturn(RevocationResult.PENDING);
 
     assertThat(service.reset(TOKEN, NEW_PASSWORD).revocationCompleted()).isFalse();
+    then(failureStore).should().clear(MEMBER_ID, 3);
   }
 
   @Test
@@ -254,5 +262,18 @@ class PasswordResetServiceTest {
     assertThatThrownBy(() -> service.reset(TOKEN, NEW_PASSWORD))
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode").isEqualTo(MemberErrorCode.RESULT_UNKNOWN);
+    then(failureStore).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("재설정은 커밋됐는데 실패 횟수를 지우지 못해도 성공으로 응답한다 (새 인증 버전에는 옛 횟수가 적용되지 않음)")
+  void reset_clearFailureStillSucceeds() {
+    given(tokenStore.take(TOKEN)).willReturn(Optional.of(new ResetTokenOwner(MEMBER_ID, 3)));
+    given(passwordEncoder.encode(NEW_PASSWORD)).willReturn(ENCODED);
+    given(tokenRevocationService.revoke(eq(MEMBER_ID), eq(RevocationReason.PASSWORD_RESET), any()))
+        .willReturn(RevocationResult.COMPLETED);
+    willThrow(new RedisConnectionFailureException("redis down")).given(failureStore).clear(MEMBER_ID, 3);
+
+    assertThat(service.reset(TOKEN, NEW_PASSWORD).revocationCompleted()).isTrue();
   }
 }
