@@ -167,6 +167,13 @@ class ImageReviewServiceIntegrationTest {
         return productRepository.findById(product.getId()).orElseThrow();
     }
 
+    // payload v2 (#456): 반영 직후 DB 값(새 상태 · 새 상품 버전)이 그대로 담겨야 함
+    private ProductStatusChanged statusChangedOf(Product product) {
+        Product reloaded = reload(product);
+        return new ProductStatusChanged(reloaded.getId(), reloaded.getSpecies().getId(), reloaded.getSellerId(),
+                reloaded.getStatus().name(), reloaded.isHidden(), reloaded.getVersion());
+    }
+
     private ImageReview reviewOf(Product product, int version) {
         return imageReviewRepository.findByProductIdAndReviewVersion(product.getId(), version).orElseThrow();
     }
@@ -208,7 +215,7 @@ class ImageReviewServiceIntegrationTest {
         assertThat(review.getStatus()).isEqualTo(ReviewStatus.DONE);
         assertThat(review.getDecision()).isEqualTo(ReviewDecision.APPROVED);
         assertThat(review.getEngineResult()).contains("Monstera deliciosa");
-        verify(outboxPublisher).publish(any(ProductStatusChanged.class));
+        verify(outboxPublisher).publish(statusChangedOf(product));
         // 판매자 알림용 통과 이벤트 (#345)
         verify(outboxPublisher).publish(new ProductApproved(product.getId(), SELLER_ID, 0, "몬스테라 팝니다"));
         verify(outboxPublisher, never()).publish(any(ProductRejected.class));
@@ -227,7 +234,7 @@ class ImageReviewServiceIntegrationTest {
         assertThat(review.getRejectReason()).isEqualTo(RejectReason.BANNED_SPECIES);
         assertThat(review.getDetail()).isEqualTo("나도풍란");
         // 판매자 알림용 반려 이벤트: 사유 코드 · 판매자 문구 (#345)
-        verify(outboxPublisher).publish(any(ProductStatusChanged.class));
+        verify(outboxPublisher).publish(statusChangedOf(product));
         verify(outboxPublisher).publish(new ProductRejected(product.getId(), SELLER_ID, 0, "난초 팝니다",
                 "BANNED_SPECIES", "판매 금지 품종이에요"));
         verify(outboxPublisher, never()).publish(any(ProductApproved.class));
@@ -462,7 +469,7 @@ class ImageReviewServiceIntegrationTest {
         ImageReview review = reviewOf(product, 1);
         assertThat(review.getManualReason()).isEqualTo(ManualReason.REVIEW_KEYWORD);
         // 판매 중 → 검수 중으로 상태만 바뀜, 결과 알림은 없음 (관리자 확인은 결과가 아님)
-        verify(outboxPublisher).publish(any(ProductStatusChanged.class));
+        verify(outboxPublisher).publish(statusChangedOf(product));
         assertNoResultEvent();
         verify(plantIdentifier, never()).identify(anyList(), anyList());
         verify(moderationClient, never()).isImageFlagged(any());
@@ -539,7 +546,7 @@ class ImageReviewServiceIntegrationTest {
         assertThat(review.getDecision()).isEqualTo(ReviewDecision.APPROVED);
         assertThat(review.getRetryCount()).isEqualTo(1);
         assertThat(review.getNextRetryAt()).isNull();
-        verify(outboxPublisher).publish(any(ProductStatusChanged.class));
+        verify(outboxPublisher).publish(statusChangedOf(product));
         // 검수 기록을 새로 만들지 않아 하루 사진 검수 횟수는 그대로 1
         assertThat(imageReviewRepository.countBySellerIdAndScopeAndCreatedAtGreaterThanEqual(
                 SELLER_ID, ReviewScope.FULL, LocalDateTime.now().minusDays(1))).isEqualTo(1);

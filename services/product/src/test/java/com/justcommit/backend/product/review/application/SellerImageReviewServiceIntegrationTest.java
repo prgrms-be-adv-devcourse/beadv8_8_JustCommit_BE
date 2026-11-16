@@ -196,6 +196,13 @@ class SellerImageReviewServiceIntegrationTest {
         return productRepository.findById(product.getId()).orElseThrow();
     }
 
+    // payload v2 (#456): 반영 직후 DB 값(새 상태 · 새 상품 버전)이 그대로 담겨야 함
+    private ProductStatusChanged statusChangedOf(Product product) {
+        Product reloaded = reload(product);
+        return new ProductStatusChanged(reloaded.getId(), reloaded.getSpecies().getId(), reloaded.getSellerId(),
+                reloaded.getStatus().name(), reloaded.isHidden(), reloaded.getVersion());
+    }
+
     private ImageReview reviewOf(Product product, int version) {
         return imageReviewRepository.findByProductIdAndReviewVersion(product.getId(), version).orElseThrow();
     }
@@ -224,7 +231,7 @@ class SellerImageReviewServiceIntegrationTest {
         assertThat(review.getManualReason()).isEqualTo(ManualReason.APPEAL);
         assertThat(review.getRejectReason()).isEqualTo(RejectReason.BANNED_SPECIES);
         assertThat(review.getDecidedBy()).isNull();
-        verify(outboxPublisher).publish(any(ProductStatusChanged.class));
+        verify(outboxPublisher).publish(statusChangedOf(product));
 
         assertThat(adminService.findAwaiting(PageRequest.of(0, 20)).getContent()).singleElement().satisfies(row -> {
             assertThat(row.appealMemo()).isEqualTo("직접 키운 호접란입니다. 꽃대 사진을 보시면 압니다");
