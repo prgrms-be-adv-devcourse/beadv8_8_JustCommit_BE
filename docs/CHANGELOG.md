@@ -7,7 +7,7 @@
 
 ## 기록
 
-- 2026-11-16 · reference/external-apis.md · reference/kafka-topics.md · services/member.md · 배송지 수정 · 삭제 API 반영: `PATCH users/me/addresses/{id}`(보낸 항목만 변경, 빈 요청 400 · 같은 값이면 200(변경 · 이벤트 없음), 상세 주소 · 배송지 이름은 빈 문자열로 지움, 우편번호 · 주소는 함께), `DELETE users/me/addresses/{id}`(기본 배송지는 409 `DEFAULT_ADDRESS_NOT_DELETABLE`), 판매자면 바뀐 뒤 배송지 목록 `MemberAddressChanged` 발행 (#469)
+- 2026-11-16 · reference/external-apis.md · reference/kafka-topics.md · services/member.md · 배송지 수정 · 삭제 API 반영: `PATCH users/me/addresses/{id}`(보낸 항목만 변경, 빈 요청 400 · 같은 값이면 200(변경 · 이벤트 없음), 상세 주소 · 배송지 이름은 빈 문자열로 지움, 우편번호 · 주소는 함께, 주소가 바뀌면 상세 주소도 함께 · 없으면 400 `ADDRESS_DETAIL_REQUIRED`), `DELETE users/me/addresses/{id}`(기본 배송지는 409 `DEFAULT_ADDRESS_NOT_DELETABLE`), 판매자면 바뀐 뒤 배송지 목록 `MemberAddressChanged` 발행 (#469)
 - 2026-11-16 · open-questions.md · 비밀번호 변경 시도 제한을 미정 항목에 추가: 하루 5회 실패 시 변경 제한 · 이메일 재설정(#412) 안내, 변경 · 재설정 성공 시 초기화 (#461)
 - 2026-11-16 · services/member.md · 회원 행 잠금 대기 제한을 배송지 추가 · 기본 변경 · 판매자 등록 · 닉네임 변경에도 적용: 로그인 · 재발급과 같은 `MemberLocker`(대기 3초, 넘으면 409 `MEMBER_BUSY`, 저장 · 이벤트 없이 롤백), 대기 제한은 잠금 조회에만 걸고 정상 반환되면 이전 `lock_timeout`으로 되돌림(잠금 뒤 닉네임 UNIQUE 확인 대기가 제한에 걸려 500으로 끝나지 않게), 정책 표 「로그인 · 재발급 잠금」 줄을 「회원 행 잠금」으로 (#466)
 - 2026-11-16 · services/product.md · flows/image-review.md · 「기타」 품종 추가: `species` id 218 고정(Flyway V11, 학명 · 속성 · 카테고리 · 사진 없음, 카테고리로 찾을 때 안 나옴), 「기타」로 등록한 상품의 사진 검수는 엔진 결과와 관계없이 관리자 확인(`OTHER_SPECIES`, 유해 · 금지 품종 반려는 그대로), 추천 · 품종 통계에서는 id 218을 뺌, 상품 이벤트 payload v2(#456)의 Flyway는 V12로 (#340)
