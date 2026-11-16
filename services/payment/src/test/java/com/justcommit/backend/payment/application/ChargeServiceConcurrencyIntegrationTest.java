@@ -1,5 +1,7 @@
 package com.justcommit.backend.payment.application;
 
+import com.justcommit.backend.payment.config.ChargeRecoveryConfig;
+import com.justcommit.backend.payment.config.ClockConfig;
 import com.justcommit.backend.payment.config.JpaAuditingConfig;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.payment.domain.Charge;
@@ -10,7 +12,7 @@ import com.justcommit.backend.payment.domain.WalletType;
 import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
 import com.justcommit.backend.payment.domain.WalletTransaction;
 import com.justcommit.backend.payment.infrastructure.pg.TossConfirmRejectedException;
-import com.justcommit.backend.payment.infrastructure.pg.TossConfirmResponse;
+import com.justcommit.backend.payment.infrastructure.pg.TossPaymentResponse;
 import com.justcommit.backend.payment.infrastructure.pg.TossConfirmResultUnknownException;
 import com.justcommit.backend.payment.infrastructure.pg.TossPaymentClient;
 import com.justcommit.backend.payment.infrastructure.repository.ChargeRepository;
@@ -65,7 +67,7 @@ import static org.mockito.Mockito.*;
 })
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ChargeService.class, ChargeConfirmFacade.class, PaymentService.class, WalletService.class, PaymentKeyCipher.class})
+@Import({JpaAuditingConfig.class, ClockConfig.class, ChargeRecoveryConfig.class, ChargeService.class, ChargeConfirmFacade.class, PaymentService.class, WalletService.class, PaymentKeyCipher.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class ChargeServiceConcurrencyIntegrationTest {
@@ -101,7 +103,7 @@ class ChargeServiceConcurrencyIntegrationTest {
         given(tossPaymentClient.confirm(any(), any(), any())).willAnswer(inv -> {
             Thread.sleep(100);
             BigDecimal amount = inv.getArgument(2);
-            return new TossConfirmResponse(
+            return new TossPaymentResponse(
                     inv.getArgument(0), inv.getArgument(1), "DONE",
                     amount.longValue(), OffsetDateTime.now());
         });
@@ -259,7 +261,7 @@ class ChargeServiceConcurrencyIntegrationTest {
         ChargeConfirmRequest request = confirmRequest(charge);
 
         // 토스는 DONE인데 승인 금액이 우리 기록(10,000원)과 다른 상황
-        doReturn(new TossConfirmResponse(
+        doReturn(new TossPaymentResponse(
                 request.getPaymentKey(), request.getOrderId(), "DONE", 20000L, OffsetDateTime.now()
         )).when(tossPaymentClient).confirm(any(), any(), any());
 
@@ -305,8 +307,9 @@ class ChargeServiceConcurrencyIntegrationTest {
         assertThat(response.getStatus()).isEqualTo(ChargeStatus.PENDING);
         Charge saved = chargeRepository.findById(charge.getId()).orElseThrow();
         assertThat(saved.getStatus()).isEqualTo(ChargeStatus.PENDING);
-        // 복구 스케줄러(#363)가 재승인할 수 있도록 TX1에서 paymentKey가 저장돼 있어야 한다
         assertThat(paymentKeyCipher.decrypt(saved.getPgPaymentKeyEnc())).isEqualTo(request.getPaymentKey());
+        // 복구 스케줄러(#363)가 조회할 시각이 TX1에서 기록돼 있어야 한다
+        assertThat(saved.getNextAttemptAt()).isNotNull();
         assertThat(balanceOf(MEMBER_ID)).isEqualByComparingTo("0");
         assertThat(walletTransactionRepository.count()).isZero();
     }

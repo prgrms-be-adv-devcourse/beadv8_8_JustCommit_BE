@@ -1,7 +1,9 @@
 # 타임아웃 · 재시도 · 서킷 브레이커
 
 > 언제 읽나: 외부 호출이나 서비스 간 호출의 실패 처리를 정할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-09 · 관련: Miro 14, 노션 기획안 「장애 처리」
+
+> 상태: ✅ 확정 · 마지막 수정 2026-11-16 · 관련: Miro 14, 노션 기획안 「장애 처리」
+
 
 ## 공통값
 
@@ -30,10 +32,10 @@
 | market → payment 결제 | 1초 / 3초 | 연결 실패만 1회 | 안 간 게 확실하면 해제 후 실패, 타임아웃이면 결과 불명 → Saga 복구가 같은 orderId로 다시 호출 (⬜ 잠금 방식 → [미정](../open-questions.md)) |
 | market → payment 환불 | 1초 / 3초 | 연결 실패만 1회 | 타임아웃이면 결과 불명 → 주문상품 「취소 중」, Saga 복구가 같은 키로 다시 요청, 5번 안 되면 `REVIEW_REQUIRED` |
 | member → market · payment · settlement (탈퇴 확인) | 1초 / 3초, **병렬** | 연결 실패만 1회 | Fail-closed: 탈퇴 막음. 최악 약 4초라 Gateway 10초 안 |
-| market → ai 추천 | 🟨 1~2초 | 없음 | 최신 상품 |
+| market → ai 추천 | 1초 / 2초 | 없음 | 빈 목록 (장바구니 조회는 영향 없음) |
 | product → OpenSearch | 1초 / 2초 | 1회 | DB LIKE 검색으로 대신 (관련도 · 오타 허용 · 한국어 분석 없음) |
 | product → OpenAI Moderation · Claude Haiku (사진 검수) | 🟨 3초 / 20초 | 비동기 최대 3회 | 자동 통과 · 자동 반려 없이 관리자 확인 |
-| payment → 토스페이먼츠 | 3초 / 65초 | 결제 조회 후 멱등 키로 1회 | 결과 불명 → 조회 3회 → `REVIEW_REQUIRED` |
+| payment → 토스페이먼츠 | 3초 / 60초 | 없음 | 결과 불명 → `PENDING` 유지, 결제 조회로 `APPROVED`, `FAILED`, `REVIEW_REQUIRED` 중 하나로 확정 → [스케줄러 표](../reference/schedulers.md) |
 | market → 모의 택배사 | 3초 / 5초 | 10초 큐 + 건별 백오프 10초 → 30초 → 1분 고정, **포기 없음** | 배송 `READY` · `CANCEL_PENDING` 유지. 서킷 없음 |
 | member → Gmail SMTP | 연결 · 응답 · 쓰기 각 5초 | 없음 (사용자가 재발송) | `EMAIL_SEND_FAILED` |
 

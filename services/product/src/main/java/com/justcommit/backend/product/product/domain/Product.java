@@ -15,6 +15,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
@@ -47,6 +48,9 @@ public class Product extends BaseTimeEntity {
     // 판매자가 수정 · 삭제할 수 있는 상태 (정책 「수정」 · 「삭제」)
     private static final Set<ProductStatus> CHANGEABLE_STATUSES =
             EnumSet.of(ProductStatus.ACTIVE, ProductStatus.REJECTED, ProductStatus.REVIEW_PENDING);
+
+    // 재검수는 2번까지 (11/16 결정, docs/flows/image-review.md)
+    public static final int MAX_RESUBMITS = 2;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "species_id", nullable = false)
@@ -84,6 +88,16 @@ public class Product extends BaseTimeEntity {
 
     @Column(name = "review_version", nullable = false)
     private int reviewVersion;
+
+    // 상품 버전: 상품 행을 바꾸는 UPDATE마다 +1 (이벤트 productVersion의 원본, ADR 0021)
+    // 엔티티 수정은 아래 @PreUpdate가 UPDATE 한 번에 한 번 올리고, 일괄 UPDATE는 ProductRepository 쿼리가 직접 올린다
+    // JPA @Version은 쓰지 않음: 낙관적 잠금 실패(예외)가 새로 생기기 때문. 상품 변경은 행 잠금(findWithLockById)으로 줄을 섬
+    @Column(nullable = false)
+    private long version;
+
+    // 재검수 횟수: 반려된 상품을 고쳐 엔진 검수를 다시 받은 횟수 (최대 MAX_RESUBMITS, REVIEW_EXPIRED · 엔진 오류 재처리는 세지 않음)
+    @Column(name = "resubmit_count", nullable = false)
+    private int resubmitCount;
 
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("sortOrder ASC")
@@ -176,6 +190,29 @@ public class Product extends BaseTimeEntity {
         this.status = ProductStatus.DELETED;
     }
 
+    // 재검수 1회를 씀 (반려된 상품 · 이의 신청 중인 상품을 고칠 때). 다 썼으면 409, 삭제 후 새로 등록
+    public void useResubmit() {
+        if (resubmitCount >= MAX_RESUBMITS) {
+            throw new BusinessException(ProductErrorCode.RESUBMIT_LIMIT_EXCEEDED);
+        }
+        this.resubmitCount++;
+    }
+
+    public int remainingResubmits() {
+        return Math.max(0, MAX_RESUBMITS - resubmitCount);
+    }
+
+    // 이의 신청: 같은 검수 버전으로 관리자 확인을 기다림 (반려 → 검수 중, 검수 버전은 그대로)
+    public void startAppeal() {
+        this.status = ProductStatus.REVIEW_PENDING;
+    }
+
+    // 기한 초과(REVIEW_EXPIRED)로 반려된 상품을 같은 내용으로 다시 검수 (재검수 횟수에 세지 않음)
+    public void resubmitAfterExpiry() {
+        this.status = ProductStatus.REVIEW_PENDING;
+        this.reviewVersion++;
+    }
+
     // 검수 중 · 반려
     public boolean isInReview() {
         return status == ProductStatus.REVIEW_PENDING || status == ProductStatus.REJECTED;
@@ -206,4 +243,10 @@ public class Product extends BaseTimeEntity {
         this.hidden = hidden;
     }
 
+
+    // 엔티티로 상품을 바꿔 UPDATE가 나갈 때마다 한 번 (한 트랜잭션에서 필드를 여러 개 바꿔도 UPDATE는 한 번이라 +1)
+    @PreUpdate
+    void increaseVersion() {
+        this.version++;
+    }
 }
