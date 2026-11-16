@@ -18,12 +18,16 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // 내 상품 조회는 /products/** 공개 규칙보다 먼저 적어야 로그인이 필요해진다
                         .requestMatchers(HttpMethod.GET, "/api/v1/products/me", "/api/v1/products/me/**").authenticated()
+                        // 판매자 본인 검수 기록도 같은 이유로 공개 규칙보다 먼저 (토큰 없이 오면 401, 남의 상품은 서비스에서 404)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/products/*/imageReviews").authenticated()
                         // 상품 · 품종 조회는 비회원도 가능 (상품 상세는 토큰이 있으면 숨긴 내 상품도 보임)
                         .requestMatchers(HttpMethod.GET, "/api/v1/products", "/api/v1/products/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/species", "/api/v1/species/**").permitAll()
 
                         // Swagger (운영 노출 여부는 미정)
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
+                        // 관리자 검수 확인 (#344)
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .build();
     }

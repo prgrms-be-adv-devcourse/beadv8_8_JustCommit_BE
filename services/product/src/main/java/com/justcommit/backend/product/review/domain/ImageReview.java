@@ -2,6 +2,7 @@ package com.justcommit.backend.product.review.domain;
 
 import com.justcommit.backend.common.entity.BaseTimeEntity;
 import com.justcommit.backend.product.product.domain.ReviewScope;
+import com.justcommit.backend.product.review.domain.enums.DecidedBy;
 import com.justcommit.backend.product.review.domain.enums.ManualReason;
 import com.justcommit.backend.product.review.domain.enums.RejectReason;
 import com.justcommit.backend.product.review.domain.enums.ReviewDecision;
@@ -81,6 +82,29 @@ public class ImageReview extends BaseTimeEntity {
     @Column(name = "next_retry_at")
     private LocalDateTime nextRetryAt;
 
+    // 최종 판정(통과 · 반려)을 누가 했는지. 관리자 확인 대기 중이면 null
+    @Enumerated(EnumType.STRING)
+    @Column(name = "decided_by", length = 20)
+    private DecidedBy decidedBy;
+
+    @Column(name = "admin_id")
+    private Long adminId;
+
+    // 관리자가 OTHER로 반려할 때 입력한 내용 (판매자에게 그대로 보여 줌)
+    @Column(name = "admin_memo", length = 200)
+    private String adminMemo;
+
+    // 최종 판정 시각. reviewedAt(엔진 판정 · 관리자 확인 기한의 시작)과 다름
+    @Column(name = "decided_at")
+    private LocalDateTime decidedAt;
+
+    // 이의 신청 메모 (자동 반려에만, 같은 검수 버전 1번)
+    @Column(name = "appeal_memo", length = 200)
+    private String appealMemo;
+
+    @Column(name = "appealed_at")
+    private LocalDateTime appealedAt;
+
     private ImageReview(Long productId, int reviewVersion, Long sellerId, ReviewScope scope) {
         this.productId = productId;
         this.reviewVersion = reviewVersion;
@@ -107,7 +131,9 @@ public class ImageReview extends BaseTimeEntity {
 
     // 스케줄러가 재처리를 맡음: 횟수 +1, 처리하는 동안 다른 파드가 다시 집지 않게 다음 시각을 뒤로 미룸
     // (도중에 서버가 죽으면 그 시각 뒤에 다시 집힘, 그 시도도 1회로 셈)
+    // 멈춘 REQUESTED도 ENGINE_ERROR로 바꿔 맡음 → 늦게 도착한 검수 요청 이벤트는 REQUESTED가 아니라서 건너뜀
     public void startRetry(LocalDateTime leaseUntil) {
+        this.status = ReviewStatus.ENGINE_ERROR;
         this.retryCount++;
         this.nextRetryAt = leaseUntil;
     }
@@ -123,6 +149,64 @@ public class ImageReview extends BaseTimeEntity {
         this.engineResult = engineResult;
         this.errorMessage = truncate(errorMessage, 500);
         this.reviewedAt = now;
+        if (verdict.decision() != ReviewDecision.MANUAL) {
+            this.decidedBy = DecidedBy.ENGINE;
+            this.decidedAt = now;
+        }
+    }
+
+    // 관리자 확인을 기다리는 중인지 (관리자 처리 · 24시간 기한 대상)
+    public boolean isAwaitingAdmin() {
+        return status == ReviewStatus.DONE && decision == ReviewDecision.MANUAL;
+    }
+
+    // 관리자가 통과(reason null) 또는 반려. 엔진이 관리자 확인으로 보낸 사유(manualReason · detail)는 그대로 둠
+    public void decideByAdmin(Long adminId, ReviewDecision decision, RejectReason reason, String memo, LocalDateTime now) {
+        this.decision = decision;
+        this.rejectReason = reason;
+        this.adminMemo = reason == RejectReason.OTHER ? memo : null;
+        this.adminId = adminId;
+        this.decidedBy = DecidedBy.ADMIN;
+        this.decidedAt = now;
+    }
+
+    // 자동 반려(엔진 판정)라서 이의 신청할 수 있는지. 관리자 반려 · 기한 초과 반려는 안 됨
+    public boolean isAppealable() {
+        return status == ReviewStatus.DONE && decision == ReviewDecision.REJECTED && decidedBy == DecidedBy.ENGINE;
+    }
+
+    public boolean isAppealed() {
+        return appealedAt != null;
+    }
+
+    // 이의 신청: 관리자 확인으로 보냄. 원래 반려 사유(rejectReason · detail)는 관리자가 보도록 그대로 두고,
+    // 관리자 확인 기한(24시간)은 이의 신청 시각부터 셈
+    public void appeal(String memo, LocalDateTime now) {
+        this.appealMemo = memo;
+        this.appealedAt = now;
+        this.decision = ReviewDecision.MANUAL;
+        this.manualReason = ManualReason.APPEAL;
+        this.reviewedAt = now;
+        this.decidedBy = null;
+        this.decidedAt = null;
+    }
+
+    // 반려(기한 초과 제외) 또는 이의 신청 중 → 이 상태에서 고치면 재검수 1회
+    public boolean countsAsResubmit() {
+        if (status != ReviewStatus.DONE) {
+            return false;
+        }
+        boolean rejected = decision == ReviewDecision.REJECTED && rejectReason != RejectReason.REVIEW_EXPIRED;
+        boolean appealing = isAwaitingAdmin() && isAppealed();
+        return rejected || appealing;
+    }
+
+    // 관리자 확인으로 간 지 24시간이 지나 자동 반려
+    public void expire(LocalDateTime now) {
+        this.decision = ReviewDecision.REJECTED;
+        this.rejectReason = RejectReason.REVIEW_EXPIRED;
+        this.decidedBy = DecidedBy.DEADLINE;
+        this.decidedAt = now;
     }
 
     // 그사이 상품이 바뀌어 이 버전은 반영하지 않음

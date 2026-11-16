@@ -57,3 +57,7 @@ custom:
     retry:
       enabled: true
       interval: PT5M
+    # 관리자 확인 기한 스케줄러 (10분마다, 관리자 확인으로 간 지 24시간 지나면 REVIEW_EXPIRED)
+    deadline:
+      enabled: true
+      interval: PT10M

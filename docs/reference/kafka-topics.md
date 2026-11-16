@@ -1,7 +1,7 @@
 # Kafka 토픽 · 이벤트 표
 
 > 언제 읽나: 어떤 이벤트를 누가 발행 · 구독하는지 정확히 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: Miro 9 · 10, 노션 기획안 「Kafka 이벤트」, 노션 「정책 정리」 3.10 · 8.7
+> 상태: ✅ 확정 · 마지막 수정 2026-11-16 · 관련: Miro 9 · 10, 노션 기획안 「Kafka 이벤트」, 노션 「정책 정리」 3.10 · 8.7
 
 ## 토픽 목록
 
@@ -85,8 +85,8 @@
 | `ProductRegistered` | 아래 공통 칸 | 상품 등록 |
 | `ProductUpdated` | 아래 공통 칸 | 제목 · 가격 · 사진 · 품종 등 수정 |
 | `ProductStatusChanged` | 아래 공통 칸 | 예약 · 판매 완료 · 예약 해제 · 판매 재개 · 숨김 · 삭제 · 판매자 탈퇴 정리 · 검수 결과(통과 · 반려) |
-| `ProductApproved` | 🟨 `productId` · `sellerId` · `reviewVersion` (숫자), `productTitle` (문자열) | 검수 통과 알림용. 제안값, #345에서 확정 |
-| `ProductRejected` | 🟨 `ProductApproved` 칸 + `reasonCode` (반려 사유 코드, 예: `HARMFUL_IMAGE`) · `reasonMessage` (판매자 문구) | 검수 반려 알림용. 제안값, #345에서 확정 |
+| `ProductApproved` | `productId` · `sellerId` · `reviewVersion` (숫자), `productTitle` (문자열) | 검수 통과 알림용. 검수 중 → 판매 중으로 바뀔 때만 (판매 중 상품의 글 검사 통과는 보내지 않음) |
+| `ProductRejected` | `ProductApproved` 칸 + `reasonCode` (반려 사유 코드, 예: `HARMFUL_IMAGE`) · `reasonMessage` (판매자 문구, `OTHER`면 관리자 입력) | 검수 반려 알림용 (글 검사 반려 포함). 관리자 확인으로 넘어갈 때는 보내지 않음 |
 
 세 이벤트의 공통 payload (`version` 2, [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md)):
 
@@ -114,7 +114,7 @@ product 색인 리스너는 상품 ID로 DB에서 최신 상품을 다시 읽습
 
 ### member 판매자 배송지 (`member.address.events.v1`, Key `memberId`, #233)
 
-판매자 등록 · 배송지 추가 · 기본 배송지 변경 때, 판매자의 **바뀐 뒤 배송지 목록 전체**를 보냅니다 (판매자가 아니면 보내지 않음).
+판매자 등록 · 배송지 추가 · 기본 배송지 변경 · 수정(실제로 바뀐 경우만) · 삭제 때, 판매자의 **바뀐 뒤 배송지 목록 전체**를 보냅니다 (판매자가 아니면 보내지 않음).
 
 | 봉투 payload | 타입 | 내용 |
 |---|---|---|

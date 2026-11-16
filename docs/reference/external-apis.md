@@ -1,7 +1,7 @@
 # 외부 API 목록
 
 > 언제 읽나: 외부 API의 경로 · 담당 서비스를 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-15 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-16 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
 
 ## 서비스별 목록
 
@@ -22,8 +22,10 @@
 | GET | `users/phoneAvailability?phone=` | 휴대폰 중복 확인 | 공개 |
 | GET | `users/me` | 내 정보 | 로그인 |
 | PATCH | `users/me/nickname` | 닉네임 변경 (지금 닉네임과 같으면 그대로) | 로그인 |
+| PATCH | `users/me/password` | 비밀번호 변경 → 모든 기기 로그아웃. 200이면 이 기기 Refresh 쿠키 만료 · 프론트는 Access를 지우고 로그인 화면으로, `revocationCompleted`는 서버 폐기 기록 완료 여부. 503 `RESULT_UNKNOWN`은 자동 재시도 금지 | 로그인 (로컬 회원) |
 | GET · POST | `users/me/addresses` | 배송지 목록 · 추가 | 로그인 |
 | PATCH | `users/me/addresses/{id}/default` | 기본 배송지 변경 | 로그인 |
+| PATCH · DELETE | `users/me/addresses/{id}` | 배송지 수정(보낸 항목만. 우편번호나 기본 주소가 바뀌면 상세 주소도 함께 보냄, 비우려면 `""`. 아무 항목도 없으면 400, 지금과 같은 값만 보내면 200 · 변경 · 이벤트 없음) · 삭제(기본 배송지는 409) | 로그인 |
 | POST | `sellers` | 판매자 등록 | 로그인 |
 | GET | `sellers/{sellerId}` | 판매자 공개 정보 (닉네임 · 소개글 · 등록일, 숫자 id만) | 공개 |
 | PATCH | `sellers/me/intro` | 소개글 수정 (최대 500자, 빈 문자열은 삭제) | 로그인 (판매자만) |
@@ -41,12 +43,12 @@
 | PATCH | `products/{id}/hidden` | 숨김 | SELLER |
 | GET | `products/me` · `products/me/counts` | 내 상품 · 상태별 개수 | SELLER |
 | POST | `products/images/uploadUrls` | 사진 Presigned URL | SELLER |
-| GET | `products/{id}/imageReviews` | 내 상품 검수 기록 (상태 · 반려 사유 · 남은 재검수 횟수) | SELLER |
+| GET | `products/{id}/imageReviews` | 내 상품 검수 기록 (상태 · 반려 사유 · 남은 재검수 횟수 · 이의 신청 · 재요청 가능 여부) | SELLER |
 | POST | `products/{id}/imageReviews` | 기한 초과(`REVIEW_EXPIRED`) 상품 같은 내용으로 다시 검수 요청 | SELLER |
-| POST | `products/{id}/appeals` | 자동 반려 이의 신청 (메모 필수, 200자) | SELLER |
+| POST | `products/{id}/appeals` | 자동 반려 이의 신청 (`memo` 필수, 200자). 409 `APPEAL_NOT_ALLOWED` · `APPEAL_ALREADY_USED` · `REVIEW_PENDING_LIMIT_EXCEEDED` | SELLER |
 | GET | `species` · `species/{id}` | 품종 목록 · 상세 (학명 · 별칭) | 공개 |
-| GET | `admin/imageReviews?status=MANUAL` | 수동 검수 대기 목록 | ADMIN |
-| PATCH | `admin/imageReviews/{id}` | 수동 검수 결과 | ADMIN |
+| GET | `admin/imageReviews?status=MANUAL&page&size` | 관리자 확인 대기 목록, 오래된 순 (사진 · 엔진 결과 · 판매자 품종 · 관리자 확인 사유 · 기한 `expiresAt` · 12시간 지연 `delayed`) | ADMIN |
+| PATCH | `admin/imageReviews/{id}` | 관리자 처리 `decision`(`APPROVED` · `REJECTED`) · `rejectReason` · `memo`(`OTHER`면 필수 200자, 다른 사유 · 통과면 저장하지 않음). 409 `REVIEW_ALREADY_PROCESSED` · `REVIEW_OUTDATED`, 400 `INVALID_REJECT_REASON` | ADMIN |
 
 ### market
 
@@ -85,7 +87,7 @@
 
 | 서비스 | 기능 | 설명 |
 |---|---|---|
-| member | 아이디 찾기 · 비밀번호 재설정 · 비밀번호 변경 · 계좌 변경 · 배송지 수정 · 탈퇴 | 노션 2.1 ~ 2.5 |
+| member | 아이디 찾기 · 비밀번호 재설정 · 계좌 변경 · 탈퇴 | 노션 2.1 ~ 2.5 |
 | market | 판매자 수락 · 거절 (판매자 주문 › 상품 트리 체크) | 판매 기록 화면 |
 | market | 반품 신청 (사유) · 판매자 승인 · 거절 | 노션 7절 |
 | market | 리뷰 작성 · 삭제 · 판매자 리뷰 목록 (태그 집계) | 노션 6절 |

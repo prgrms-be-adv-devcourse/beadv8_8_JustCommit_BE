@@ -33,9 +33,21 @@ public enum MemberErrorCode implements ErrorCode {
   // 회원 잠금 (#409): 같은 회원의 다른 요청이 잠금을 잡고 있어 대기 제한 안에 처리하지 못함
   MEMBER_BUSY(HttpStatus.CONFLICT, "같은 계정의 다른 요청을 처리하고 있습니다. 잠시 후 다시 시도해 주세요."),
 
+  // 비밀번호 변경 (#411)
+  INVALID_CURRENT_PASSWORD(HttpStatus.BAD_REQUEST, "현재 비밀번호가 올바르지 않습니다."),
+  SAME_AS_CURRENT_PASSWORD(HttpStatus.BAD_REQUEST, "새 비밀번호가 현재 비밀번호와 같습니다."),
+  PASSWORD_NOT_SET(HttpStatus.BAD_REQUEST, "소셜 로그인 회원은 비밀번호를 변경할 수 없습니다."),
+
+  // 처리 결과 불명: 변경이 반영됐는지 확인하지 못함 (비밀번호 변경 · 탈퇴, 기능마다 메시지를 따로 넘김)
+  RESULT_UNKNOWN(HttpStatus.SERVICE_UNAVAILABLE, "처리 결과를 확인하지 못했습니다. 잠시 후 확인해 주세요."),
+
   // 배송지
   ADDRESS_NOT_FOUND(HttpStatus.NOT_FOUND, "배송지를 찾을 수 없습니다."),
   ADDRESS_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "배송지는 최대 4개까지 등록할 수 있습니다."),
+  // 기본 배송지는 항상 1개라 지울 수 없음 (#416). 다른 배송지를 기본으로 바꾼 뒤 삭제
+  DEFAULT_ADDRESS_NOT_DELETABLE(HttpStatus.CONFLICT, "기본 배송지는 삭제할 수 없습니다. 다른 배송지를 기본으로 설정한 뒤 삭제해 주세요."),
+  // 우편번호나 기본 주소가 실제로 바뀌는데 상세 주소를 보내지 않음 (#416). 옛 상세 주소가 새 주소에 남지 않게
+  ADDRESS_DETAIL_REQUIRED(HttpStatus.BAD_REQUEST, "주소를 바꿀 때는 상세 주소도 함께 보내주세요. 비우려면 빈 값으로 보내주세요."),
 
   // 정상 경로에서는 생기지 않는 판매자 배송지 상태 (빈 목록 · 기본 배송지 0개 · 여러 개). 서버 오류로 멈추고 롤백
   INVALID_SELLER_ADDRESS_STATE(HttpStatus.INTERNAL_SERVER_ERROR, "배송지 정보를 처리할 수 없습니다. 잠시 후 다시 시도해 주세요."),
