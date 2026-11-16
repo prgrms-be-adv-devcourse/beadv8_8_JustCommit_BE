@@ -45,16 +45,16 @@ public class EmailVerificationService {
     if (memberRepository.existsByEmail(email)) {
       throw new BusinessException(MemberErrorCode.DUPLICATE_EMAIL);
     }
-    acquireSendSlot(email);
+    EmailVerificationRedisStore.SendResult slot = acquireSendSlot(email);
     String code = generateCode();
-    store.saveCode(purpose, email, code, CODE_TTL);
+    store.saveCode(purpose, email, slot.requestId(), code, CODE_TTL);
     try {
       mailSender.send(email, code, CODE_TTL);
     } catch (MailException e) {
-      // 발송 실패 시 저장한 번호와 확보한 발송 자리를 되돌려서 다시 시도할 수 있게 함 (서버 쪽 실패는 하루 횟수에 넣지 않음)
+      // 발송 실패 시 이 요청이 만든 번호 · 재발송 제한 · 하루 횟수만 되돌려 다시 시도할 수 있게 함
+      // (늦게 실패해도 그 사이 다른 요청이 만든 번호 · 재발송 제한은 지우지 않음, 서버 쪽 실패는 하루 횟수에 넣지 않음)
       log.error("인증 메일 발송 실패: email={}", email, e);
-      store.deleteCode(purpose, email);
-      store.releaseSend(email);
+      store.releaseSend(purpose, email, slot.requestId());
       throw new BusinessException(MemberErrorCode.EMAIL_SEND_FAILED);
     }
     return new EmailSendResult(CODE_TTL.toSeconds(), COOLDOWN_TTL.toSeconds());
@@ -73,7 +73,7 @@ public class EmailVerificationService {
   }
 
   // 재발송 제한(60초) · 하루 한도(5회)를 확인하고 자리를 확보. 막히면 429 + 남은 초(Retry-After)
-  private void acquireSendSlot(String email) {
+  private EmailVerificationRedisStore.SendResult acquireSendSlot(String email) {
     EmailVerificationRedisStore.SendResult result =
         store.tryAcquireSend(email, COOLDOWN_TTL, DAILY_SEND_LIMIT, DAILY_WINDOW);
     switch (result.status()) {
@@ -83,6 +83,7 @@ public class EmailVerificationService {
       case DAILY_LIMIT -> throw new EmailCooldownException(
           MemberErrorCode.EMAIL_SEND_DAILY_LIMIT, result.retryAfterSeconds());
     }
+    return result;
   }
 
   // TODO: #412 비밀번호 재설정에서 PASSWORD_RESET, #413 계좌 변경에서 ACCOUNT_CHANGE를 연다

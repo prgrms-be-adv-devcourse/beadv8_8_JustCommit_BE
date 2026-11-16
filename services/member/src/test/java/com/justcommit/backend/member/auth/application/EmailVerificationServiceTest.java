@@ -30,6 +30,7 @@ class EmailVerificationServiceTest {
 
   private static final String EMAIL = "test@example.com";
   private static final EmailPurpose SIGNUP = EmailPurpose.SIGNUP;
+  private static final String REQUEST_ID = "request-1";
 
   @Mock
   private EmailVerificationRedisStore store;
@@ -47,7 +48,7 @@ class EmailVerificationServiceTest {
   private void givenSendSlot(SendStatus status, long retryAfterSeconds) {
     given(store.tryAcquireSend(EMAIL, EmailVerificationService.COOLDOWN_TTL,
         EmailVerificationService.DAILY_SEND_LIMIT, EmailVerificationService.DAILY_WINDOW))
-        .willReturn(new SendResult(status, retryAfterSeconds));
+        .willReturn(new SendResult(status, retryAfterSeconds, status == SendStatus.ACQUIRED ? REQUEST_ID : null));
   }
 
   // 인증번호 확인 결과를 정함 (틀린 횟수 한도 · TTL은 서비스 상수 그대로 넘어가야 함)
@@ -66,7 +67,7 @@ class EmailVerificationServiceTest {
     EmailSendResult result = service.sendCode(EMAIL, SIGNUP);
 
     ArgumentCaptor<String> code = ArgumentCaptor.forClass(String.class);
-    then(store).should().saveCode(eq(SIGNUP), eq(EMAIL), code.capture(), eq(EmailVerificationService.CODE_TTL));
+    then(store).should().saveCode(eq(SIGNUP), eq(EMAIL), eq(REQUEST_ID), code.capture(), eq(EmailVerificationService.CODE_TTL));
     then(mailSender).should().send(EMAIL, code.getValue(), EmailVerificationService.CODE_TTL);
     assertThat(code.getValue()).matches("\\d{6}");
     assertThat(result.expiresIn()).isEqualTo(300);
@@ -80,7 +81,7 @@ class EmailVerificationServiceTest {
 
     service.sendCode("  Test@Example.COM ", SIGNUP);
 
-    then(store).should().saveCode(eq(SIGNUP), eq(EMAIL), anyString(), any());
+    then(store).should().saveCode(eq(SIGNUP), eq(EMAIL), eq(REQUEST_ID), anyString(), any());
   }
 
   @Test
@@ -94,7 +95,7 @@ class EmailVerificationServiceTest {
           assertThat(e.getRetryAfterSeconds()).isEqualTo(42L);
         });
 
-    then(store).should(never()).saveCode(any(), any(), any(), any());
+    then(store).should(never()).saveCode(any(), any(), any(), any(), any());
     then(mailSender).shouldHaveNoInteractions();
   }
 
@@ -109,12 +110,12 @@ class EmailVerificationServiceTest {
           assertThat(e.getRetryAfterSeconds()).isEqualTo(3600L);
         });
 
-    then(store).should(never()).saveCode(any(), any(), any(), any());
+    then(store).should(never()).saveCode(any(), any(), any(), any(), any());
     then(mailSender).shouldHaveNoInteractions();
   }
 
   @Test
-  @DisplayName("메일 발송 실패 시 저장한 번호를 지우고 발송 자리를 되돌린 뒤 EMAIL_SEND_FAILED")
+  @DisplayName("메일 발송 실패 시 이 요청이 만든 번호 · 발송 자리만 되돌리고 EMAIL_SEND_FAILED")
   void sendCode_mailFail() {
     givenSendSlot(SendStatus.ACQUIRED, 0);
     willThrow(new MailSendException("fail")).given(mailSender).send(eq(EMAIL), anyString(), any());
@@ -123,8 +124,7 @@ class EmailVerificationServiceTest {
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode").isEqualTo(MemberErrorCode.EMAIL_SEND_FAILED);
 
-    then(store).should().deleteCode(SIGNUP, EMAIL);
-    then(store).should().releaseSend(EMAIL);
+    then(store).should().releaseSend(SIGNUP, EMAIL, REQUEST_ID);
   }
 
   @Test

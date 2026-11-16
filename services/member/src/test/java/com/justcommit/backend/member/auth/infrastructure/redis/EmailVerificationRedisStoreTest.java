@@ -135,15 +135,45 @@ class EmailVerificationRedisStoreTest {
   }
 
   @Test
-  @DisplayName("발송 실패로 되돌리면 재발송 제한이 풀리고 하루 횟수가 1 줄어 바로 다시 보낼 수 있다")
+  @DisplayName("발송 실패로 되돌리면 그 요청의 인증번호 · 재발송 제한이 지워지고 하루 횟수가 1 줄어 바로 다시 보낼 수 있다")
   void release() {
-    acquire();
+    SendResult sent = acquire();
+    store.saveCode(EmailPurpose.SIGNUP, EMAIL, sent.requestId(), "123456", CODE_TTL);
 
-    store.releaseSend(EMAIL);
+    store.releaseSend(EmailPurpose.SIGNUP, EMAIL, sent.requestId());
 
+    assertThat(redisTemplate.hasKey(CODE_KEY)).isFalse();
     assertThat(redisTemplate.hasKey(COOLDOWN_KEY)).isFalse();
     assertThat(redisTemplate.opsForValue().get(DAILY_KEY)).isEqualTo("0");
     assertThat(acquire().status()).isEqualTo(SendStatus.ACQUIRED);
+  }
+
+  @Test
+  @DisplayName("앞 요청이 늦게 실패해도 뒤 요청의 인증번호 · 재발송 제한은 그대로이고, 하루 횟수만 1 줄어든다")
+  void release_doesNotTouchLaterRequest() {
+    SendResult first = acquire();
+    store.saveCode(EmailPurpose.SIGNUP, EMAIL, first.requestId(), "111111", CODE_TTL);
+    redisTemplate.delete(COOLDOWN_KEY); // 앞 요청의 메일 발송이 60초 넘게 걸린 상황
+    SendResult second = acquire();
+    store.saveCode(EmailPurpose.SIGNUP, EMAIL, second.requestId(), "222222", CODE_TTL);
+
+    store.releaseSend(EmailPurpose.SIGNUP, EMAIL, first.requestId());
+
+    assertThat(redisTemplate.opsForValue().get(COOLDOWN_KEY)).isEqualTo(second.requestId());
+    assertThat(redisTemplate.opsForValue().get(DAILY_KEY)).isEqualTo("1");
+    assertThat(verify(EmailPurpose.SIGNUP, "222222")).isEqualTo(VerifyResult.MATCHED);
+  }
+
+  @Test
+  @DisplayName("재발송 제한이 1초 미만 남아도 키가 있는 동안은 COOLDOWN, 남은 시간은 1초로 응답")
+  void acquire_cooldownBelowOneSecond() {
+    redisTemplate.opsForValue().set(COOLDOWN_KEY, "other-request", Duration.ofMillis(500));
+
+    SendResult result = acquire();
+
+    assertThat(result.status()).isEqualTo(SendStatus.COOLDOWN);
+    assertThat(result.retryAfterSeconds()).isEqualTo(1L);
+    assertThat(redisTemplate.hasKey(DAILY_KEY)).isFalse();
   }
 
   // ===== 인증번호 확인 =====
@@ -151,7 +181,7 @@ class EmailVerificationRedisStoreTest {
   @Test
   @DisplayName("일치하면 MATCHED, 인증번호와 틀린 횟수를 모두 지운다")
   void verify_match() {
-    store.saveCode(EmailPurpose.SIGNUP, EMAIL, "123456", CODE_TTL);
+    store.saveCode(EmailPurpose.SIGNUP, EMAIL, "request", "123456", CODE_TTL);
     verify(EmailPurpose.SIGNUP, "000000");
 
     assertThat(verify(EmailPurpose.SIGNUP, "123456")).isEqualTo(VerifyResult.MATCHED);
@@ -162,7 +192,7 @@ class EmailVerificationRedisStoreTest {
   @Test
   @DisplayName("4번까지는 MISMATCH, 5번째에 EXHAUSTED로 폐기되고 그 뒤에는 맞는 번호도 EXPIRED")
   void verify_exhausted() {
-    store.saveCode(EmailPurpose.SIGNUP, EMAIL, "123456", CODE_TTL);
+    store.saveCode(EmailPurpose.SIGNUP, EMAIL, "request", "123456", CODE_TTL);
 
     for (int i = 0; i < MAX_WRONG - 1; i++) {
       assertThat(verify(EmailPurpose.SIGNUP, "000000")).isEqualTo(VerifyResult.MISMATCH);
@@ -177,12 +207,12 @@ class EmailVerificationRedisStoreTest {
   @Test
   @DisplayName("새 인증번호를 저장하면 틀린 횟수가 다시 시작된다")
   void saveCode_resetsAttempts() {
-    store.saveCode(EmailPurpose.SIGNUP, EMAIL, "123456", CODE_TTL);
+    store.saveCode(EmailPurpose.SIGNUP, EMAIL, "request", "123456", CODE_TTL);
     for (int i = 0; i < MAX_WRONG - 1; i++) {
       verify(EmailPurpose.SIGNUP, "000000");
     }
 
-    store.saveCode(EmailPurpose.SIGNUP, EMAIL, "654321", CODE_TTL);
+    store.saveCode(EmailPurpose.SIGNUP, EMAIL, "request", "654321", CODE_TTL);
 
     for (int i = 0; i < MAX_WRONG - 1; i++) {
       assertThat(verify(EmailPurpose.SIGNUP, "000000")).isEqualTo(VerifyResult.MISMATCH);
@@ -193,7 +223,7 @@ class EmailVerificationRedisStoreTest {
   @Test
   @DisplayName("같은 번호로 동시에 확인해도 한 번만 MATCHED (나머지는 이미 지워져 EXPIRED)")
   void verify_concurrent() throws Exception {
-    store.saveCode(EmailPurpose.SIGNUP, EMAIL, "123456", CODE_TTL);
+    store.saveCode(EmailPurpose.SIGNUP, EMAIL, "request", "123456", CODE_TTL);
 
     List<VerifyResult> results = runTogether(10, () -> verify(EmailPurpose.SIGNUP, "123456"));
 
@@ -206,7 +236,7 @@ class EmailVerificationRedisStoreTest {
   @Test
   @DisplayName("가입 목적의 인증번호 · 인증 완료는 비밀번호 재설정 목적으로 쓸 수 없다")
   void purposesAreSeparated() {
-    store.saveCode(EmailPurpose.SIGNUP, EMAIL, "123456", CODE_TTL);
+    store.saveCode(EmailPurpose.SIGNUP, EMAIL, "request", "123456", CODE_TTL);
     assertThat(verify(EmailPurpose.PASSWORD_RESET, "123456")).isEqualTo(VerifyResult.EXPIRED);
 
     store.saveVerified(EmailPurpose.SIGNUP, EMAIL, Duration.ofMinutes(30));

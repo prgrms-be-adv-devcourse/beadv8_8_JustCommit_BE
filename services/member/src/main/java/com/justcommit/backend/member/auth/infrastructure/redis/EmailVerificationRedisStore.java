@@ -9,13 +9,16 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 이메일 인증 Redis 키 관리 (키 규칙 도메인:용도:식별자)
  * - 목적별 (#412): 인증번호 · 틀린 횟수 · 인증 완료. 다른 목적으로 받은 인증을 쓰지 못하게 목적을 키에 넣는다
  * - 이메일 단위: 재발송 제한(60초) · 하루 발송 횟수. 목적과 관계없이 같은 이메일로 보내는 메일 수를 함께 센다
- * - 판단과 변경이 함께 필요한 곳(발송 자리 확보 · 인증번호 확인)은 Lua 한 번으로 처리해,
+ * - 판단과 변경이 함께 필요한 곳(발송 자리 확보 · 되돌리기 · 인증번호 확인)은 Lua 한 번으로 처리해,
  *   동시 요청에도 하루 한도를 넘지 않고 같은 인증번호가 두 번 승인되지 않게 한다
+ * - 발송 요청마다 식별자를 만들어 재발송 제한 · 인증번호 값에 남긴다. 메일 발송이 늦게 실패해도
+ *   그 사이 다른 요청이 만든 인증번호 · 재발송 제한은 건드리지 않고 자기 것만 되돌린다
  */
 @Component
 @RequiredArgsConstructor
@@ -27,29 +30,39 @@ public class EmailVerificationRedisStore {
   private static final String COOLDOWN_KEY = "auth:email:cooldown:%s";
   private static final String DAILY_KEY = "auth:email:daily:%s";
 
-  // KEYS[1] = 재발송 제한 키, KEYS[2] = 하루 발송 키 / ARGV[1] = 재발송 간격(초), ARGV[2] = 하루 한도, ARGV[3] = 하루 기간(초)
-  // 반환 {상태, 남은 초}: 0 = 확보, 1 = 재발송 제한, 2 = 하루 한도 초과. 하루 기간은 첫 발송부터 센다
+  // KEYS[1] = 재발송 제한 키, KEYS[2] = 하루 발송 키
+  // ARGV[1] = 재발송 간격(초), ARGV[2] = 하루 한도, ARGV[3] = 하루 기간(초), ARGV[4] = 요청 식별자
+  // 반환 {상태, 남은 밀리초}: 0 = 확보, 1 = 재발송 제한, 2 = 하루 한도 초과. 하루 기간은 첫 발송부터 센다
+  // 재발송 제한은 키가 있는 동안 막는다 (TTL은 초 단위 내림이라 1초 미만이 남으면 0이 되어 통과할 수 있음)
   @SuppressWarnings("rawtypes")
   private static final RedisScript<List> ACQUIRE_SEND_SCRIPT = new DefaultRedisScript<>("""
-      local cooldown = redis.call('TTL', KEYS[1])
-      if cooldown > 0 then
+      local cooldown = redis.call('PTTL', KEYS[1])
+      if cooldown ~= -2 then
         return {1, cooldown}
       end
       local count = tonumber(redis.call('GET', KEYS[2]) or '0')
       if count >= tonumber(ARGV[2]) then
-        return {2, redis.call('TTL', KEYS[2])}
+        return {2, redis.call('PTTL', KEYS[2])}
       end
       redis.call('INCR', KEYS[2])
       if redis.call('TTL', KEYS[2]) < 0 then
         redis.call('EXPIRE', KEYS[2], ARGV[3])
       end
-      redis.call('SET', KEYS[1], '1', 'EX', ARGV[1])
+      redis.call('SET', KEYS[1], ARGV[4], 'EX', ARGV[1])
       return {0, 0}
       """, List.class);
 
-  // KEYS[1] = 재발송 제한 키, KEYS[2] = 하루 발송 키. 확보한 발송 자리를 되돌린다 (재발송 제한 해제 · 하루 횟수 -1)
+  // KEYS[1] = 재발송 제한 키, KEYS[2] = 하루 발송 키, KEYS[3] = 인증번호 키, KEYS[4] = 틀린 횟수 키 / ARGV[1] = 요청 식별자
+  // 자기 요청이 만든 것만 되돌린다: 재발송 제한 · 인증번호는 값이 자기 식별자일 때만 삭제,
+  // 하루 횟수는 자기 요청이 올린 1을 되돌린다
   private static final RedisScript<Long> RELEASE_SEND_SCRIPT = new DefaultRedisScript<>("""
-      redis.call('DEL', KEYS[1])
+      if redis.call('GET', KEYS[1]) == ARGV[1] then
+        redis.call('DEL', KEYS[1])
+      end
+      local saved = redis.call('GET', KEYS[3])
+      if saved and string.sub(saved, 1, #ARGV[1] + 1) == ARGV[1] .. ':' then
+        redis.call('DEL', KEYS[3], KEYS[4])
+      end
       local count = tonumber(redis.call('GET', KEYS[2]) or '0')
       if count > 0 then
         redis.call('DECR', KEYS[2])
@@ -58,13 +71,16 @@ public class EmailVerificationRedisStore {
       """, Long.class);
 
   // KEYS[1] = 인증번호 키, KEYS[2] = 틀린 횟수 키 / ARGV[1] = 입력한 번호, ARGV[2] = 최대 틀린 횟수, ARGV[3] = 틀린 횟수 TTL(초)
+  // 인증번호 값은 "{요청 식별자}:{번호}"라 ':' 뒤만 비교한다
   // 반환: 0 = 없음(만료), 1 = 일치(번호 · 횟수 삭제), 2 = 불일치, 3 = 최대 횟수만큼 틀림(번호 · 횟수 삭제)
   private static final RedisScript<Long> VERIFY_SCRIPT = new DefaultRedisScript<>("""
       local saved = redis.call('GET', KEYS[1])
       if not saved then
         return 0
       end
-      if saved == ARGV[1] then
+      local separator = string.find(saved, ':', 1, true)
+      local code = separator and string.sub(saved, separator + 1) or saved
+      if code == ARGV[1] then
         redis.call('DEL', KEYS[1], KEYS[2])
         return 1
       end
@@ -84,7 +100,8 @@ public class EmailVerificationRedisStore {
   public enum SendStatus { ACQUIRED, COOLDOWN, DAILY_LIMIT }
 
   // retryAfterSeconds: 다시 보낼 수 있을 때까지 남은 초 (ACQUIRED면 0)
-  public record SendResult(SendStatus status, long retryAfterSeconds) {
+  // requestId: 확보한 발송 요청의 식별자 (ACQUIRED일 때만). 인증번호 저장 · 되돌리기에 넘긴다
+  public record SendResult(SendStatus status, long retryAfterSeconds, String requestId) {
   }
 
   public enum VerifyResult { MATCHED, MISMATCH, EXHAUSTED, EXPIRED }
@@ -93,33 +110,35 @@ public class EmailVerificationRedisStore {
 
   // 재발송 제한 · 하루 한도를 확인하고, 보낼 수 있으면 하루 횟수 +1 · 재발송 제한 시작까지 한 번에 처리
   public SendResult tryAcquireSend(String email, Duration cooldown, int dailyLimit, Duration dailyWindow) {
+    String requestId = UUID.randomUUID().toString();
     List<?> result = redisTemplate.execute(ACQUIRE_SEND_SCRIPT,
         List.of(key(COOLDOWN_KEY, email), key(DAILY_KEY, email)),
-        String.valueOf(cooldown.toSeconds()), String.valueOf(dailyLimit), String.valueOf(dailyWindow.toSeconds()));
+        String.valueOf(cooldown.toSeconds()), String.valueOf(dailyLimit),
+        String.valueOf(dailyWindow.toSeconds()), requestId);
     int status = ((Number) result.get(0)).intValue();
-    long remaining = Math.max(1, ((Number) result.get(1)).longValue()); // 0초 · 음수는 1초로 응답
+    long remainingSeconds = toRetryAfterSeconds(((Number) result.get(1)).longValue());
     return switch (status) {
-      case 0 -> new SendResult(SendStatus.ACQUIRED, 0);
-      case 1 -> new SendResult(SendStatus.COOLDOWN, remaining);
-      default -> new SendResult(SendStatus.DAILY_LIMIT, remaining);
+      case 0 -> new SendResult(SendStatus.ACQUIRED, 0, requestId);
+      case 1 -> new SendResult(SendStatus.COOLDOWN, remainingSeconds, null);
+      default -> new SendResult(SendStatus.DAILY_LIMIT, remainingSeconds, null);
     };
   }
 
-  // 메일 발송이 실패하면 확보한 자리를 되돌린다 (서버 쪽 실패는 하루 횟수에 넣지 않음)
-  public void releaseSend(String email) {
-    redisTemplate.execute(RELEASE_SEND_SCRIPT, List.of(key(COOLDOWN_KEY, email), key(DAILY_KEY, email)));
+  // 메일 발송이 실패하면 그 요청이 만든 상태만 되돌린다 (서버 쪽 실패는 하루 횟수에 넣지 않음)
+  public void releaseSend(EmailPurpose purpose, String email, String requestId) {
+    redisTemplate.execute(RELEASE_SEND_SCRIPT,
+        List.of(key(COOLDOWN_KEY, email), key(DAILY_KEY, email),
+            key(CODE_KEY, purpose, email), key(ATTEMPTS_KEY, purpose, email)),
+        requestId);
   }
 
   // ===== 인증번호 (목적별) =====
 
   // 재발송하면 같은 키에 덮어써 이전 번호는 자동으로 무효, 틀린 횟수도 새로 시작
-  public void saveCode(EmailPurpose purpose, String email, String code, Duration ttl) {
-    redisTemplate.opsForValue().set(key(CODE_KEY, purpose, email), code, ttl);
+  // 값은 "{요청 식별자}:{번호}" (되돌리기가 자기 요청의 번호인지 알아볼 수 있게)
+  public void saveCode(EmailPurpose purpose, String email, String requestId, String code, Duration ttl) {
+    redisTemplate.opsForValue().set(key(CODE_KEY, purpose, email), requestId + ":" + code, ttl);
     redisTemplate.delete(key(ATTEMPTS_KEY, purpose, email));
-  }
-
-  public void deleteCode(EmailPurpose purpose, String email) {
-    redisTemplate.delete(List.of(key(CODE_KEY, purpose, email), key(ATTEMPTS_KEY, purpose, email)));
   }
 
   // 비교 · 틀린 횟수 증가 · 폐기를 한 번에 처리 (같은 번호가 동시에 두 번 승인되지 않음)
@@ -148,6 +167,11 @@ public class EmailVerificationRedisStore {
 
   public void deleteVerified(EmailPurpose purpose, String email) {
     redisTemplate.delete(key(VERIFIED_KEY, purpose, email));
+  }
+
+  // 남은 밀리초를 초로 올림, 최소 1초 (만료 시각이 없거나 막 사라진 경우도 1초)
+  private static long toRetryAfterSeconds(long remainingMillis) {
+    return Math.max(1, (remainingMillis + 999) / 1000);
   }
 
   private String key(String pattern, String email) {
