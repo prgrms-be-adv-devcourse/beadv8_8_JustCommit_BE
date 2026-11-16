@@ -28,7 +28,7 @@ market 서비스가 소유하는 테이블입니다 (market DB).
 | `ORDERS` | 구매자 주문 |
 | `SELLER_ORDER` | 판매자별 주문 (배송비 · 배송 단위 · `confirmedAt`) |
 | `ORDERS_ITEM` | 주문상품 (`ACCEPT_PENDING` · `NORMAL` · `CANCELLED` 등) |
-| `SHIPMENT` | 배송 (방향: 가는 길 / 반품, `next_attempt_at` · `last_error`) |
+| `SHIPMENT` | 배송 (방향: 가는 길 / 반품, 택배 예약 큐용 `next_attempt_at` · `attempt_count`) |
 | ⬜ 반품 신청 (이름 미정) | 주문상품별 반품 사유 · 상태 |
 | ⬜ 배송비 요금표 (이름 미정) | 기본 + 제주 · 도서산간 요금, 도서산간 우편번호, 버전 |
 | `REVIEW` | 리뷰 (`seller_order_id` UK, 소프트 삭제) |
