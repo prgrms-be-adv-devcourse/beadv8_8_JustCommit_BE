@@ -99,7 +99,7 @@ sequenceDiagram
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| GET | `products/{id}/imageReviews` | 판매자 본인 검수 기록, 최신 검수 버전부터. 표시 상태(`IN_REVIEW` 검수 중 · `ADMIN_CHECK` 관리자 확인 중 · `ADMIN_CHECK_DELAYED` 확인 지연 · `APPROVED` · `REJECTED` · `REPLACED` 그사이 수정됨) · 반려 사유와 문구 · 판정 주체(`ENGINE` · `ADMIN` · `DEADLINE`) · 시각, 남은 재검수 횟수 · 이의 신청 가능 여부 · 기한 초과 재요청 가능 여부 |
+| GET | `products/{id}/imageReviews` | 판매자 본인 검수 기록, 최신 검수 버전부터. 표시 상태(`IN_REVIEW` 검수 중 · `ADMIN_CHECK` 관리자 확인 중 · `ADMIN_CHECK_DELAYED` 확인 지연 · `APPROVED` · `REJECTED` · `REPLACED` 그사이 수정됨) · 반려 사유와 문구 · 판정 주체(`ENGINE` · `ADMIN` · `DEADLINE`) · 시각, 남은 재검수 횟수 · 이의 신청 가능 여부 · 기한 초과 재요청 가능 여부 (두 가능 여부는 상품 · 검수 상태만 봄. 검수 중 동시 5개는 신청할 때 확인해 넘으면 409 `REVIEW_PENDING_LIMIT_EXCEEDED`) |
 | POST | `products/{id}/appeals` | 자동 반려 이의 신청 (`memo` 필수, 200자). 409 `APPEAL_NOT_ALLOWED` · `APPEAL_ALREADY_USED` |
 | POST | `products/{id}/imageReviews` | 기한 초과(`REVIEW_EXPIRED`) 상품을 같은 내용으로 다시 검수 요청. 재검수 · 등록 제한에 세지 않음. 다른 상태면 409 `RESUBMIT_NOT_ALLOWED` |
 

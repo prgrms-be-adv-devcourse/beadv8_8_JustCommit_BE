@@ -48,6 +48,7 @@ public class SellerImageReviewService {
         ImageReview current = reviews.stream()
                 .filter(review -> review.getReviewVersion() == product.getReviewVersion())
                 .findFirst().orElse(null);
+        // 두 가능 여부는 상품 · 검수 상태만 본다. 검수 중 동시 5개는 신청 때 확인(넘으면 409 REVIEW_PENDING_LIMIT_EXCEEDED)
         boolean appealable = product.getStatus() == ProductStatus.REJECTED
                 && current != null && current.isAppealable() && !current.isAppealed();
         boolean resubmittable = product.getStatus() == ProductStatus.REJECTED
