@@ -1,6 +1,6 @@
 package com.justcommit.backend.product.member.application;
 
-import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
+import com.justcommit.backend.product.product.application.ProductEventPublisher;
 import com.justcommit.backend.product.member.infrastructure.MemberReplicaRepository;
 import com.justcommit.backend.product.product.event.ProductStatusChanged;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
@@ -15,6 +15,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
@@ -36,7 +37,7 @@ class MemberReplicaServiceTest {
     private ProductRepository productRepository;
 
     @Mock
-    private OutboxPublisher outboxPublisher;
+    private ProductEventPublisher productEventPublisher;
 
     @InjectMocks
     private MemberReplicaService memberReplicaService;
@@ -49,8 +50,7 @@ class MemberReplicaServiceTest {
 
         assertThat(memberReplicaService.applyWithdrawn(SELLER_ID, OCCURRED_AT)).isEqualTo(2);
 
-        verify(outboxPublisher).publish(new ProductStatusChanged(10L));
-        verify(outboxPublisher).publish(new ProductStatusChanged(11L));
+        verify(productEventPublisher).statusChanged(List.of(10L, 11L));
     }
 
     @Test
@@ -61,6 +61,6 @@ class MemberReplicaServiceTest {
 
         assertThat(memberReplicaService.applyWithdrawn(SELLER_ID, OCCURRED_AT)).isZero();
 
-        verify(outboxPublisher, never()).publish(any());
+        verifyNoInteractions(productEventPublisher);
     }
 }

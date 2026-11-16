@@ -1,9 +1,8 @@
 package com.justcommit.backend.product.member.application;
 
-import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
+import com.justcommit.backend.product.product.application.ProductEventPublisher;
 import com.justcommit.backend.product.member.domain.MemberRole;
 import com.justcommit.backend.product.member.infrastructure.MemberReplicaRepository;
-import com.justcommit.backend.product.product.event.ProductStatusChanged;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -19,7 +18,7 @@ public class MemberReplicaService {
 
     private final MemberReplicaRepository memberReplicaRepository;
     private final ProductRepository productRepository;
-    private final OutboxPublisher outboxPublisher;
+    private final ProductEventPublisher productEventPublisher;
 
     /**
      * 가입 · 정보 변경을 복제본에 반영한다.
@@ -46,7 +45,7 @@ public class MemberReplicaService {
         int deleted = productRepository.deleteOnSaleBySeller(memberId);
         if (deleted > 0) {
             // 잠근 상품 중 결제 대기 · 판매 완료는 지금 안 바뀌지만, 받는 쪽이 DB를 다시 읽어 결과는 같음
-            productIds.forEach(id -> outboxPublisher.publish(new ProductStatusChanged(id)));
+            productEventPublisher.statusChanged(productIds);
         }
         return deleted;
     }
