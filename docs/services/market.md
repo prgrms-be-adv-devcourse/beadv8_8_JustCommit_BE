@@ -62,7 +62,7 @@ market 서비스가 부르는 다른 서비스의 API입니다.
 | product | 상품 조회 · 예약(`expectedPrice`). 판매 완료 · 예약 해제 · 판매 재개는 이벤트 → [ADR 0016](../decisions/0016-product-sale-events-from-market.md) | orderId |
 | payment | 결제(잔액 차감) · 상품 환불 · 배송비 환불 | orderId / orderItemId / sellerOrderId |
 | settlement | 정산 완료 시각 조회 (🟨 제안) | – |
-| ai-service | 장바구니 추천 (응답 2초, 실패 시 빈 목록) | – |
+| ai-service | 장바구니 추천 (실패 · 타임아웃이면 빈 목록 → [타임아웃 · 재시도](../conventions/resilience.md)) | – |
 | 택배사 (404-express) | 택배 예약 · 취소 · 요금표 조회 (외부 그룹, 서킷 없음) | `courierOrderNo` |
 
 ## 발행 이벤트
