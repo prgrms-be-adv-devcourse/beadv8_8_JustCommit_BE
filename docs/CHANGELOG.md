@@ -1,12 +1,13 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-15 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-16 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-16 · open-questions.md · 비밀번호 변경 시도 제한을 미정 항목에 추가: 하루 5회 실패 시 변경 제한 · 이메일 재설정(#412) 안내, 변경 · 재설정 성공 시 초기화 (#461)
 - 2026-11-15 · reference/external-apis.md · services/member.md · 비밀번호 변경 API 반영: `PATCH users/me/password`(로컬 회원, 현재 비밀번호 확인 · 가입과 같은 규칙), 회원 행 잠금 안에서 확인 · 저장 후 토큰 폐기(#409)로 모든 기기 로그아웃, 현재 비밀번호 틀림 400 `INVALID_CURRENT_PASSWORD` · 같은 비밀번호 400 `SAME_AS_CURRENT_PASSWORD` · 소셜 회원 400 `PASSWORD_NOT_SET`(셋 다 변경 · 폐기 없음), 변경이 커밋되면 200 + `revocationCompleted`(폐기 기록 완료 여부) · 이 기기 Refresh 쿠키 만료, 커밋 결과 불명 503 `RESULT_UNKNOWN`(자동 재시도 금지), 「추가 예정」에서 비밀번호 변경 제거 (#461)
 - 2026-11-15 · reference/internal-apis.md · payment · settlement 탈퇴 확인 내부 API 경로 · 응답 반영: `GET /internal/v1/{payments, settlements}/members/{memberId}/withdrawalCheck`, 사유 코드 · details는 (payment `WALLET_BALANCE_REMAINING` · `TRANSACTION_IN_PROGRESS` · `SELLER_DEBT_REMAINING`, settlement `INCOMPLETE_SETTLEMENT`), 구현은 #329 · #442 (#463)
 - 2026-11-15 · reference/external-apis.md · services/member.md · conventions/auth.md · 판매자 공개 정보 · 소개글 수정 반영: `GET sellers/{sellerId}`(공개, 숫자 id만, 닉네임 · 소개글 · 등록일, 판매자가 아니거나 없는 회원 · 탈퇴한 판매자는 404 `SELLER_NOT_FOUND`), `PATCH sellers/me/intro`(판매자 본인만, 판매자 행이 없으면 403 `NOT_SELLER` · 탈퇴 회원 404 `MEMBER_NOT_FOUND`, `intro` 필수 · 최대 500자 · 빈 문자열은 삭제), 공개 경로를 Gateway · member 양쪽에 등록, 「추가 예정」에서 판매자 상점 정보 · 소개글 수정 제거 (#460)
