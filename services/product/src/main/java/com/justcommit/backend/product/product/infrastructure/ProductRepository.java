@@ -14,6 +14,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
+// 규칙: 상품 행을 바꾸는 일괄 UPDATE 쿼리는 반드시 p.version = p.version + 1을 함께 넣는다 (@PreUpdate는 일괄 UPDATE에서 돌지 않음, ADR 0021)
 public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpecificationExecutor<Product> {
 
     // 판매 중이고 숨김이 아닌 상품만 이 주문으로 예약
