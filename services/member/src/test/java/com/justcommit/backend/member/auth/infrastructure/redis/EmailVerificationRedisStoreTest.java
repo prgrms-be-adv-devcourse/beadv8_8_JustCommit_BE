@@ -243,6 +243,19 @@ class EmailVerificationRedisStoreTest {
     assertThat(verify(EmailPurpose.SIGNUP, "123456")).isEqualTo(VerifyResult.MATCHED);
   }
 
+  @Test
+  @DisplayName("앞선 안내 메일 요청이 늦게 실패해도(인증번호 키 없이 복구) 다음 요청의 재발송 제한 · 하루 횟수는 남는다")
+  void releaseWithoutCode_doesNotTouchLaterRequest() {
+    SendResult first = acquire();
+    redisTemplate.delete(COOLDOWN_KEY); // 앞 요청의 메일 발송이 60초 넘게 걸린 상황
+    SendResult second = acquire();
+
+    store.releaseSend(EMAIL, first.requestId());
+
+    assertThat(redisTemplate.opsForValue().get(COOLDOWN_KEY)).isEqualTo(second.requestId());
+    assertThat(dailyCount()).isEqualTo(1L);
+  }
+
   // ===== 인증번호 확인 =====
 
   @Test

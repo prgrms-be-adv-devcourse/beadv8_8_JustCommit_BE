@@ -23,6 +23,7 @@ public class AuthController {
 
   private final EmailVerificationService emailVerificationService;
   private final PasswordResetService passwordResetService;
+  private final AccountReminderService accountReminderService;
   private final LoginService loginService;
   private final TokenReissueService tokenReissueService;
   private final LogoutService logoutService;
@@ -54,6 +55,15 @@ public class AuthController {
   public ApiResponse<PasswordResetResponse> resetPassword(@Valid @RequestBody PasswordResetRequest request) {
     PasswordResetResult result = passwordResetService.reset(request.resetToken(), request.newPassword());
     return ApiResponse.ok("비밀번호를 재설정했습니다.", PasswordResetResponse.from(result));
+  }
+
+  // 가입 계정 안내 (#412, 아이디 찾기): 유효한 요청은 가입 여부 · 발송 제한 · SMTP 실패와 관계없이 같은 200
+  // (입력 오류 400, Redis · DB 장애는 서버 오류). IP 기준 요청 수 제한은 Gateway에서 429,
+  // 같은 이메일의 발송 예약 제한은 인증 메일과 함께 member에서 (걸려도 같은 200)
+  @PostMapping("/accountReminders")
+  public ApiResponse<Void> sendAccountReminder(@Valid @RequestBody AccountReminderRequest request) {
+    accountReminderService.sendReminder(request.email());
+    return ApiResponse.ok("가입된 계정이면 안내 메일을 보내드립니다.");
   }
 
   // 로그인: Access 토큰은 Body, Refresh 토큰은 HttpOnly 쿠키
