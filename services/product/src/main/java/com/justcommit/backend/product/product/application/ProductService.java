@@ -257,6 +257,11 @@ public class ProductService implements ProductQuery, ProductUseCase {
 
         List<String> oldImageUrls = imageUrlsOf(product);   // update 전에 꺼내 둠
 
+        // 반려된 상품 · 이의 신청 중인 상품을 고치면 재검수 1회 (2번 다 썼으면 409). 검수 버전이 바뀌기 전에 확인
+        if (reviewRequester.isResubmit(product)) {
+            product.useResubmit();
+        }
+
         // 상태 · 검수 버전은 update 안에서 바뀜. 검수 범위에 따라 사진 검수부터 또는 글 검사만
         ReviewScope reviewScope = product.update(species, request.title(), request.description(), request.price(),
                 request.heightCm(), request.potSize(), request.growNote(), imageUrls);

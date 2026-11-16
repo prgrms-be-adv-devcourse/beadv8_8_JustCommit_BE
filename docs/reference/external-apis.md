@@ -43,9 +43,9 @@
 | PATCH | `products/{id}/hidden` | 숨김 | SELLER |
 | GET | `products/me` · `products/me/counts` | 내 상품 · 상태별 개수 | SELLER |
 | POST | `products/images/uploadUrls` | 사진 Presigned URL | SELLER |
-| GET | `products/{id}/imageReviews` | 내 상품 검수 기록 (상태 · 반려 사유 · 남은 재검수 횟수) | SELLER |
+| GET | `products/{id}/imageReviews` | 내 상품 검수 기록 (상태 · 반려 사유 · 남은 재검수 횟수 · 이의 신청 · 재요청 가능 여부) | SELLER |
 | POST | `products/{id}/imageReviews` | 기한 초과(`REVIEW_EXPIRED`) 상품 같은 내용으로 다시 검수 요청 | SELLER |
-| POST | `products/{id}/appeals` | 자동 반려 이의 신청 (메모 필수, 200자) | SELLER |
+| POST | `products/{id}/appeals` | 자동 반려 이의 신청 (`memo` 필수, 200자). 409 `APPEAL_NOT_ALLOWED` · `APPEAL_ALREADY_USED` · `REVIEW_PENDING_LIMIT_EXCEEDED` | SELLER |
 | GET | `species` · `species/{id}` | 품종 목록 · 상세 (학명 · 별칭) | 공개 |
 | GET | `admin/imageReviews?status=MANUAL&page&size` | 관리자 확인 대기 목록, 오래된 순 (사진 · 엔진 결과 · 판매자 품종 · 관리자 확인 사유 · 기한 `expiresAt` · 12시간 지연 `delayed`) | ADMIN |
 | PATCH | `admin/imageReviews/{id}` | 관리자 처리 `decision`(`APPROVED` · `REJECTED`) · `rejectReason` · `memo`(`OTHER`면 필수 200자, 다른 사유 · 통과면 저장하지 않음). 409 `REVIEW_ALREADY_PROCESSED` · `REVIEW_OUTDATED`, 400 `INVALID_REJECT_REASON` | ADMIN |
