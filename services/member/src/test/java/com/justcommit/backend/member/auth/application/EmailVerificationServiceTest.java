@@ -51,6 +51,12 @@ class EmailVerificationServiceTest {
         .willReturn(new SendResult(status, retryAfterSeconds, status == SendStatus.ACQUIRED ? REQUEST_ID : null));
   }
 
+  // 인증번호 저장 결과를 정함 (재발송 제한의 주인이면 true)
+  private void givenCodeSaved(boolean saved) {
+    given(store.saveCode(eq(SIGNUP), eq(EMAIL), eq(REQUEST_ID), anyString(), eq(EmailVerificationService.CODE_TTL)))
+        .willReturn(saved);
+  }
+
   // 인증번호 확인 결과를 정함 (틀린 횟수 한도 · TTL은 서비스 상수 그대로 넘어가야 함)
   private void givenVerify(String code, VerifyResult result) {
     given(store.verifyCode(SIGNUP, EMAIL, code,
@@ -63,6 +69,7 @@ class EmailVerificationServiceTest {
   @DisplayName("발송 성공: 가입 목적으로 6자리 번호를 저장하고 같은 번호로 메일 발송")
   void sendCode_success() {
     givenSendSlot(SendStatus.ACQUIRED, 0);
+    givenCodeSaved(true);
 
     EmailSendResult result = service.sendCode(EMAIL, SIGNUP);
 
@@ -78,6 +85,7 @@ class EmailVerificationServiceTest {
   @DisplayName("이메일은 앞뒤 공백 제거, 소문자로 바꿔서 사용")
   void sendCode_normalizeEmail() {
     givenSendSlot(SendStatus.ACQUIRED, 0);
+    givenCodeSaved(true);
 
     service.sendCode("  Test@Example.COM ", SIGNUP);
 
@@ -118,12 +126,27 @@ class EmailVerificationServiceTest {
   @DisplayName("메일 발송 실패 시 이 요청이 만든 번호 · 발송 자리만 되돌리고 EMAIL_SEND_FAILED")
   void sendCode_mailFail() {
     givenSendSlot(SendStatus.ACQUIRED, 0);
+    givenCodeSaved(true);
     willThrow(new MailSendException("fail")).given(mailSender).send(eq(EMAIL), anyString(), any());
 
     assertThatThrownBy(() -> service.sendCode(EMAIL, SIGNUP))
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode").isEqualTo(MemberErrorCode.EMAIL_SEND_FAILED);
 
+    then(store).should().releaseSend(SIGNUP, EMAIL, REQUEST_ID);
+  }
+
+  @Test
+  @DisplayName("자리를 잡은 사이 다른 요청이 새 번호를 보냈다면 덮어쓰지 않고, 메일 없이 자리를 되돌린 뒤 429 EMAIL_SEND_COOLDOWN")
+  void sendCode_superseded() {
+    givenSendSlot(SendStatus.ACQUIRED, 0);
+    givenCodeSaved(false);
+
+    assertThatThrownBy(() -> service.sendCode(EMAIL, SIGNUP))
+        .isInstanceOfSatisfying(EmailCooldownException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(MemberErrorCode.EMAIL_SEND_COOLDOWN));
+
+    then(mailSender).shouldHaveNoInteractions();
     then(store).should().releaseSend(SIGNUP, EMAIL, REQUEST_ID);
   }
 
