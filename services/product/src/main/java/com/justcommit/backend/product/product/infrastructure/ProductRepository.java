@@ -24,6 +24,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             UPDATE Product p
             SET p.status = com.justcommit.backend.product.ProductStatus.PAYMENT_PENDING,
                 p.reservedOrderId = :orderId,
+                p.version = p.version + 1,
                 p.updatedAt = CURRENT_TIMESTAMP
             WHERE p.id IN :productIds
               AND p.status = com.justcommit.backend.product.ProductStatus.ACTIVE
@@ -37,6 +38,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     @Query("""
             UPDATE Product p
             SET p.status = :to,
+                p.version = p.version + 1,
                 p.updatedAt = CURRENT_TIMESTAMP
             WHERE p.id = :productId
               AND p.reviewVersion = :reviewVersion
@@ -57,6 +59,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
                     ELSE com.justcommit.backend.product.ProductStatus.ACTIVE
                 END,
                 p.reservedOrderId = null,
+                p.version = p.version + 1,
                 p.updatedAt = CURRENT_TIMESTAMP
             WHERE p.reservedOrderId = :orderId
               AND p.status = com.justcommit.backend.product.ProductStatus.PAYMENT_PENDING
@@ -68,6 +71,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     @Query("""
             UPDATE Product p
             SET p.status = com.justcommit.backend.product.ProductStatus.SOLD_OUT,
+                p.version = p.version + 1,
                 p.updatedAt = CURRENT_TIMESTAMP
             WHERE p.reservedOrderId = :orderId
               AND p.status = com.justcommit.backend.product.ProductStatus.PAYMENT_PENDING
@@ -89,6 +93,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
                 END,
                 p.reservedOrderId = null,
                 p.hidden = CASE WHEN :hide = true THEN true ELSE p.hidden END,
+                p.version = p.version + 1,
                 p.updatedAt = CURRENT_TIMESTAMP
             WHERE p.id = :productId
               AND p.reservedOrderId = :orderId
@@ -102,6 +107,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     @Query("""
             UPDATE Product p
             SET p.status = com.justcommit.backend.product.ProductStatus.DELETED,
+                p.version = p.version + 1,
                 p.updatedAt = CURRENT_TIMESTAMP
             WHERE p.sellerId = :sellerId
               AND p.status IN (com.justcommit.backend.product.ProductStatus.ACTIVE,

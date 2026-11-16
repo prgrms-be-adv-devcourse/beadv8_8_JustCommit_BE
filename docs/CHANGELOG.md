@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-16 · services/product.md · 상품 버전 `PRODUCT.version` 구현 (V13): 엔티티 수정은 `@PreUpdate`로 UPDATE 한 번에 +1(JPA `@Version`은 낙관적 잠금 예외가 생겨 쓰지 않음), 일괄 UPDATE 6개(`reserve` · `release` · `markSoldOut` · `releaseItem` · `deleteOnSaleBySeller` · `applyReviewResult`)는 쿼리에서 +1. payload v2는 #456 (#444)
 - 2026-11-16 · reference/external-apis.md · reference/kafka-topics.md · services/member.md · 배송지 수정 · 삭제 API 반영: `PATCH users/me/addresses/{id}`(보낸 항목만 변경, 빈 요청 400 · 같은 값이면 200(변경 · 이벤트 없음), 상세 주소 · 배송지 이름은 빈 문자열로 지움, 우편번호 · 주소는 함께, 주소가 바뀌면 상세 주소도 함께 · 없으면 400 `ADDRESS_DETAIL_REQUIRED`), `DELETE users/me/addresses/{id}`(기본 배송지는 409 `DEFAULT_ADDRESS_NOT_DELETABLE`), 판매자면 바뀐 뒤 배송지 목록 `MemberAddressChanged` 발행 (#469)
 - 2026-11-16 · flows/image-review.md · reference/schedulers.md · reference/external-apis.md · testing/scenarios.md · 관리자 검수 확인 · 24시간 기한: 관리자 API 요청 · 응답 · 409 `REVIEW_ALREADY_PROCESSED` · `REVIEW_OUTDATED` · 400 `INVALID_REJECT_REASON`(관리자는 `REVIEW_EXPIRED` 못 고름), 처리자 `decided_by` 기록, 기한 스케줄러 10분 · 24시간 `REVIEW_EXPIRED`, 12시간은 관리자 목록 「지연」 표시만(관리자 알림은 notification 연동 때) (#344)
 - 2026-11-16 · open-questions.md · 비밀번호 변경 시도 제한을 미정 항목에 추가: 하루 5회 실패 시 변경 제한 · 이메일 재설정(#412) 안내, 변경 · 재설정 성공 시 초기화 (#461)

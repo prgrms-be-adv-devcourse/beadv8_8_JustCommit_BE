@@ -15,6 +15,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
@@ -84,6 +85,12 @@ public class Product extends BaseTimeEntity {
 
     @Column(name = "review_version", nullable = false)
     private int reviewVersion;
+
+    // 상품 버전: 상품 행을 바꾸는 UPDATE마다 +1 (이벤트 productVersion의 원본, ADR 0021)
+    // 엔티티 수정은 아래 @PreUpdate가 UPDATE 한 번에 한 번 올리고, 일괄 UPDATE는 ProductRepository 쿼리가 직접 올린다
+    // JPA @Version은 쓰지 않음: 낙관적 잠금 실패(예외)가 새로 생기기 때문. 상품 변경은 행 잠금(findWithLockById)으로 줄을 섬
+    @Column(nullable = false)
+    private long version;
 
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("sortOrder ASC")
@@ -206,4 +213,10 @@ public class Product extends BaseTimeEntity {
         this.hidden = hidden;
     }
 
+
+    // 엔티티로 상품을 바꿔 UPDATE가 나갈 때마다 한 번 (한 트랜잭션에서 필드를 여러 개 바꿔도 UPDATE는 한 번이라 +1)
+    @PreUpdate
+    void increaseVersion() {
+        this.version++;
+    }
 }
