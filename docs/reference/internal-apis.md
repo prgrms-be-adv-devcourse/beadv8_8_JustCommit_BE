@@ -1,7 +1,7 @@
 # 내부 API 목록
 
 > 언제 읽나: 서비스 간 내부 API의 경로 · 멱등 키를 찾을 때
-> 상태: 🟨 제안 · 마지막 수정 2026-11-15 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
+> 상태: 🟨 제안 · 마지막 수정 2026-11-16 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
 
 ## 목록
 
@@ -21,7 +21,7 @@
 | payment | `POST /internal/v1/settlement-payouts` | settlement | 정산 지급 (양수: 지급 · 음수: 회수 후 미수금) | settlementId | ✅ |
 | settlement | `GET /internal/v1/settlements/seller-orders/{sellerOrderId}` | market | 정산 완료 시각 | – | 🟨 |
 | market | `GET /internal/v1/shipments?sellerOrderIds=` | notification | 알림 문구용 배송 정보 | – | 🟨 |
-| ai | `/internal/v1/recommendations` | market | 장바구니 추천. 요청에 장바구니 상품 ID와 최근 구매 확정 상품 ID(`orders_item.status = CONFIRMED`, 개수 · 기간 ⬜) → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md) | – | 🟨 |
+| ai | `POST /internal/v1/recommendations/cart` | market | 장바구니 추천. 요청: 장바구니 상품 ID, 최근 구매 확정 상품 ID(`orders_item.status = CONFIRMED`, 최근 90일, 최신순 최대 20개). 응답: 추천 상품 ID + 추천 이유(카드 정보 · 본인 상품 · 구매 불가 상품 제외는 market) → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md) | – | ✅ |
 
 판매 완료 · 결제 전 예약 해제 · 판매 재개는 내부 API가 아니라 market 이벤트입니다 → [Kafka 토픽 표](kafka-topics.md), [ADR 0016](../decisions/0016-product-sale-events-from-market.md). 상품 의미 검색은 범위 밖이라 product → ai 호출이 없습니다 (의미 검색은 챗봇이 맡음). ai는 상품 정보를 이벤트로 받아 ai → product 호출도 없습니다 → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md). 계좌 변경 때 다른 서비스 확인 호출은 없습니다 (노션 2.3).
 

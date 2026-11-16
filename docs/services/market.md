@@ -1,7 +1,7 @@
 # market 서비스
 
 > 언제 읽나: market 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-16 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -62,7 +62,7 @@ market 서비스가 부르는 다른 서비스의 API입니다.
 | product | 상품 조회 · 예약(`expectedPrice`). 판매 완료 · 예약 해제 · 판매 재개는 이벤트 → [ADR 0016](../decisions/0016-product-sale-events-from-market.md) | orderId |
 | payment | 결제(잔액 차감) · 상품 환불 · 배송비 환불 | orderId / orderItemId / sellerOrderId |
 | settlement | 정산 완료 시각 조회 (🟨 제안) | – |
-| ai-service | 장바구니 추천 (🟨 1~2초, 실패 시 최신 상품) | – |
+| ai-service | 장바구니 추천 (응답 2초, 실패 시 빈 목록) | – |
 | 택배사 (404-express) | 택배 예약 · 취소 · 요금표 조회 (외부 그룹, 서킷 없음) | `courierOrderNo` |
 
 ## 발행 이벤트
