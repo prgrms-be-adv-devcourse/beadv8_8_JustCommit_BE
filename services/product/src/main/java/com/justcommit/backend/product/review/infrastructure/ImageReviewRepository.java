@@ -4,7 +4,11 @@ import com.justcommit.backend.product.product.domain.ReviewScope;
 import com.justcommit.backend.product.review.domain.ImageReview;
 import com.justcommit.backend.product.review.domain.enums.RejectReason;
 import com.justcommit.backend.product.review.domain.enums.ReviewDecision;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -33,4 +37,37 @@ public interface ImageReviewRepository extends JpaRepository<ImageReview, Long> 
             FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
     Optional<Long> lockNextRetryTarget(@Param("now") LocalDateTime now, @Param("staleBefore") LocalDateTime staleBefore);
+
+    // 관리자 확인 목록: 관리자 확인을 기다리는 검수 중 상품이 아직 그 버전 · 검수 중일 때만 (그사이 수정 · 삭제됐으면 빠짐), 오래된 순
+    @Query(value = """
+            SELECT r FROM ImageReview r JOIN Product p ON p.id = r.productId
+            WHERE r.status = com.justcommit.backend.product.review.domain.enums.ReviewStatus.DONE
+              AND r.decision = com.justcommit.backend.product.review.domain.enums.ReviewDecision.MANUAL
+              AND p.reviewVersion = r.reviewVersion
+              AND p.status = com.justcommit.backend.product.ProductStatus.REVIEW_PENDING
+            ORDER BY r.reviewedAt, r.id
+            """,
+            countQuery = """
+            SELECT COUNT(r) FROM ImageReview r JOIN Product p ON p.id = r.productId
+            WHERE r.status = com.justcommit.backend.product.review.domain.enums.ReviewStatus.DONE
+              AND r.decision = com.justcommit.backend.product.review.domain.enums.ReviewDecision.MANUAL
+              AND p.reviewVersion = r.reviewVersion
+              AND p.status = com.justcommit.backend.product.ProductStatus.REVIEW_PENDING
+            """)
+    Page<ImageReview> findAwaitingAdmin(Pageable pageable);
+
+    // 관리자 처리: 두 관리자가 동시에 눌러도 한 명씩 (늦은 쪽은 이미 처리된 것을 보고 409)
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT r FROM ImageReview r WHERE r.id = :id")
+    Optional<ImageReview> findWithLockById(@Param("id") Long id);
+
+    // 24시간 기한: 관리자 확인으로 간 지 기한이 지난 한 건을 잠금 (파드 여러 개여도 같은 건을 집지 않게 SKIP LOCKED)
+    @Query(value = """
+            SELECT id FROM image_review
+            WHERE status = 'DONE' AND decision = 'MANUAL' AND reviewed_at <= :expireBefore
+            ORDER BY reviewed_at, id
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+            """, nativeQuery = true)
+    Optional<Long> lockNextExpiredTarget(@Param("expireBefore") LocalDateTime expireBefore);
 }

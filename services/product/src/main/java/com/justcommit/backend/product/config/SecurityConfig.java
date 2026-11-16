@@ -24,6 +24,8 @@ public class SecurityConfig {
 
                         // Swagger (운영 노출 여부는 미정)
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
+                        // 관리자 검수 확인 (#344)
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .build();
     }
