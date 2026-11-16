@@ -23,13 +23,9 @@ import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 public class EmailVerificationService {
-  // 정책 값: Redis TTL과 응답의 남은 시간을 같은 상수에서 가져옴
-  static final Duration COOLDOWN_TTL = Duration.ofSeconds(60);
+  // 인증번호 정책 값 (발송 간격 · 하루 한도는 안내 메일과 함께 쓰는 EmailSendPolicy)
   static final Duration CODE_TTL = Duration.ofMinutes(5);
   static final Duration VERIFIED_TTL = Duration.ofMinutes(30);
-  // 같은 이메일 하루 발송 한도 (목적과 관계없이, 첫 발송부터 24시간)
-  static final int DAILY_SEND_LIMIT = 5;
-  static final Duration DAILY_WINDOW = Duration.ofDays(1);
   // 이만큼 틀리면 인증번호를 폐기 (다시 받으려면 재발송)
   static final int MAX_WRONG_ATTEMPTS = 5;
   // 예측 불가 난수 (보안용)
@@ -45,7 +41,7 @@ public class EmailVerificationService {
     String email = normalize(rawEmail);
     if (purpose == EmailPurpose.PASSWORD_RESET) {
       sendResetCode(email);
-      return new EmailSendResult(CODE_TTL.toSeconds(), COOLDOWN_TTL.toSeconds());
+      return new EmailSendResult(CODE_TTL.toSeconds(), EmailSendPolicy.COOLDOWN.toSeconds());
     }
     // 이미 가입된 이메일이면 인증번호를 보내지 않음 (가입 목적)
     if (memberRepository.existsByEmail(email)) {
@@ -57,7 +53,7 @@ public class EmailVerificationService {
       // 자리를 잡은 뒤 멈춘 사이 재발송 제한이 끝나 다른 요청이 새 번호를 보낸 경우:
       // 그 번호를 덮어쓰지 않고 메일도 보내지 않는다 (이 요청의 하루 횟수만 되돌림)
       store.releaseSend(purpose, email, slot.requestId());
-      throw new EmailCooldownException(COOLDOWN_TTL.toSeconds());
+      throw new EmailCooldownException(EmailSendPolicy.COOLDOWN.toSeconds());
     }
     try {
       mailSender.send(email, code, CODE_TTL, purpose);
@@ -68,7 +64,7 @@ public class EmailVerificationService {
       store.releaseSend(purpose, email, slot.requestId());
       throw new BusinessException(MemberErrorCode.EMAIL_SEND_FAILED);
     }
-    return new EmailSendResult(CODE_TTL.toSeconds(), COOLDOWN_TTL.toSeconds());
+    return new EmailSendResult(CODE_TTL.toSeconds(), EmailSendPolicy.COOLDOWN.toSeconds());
   }
 
   // 인증번호 확인: 비교 · 틀린 횟수 · 폐기를 Redis에서 한 번에 처리하고, 일치하면 그 목적의 인증 완료를 저장
@@ -98,7 +94,7 @@ public class EmailVerificationService {
   // - Redis · DB 장애는 감추지 않는다 (예외가 그대로 올라가 서버 오류로 처리됨)
   private void sendResetCode(String email) {
     EmailVerificationRedisStore.SendResult slot =
-        store.tryAcquireSend(email, COOLDOWN_TTL, DAILY_SEND_LIMIT, DAILY_WINDOW);
+        store.tryAcquireSend(email, EmailSendPolicy.COOLDOWN, EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW);
     if (slot.status() != EmailVerificationRedisStore.SendStatus.ACQUIRED) {
       return;
     }
@@ -133,7 +129,7 @@ public class EmailVerificationService {
   // 재발송 제한(60초) · 하루 한도(5회)를 확인하고 자리를 확보. 막히면 429 + 남은 초(Retry-After)
   private EmailVerificationRedisStore.SendResult acquireSendSlot(String email) {
     EmailVerificationRedisStore.SendResult result =
-        store.tryAcquireSend(email, COOLDOWN_TTL, DAILY_SEND_LIMIT, DAILY_WINDOW);
+        store.tryAcquireSend(email, EmailSendPolicy.COOLDOWN, EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW);
     switch (result.status()) {
       case ACQUIRED -> {
       }

@@ -54,8 +54,8 @@ class EmailVerificationServiceTest {
 
   // 발송 자리 확보 결과를 정함 (재발송 제한 · 하루 한도는 서비스 상수 그대로 넘어가야 함)
   private void givenSendSlot(SendStatus status, long retryAfterSeconds) {
-    given(store.tryAcquireSend(EMAIL, EmailVerificationService.COOLDOWN_TTL,
-        EmailVerificationService.DAILY_SEND_LIMIT, EmailVerificationService.DAILY_WINDOW))
+    given(store.tryAcquireSend(EMAIL, EmailSendPolicy.COOLDOWN,
+        EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW))
         .willReturn(new SendResult(status, retryAfterSeconds, status == SendStatus.ACQUIRED ? REQUEST_ID : null));
   }
 
@@ -266,8 +266,8 @@ class EmailVerificationServiceTest {
   @Test
   @DisplayName("재설정 발송: 재발송 제한 · 하루 한도에 걸려도 예외 없이 같은 결과, 대상 조회 · 메일 없음")
   void sendResetCode_limited() {
-    given(store.tryAcquireSend(EMAIL, EmailVerificationService.COOLDOWN_TTL,
-        EmailVerificationService.DAILY_SEND_LIMIT, EmailVerificationService.DAILY_WINDOW))
+    given(store.tryAcquireSend(EMAIL, EmailSendPolicy.COOLDOWN,
+        EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW))
         .willReturn(new SendResult(SendStatus.COOLDOWN, 42, null), new SendResult(SendStatus.DAILY_LIMIT, 3600, null));
 
     assertThat(service.sendCode(EMAIL, RESET).expiresIn()).isEqualTo(300);

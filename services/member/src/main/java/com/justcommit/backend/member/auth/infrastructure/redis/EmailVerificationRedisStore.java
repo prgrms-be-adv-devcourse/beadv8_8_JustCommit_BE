@@ -53,7 +53,8 @@ public class EmailVerificationRedisStore {
       return {0, 0}
       """, List.class);
 
-  // KEYS[1] = 재발송 제한 키, KEYS[2] = 하루 발송 키, KEYS[3] = 인증번호 키, KEYS[4] = 틀린 횟수 키 / ARGV[1] = 요청 식별자
+  // KEYS[1] = 재발송 제한 키, KEYS[2] = 하루 발송 키, (인증 메일일 때만) KEYS[3] = 인증번호 키, KEYS[4] = 틀린 횟수 키
+  // ARGV[1] = 요청 식별자. 인증번호 키가 넘어온 경우에만 번호 · 틀린 횟수를 정리한다 (안내 메일은 발송 자리만)
   // 자기 요청이 만든 것만 되돌린다: 재발송 제한 · 인증번호는 값이 자기 식별자일 때만 삭제,
   // 하루 Set에서는 자기 식별자만 뺀다 (구간이 바뀌었으면 새 Set에 없으니 아무것도 빼지 않음, 두 번 불러도 한 번만)
   // 마지막 원소가 빠지면 하루 키도 사라져, 그 구간의 발송이 모두 실패했다면 다음 요청부터 24시간을 새로 센다
@@ -62,9 +63,11 @@ public class EmailVerificationRedisStore {
       if redis.call('GET', KEYS[1]) == ARGV[1] then
         redis.call('DEL', KEYS[1])
       end
-      local saved = redis.call('GET', KEYS[3])
-      if saved and string.sub(saved, 1, #ARGV[1] + 1) == ARGV[1] .. ':' then
-        redis.call('DEL', KEYS[3], KEYS[4])
+      if #KEYS >= 4 then
+        local saved = redis.call('GET', KEYS[3])
+        if saved and string.sub(saved, 1, #ARGV[1] + 1) == ARGV[1] .. ':' then
+          redis.call('DEL', KEYS[3], KEYS[4])
+        end
       end
       redis.call('SREM', KEYS[2], ARGV[1])
       return 1
@@ -152,6 +155,11 @@ public class EmailVerificationRedisStore {
         List.of(key(COOLDOWN_KEY, email), key(DAILY_KEY, email),
             key(CODE_KEY, purpose, email), key(ATTEMPTS_KEY, purpose, email)),
         requestId);
+  }
+
+  // 인증번호가 없는 메일(가입 계정 안내)의 발송이 실패하면 발송 자리만 되돌린다 (재발송 제한 · 하루 횟수의 자기 몫)
+  public void releaseSend(String email, String requestId) {
+    redisTemplate.execute(RELEASE_SEND_SCRIPT, List.of(key(COOLDOWN_KEY, email), key(DAILY_KEY, email)), requestId);
   }
 
   // ===== 인증번호 (목적별) =====

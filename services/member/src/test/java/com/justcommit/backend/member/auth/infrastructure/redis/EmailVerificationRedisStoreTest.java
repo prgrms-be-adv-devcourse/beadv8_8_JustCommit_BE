@@ -230,6 +230,19 @@ class EmailVerificationRedisStoreTest {
     assertThat(redisTemplate.hasKey(DAILY_KEY)).isFalse();
   }
 
+  @Test
+  @DisplayName("인증번호 키 없이 되돌리면 재발송 제한 · 하루 횟수만 되돌리고, 인증번호는 건드리지 않는다 (안내 메일)")
+  void releaseWithoutCode() {
+    SendResult sent = acquire();
+    store.saveCode(EmailPurpose.SIGNUP, EMAIL, sent.requestId(), "123456", "", CODE_TTL);
+
+    store.releaseSend(EMAIL, sent.requestId());
+
+    assertThat(redisTemplate.hasKey(COOLDOWN_KEY)).isFalse();
+    assertThat(dailyCount()).isZero();
+    assertThat(verify(EmailPurpose.SIGNUP, "123456")).isEqualTo(VerifyResult.MATCHED);
+  }
+
   // ===== 인증번호 확인 =====
 
   @Test
