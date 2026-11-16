@@ -27,7 +27,7 @@
 
 ## 외부 API
 
-`auth/email/send` · `auth/email/verify` · `auth/login` · `auth/logout` · `auth/reissue` · `users` · `users/social` · `users/nicknameAvailability` · `users/phoneAvailability` · `users/me` · `users/me/nickname` · `users/me/addresses` · `users/me/addresses/{id}/default` · `sellers` · `sellers/{sellerId}` · `sellers/me/intro` + 카카오 로그인 2개 → [외부 API 목록](../reference/external-apis.md)
+`auth/email/send` · `auth/email/verify` · `auth/login` · `auth/logout` · `auth/reissue` · `users` · `users/social` · `users/nicknameAvailability` · `users/phoneAvailability` · `users/me` · `users/me/nickname` · `users/me/password` · `users/me/addresses` · `users/me/addresses/{id}/default` · `sellers` · `sellers/{sellerId}` · `sellers/me/intro` + 카카오 로그인 2개 → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 
@@ -94,7 +94,7 @@ payload (받는 쪽은 upsert, `occurredAt`이 저장된 값보다 오래되면 
 | 권한 | 가입하면 `MEMBER`, 판매자 등록하면 바로 `SELLER` (사진 외부 전송 · 학습 이용 동의 필수, 내용 · 버전 · 시각 기록) |
 | 여러 기기 | 동시 로그인 허용 |
 | 회원 행 잠금 | 로그인 · 소셜 로그인 · 재발급 · 토큰 폐기 · 배송지 추가 · 기본 변경 · 판매자 등록 · 닉네임 변경이 같은 회원 행 잠금(`MemberLocker`)을 씀 (잠금 조회에만 대기 3초, 넘으면 409 `MEMBER_BUSY`, 저장 · 이벤트 없이 롤백. 잠금을 잡은 뒤 저장 쿼리에는 기존 `lock_timeout`이 적용됨). 이후 배송지 수정 · 삭제도 같은 잠금을 씀 → [인증 규칙](../conventions/auth.md#토큰-폐기) |
-| 비밀번호 변경 | 현재 비밀번호 확인 후, 모든 기기 로그아웃 (소셜 제외) |
+| 비밀번호 변경 | 현재 비밀번호 확인 후 변경하고 모든 기기 로그아웃(토큰 폐기 → [인증 규칙](../conventions/auth.md#토큰-폐기)). 현재 비밀번호가 틀리면 400 `INVALID_CURRENT_PASSWORD`, 새 비밀번호가 같으면 400 `SAME_AS_CURRENT_PASSWORD`, 소셜 회원은 400 `PASSWORD_NOT_SET`. 변경이 커밋되면 200(이 기기 Refresh 쿠키 만료, `revocationCompleted`로 폐기 기록 완료 여부를 따로 전달, `false`면 다른 기기 로그아웃이 늦어질 수 있음), 커밋 결과 불명은 503 `RESULT_UNKNOWN`(자동 재시도 금지, 새 비밀번호로 로그인해 확인) |
 | 계좌 변경 | 이메일 재인증 후 가능(소셜도 같음). 정산 대기 · 진행 중 인출이 있어도 가능하고 다른 서비스 확인 호출은 없음 (정산금은 지갑으로, 인출은 신청할 때의 계좌로 지급) |
 | 계좌 표시 | 화면은 뒤 4자리만, 로그에 원문 금지, 복호화는 member 안에서만. payment에는 member가 복호화해 응답 (⬜ 운영 전송 보호 방식(서비스 간 HTTPS 또는 응답 암호화)은 payment · 인프라 담당과 정함) |
 | 배송지 | 회원당 최대 4개 · 기본 1개(회원 행 잠금), 부분 수정, 남의 배송지는 404. 배송지를 바꾸는 모든 경로(추가 · 기본 변경 · 판매자 등록, 이후 수정 · 삭제 포함)가 회원 행을 먼저 잠근다 |
