@@ -30,7 +30,11 @@ ProductErrorCode implements ErrorCode {
     REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "검수 기록을 찾을 수 없습니다."),
     REVIEW_ALREADY_PROCESSED(HttpStatus.CONFLICT, "이미 처리된 검수입니다."),
     REVIEW_OUTDATED(HttpStatus.CONFLICT, "그사이 판매자가 상품을 수정하거나 삭제해 처리할 수 없습니다."),
-    INVALID_REJECT_REASON(HttpStatus.BAD_REQUEST, "반려 사유를 확인해 주세요. 기타(OTHER)는 내용을 200자 이하로 입력해야 합니다.");
+    INVALID_REJECT_REASON(HttpStatus.BAD_REQUEST, "반려 사유를 확인해 주세요. 기타(OTHER)는 내용을 200자 이하로 입력해야 합니다."),
+    RESUBMIT_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "재검수는 2번까지 할 수 있습니다. 상품을 삭제하고 새로 등록해 주세요."),
+    RESUBMIT_NOT_ALLOWED(HttpStatus.CONFLICT, "확인이 늦어져 반려된 상품만 같은 내용으로 다시 검수를 요청할 수 있습니다."),
+    APPEAL_NOT_ALLOWED(HttpStatus.CONFLICT, "자동으로 반려된 상품만 이의 신청할 수 있습니다."),
+    APPEAL_ALREADY_USED(HttpStatus.CONFLICT, "이 검수 결과에는 이미 이의 신청을 했습니다.");
 
     private final HttpStatus status;
     private final String message;

@@ -87,16 +87,31 @@ public class ImageReviewService implements ReviewRequester {
     @Transactional(propagation = Propagation.MANDATORY)
     public void request(Product product, ReviewScope scope) {
         // 사진 검수만 셈. 동시에 요청하면 확인과 저장 사이에 끼어 1~2회 넘을 수 있다 (비용 보호용이라 허용, 등록 제한과 같음)
-        if (scope == ReviewScope.FULL) {
+        // 기한 초과(REVIEW_EXPIRED) 바로 다음 검수는 판매자 잘못이 아니라 확인도 하지 않고 세지도 않음
+        if (scope == ReviewScope.FULL && !isAfterExpiry(product)) {
             LocalDateTime startOfToday = LocalDate.now(clock).atStartOfDay();
-            long today = imageReviewRepository.countBySellerIdAndScopeAndCreatedAtGreaterThanEqual(
-                    product.getSellerId(), ReviewScope.FULL, startOfToday);
+            long today = imageReviewRepository.countDailyPhotoReviews(product.getSellerId(), startOfToday);
             if (today >= DAILY_REVIEW_LIMIT) {
                 throw new BusinessException(ProductErrorCode.DAILY_REVIEW_LIMIT_EXCEEDED);
             }
         }
         imageReviewRepository.save(ImageReview.requested(product.getId(), product.getReviewVersion(), product.getSellerId(), scope));
         outboxPublisher.publish(new ProductReviewRequested(product.getId(), product.getReviewVersion()));
+    }
+
+    // 수정 전(검수 버전이 바뀌기 전) 지금 검수가 반려(기한 초과 제외)거나 이의 신청 중이면 재검수
+    @Override
+    public boolean isResubmit(Product product) {
+        return imageReviewRepository.findByProductIdAndReviewVersion(product.getId(), product.getReviewVersion())
+                .map(ImageReview::countsAsResubmit)
+                .orElse(false);
+    }
+
+    // 바로 앞 검수 버전이 기한 초과로 반려됐는지 (검수 버전은 이미 +1 된 뒤)
+    private boolean isAfterExpiry(Product product) {
+        return imageReviewRepository.findByProductIdAndReviewVersion(product.getId(), product.getReviewVersion() - 1)
+                .map(review -> review.getRejectReason() == RejectReason.REVIEW_EXPIRED)
+                .orElse(false);
     }
 
     // ── 실행 ───────────────────────────────

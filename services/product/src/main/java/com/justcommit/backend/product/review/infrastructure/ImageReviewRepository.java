@@ -13,6 +13,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 public interface ImageReviewRepository extends JpaRepository<ImageReview, Long> {
@@ -21,6 +22,20 @@ public interface ImageReviewRepository extends JpaRepository<ImageReview, Long> 
 
     // 하루 사진 검수 횟수 (사진 검수 요청 = scope FULL)
     long countBySellerIdAndScopeAndCreatedAtGreaterThanEqual(Long sellerId, ReviewScope scope, LocalDateTime from);
+
+    // 하루 사진 검수 횟수 (한도 확인용). 기한 초과(REVIEW_EXPIRED) 바로 다음 검수는 판매자 잘못이 아니라 세지 않음
+    @Query(value = """
+            SELECT COUNT(*) FROM image_review r
+            WHERE r.seller_id = :sellerId AND r.scope = 'FULL' AND r.created_at >= :from
+              AND NOT EXISTS (SELECT 1 FROM image_review prev
+                              WHERE prev.product_id = r.product_id
+                                AND prev.review_version = r.review_version - 1
+                                AND prev.reject_reason = 'REVIEW_EXPIRED')
+            """, nativeQuery = true)
+    long countDailyPhotoReviews(@Param("sellerId") Long sellerId, @Param("from") LocalDateTime from);
+
+    // 판매자 검수 기록 (최신 검수 버전부터)
+    List<ImageReview> findByProductIdOrderByReviewVersionDesc(Long productId);
 
     // 최근 반려 수 (REVIEW_EXPIRED는 판매자 잘못이 아니라 제외)
     long countBySellerIdAndDecisionAndRejectReasonNotAndReviewedAtGreaterThanEqual(
