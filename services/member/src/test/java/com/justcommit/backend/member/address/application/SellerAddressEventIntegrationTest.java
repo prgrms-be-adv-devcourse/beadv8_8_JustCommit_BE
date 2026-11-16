@@ -237,6 +237,80 @@ class SellerAddressEventIntegrationTest {
                 .isInstanceOf(IllegalTransactionStateException.class);
     }
 
+    @Test
+    @DisplayName("판매자가 배송지를 수정하면 주소 이벤트에 바뀐 값이 들어가고, 보내지 않은 항목은 그대로다")
+    void updateAddress_reflectsChangeInEvent() {
+        Long memberId = givenMember(true, 2);
+        Long second = addressIds(memberId).get(1);
+        Set<String> before = outboxIds();
+
+        addressService.updateAddress(memberId, second,
+                new AddressUpdateCommand(null, "01099998888", null, null, "101동 202호", null));
+
+        Map<String, Object> changed = addresses(newAddressEvent(before, memberId)).stream()
+                .filter(a -> ((Number) a.get("addressId")).longValue() == second)
+                .findFirst().orElseThrow();
+        assertThat(changed).containsEntry("recipientPhone", "01099998888")
+                .containsEntry("address2", "101동 202호")
+                .containsEntry("recipientName", "받는사람1");
+    }
+
+    @Test
+    @DisplayName("같은 값만 보내 바뀐 게 없으면 주소 이벤트를 저장하지 않는다")
+    void updateAddress_unchanged_noEvent() {
+        Long memberId = givenMember(true, 1);
+        Long first = addressIds(memberId).get(0);
+        Set<String> before = outboxIds();
+
+        addressService.updateAddress(memberId, first, new AddressUpdateCommand("받는사람0", null, null, null, null, null));
+
+        assertThat(outboxIds()).isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("판매자가 배송지를 삭제하면 주소 이벤트 목록에서 빠진다 (삭제가 목록 조회 전에 반영됨)")
+    void deleteAddress_removedFromEvent() {
+        Long memberId = givenMember(true, 2);
+        List<Long> ids = addressIds(memberId);
+        Set<String> before = outboxIds();
+
+        addressService.deleteAddress(memberId, ids.get(1));
+
+        assertThat(addresses(newAddressEvent(before, memberId)))
+                .extracting(a -> ((Number) a.get("addressId")).longValue())
+                .containsExactly(ids.get(0));
+        assertThat(addressIds(memberId)).containsExactly(ids.get(0));
+    }
+
+    @Test
+    @DisplayName("기본 배송지 삭제는 409로 롤백되어 배송지와 주소 이벤트가 그대로다")
+    void deleteDefault_rejected() {
+        Long memberId = givenMember(true, 2);
+        List<Long> ids = addressIds(memberId);
+        Set<String> before = outboxIds();
+
+        assertThatThrownBy(() -> addressService.deleteAddress(memberId, ids.get(0)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(MemberErrorCode.DEFAULT_ADDRESS_NOT_DELETABLE);
+        assertThat(addressIds(memberId)).containsExactlyElementsOf(ids);
+        assertThat(outboxIds()).isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("다른 트랜잭션이 회원 잠금을 쥐고 있으면 배송지 수정 · 삭제도 기다렸다가, 잠금이 풀린 뒤 끝난다 (잠금 검증)")
+    void updateAndDelete_waitForMemberLock() throws Exception {
+        Long memberId = givenMember(false, 2);
+        Long second = addressIds(memberId).get(1);
+
+        assertWaitsForMemberLock(memberId, () -> addressService.updateAddress(memberId, second,
+                new AddressUpdateCommand(null, null, null, null, null, "회사")));
+        assertWaitsForMemberLock(memberId, () -> {
+            addressService.deleteAddress(memberId, second);
+            return null;
+        });
+    }
+
     // 회원 + 배송지를 만들어 커밋한다 (첫 배송지가 기본). seller면 판매자로 등록된 상태로 만든다
     private Long givenMember(boolean seller, int addressCount) {
         return new TransactionTemplate(transactionManager).execute(status -> {
