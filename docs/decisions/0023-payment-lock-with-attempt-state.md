@@ -17,25 +17,42 @@
    - 트랜잭션 밖에서 상품 예약 REST. 확정 실패 · 응답 타임아웃이면 다시 부르지 않고 주문 실패 + `market.order-failed.v1` Outbox 커밋 (정책 3.10)
 2. TX2: 주문 행 잠금 → 진입 조건(`status = PAYMENT_PENDING` · `paymentState = READY` · `createdAt + 10분` 이내) 확인 → `IN_PROGRESS` 및 `attempted_at`(DB 시각) 커밋 후 잠금 해제
    - 10분이 지났으면 `PAYMENT_WINDOW_EXPIRED`, `paymentState`가 `IN_PROGRESS` · `REVIEW_REQUIRED`이면 409 `PAYMENT_IN_PROGRESS`로 거절하고 payment를 호출하지 않음
-3. TX3: 주문 행 잠금 → `IN_PROGRESS` 재확인 → **잠금을 쥔 채** payment REST → 결과 처리 후 커밋. 이미 다른 경로가 처리했다면 payment REST를 호출하지 않음
-
+3. TX3: 주문 행 잠금 → `IN_PROGRESS` 재확인 → **잠금을 쥔 채** Payment REST 호출 (`Idempotency-Key: orderId`) → 결과 처리 후 커밋. 이미 다른 경로가 처리했다면 payment REST를 호출하지 않음
 결제 시도 상태(`READY` · `IN_PROGRESS` · `REVIEW_REQUIRED`)는 주문 상태(`PAYMENT_PENDING`)와 별도 칸입니다. 신규 주문은 `READY`로 초기화합니다. 결과 처리는 다음과 같습니다.
 
 | payment 응답 | TX3에서 커밋 |
 |---|---|
 | `PAID` · `ALREADY_PAID` | 기존 `orderPayment()` 전체(주문 PAID 전환, `market.order-paid.v1` · `SellerOrderPaid` Outbox, 현행 배송 관련 로직) 실행 후 커밋. Saga 복구도 동일한 완료 경로 사용 |
 | 잔액 부족 | `READY`로 되돌림 (10분 지나면 만료 스케줄러가 정리) |
-| 확정 실패 (지갑 없음 · 연결 실패 · 4xx) | 주문 실패 + `market.order-failed.v1` Outbox, 장바구니 유지 |
+| 확정 실패 (지갑 없음 · 연결 실패 · 4xx) | 주문 실패 + `market.order-failed.v1` Outbox + 장바구니 복원 |
 | 결과 불명 (응답 타임아웃 · 5xx) | `IN_PROGRESS` 유지 → Saga 복구. 복구 요청에서 다시 결과 불명이면 `retry_count` 증가, `attempted_at` 갱신 후 커밋 |
 
 Saga 복구 호출에서는 연결 실패도 결과 불명으로 봅니다. 이번 요청이 도착하지 않았을 뿐 원래 요청의 결과는 여전히 모르기 때문입니다. 복구에서 주문을 실패로 끝내는 것은 payment가 판단해 돌려준 응답(지갑 없음 등 4xx)뿐입니다.
 
 만료 스케줄러는 `paymentState = READY`인 결제 대기 주문만 만료합니다. `IN_PROGRESS` 및 `REVIEW_REQUIRED` 주문은 자동 만료하지 않습니다.
 
-Saga 복구 스케줄러는 1분 주기로, **`IN_PROGRESS`이고 `attempted_at`이 10초 이상 지난 주문**을 후보로 찾은 뒤 `FOR UPDATE SKIP LOCKED`로 잠금이 잡힌 주문만 처리합니다. 10초는 제안된 유예값이며 구현·팀 합의에서 최종 확정합니다. 잠금 획득 후 상태를 재확인하고 같은 `orderId`로 결제를 다시 부릅니다. 복구 시 `attempted_at`을 DB 시각으로 갱신하며, 결과 불명이면 `retry_count`를 커밋합니다. **복구 5회 실패 시** `REVIEW_REQUIRED`로 전환하고 팀 알림을 보냅니다. 최초 결제 호출은 복구 5회에 포함하지 않는 설계로 명시합니다.
+Saga 복구 스케줄러는 1분 주기로, **`IN_PROGRESS`이고 `attempted_at`이 10초 이상 지난 주문**을 후보로 찾은 뒤 `FOR UPDATE SKIP LOCKED`로 잠금이 잡힌 주문만 처리합니다. 잠금 획득 후 상태를 재확인하고 같은 `orderId`로 결제를 다시 부릅니다. 복구 시 `attempted_at`을 DB 시각으로 갱신하며, 결과 불명이면 `retry_count`를 커밋합니다. **복구 5회 실패 시** `REVIEW_REQUIRED`로 전환하고 팀 알림을 보냅니다. 최초 결제 호출은 복구 5회에 포함하지 않는 설계로 명시합니다.
 
 `attempted_at`의 기록과 조회 시각 비교는 동일한 DB 시각을 사용합니다. 예: 저장 시 `now()`, 조회 시 `now() - interval '10 seconds'`. 결과 불명 예외 때문에 TX가 롤백되어 `retry_count`와 `attempted_at` 갱신이 사라지지 않도록 합니다.
 
+### 장바구니
+
+`create()`의 TX3에서 확정 실패가 아니면 선택한 장바구니 항목을 비웁니다. 주문이 실패 · 만료로 끝나면 경로와 관계없이 주문상품을 `restoreItem`으로 복원합니다. `restoreItem`은 같은 상품이 이미 있으면 건너뛰므로, 비우지 않았던 경우에도 안전합니다.
+
+| 경로 | 장바구니 |
+|---|---|
+| 상품 예약 실패 (TX1 뒤) | 비우기 전이라 그대로 (복원 호출해도 변화 없음) |
+| 첫 호출 — `PAID` · `ALREADY_PAID` | TX3에서 비움 |
+| 첫 호출 — 잔액 부족 | TX3에서 비움 → 10분 지나 만료되면 복원 (기존 `OrderExpirationService.expire()`) |
+| 첫 호출 — 확정 실패 | 비우지 않음 (복원 호출해도 변화 없음) |
+| 첫 호출 — 결과 불명 | TX3에서 비움 |
+| 복구 — `PAID` · `ALREADY_PAID` | 주문상품의 productId로 장바구니에서 지움 (없으면 건너뜀) |
+| 복구 — 잔액 부족 | 변화 없음 → 만료되면 복원 |
+| 복구 — 확정 실패 (4xx) | 복원 |
+| `REVIEW_REQUIRED` | 변화 없음 |
+| `repayment()` | 장바구니를 다루지 않음 |
+
+TX3의 장바구니 비우기는 항목이 없어도 예외를 던지지 않습니다. 결제가 끝난 뒤 장바구니 때문에 TX3가 롤백되지 않게 하기 위해서입니다.
 ## 고른 이유
 
 - 시도 상태를 먼저 커밋하므로 결제 도중 파드가 죽거나 TX3 커밋이 실패해도 Saga 복구가 그 주문을 찾습니다.
