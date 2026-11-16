@@ -1,5 +1,6 @@
 package com.justcommit.backend.product.review.application;
 
+import com.justcommit.backend.product.product.application.ProductEventPublisher;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.product.ProductStatus;
@@ -13,7 +14,6 @@ import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.product.domain.ProductImage;
 import com.justcommit.backend.product.product.domain.ReviewScope;
 import com.justcommit.backend.product.product.event.ProductReviewRequested;
-import com.justcommit.backend.product.product.event.ProductStatusChanged;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import com.justcommit.backend.product.review.domain.ImageReview;
 import com.justcommit.backend.product.review.domain.ModerationResult;
@@ -75,6 +75,7 @@ public class ImageReviewService implements ReviewRequester {
     private final BannedListService bannedListService;
     private final ReviewJudgeProvider judgeProvider;
     private final OutboxPublisher outboxPublisher;
+    private final ProductEventPublisher productEventPublisher;
     private final ReviewResultPublisher reviewResultPublisher;
     private final TransactionTemplate transactionTemplate;
     private final JsonMapper jsonMapper;
@@ -314,7 +315,7 @@ public class ImageReviewService implements ReviewRequester {
                     target.productId(), review.getSellerId(), target.reviewVersion(), target.title());
             case REJECTED -> reviewResultPublisher.rejected(
                     target.productId(), review.getSellerId(), target.reviewVersion(), target.title(), verdict.rejectReason(), null);
-            case MANUAL -> outboxPublisher.publish(new ProductStatusChanged(target.productId()));
+            case MANUAL -> productEventPublisher.statusChanged(target.productId());
         }
     }
 

@@ -64,7 +64,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DataJpaTest(properties = "outbox.scheduler.enabled=false")   // 재전송 스케줄러는 끔 (커밋 직후 발행만 확인)
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ClockConfig.class, ProductService.class, ReviewResultPublisher.class})
+@Import({JpaAuditingConfig.class, ClockConfig.class, ProductService.class, ProductEventPublisher.class,
+        ReviewResultPublisher.class})
 @ImportAutoConfiguration({KafkaAutoConfiguration.class, MessagingConsumerAutoConfiguration.class,
         OutboxAutoConfiguration.class})
 @Testcontainers(disabledWithoutDocker = true)
@@ -163,14 +164,15 @@ class ProductOutboxIntegrationTest {
     @Test
     @DisplayName("검수 반려가 커밋되면 ProductStatusChanged와 ProductRejected(사유 코드 · 판매자 문구)가 Outbox에 저장 · 발행된다")
     void reviewRejectedPublishes() {
+        Long productId = saveActiveProduct();
         new TransactionTemplate(transactionManager).executeWithoutResult(status ->
-                reviewResultPublisher.rejected(900L, 7L, 2, "몬스테라 중품", RejectReason.HARMFUL_IMAGE, null));
+                reviewResultPublisher.rejected(productId, 7L, 2, "몬스테라 중품", RejectReason.HARMFUL_IMAGE, null));
 
         assertThat(outboxEventRepository.findAll()).extracting(row -> row.getEventType())
                 .containsExactlyInAnyOrder("ProductStatusChanged", "ProductRejected");
 
-        EventEnvelope envelope = pollEvent(KafkaTopics.PRODUCT_EVENTS, "900", "ProductRejected");
-        assertThat(envelope.payload().get("productId").asLong()).isEqualTo(900L);
+        EventEnvelope envelope = pollEvent(KafkaTopics.PRODUCT_EVENTS, String.valueOf(productId), "ProductRejected");
+        assertThat(envelope.payload().get("productId").asLong()).isEqualTo(productId);
         assertThat(envelope.payload().get("sellerId").asLong()).isEqualTo(7L);
         assertThat(envelope.payload().get("reviewVersion").asInt()).isEqualTo(2);
         assertThat(envelope.payload().get("productTitle").asString()).isEqualTo("몬스테라 중품");
@@ -181,10 +183,11 @@ class ProductOutboxIntegrationTest {
     @Test
     @DisplayName("관리자가 OTHER로 반려하면 판매자 문구는 관리자가 입력한 내용 (#344에서 사용)")
     void reviewRejectedOtherUsesMemo() {
+        Long productId = saveActiveProduct();
         new TransactionTemplate(transactionManager).executeWithoutResult(status ->
-                reviewResultPublisher.rejected(901L, 7L, 0, "몬스테라", RejectReason.OTHER, "가격 표기가 사진과 달라요"));
+                reviewResultPublisher.rejected(productId, 7L, 0, "몬스테라", RejectReason.OTHER, "가격 표기가 사진과 달라요"));
 
-        EventEnvelope envelope = pollEvent(KafkaTopics.PRODUCT_EVENTS, "901", "ProductRejected");
+        EventEnvelope envelope = pollEvent(KafkaTopics.PRODUCT_EVENTS, String.valueOf(productId), "ProductRejected");
         assertThat(envelope.payload().get("reasonCode").asString()).isEqualTo("OTHER");
         assertThat(envelope.payload().get("reasonMessage").asString()).isEqualTo("가격 표기가 사진과 달라요");
     }
@@ -192,8 +195,9 @@ class ProductOutboxIntegrationTest {
     @Test
     @DisplayName("검수 통과 반영이 롤백되면 결과 이벤트 Outbox 행도 남지 않는다")
     void reviewResultRollbackLeavesNoRow() {
+        Long productId = saveActiveProduct();
         assertThatThrownBy(() -> new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-            reviewResultPublisher.approved(902L, 7L, 0, "몬스테라");
+            reviewResultPublisher.approved(productId, 7L, 0, "몬스테라");
             throw new IllegalStateException("반영 실패");
         })).isInstanceOf(IllegalStateException.class);
 

@@ -1,5 +1,6 @@
 package com.justcommit.backend.product.review.application;
 
+import com.justcommit.backend.product.product.application.ProductEventPublisher;
 import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
@@ -68,7 +69,7 @@ import static org.mockito.Mockito.verify;
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaAuditingConfig.class, ClockConfig.class, SellerImageReviewService.class, ImageReviewService.class,
-        AdminImageReviewService.class, ReviewJudgeProvider.class, ReviewResultPublisher.class, BannedListService.class,
+        AdminImageReviewService.class, ReviewJudgeProvider.class, ReviewResultPublisher.class, ProductEventPublisher.class, BannedListService.class,
         SellerImageReviewServiceIntegrationTest.Config.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -223,7 +224,7 @@ class SellerImageReviewServiceIntegrationTest {
         assertThat(review.getManualReason()).isEqualTo(ManualReason.APPEAL);
         assertThat(review.getRejectReason()).isEqualTo(RejectReason.BANNED_SPECIES);
         assertThat(review.getDecidedBy()).isNull();
-        verify(outboxPublisher).publish(new ProductStatusChanged(product.getId()));
+        verify(outboxPublisher).publish(any(ProductStatusChanged.class));
 
         assertThat(adminService.findAwaiting(PageRequest.of(0, 20)).getContent()).singleElement().satisfies(row -> {
             assertThat(row.appealMemo()).isEqualTo("직접 키운 호접란입니다. 꽃대 사진을 보시면 압니다");

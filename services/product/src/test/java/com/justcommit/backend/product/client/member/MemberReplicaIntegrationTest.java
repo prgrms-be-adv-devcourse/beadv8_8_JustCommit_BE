@@ -1,5 +1,6 @@
 package com.justcommit.backend.product.client.member;
 
+import com.justcommit.backend.product.product.application.ProductEventPublisher;
 import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.product.ProductStatus;
@@ -39,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ClockConfig.class, MemberReplicaService.class, MemberReplicaQuery.class})
+@Import({JpaAuditingConfig.class, ClockConfig.class, MemberReplicaService.class, MemberReplicaQuery.class, ProductEventPublisher.class})
 @Testcontainers(disabledWithoutDocker = true)
 class MemberReplicaIntegrationTest {
 

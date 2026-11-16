@@ -2,7 +2,6 @@ package com.justcommit.backend.product.product.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.exception.CommonErrorCode;
-import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.product.ProductQuery;
 import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.product.ProductStatus;
@@ -14,9 +13,6 @@ import com.justcommit.backend.product.image.application.ProductImageUrlValidator
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.product.domain.ProductImage;
 import com.justcommit.backend.product.product.domain.ReviewScope;
-import com.justcommit.backend.product.product.event.ProductRegistered;
-import com.justcommit.backend.product.product.event.ProductStatusChanged;
-import com.justcommit.backend.product.product.event.ProductUpdated;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import com.justcommit.backend.product.product.infrastructure.ProductSpecifications;
 import com.justcommit.backend.product.product.presentation.dto.*;
@@ -33,7 +29,6 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -56,7 +51,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
     private final ProductImageUrlValidator imageUrlValidator;
     private final ProductImageCleaner imageCleaner;
     private final Clock clock;
-    private final OutboxPublisher outboxPublisher;
+    private final ProductEventPublisher productEventPublisher;
     private final ReviewRequester reviewRequester;
 
     // ── ProductQuery ───────────────────────────────
@@ -123,7 +118,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
         }
 
         // 5단계) 잡은 상품마다 이벤트 (가격이 달라 위에서 예외가 나면 롤백되어 Outbox 행도 사라짐)
-        publishStatusChanged(ids);
+        productEventPublisher.statusChanged(ids);
     }
 
     @Override
@@ -132,7 +127,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
         productRepository.lockById(productId); // 판매자 탈퇴 처리와 순서를 맞춤
         boolean released = productRepository.releaseItem(productId, orderId, hidden) > 0;
         if (released) {
-            outboxPublisher.publish(new ProductStatusChanged(productId));
+            productEventPublisher.statusChanged(productId);
         }
         return released;
     }
@@ -146,7 +141,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
         // 해당 주문이 잡은 PAYMENT_PENDING 상품만 ACTIVE 로 (판매자가 탈퇴했으면 DELETED)
         boolean released = productRepository.release(orderId) > 0;
         if (released) {
-            publishStatusChanged(productIds);
+            productEventPublisher.statusChanged(productIds);
         }
         return released;
     }
@@ -158,7 +153,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
         List<Long> productIds = productRepository.lockByReservedOrder(orderId);
         boolean soldOut = productRepository.markSoldOut(orderId) > 0;
         if (soldOut) {
-            publishStatusChanged(productIds);
+            productEventPublisher.statusChanged(productIds);
         }
         return soldOut;
     }
@@ -204,7 +199,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
 
         Product saved = productRepository.save(product);
         // 상품 ID는 저장한 뒤에야 생김
-        outboxPublisher.publish(new ProductRegistered(saved.getId()));
+        productEventPublisher.registered(saved.getId());
         // 검수 기록 + 검수 요청 이벤트 (하루 사진 검수 30회를 넘으면 429로 등록까지 롤백)
         reviewRequester.request(saved, ReviewScope.FULL);
 
@@ -271,7 +266,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
                 .filter(url -> !imageUrls.contains(url))
                 .toList());
 
-        outboxPublisher.publish(new ProductUpdated(product.getId()));
+        productEventPublisher.updated(product.getId());
         reviewRequester.request(product, reviewScope);
         return ProductDetailResponse.from(product, memberQuery.getNickname(product.getSellerId()));
     }
@@ -280,7 +275,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
     public void deleteProduct(Long memberId, Long productId) {
         Product product = getOwnedProductForUpdate(memberId, productId);
         product.delete();
-        outboxPublisher.publish(new ProductStatusChanged(product.getId()));
+        productEventPublisher.statusChanged(product.getId());
         imageCleaner.deleteAfterCommit(imageUrlsOf(product));
     }
 
@@ -303,7 +298,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
     @Transactional
     public void changeHidden(Long memberId, Long productId, boolean hidden) {
         getOwnedProductForUpdate(memberId, productId).changeHidden(hidden);
-        outboxPublisher.publish(new ProductStatusChanged(productId));
+        productEventPublisher.statusChanged(productId);
     }
 
     public Page<MyProductResponse> getMyProducts(Long sellerId, MyProductSearchRequest request) {
@@ -320,8 +315,4 @@ public class ProductService implements ProductQuery, ProductUseCase {
         return MyProductCountResponse.from(counts);
     }
 
-    // 상태 · 숨김이 바뀐 상품마다 같은 트랜잭션에 Outbox 저장 (커밋 뒤에만 발행, 롤백되면 함께 사라짐)
-    private void publishStatusChanged(Collection<Long> productIds) {
-        productIds.forEach(id -> outboxPublisher.publish(new ProductStatusChanged(id)));
-    }
 }
