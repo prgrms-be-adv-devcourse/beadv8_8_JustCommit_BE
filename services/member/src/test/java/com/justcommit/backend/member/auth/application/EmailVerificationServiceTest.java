@@ -75,7 +75,7 @@ class EmailVerificationServiceTest {
 
     ArgumentCaptor<String> code = ArgumentCaptor.forClass(String.class);
     then(store).should().saveCode(eq(SIGNUP), eq(EMAIL), eq(REQUEST_ID), code.capture(), eq(EmailVerificationService.CODE_TTL));
-    then(mailSender).should().send(EMAIL, code.getValue(), EmailVerificationService.CODE_TTL);
+    then(mailSender).should().send(EMAIL, code.getValue(), EmailVerificationService.CODE_TTL, SIGNUP);
     assertThat(code.getValue()).matches("\\d{6}");
     assertThat(result.expiresIn()).isEqualTo(300);
     assertThat(result.resendAvailableIn()).isEqualTo(60);
@@ -127,7 +127,7 @@ class EmailVerificationServiceTest {
   void sendCode_mailFail() {
     givenSendSlot(SendStatus.ACQUIRED, 0);
     givenCodeSaved(true);
-    willThrow(new MailSendException("fail")).given(mailSender).send(eq(EMAIL), anyString(), any());
+    willThrow(new MailSendException("fail")).given(mailSender).send(eq(EMAIL), anyString(), any(), any());
 
     assertThatThrownBy(() -> service.sendCode(EMAIL, SIGNUP))
         .isInstanceOf(BusinessException.class)

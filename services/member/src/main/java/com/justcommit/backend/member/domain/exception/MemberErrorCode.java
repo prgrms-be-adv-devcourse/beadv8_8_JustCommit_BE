@@ -19,6 +19,10 @@ public enum MemberErrorCode implements ErrorCode {
   EMAIL_CODE_ATTEMPTS_EXCEEDED(HttpStatus.BAD_REQUEST, "인증번호를 5번 틀려 더 이상 사용할 수 없습니다. 인증번호를 다시 요청해주세요."),
   EMAIL_PURPOSE_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "지원하지 않는 인증 목적입니다."),
 
+  // 비밀번호 재설정 (#412): 형식 오류 · 만료 · 이미 사용 · 이전 인증 버전 모두 같은 응답
+  // 401이 아닌 이유: 로그인과 무관한 요청이라, 프론트 공통 클라이언트가 401에 하는 토큰 재발급이 일어나면 안 됨
+  INVALID_RESET_TOKEN(HttpStatus.BAD_REQUEST, "재설정 요청이 만료되었거나 유효하지 않습니다. 이메일 인증을 다시 진행해 주세요."),
+
   // 회원가입
   EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증을 먼저 완료해주세요."),
   DUPLICATE_EMAIL(HttpStatus.CONFLICT, "이미 가입된 이메일입니다."),

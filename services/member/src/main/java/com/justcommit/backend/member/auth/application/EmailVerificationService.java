@@ -54,7 +54,7 @@ public class EmailVerificationService {
       throw new EmailCooldownException(COOLDOWN_TTL.toSeconds());
     }
     try {
-      mailSender.send(email, code, CODE_TTL);
+      mailSender.send(email, code, CODE_TTL, purpose);
     } catch (MailException e) {
       // 발송 실패 시 이 요청이 만든 번호 · 재발송 제한 · 하루 횟수만 되돌려 다시 시도할 수 있게 함
       // (늦게 실패해도 그 사이 다른 요청이 만든 번호 · 재발송 제한은 지우지 않음, 서버 쪽 실패는 하루 횟수에 넣지 않음)
