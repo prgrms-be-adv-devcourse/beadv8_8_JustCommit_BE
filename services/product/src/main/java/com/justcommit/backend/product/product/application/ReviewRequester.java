@@ -9,4 +9,8 @@ public interface ReviewRequester {
 
     // 등록 · 수정 트랜잭션 안에서만 부름 (상품 저장과 검수 요청이 함께 커밋 · 롤백)
     void request(Product product, ReviewScope scope);
+
+    // 지금 검수 버전이 반려(기한 초과 제외)거나 이의 신청 중이면 true → 이번 수정은 재검수 1회를 씀
+    // 수정(검수 버전 +1) 전에 부름
+    boolean isResubmit(Product product);
 }

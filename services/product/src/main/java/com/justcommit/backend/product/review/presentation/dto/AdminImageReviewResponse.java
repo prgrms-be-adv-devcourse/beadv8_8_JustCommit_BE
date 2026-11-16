@@ -26,7 +26,10 @@ public record AdminImageReviewResponse(
         String manualReason,            // 관리자 확인으로 보낸 이유 (BANNED_SUSPECTED · SPECIES_MISMATCH · ENGINE_ERROR …)
         String detail,                  // 걸린 금지 품종 · 단어, 불일치 학명
         JsonNode engineResult,          // 유해 여부 · 식물 여부 · 판매 형태 · 후보 · 확신도 (엔진 오류면 일부 null)
-        LocalDateTime reviewedAt,       // 관리자 확인으로 간 시각
+        String rejectReason,            // 이의 신청이면 원래 자동 반려 사유
+        String appealMemo,              // 판매자의 이의 신청 메모 (이의 신청이 아니면 null)
+        LocalDateTime appealedAt,
+        LocalDateTime reviewedAt,       // 관리자 확인으로 간 시각 (이의 신청이면 이의 신청 시각)
         LocalDateTime expiresAt,        // 이때까지 처리하지 않으면 REVIEW_EXPIRED로 자동 반려
         boolean delayed                 // 12시간이 지남
 ) {
@@ -40,6 +43,9 @@ public record AdminImageReviewResponse(
                 species.getId(), species.getName(), species.getScientificName(), species.isOther(),
                 review.getScope().name(),
                 review.getManualReason() == null ? null : review.getManualReason().name(),
-                review.getDetail(), engineResult, review.getReviewedAt(), expiresAt, delayed);
+                review.getDetail(), engineResult,
+                review.getRejectReason() == null ? null : review.getRejectReason().name(),
+                review.getAppealMemo(), review.getAppealedAt(),
+                review.getReviewedAt(), expiresAt, delayed);
     }
 }

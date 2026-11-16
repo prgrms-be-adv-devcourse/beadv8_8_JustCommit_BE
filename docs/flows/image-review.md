@@ -54,8 +54,8 @@ sequenceDiagram
 
 - 결과는 "검수 버전이 같고 사진 검수는 `REVIEW_PENDING`, 글 검사는 `ACTIVE`일 때만" 조건을 건 UPDATE로 반영합니다. 0건이면(그사이 수정 · 삭제 · 예약) 반영하지 않고 `IMAGE_REVIEW`를 `STALE`로 둡니다. 외부 API 장애로 자동 통과도 자동 반려도 하지 않습니다 (재시도: Moderation 3번, Haiku SDK 재시도 2번).
 - 통과 · 반려(글 검사 반려 포함)로 상태가 바뀌면 새 상태가 담긴 `ProductStatusChanged`도 발행합니다 (ai 상품 스냅샷 → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md)). `ProductApproved`(통과 알림) · `ProductRejected`(반려 알림)는 notification용입니다.
-- 반려되면 `ProductRejected` → 판매자에게 사유와 함께 알립니다. 재검수(수정 후 다시 제출)는 1회까지입니다.
-- 자동 반려가 틀렸다면 판매자는 수정하지 않고 **이의 신청**을 합니다 (메모 필수 200자, 같은 검수 버전으로 1번, 관리자가 반려하면 최종, 재검수 횟수를 쓰지 않음. 관리자가 반려한 상품은 409 `APPEAL_NOT_ALLOWED`, 두 번째는 409 `APPEAL_ALREADY_USED`. 이의 신청 중에 수정하면 이의 신청은 끝나고 엔진 검수로 가며 재검수 1회를 씀).
+- 반려되면 `ProductRejected` → 판매자에게 사유와 함께 알립니다. 재검수(수정 후 다시 제출)는 **2회까지**입니다 (11/16 결정). 반려된 상품 · 이의 신청 중인 상품을 고칠 때 1회씩 쓰고(`product.resubmit_count`), 세 번째로 고치려고 하면 409 `RESUBMIT_LIMIT_EXCEEDED` → 삭제 후 새로 등록합니다. 기한 초과(`REVIEW_EXPIRED`) 뒤 수정 · 재요청과 엔진 오류 재처리는 세지 않습니다.
+- 자동 반려가 틀렸다면 판매자는 수정하지 않고 **이의 신청**을 합니다 (메모 필수 200자, 같은 검수 버전으로 1번, 관리자가 반려하면 최종, 재검수 횟수를 쓰지 않음. 관리자가 반려한 상품은 409 `APPEAL_NOT_ALLOWED`, 두 번째는 409 `APPEAL_ALREADY_USED`. 이의 신청 중에 수정하면 이의 신청은 끝나고 엔진 검수로 가며 재검수 1회를 씀). 이의 신청은 같은 검수 버전으로 관리자 확인(`manual_reason` `APPEAL`)으로 가고, 관리자는 원래 반려 사유와 메모를 봅니다. 24시간 기한은 이의 신청 시각부터 셉니다. 이의 신청도 검수 중 동시 5개에 셉니다.
 
 ## 엔진 오류 재처리
 
@@ -66,7 +66,7 @@ sequenceDiagram
 | 상태 | 사진 검수: 상품은 `REVIEW_PENDING` 그대로. 판매 중 상품의 글 검사(`TEXT_ONLY`): 상품은 `ACTIVE` 그대로, 재처리 동안 판매 유지 (🟨 팀 확인 중). 둘 다 `IMAGE_REVIEW`는 `ENGINE_ERROR` |
 | 재처리 | 스케줄러가 5분마다 `ENGINE_ERROR` 건을 같은 검수 버전으로 다시 검수, 최대 3회. 그사이 수정 · 삭제되면(버전이 다르면) 재처리하지 않음 |
 | 3회 모두 실패 | 관리자 확인으로 넘김 (사유 `ENGINE_ERROR`). 자동 통과 · 자동 반려는 하지 않음 |
-| 횟수 · 제한 | 재처리는 하루 사진 검수 30회 · 재검수 1회에 세지 않음 (판매자 잘못이 아님) |
+| 횟수 · 제한 | 재처리는 하루 사진 검수 30회 · 재검수 횟수에 세지 않음 (판매자 잘못이 아님) |
 | 기한 | 12 · 24시간 기한은 관리자 확인으로 넘어간 시점부터 셈. 재처리하는 동안은 세지 않음 |
 | 판매자 화면 | "검수 중" 그대로, 문구 "확인에 시간이 조금 더 걸리고 있어요" |
 | 관리자 화면 | 관리자 확인 목록에서 사유 `ENGINE_ERROR`로 구분. 엔진에 다시 맡기는 수동 「다시 검수」 버튼은 두지 않음 (관리자가 사진을 보고 직접 통과 · 반려) |
@@ -99,7 +99,7 @@ sequenceDiagram
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| GET | `products/{id}/imageReviews` | 판매자 본인 검수 기록. 검수 버전별 표시 상태(검수 중 · 관리자 확인 중 · 확인 지연) · 결과 · 반려 사유와 문구 · 자동 / 관리자 판정 · 시각, 남은 재검수 횟수 · 이의 신청 가능 여부 |
+| GET | `products/{id}/imageReviews` | 판매자 본인 검수 기록, 최신 검수 버전부터. 표시 상태(`IN_REVIEW` 검수 중 · `ADMIN_CHECK` 관리자 확인 중 · `ADMIN_CHECK_DELAYED` 확인 지연 · `APPROVED` · `REJECTED` · `REPLACED` 그사이 수정됨) · 반려 사유와 문구 · 판정 주체(`ENGINE` · `ADMIN` · `DEADLINE`) · 시각, 남은 재검수 횟수 · 이의 신청 가능 여부 · 기한 초과 재요청 가능 여부 |
 | POST | `products/{id}/appeals` | 자동 반려 이의 신청 (`memo` 필수, 200자). 409 `APPEAL_NOT_ALLOWED` · `APPEAL_ALREADY_USED` |
 | POST | `products/{id}/imageReviews` | 기한 초과(`REVIEW_EXPIRED`) 상품을 같은 내용으로 다시 검수 요청. 재검수 · 등록 제한에 세지 않음. 다른 상태면 409 `RESUBMIT_NOT_ALLOWED` |
 
