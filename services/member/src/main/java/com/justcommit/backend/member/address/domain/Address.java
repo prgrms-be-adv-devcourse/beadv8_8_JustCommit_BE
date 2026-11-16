@@ -7,6 +7,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.util.Objects;
+
 // 배송지 (회원 애그리거트에 포함, id·created_at·updated_at은 BaseTimeEntity에서 상속)
 @Entity
 @Table(name = "address")
@@ -72,5 +74,43 @@ public class Address extends BaseTimeEntity {
   // 기본 배송지 해제
   public void unmarkDefault() {
     this.isDefault = false;
+  }
+
+  // 부분 수정 (#416): null인 항목은 그대로 둔다. 선택 항목(address2 · addressName)은 빈 문자열이면 지운다(null)
+  // 실제로 바뀐 항목이 있으면 true (같은 값이면 판매자 배송지 이벤트를 보내지 않게)
+  public boolean update(String recipientName, String recipientPhone, String zipcode,
+                        String address1, String address2, String addressName) {
+    boolean changed = false;
+    if (recipientName != null && !recipientName.equals(this.recipientName)) {
+      this.recipientName = recipientName;
+      changed = true;
+    }
+    if (recipientPhone != null && !recipientPhone.equals(this.recipientPhone)) {
+      this.recipientPhone = recipientPhone;
+      changed = true;
+    }
+    if (zipcode != null && !zipcode.equals(this.zipcode)) {
+      this.zipcode = zipcode;
+      changed = true;
+    }
+    if (address1 != null && !address1.equals(this.address1)) {
+      this.address1 = address1;
+      changed = true;
+    }
+    if (address2 != null) {
+      String next = address2.isBlank() ? null : address2;
+      if (!Objects.equals(next, this.address2)) {
+        this.address2 = next;
+        changed = true;
+      }
+    }
+    if (addressName != null) {
+      String next = addressName.isBlank() ? null : addressName;
+      if (!Objects.equals(next, this.addressName)) {
+        this.addressName = next;
+        changed = true;
+      }
+    }
+    return changed;
   }
 }
