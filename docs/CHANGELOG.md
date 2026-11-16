@@ -1,12 +1,13 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-15 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-16 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-16 · services/product.md · flows/image-review.md · 「기타」 품종 추가: `species` id 218 고정(Flyway V11, 학명 · 속성 · 카테고리 · 사진 없음, 카테고리로 찾을 때 안 나옴), 「기타」로 등록한 상품의 사진 검수는 엔진 결과와 관계없이 관리자 확인(`OTHER_SPECIES`, 유해 · 금지 품종 반려는 그대로), 추천 · 품종 통계에서는 id 218을 뺌, 상품 이벤트 payload v2(#456)의 Flyway는 V12로 (#340)
 - 2026-11-15 · reference/internal-apis.md · payment · settlement 탈퇴 확인 내부 API 경로 · 응답 반영: `GET /internal/v1/{payments, settlements}/members/{memberId}/withdrawalCheck`, 사유 코드 · details는 (payment `WALLET_BALANCE_REMAINING` · `TRANSACTION_IN_PROGRESS` · `SELLER_DEBT_REMAINING`, settlement `INCOMPLETE_SETTLEMENT`), 구현은 #329 · #442 (#463)
 - 2026-11-15 · reference/external-apis.md · services/member.md · conventions/auth.md · 판매자 공개 정보 · 소개글 수정 반영: `GET sellers/{sellerId}`(공개, 숫자 id만, 닉네임 · 소개글 · 등록일, 판매자가 아니거나 없는 회원 · 탈퇴한 판매자는 404 `SELLER_NOT_FOUND`), `PATCH sellers/me/intro`(판매자 본인만, 판매자 행이 없으면 403 `NOT_SELLER` · 탈퇴 회원 404 `MEMBER_NOT_FOUND`, `intro` 필수 · 최대 500자 · 빈 문자열은 삭제), 공개 경로를 Gateway · member 양쪽에 등록, 「추가 예정」에서 판매자 상점 정보 · 소개글 수정 제거 (#460)
 - 2026-11-15 · reference/internal-apis.md · services/market.md · market 탈퇴 확인 내부 API 확정: `GET /internal/v1/orders/members/{memberId}/withdrawalCheck`, 응답을 `hasActiveOrders` → 공통 규격(`hasWithdrawalBlocker` · `blockingReasons` `ACTIVE_BUYER_ORDER` · `ACTIVE_SELLER_ORDER` · `details` 건수)으로, 진행 중 기준 명시, 판매자 수락 대기는 #284에서 추가 (#452)

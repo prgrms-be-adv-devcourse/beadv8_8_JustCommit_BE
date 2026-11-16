@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.tuple;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
+import com.justcommit.backend.product.species.domain.Species;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationInfo;
 import org.flywaydb.core.api.MigrationState;
@@ -54,15 +55,25 @@ class ProductApplicationTests {
     @Test
     @DisplayName("V4가 품종 215종 · 사진 · 별칭을 넣고, 판매 금지로 뺀 나도풍란 · 파피오페딜럼은 없다")
     void speciesDataLoaded(@Autowired JdbcTemplate jdbc) {
-        assertThat(jdbc.queryForObject("select count(*) from species", Integer.class)).isEqualTo(215);
+        // V11 「기타」(id 218)를 빼고 셈
+        assertThat(jdbc.queryForObject("select count(*) from species where id <> 218", Integer.class)).isEqualTo(215);
         assertThat(jdbc.queryForObject("select count(*) from species where id in (18, 178)", Integer.class)).isZero();
-        assertThat(jdbc.queryForObject("select count(*) from species where scientific_name is null", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from species where scientific_name is null and id <> 218", Integer.class)).isZero();
         // 이름 · 학명에 이중 공백이나 둥근 따옴표가 없어야 검색 · 학명 대조가 어긋나지 않는다
         assertThat(jdbc.queryForObject(
                 "select count(*) from species where name like '%  %' or scientific_name like '%  %'"
                         + " or scientific_name ~ '[‘’]'", Integer.class)).isZero();
         assertThat(jdbc.queryForObject("select count(*) from species_image", Integer.class)).isPositive();
         assertThat(jdbc.queryForObject("select count(*) from species_alias", Integer.class)).isPositive();
+    }
+
+    @Test
+    @DisplayName("V11이 「기타」 품종을 id 218로 넣고, 학명 · 카테고리는 비워 둔다")
+    void otherSpeciesLoaded(@Autowired JdbcTemplate jdbc) {
+        assertThat(jdbc.queryForObject("select name from species where id = ?", String.class, Species.OTHER_ID))
+                .isEqualTo("기타");
+        assertThat(jdbc.queryForObject("select count(*) from species where id = ? and scientific_name is null and category is null",
+                Integer.class, Species.OTHER_ID)).isEqualTo(1);
     }
 
     @Test

@@ -22,6 +22,9 @@ import java.util.List;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Species extends BaseTimeEntity {
 
+    // 「기타」 품종 (V11). 목록에 없는 식물을 팔 때 고르며, 사진 검수는 항상 관리자 확인
+    public static final long OTHER_ID = 218L;
+
     @Column(nullable = false, unique = true)
     private String name;
 
@@ -53,6 +56,10 @@ public class Species extends BaseTimeEntity {
     @OrderBy("sortOrder ASC")
     @BatchSize(size = 100)
     private List<SpeciesImage> images = new ArrayList<>();
+
+    public boolean isOther() {
+        return getId() != null && getId() == OTHER_ID;
+    }
 
     public String getThumbnailUrl() {
         return images.isEmpty() ? null : images.get(0).getS3Url();
