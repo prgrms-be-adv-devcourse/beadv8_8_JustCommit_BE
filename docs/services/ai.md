@@ -19,8 +19,8 @@ DB `ai_db` · 계정 `ai_app` (pgvector 확장 `vector`, Flyway V1) → [DB · F
 
 | 테이블 | 설명 |
 |---|---|
-| `species_profile` | 농사로 자료로 시드한 품종 프로필 (품종 ID = product `species.id`) → [ADR 0020](../decisions/0020-species-profile-ai-seed.md) |
-| `species_vector_store` | 품종 벡터 (pgvector): 품종 문서 임베딩, speciesId 기준 |
+| `species_profile` | 농사로 자료로 시드한 품종 프로필 215종 (품종 ID = product `species.id`, Flyway V2 테이블 · V3 시드). 시드 원본은 팀 드라이브 `nongsaro/species_profile_seed.csv` · `generate_ai_seed.py` → [ADR 0020](../decisions/0020-species-profile-ai-seed.md) |
+| `species_vector_store` | 품종 벡터 (pgvector, `vector(1536)` · HNSW 코사인): 품종 문서 임베딩, `id` = speciesId, `metadata.documentHash`로 재임베딩 판단 |
 | `product_snapshot` | 상품 스냅샷: `productId` · `speciesId` · `sellerId` · `status` · `hidden` · `product_version`. 모든 상태를 저장 (최근 구매 상품을 품종으로 바꿀 때 `SOLD_OUT`도 씀) → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md) |
 
 ## 외부 API
@@ -32,6 +32,7 @@ DB `ai_db` · 계정 `ai_app` (pgvector 확장 `vector`, Flyway V1) → [DB · F
 | API | 부르는 서비스 | 상태 |
 |---|---|---|
 | `POST /internal/v1/recommendations/cart` | market (장바구니 추천) | ✅ |
+| `POST /internal/v1/ai/admin/reindex?target=SPECIES` | 운영자 (재임베딩) | ✅ |
 
 상품 의미 검색은 범위 밖이라 product 호출이 없습니다. 상세 → [내부 API 목록](../reference/internal-apis.md)
 
