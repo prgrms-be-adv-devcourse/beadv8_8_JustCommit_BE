@@ -56,7 +56,7 @@
 
 품종 이벤트(`species.events.v1`)는 발행하지 않습니다 → [ADR 0020](../decisions/0020-species-profile-ai-seed.md)
 
-`ProductRegistered` · `ProductUpdated` · `ProductStatusChanged`에는 `productId` · `speciesId` · `sellerId` · `status` · `hidden` · `productVersion`을 싣고(봉투 `version` 2), 상품 행을 바꾸는 모든 UPDATE에서 `version`을 +1, 상태 · 숨김을 바꾸는 곳은 새 값이 담긴 이벤트를 보냅니다 (ai 상품 스냅샷). 초기 적재 · 복제본 재구축용 「전체 상품 이벤트 재발행」 운영 API는 🟨 제안 → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md)
+`ProductRegistered` · `ProductUpdated` · `ProductStatusChanged`에는 `productId` · `speciesId` · `sellerId` · `status` · `hidden` · `productVersion`을 싣고(봉투 `version` 2), 상품 행을 바꾸는 모든 UPDATE에서 `version`을 +1, 상태 · 숨김을 바꾸는 곳은 새 값이 담긴 이벤트를 보냅니다 (ai 상품 스냅샷). 초기 적재는 하지 않고(상품 데이터를 비우고 시작), 복제본 재구축용 「전체 상품 이벤트 재발행」 운영 API는 만듭니다 (🟨 구현 전, #293 뒤 별도 Task) → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md)
 
 상세 → [Kafka 토픽 표](../reference/kafka-topics.md)
 

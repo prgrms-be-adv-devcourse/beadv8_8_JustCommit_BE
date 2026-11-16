@@ -57,7 +57,7 @@ sequenceDiagram
 
 추천 대상은 판매 중(`ACTIVE`이고 숨김이 아님) 상품입니다. ai는 상품 이벤트(`ProductRegistered` · `ProductUpdated` · `ProductStatusChanged`)의 payload로 상품 스냅샷을 채우고(모든 상태), 추천할 때 판매 중만 고릅니다. ai는 product를 부르지 않고, 카드 정보(제목 · 가격 · 사진)는 market이 결과 ID로 조회합니다. market은 조회 결과에서 본인 상품과 함께 `isPurchasable()`이 false이거나 응답에 없는 상품도 뺍니다. 이벤트 반영이 늦어 스냅샷이 아직 판매 중이어도, 조회 시점에 판매 완료 · 숨김인 상품은 여기서 걸러집니다. 추천 이유는 템플릿 문장입니다 → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md)
 
-상품 스냅샷은 상품 이벤트로만 채웁니다. 시연 상품도 SQL이 아니라 상품 등록 API로 넣어 이벤트가 나가게 하고, 전체 상품 이벤트 재발행 API는 만들지 않습니다 (초기 적재 없음).
+상품 스냅샷은 상품 이벤트로만 채웁니다. 초기 적재는 하지 않습니다 (상품 데이터를 비우고 시작, 시연 상품도 SQL이 아니라 상품 등록 API로 넣어 이벤트가 나가게 함). Kafka 보관(7일)이 지난 뒤 ai DB를 잃으면 product의 「전체 상품 이벤트 재발행」 운영 API로 다시 채웁니다 → [product 카드](../services/product.md)
 
 ## 의미 검색
 
