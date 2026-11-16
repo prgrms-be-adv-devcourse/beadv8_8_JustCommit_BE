@@ -48,7 +48,7 @@ public class AdminImageReviewController {
 
     @Operation(summary = "관리자 검수 처리",
             description = "통과(APPROVED)면 판매 중, 반려(REJECTED)면 반려됩니다. 반려는 rejectReason 필수(REVIEW_EXPIRED 제외), "
-                    + "OTHER면 memo 필수(200자 이하, 판매자에게 그대로 보임). 다른 관리자가 먼저 처리했으면 409 REVIEW_ALREADY_PROCESSED, "
+                    + "OTHER면 memo 필수(200자 이하, 판매자에게 그대로 보임), 다른 사유 · 통과의 memo는 저장하지 않습니다. 다른 관리자가 먼저 처리했으면 409 REVIEW_ALREADY_PROCESSED, "
                     + "그사이 판매자가 수정·삭제했으면 409 REVIEW_OUTDATED입니다.")
     @PatchMapping("/{reviewId}")
     public ApiResponse<Void> decide(
