@@ -33,6 +33,14 @@ public enum MemberErrorCode implements ErrorCode {
   // 회원 잠금 (#409): 같은 회원의 다른 요청이 잠금을 잡고 있어 대기 제한 안에 처리하지 못함
   MEMBER_BUSY(HttpStatus.CONFLICT, "같은 계정의 다른 요청을 처리하고 있습니다. 잠시 후 다시 시도해 주세요."),
 
+  // 비밀번호 변경 (#411)
+  INVALID_CURRENT_PASSWORD(HttpStatus.BAD_REQUEST, "현재 비밀번호가 올바르지 않습니다."),
+  SAME_AS_CURRENT_PASSWORD(HttpStatus.BAD_REQUEST, "새 비밀번호가 현재 비밀번호와 같습니다."),
+  PASSWORD_NOT_SET(HttpStatus.BAD_REQUEST, "소셜 로그인 회원은 비밀번호를 변경할 수 없습니다."),
+
+  // 처리 결과 불명: 변경이 반영됐는지 확인하지 못함 (비밀번호 변경 · 탈퇴, 기능마다 메시지를 따로 넘김)
+  RESULT_UNKNOWN(HttpStatus.SERVICE_UNAVAILABLE, "처리 결과를 확인하지 못했습니다. 잠시 후 확인해 주세요."),
+
   // 배송지
   ADDRESS_NOT_FOUND(HttpStatus.NOT_FOUND, "배송지를 찾을 수 없습니다."),
   ADDRESS_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "배송지는 최대 4개까지 등록할 수 있습니다."),

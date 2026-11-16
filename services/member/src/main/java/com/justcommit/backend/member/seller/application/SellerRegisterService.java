@@ -7,7 +7,7 @@ import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.event.MemberAddressChanged;
 import com.justcommit.backend.member.event.MemberUpdated;
-import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.seller.domain.Seller;
 import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class SellerRegisterService {
 
-  private final MemberRepository memberRepository;
+  private final MemberLocker memberLocker;
   private final SellerRepository sellerRepository;
   private final OutboxPublisher outboxPublisher;
   private final SellerAddressEventFactory sellerAddressEventFactory;
@@ -31,7 +31,8 @@ public class SellerRegisterService {
   public SellerResult register(SellerRegisterCommand command) {
     Long memberId = command.memberId();
 
-    Member member = memberRepository.findByIdForUpdate(memberId)
+    // 대기 제한을 넘으면 409 MEMBER_BUSY, 아무것도 저장되지 않음
+    Member member = memberLocker.lockById(memberId)
         .orElseThrow(() -> new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
 
     // 이미 판매자면 409 (잠금을 얻은 뒤에 확인해야 동시 요청의 앞선 등록이 보임)
