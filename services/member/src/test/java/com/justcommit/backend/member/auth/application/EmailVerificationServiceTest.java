@@ -20,6 +20,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mail.MailSendException;
 
+import java.util.Optional;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
@@ -32,6 +34,8 @@ class EmailVerificationServiceTest {
   private static final String EMAIL = "test@example.com";
   private static final EmailPurpose SIGNUP = EmailPurpose.SIGNUP;
   private static final String REQUEST_ID = "request-1";
+  private static final EmailPurpose RESET = EmailPurpose.PASSWORD_RESET;
+  private static final PasswordResetService.ResetTarget TARGET = new PasswordResetService.ResetTarget(7L, 3);
 
   @Mock
   private EmailVerificationRedisStore store;
@@ -41,6 +45,9 @@ class EmailVerificationServiceTest {
 
   @Mock
   private MemberRepository memberRepository;
+
+  @Mock
+  private PasswordResetService passwordResetService;
 
   @InjectMocks
   private EmailVerificationService service;
@@ -219,6 +226,137 @@ class EmailVerificationServiceTest {
     assertThatThrownBy(() -> service.verifyCode(EMAIL, "123456", SIGNUP))
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode").isEqualTo(MemberErrorCode.EMAIL_CODE_EXPIRED);
+  }
+
+  // ===== 비밀번호 재설정 발송 (#412): 모든 경우 같은 결과 =====
+
+  @Test
+  @DisplayName("재설정 발송: 대상이면 발송 당시 회원 id · 인증 버전을 번호에 묶어 저장하고 재설정 문구로 메일")
+  void sendResetCode_target() {
+    givenSendSlot(SendStatus.ACQUIRED, 0);
+    given(passwordResetService.findTarget(EMAIL)).willReturn(Optional.of(TARGET));
+    given(store.saveCode(eq(RESET), eq(EMAIL), eq(REQUEST_ID), anyString(), eq("7:3"), eq(EmailVerificationService.CODE_TTL)))
+        .willReturn(true);
+
+    EmailSendResult result = service.sendCode(EMAIL, RESET);
+
+    ArgumentCaptor<String> code = ArgumentCaptor.forClass(String.class);
+    then(store).should().saveCode(eq(RESET), eq(EMAIL), eq(REQUEST_ID), code.capture(), eq("7:3"), eq(EmailVerificationService.CODE_TTL));
+    then(mailSender).should().send(EMAIL, code.getValue(), EmailVerificationService.CODE_TTL, RESET);
+    assertThat(result.expiresIn()).isEqualTo(300);
+    assertThat(result.resendAvailableIn()).isEqualTo(60);
+  }
+
+  @Test
+  @DisplayName("재설정 발송: 대상이 아니면(가입 안 됨 · 소셜 · 탈퇴) 자리는 똑같이 잡고 번호 · 메일 없이 같은 결과")
+  void sendResetCode_notTarget() {
+    givenSendSlot(SendStatus.ACQUIRED, 0);
+    given(passwordResetService.findTarget(EMAIL)).willReturn(Optional.empty());
+
+    EmailSendResult result = service.sendCode(EMAIL, RESET);
+
+    assertThat(result.expiresIn()).isEqualTo(300);
+    assertThat(result.resendAvailableIn()).isEqualTo(60);
+    then(store).should(never()).saveCode(any(), any(), any(), any(), any(), any());
+    then(store).should(never()).releaseSend(any(), any(), any());
+    then(mailSender).shouldHaveNoInteractions();
+    then(memberRepository).shouldHaveNoInteractions(); // 가입 목적의 가입 여부(409) 검사는 하지 않음
+  }
+
+  @Test
+  @DisplayName("재설정 발송: 재발송 제한 · 하루 한도에 걸려도 예외 없이 같은 결과, 대상 조회 · 메일 없음")
+  void sendResetCode_limited() {
+    given(store.tryAcquireSend(EMAIL, EmailVerificationService.COOLDOWN_TTL,
+        EmailVerificationService.DAILY_SEND_LIMIT, EmailVerificationService.DAILY_WINDOW))
+        .willReturn(new SendResult(SendStatus.COOLDOWN, 42, null), new SendResult(SendStatus.DAILY_LIMIT, 3600, null));
+
+    assertThat(service.sendCode(EMAIL, RESET).expiresIn()).isEqualTo(300);
+    assertThat(service.sendCode(EMAIL, RESET).expiresIn()).isEqualTo(300);
+
+    then(passwordResetService).shouldHaveNoInteractions();
+    then(mailSender).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("재설정 발송: 번호 저장이 거절되면(다른 요청이 자리를 잡음) 이 요청의 예약만 되돌리고 메일 없이 같은 결과")
+  void sendResetCode_superseded() {
+    givenSendSlot(SendStatus.ACQUIRED, 0);
+    given(passwordResetService.findTarget(EMAIL)).willReturn(Optional.of(TARGET));
+    given(store.saveCode(eq(RESET), eq(EMAIL), eq(REQUEST_ID), anyString(), eq("7:3"), eq(EmailVerificationService.CODE_TTL)))
+        .willReturn(false);
+
+    assertThat(service.sendCode(EMAIL, RESET).expiresIn()).isEqualTo(300);
+
+    then(store).should().releaseSend(RESET, EMAIL, REQUEST_ID);
+    then(mailSender).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("재설정 발송: SMTP가 실패하면 이 요청의 예약만 되돌리고 예외 없이 같은 결과")
+  void sendResetCode_mailFail() {
+    givenSendSlot(SendStatus.ACQUIRED, 0);
+    given(passwordResetService.findTarget(EMAIL)).willReturn(Optional.of(TARGET));
+    given(store.saveCode(eq(RESET), eq(EMAIL), eq(REQUEST_ID), anyString(), eq("7:3"), eq(EmailVerificationService.CODE_TTL)))
+        .willReturn(true);
+    willThrow(new MailSendException("fail")).given(mailSender).send(eq(EMAIL), anyString(), any(), eq(RESET));
+
+    assertThat(service.sendCode(EMAIL, RESET).expiresIn()).isEqualTo(300);
+
+    then(store).should().releaseSend(RESET, EMAIL, REQUEST_ID);
+  }
+
+  // ===== 비밀번호 재설정 확인 (#412) =====
+
+  @Test
+  @DisplayName("재설정 확인 성공: 묶어 둔 대상으로 토큰을 받아 돌려주고, 인증 완료 표시는 남기지 않는다")
+  void verifyResetCode_success() {
+    given(store.verifyCode(RESET, EMAIL, "123456",
+        EmailVerificationService.MAX_WRONG_ATTEMPTS, EmailVerificationService.CODE_TTL))
+        .willReturn(new VerifyOutcome(VerifyResult.MATCHED, "7:3"));
+    given(passwordResetService.issueToken(TARGET)).willReturn(Optional.of("reset-token"));
+
+    EmailVerifyResult result = service.verifyCode(EMAIL, "123456", RESET);
+
+    assertThat(result.resetToken()).isEqualTo("reset-token");
+    assertThat(result.resetTokenExpiresIn()).isEqualTo(1800);
+    then(store).should(never()).saveVerified(any(), any(), any());
+  }
+
+  @Test
+  @DisplayName("재설정 확인: 틀림 · 만료 · 폐기는 모두 EMAIL_CODE_INVALID, 토큰 발급 시도 없음")
+  void verifyResetCode_failuresAreSame() {
+    given(store.verifyCode(RESET, EMAIL, "000000",
+        EmailVerificationService.MAX_WRONG_ATTEMPTS, EmailVerificationService.CODE_TTL))
+        .willReturn(new VerifyOutcome(VerifyResult.MISMATCH, ""),
+            new VerifyOutcome(VerifyResult.EXPIRED, ""),
+            new VerifyOutcome(VerifyResult.EXHAUSTED, ""));
+
+    for (int i = 0; i < 3; i++) {
+      assertThatThrownBy(() -> service.verifyCode(EMAIL, "000000", RESET))
+          .isInstanceOf(BusinessException.class)
+          .extracting("errorCode").isEqualTo(MemberErrorCode.EMAIL_CODE_INVALID);
+    }
+    then(passwordResetService).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("재설정 확인: 번호는 맞아도 묶음 정보가 깨졌거나, 그 사이 인증 버전이 바뀌어 토큰을 못 받으면 EMAIL_CODE_INVALID")
+  void verifyResetCode_bindingOrVersionInvalid() {
+    given(store.verifyCode(RESET, EMAIL, "123456",
+        EmailVerificationService.MAX_WRONG_ATTEMPTS, EmailVerificationService.CODE_TTL))
+        .willReturn(new VerifyOutcome(VerifyResult.MATCHED, "broken"),
+            new VerifyOutcome(VerifyResult.MATCHED, "7:3"));
+    given(passwordResetService.issueToken(TARGET)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> service.verifyCode(EMAIL, "123456", RESET))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode").isEqualTo(MemberErrorCode.EMAIL_CODE_INVALID);
+    assertThatThrownBy(() -> service.verifyCode(EMAIL, "123456", RESET))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode").isEqualTo(MemberErrorCode.EMAIL_CODE_INVALID);
+
+    then(passwordResetService).should().issueToken(TARGET); // 깨진 묶음 정보로는 발급을 시도하지 않음
+    then(passwordResetService).shouldHaveNoMoreInteractions();
   }
 
   @Test

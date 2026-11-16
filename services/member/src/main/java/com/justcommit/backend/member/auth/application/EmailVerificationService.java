@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.Optional;
 
 // 이메일 인증번호 발송·확인
 // #412: 목적(가입 · 비밀번호 재설정 · 계좌 변경)별로 인증을 나누고, 같은 이메일 하루 발송 한도 · 틀린 횟수 제한을 둔다
@@ -36,11 +37,16 @@ public class EmailVerificationService {
   private final EmailVerificationRedisStore store;
   private final VerificationMailSender mailSender;
   private final MemberRepository memberRepository;
+  private final PasswordResetService passwordResetService;
 
   // 인증번호 발송: 목적 확인 -> 가입 여부 확인 -> 재발송 제한 · 하루 한도 확인 -> 번호 생성, 저장 -> 메일 발송
   public EmailSendResult sendCode(String rawEmail, EmailPurpose purpose) {
     requireSupported(purpose);
     String email = normalize(rawEmail);
+    if (purpose == EmailPurpose.PASSWORD_RESET) {
+      sendResetCode(email);
+      return new EmailSendResult(CODE_TTL.toSeconds(), COOLDOWN_TTL.toSeconds());
+    }
     // 이미 가입된 이메일이면 인증번호를 보내지 않음 (가입 목적)
     if (memberRepository.existsByEmail(email)) {
       throw new BusinessException(MemberErrorCode.DUPLICATE_EMAIL);
@@ -66,15 +72,62 @@ public class EmailVerificationService {
   }
 
   // 인증번호 확인: 비교 · 틀린 횟수 · 폐기를 Redis에서 한 번에 처리하고, 일치하면 그 목적의 인증 완료를 저장
-  public void verifyCode(String rawEmail, String code, EmailPurpose purpose) {
+  // 재설정 목적은 인증 완료 표시 대신 일회용 재설정 토큰을 돌려준다 (가입은 빈 결과)
+  public EmailVerifyResult verifyCode(String rawEmail, String code, EmailPurpose purpose) {
     requireSupported(purpose);
     String email = normalize(rawEmail);
-    switch (store.verifyCode(purpose, email, code, MAX_WRONG_ATTEMPTS, CODE_TTL).result()) {
+    EmailVerificationRedisStore.VerifyOutcome outcome =
+        store.verifyCode(purpose, email, code, MAX_WRONG_ATTEMPTS, CODE_TTL);
+    if (purpose == EmailPurpose.PASSWORD_RESET) {
+      return EmailVerifyResult.resetToken(issueResetToken(outcome), PasswordResetService.RESET_TOKEN_TTL);
+    }
+    switch (outcome.result()) {
       case MATCHED -> store.saveVerified(purpose, email, VERIFIED_TTL);
       case MISMATCH -> throw new BusinessException(MemberErrorCode.EMAIL_CODE_MISMATCH);
       case EXHAUSTED -> throw new BusinessException(MemberErrorCode.EMAIL_CODE_ATTEMPTS_EXCEEDED);
       case EXPIRED -> throw new BusinessException(MemberErrorCode.EMAIL_CODE_EXPIRED);
     }
+    return EmailVerifyResult.none();
+  }
+
+  // 비밀번호 재설정 인증번호 발송 (#412): 가입 여부 · 로그인 방식이 드러나지 않게 모든 경우 같은 결과로 끝낸다
+  // - 재발송 제한 · 하루 한도: 자리를 못 잡았으니 되돌릴 것 없이 끝
+  // - 자리는 재설정 대상인지와 관계없이 똑같이 잡는다 (하루 횟수도 똑같이 세어, 한도에 걸리는지로 가입 여부를 알 수 없게)
+  // - 대상이면 발송 당시 회원 id · 인증 버전을 번호에 묶어 저장하고 재설정 문구로 메일
+  // - 번호 저장 거절(다른 요청이 자리를 잡음) · SMTP 실패: 이 요청의 예약만 되돌리고 끝
+  // - Redis · DB 장애는 감추지 않는다 (예외가 그대로 올라가 서버 오류로 처리됨)
+  private void sendResetCode(String email) {
+    EmailVerificationRedisStore.SendResult slot =
+        store.tryAcquireSend(email, COOLDOWN_TTL, DAILY_SEND_LIMIT, DAILY_WINDOW);
+    if (slot.status() != EmailVerificationRedisStore.SendStatus.ACQUIRED) {
+      return;
+    }
+    Optional<PasswordResetService.ResetTarget> target = passwordResetService.findTarget(email);
+    if (target.isEmpty()) {
+      return;
+    }
+    String code = generateCode();
+    if (!store.saveCode(EmailPurpose.PASSWORD_RESET, email, slot.requestId(), code, target.get().toBinding(), CODE_TTL)) {
+      store.releaseSend(EmailPurpose.PASSWORD_RESET, email, slot.requestId());
+      return;
+    }
+    try {
+      mailSender.send(email, code, CODE_TTL, EmailPurpose.PASSWORD_RESET);
+    } catch (MailException e) {
+      log.error("재설정 인증 메일 발송 실패: email={}", email, e);
+      store.releaseSend(EmailPurpose.PASSWORD_RESET, email, slot.requestId());
+    }
+  }
+
+  // 재설정 인증번호 확인 (#412): 틀림 · 만료 · 폐기 · 깨진 묶음 정보 · 발송 뒤 인증 버전 변경은 모두 같은 오류
+  // (어느 경우인지 응답으로 드러나지 않게). 번호가 맞고 발송 당시 상태 그대로일 때만 토큰을 받는다
+  private String issueResetToken(EmailVerificationRedisStore.VerifyOutcome outcome) {
+    if (outcome.result() != EmailVerificationRedisStore.VerifyResult.MATCHED) {
+      throw new BusinessException(MemberErrorCode.EMAIL_CODE_INVALID);
+    }
+    return PasswordResetService.ResetTarget.fromBinding(outcome.binding())
+        .flatMap(passwordResetService::issueToken)
+        .orElseThrow(() -> new BusinessException(MemberErrorCode.EMAIL_CODE_INVALID));
   }
 
   // 재발송 제한(60초) · 하루 한도(5회)를 확인하고 자리를 확보. 막히면 429 + 남은 초(Retry-After)
@@ -91,9 +144,9 @@ public class EmailVerificationService {
     return result;
   }
 
-  // TODO: #412 비밀번호 재설정에서 PASSWORD_RESET, #413 계좌 변경에서 ACCOUNT_CHANGE를 연다
+  // TODO: #413 계좌 변경에서 ACCOUNT_CHANGE를 연다
   private void requireSupported(EmailPurpose purpose) {
-    if (purpose != EmailPurpose.SIGNUP) {
+    if (purpose == EmailPurpose.ACCOUNT_CHANGE) {
       throw new BusinessException(MemberErrorCode.EMAIL_PURPOSE_NOT_SUPPORTED);
     }
   }

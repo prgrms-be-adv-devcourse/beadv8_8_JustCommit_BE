@@ -1,6 +1,7 @@
 package com.justcommit.backend.member.auth.presentation;
 
 import com.justcommit.backend.common.response.ApiResponse;
+import com.justcommit.backend.member.auth.domain.EmailPurpose;
 import com.justcommit.backend.member.auth.application.*;
 import com.justcommit.backend.member.auth.presentation.dto.*;
 import com.justcommit.backend.member.auth.presentation.support.RefreshTokenCookieFactory;
@@ -21,6 +22,7 @@ public class AuthController {
   private static final String BEARER_PREFIX = "Bearer ";
 
   private final EmailVerificationService emailVerificationService;
+  private final PasswordResetService passwordResetService;
   private final LoginService loginService;
   private final TokenReissueService tokenReissueService;
   private final LogoutService logoutService;
@@ -28,14 +30,30 @@ public class AuthController {
 
   @PostMapping("/email/send")
   public ApiResponse<EmailSendResponse> sendEmailCode(@Valid @RequestBody EmailSendRequest request) {
-    EmailSendResult result = emailVerificationService.sendCode(request.email(), request.purposeOrDefault());
-    return ApiResponse.ok("인증번호를 발송했습니다.", EmailSendResponse.from(result));
+    EmailPurpose purpose = request.purposeOrDefault();
+    EmailSendResult result = emailVerificationService.sendCode(request.email(), purpose);
+    // 재설정은 실제 발송 여부와 관계없이 같은 안내 (가입 여부 · 로그인 방식이 드러나지 않게)
+    String message = purpose == EmailPurpose.PASSWORD_RESET
+        ? "재설정 가능한 계정이면 인증번호를 보내드립니다."
+        : "인증번호를 발송했습니다.";
+    return ApiResponse.ok(message, EmailSendResponse.from(result));
   }
 
   @PostMapping("/email/verify")
-  public ApiResponse<Void> verifyEmailCode(@Valid @RequestBody EmailVerifyRequest request) {
-    emailVerificationService.verifyCode(request.email(), request.code(), request.purposeOrDefault());
-    return ApiResponse.ok("이메일 인증이 완료되었습니다.");
+  public ApiResponse<EmailVerifyResponse> verifyEmailCode(@Valid @RequestBody EmailVerifyRequest request) {
+    EmailVerifyResult result =
+        emailVerificationService.verifyCode(request.email(), request.code(), request.purposeOrDefault());
+    // 가입은 data 없이(기존과 같음), 재설정은 일회용 재설정 토큰
+    return ApiResponse.ok("이메일 인증이 완료되었습니다.", EmailVerifyResponse.from(result));
+  }
+
+  // 비밀번호 재설정 (#412): 재설정 목적 이메일 인증으로 받은 일회용 토큰 + 새 비밀번호
+  // 로그인 없이 호출하므로 Refresh 쿠키는 건드리지 않는다 (이 브라우저에 다른 계정 쿠키가 있을 수 있음).
+  // 재설정한 계정의 기존 Refresh는 토큰 폐기(#409)로 서버에서 모두 무효가 된다
+  @PostMapping("/passwordResets")
+  public ApiResponse<PasswordResetResponse> resetPassword(@Valid @RequestBody PasswordResetRequest request) {
+    PasswordResetResult result = passwordResetService.reset(request.resetToken(), request.newPassword());
+    return ApiResponse.ok("비밀번호를 재설정했습니다.", PasswordResetResponse.from(result));
   }
 
   // 로그인: Access 토큰은 Body, Refresh 토큰은 HttpOnly 쿠키
