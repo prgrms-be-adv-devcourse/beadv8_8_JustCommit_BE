@@ -393,4 +393,37 @@ class AddressServiceTest {
             .isEqualTo(MemberErrorCode.ADDRESS_NOT_FOUND);
     then(addressRepository).should(never()).delete(any());
   }
+
+  @Test
+  @DisplayName("우편번호 · 주소가 실제로 바뀌는데 상세 주소를 보내지 않으면 400 ADDRESS_DETAIL_REQUIRED, 아무것도 바뀌지 않음")
+  void updateAddress_locationChangedWithoutDetail_rejected() {
+    Address target = address(2L, false);
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+
+    assertThatThrownBy(() -> addressService.updateAddress(MEMBER_ID, 2L,
+            update(null, null, "04524", "서울 중구 세종대로 110", null, null)))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MemberErrorCode.ADDRESS_DETAIL_REQUIRED);
+    assertThat(target.getZipcode()).isEqualTo("06236");
+    assertThat(target.getAddress1()).isEqualTo("서울 강남구 테헤란로 1");
+    then(sellerRepository).shouldHaveNoInteractions();
+    then(outboxPublisher).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("지금과 같은 우편번호 · 주소를 상세 주소 없이 다시 보내면 주소가 바뀌지 않으므로 통과")
+  void updateAddress_sameLocationWithoutDetail_allowed() {
+    Address target = address(2L, false);
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
+
+    addressService.updateAddress(MEMBER_ID, 2L,
+            update(null, "01098765432", "06236", "서울 강남구 테헤란로 1", null, null));
+
+    assertThat(target.getRecipientPhone()).isEqualTo("01098765432");
+    assertThat(target.getZipcode()).isEqualTo("06236");
+  }
 }

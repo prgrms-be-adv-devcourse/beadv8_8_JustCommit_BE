@@ -24,6 +24,9 @@ public final class MemberValidation {
   // 예금주 최대 길이 (account_holder VARCHAR(50))
   public static final int ACCOUNT_HOLDER_MAX_LENGTH = 50;
 
+  // 보낼 거면 공백만은 불가 (@NotBlank와 같은 기준, (?s)로 줄바꿈이 있어도 내용이 있으면 통과, null은 검사 안 함)
+  public static final String NOT_BLANK_REGEX = "(?s).*\\S.*";
+
   // 우편번호(숫자 5자리)
   public static final String ZIPCODE_REGEX = "^\\d{5}$";
 

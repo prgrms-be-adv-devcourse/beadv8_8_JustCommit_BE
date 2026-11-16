@@ -85,6 +85,11 @@ public class AddressService {
     Address target = addressRepository.findByIdAndMemberId(addressId, memberId)
         .orElseThrow(() -> new BusinessException(MemberErrorCode.ADDRESS_NOT_FOUND)); // 남의 배송지도 404
 
+    // 주소가 실제로 바뀌는데 상세 주소가 없으면 옛 상세 주소가 새 주소에 남으므로 거절 (비우려면 "")
+    if (target.changesLocation(command.zipcode(), command.address1()) && command.address2() == null) {
+      throw new BusinessException(MemberErrorCode.ADDRESS_DETAIL_REQUIRED);
+    }
+
     boolean changed = target.update(command.recipientName(), command.recipientPhone(), command.zipcode(),
         command.address1(), command.address2(), command.addressName());
     if (changed) {

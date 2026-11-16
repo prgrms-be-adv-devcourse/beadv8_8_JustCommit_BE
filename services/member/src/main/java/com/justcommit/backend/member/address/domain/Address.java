@@ -76,6 +76,12 @@ public class Address extends BaseTimeEntity {
     this.isDefault = false;
   }
 
+  // 보낸 우편번호 · 기본 주소가 지금 값과 달라 주소가 실제로 바뀌는지 (null은 그대로라 바뀌지 않음)
+  public boolean changesLocation(String zipcode, String address1) {
+    return (zipcode != null && !zipcode.equals(this.zipcode))
+        || (address1 != null && !address1.equals(this.address1));
+  }
+
   // 부분 수정 (#416): null인 항목은 그대로 둔다. 선택 항목(address2 · addressName)은 빈 문자열이면 지운다(null)
   // 실제로 바뀐 항목이 있으면 true (같은 값이면 판매자 배송지 이벤트를 보내지 않게)
   public boolean update(String recipientName, String recipientPhone, String zipcode,
