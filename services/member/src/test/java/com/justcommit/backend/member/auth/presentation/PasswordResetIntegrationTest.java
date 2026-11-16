@@ -147,7 +147,7 @@ class PasswordResetIntegrationTest {
   }
 
   @Test
-  @DisplayName("3. 가입 목적으로 받은 인증번호로는 재설정 확인을 할 수 없다 (EMAIL_CODE_INVALID)")
+  @DisplayName("3. 가입 목적으로 받은 인증번호로는 재설정 확인을 할 수 없고(EMAIL_CODE_INVALID), 그 번호로 가입 인증은 그대로 성공한다")
   void signupCodeCannotReset() throws Exception {
     String email = "signup" + SEQ.incrementAndGet() + "@test.com";
     HttpResponse<String> send = post("/api/v1/auth/email/send", "{\"email\":\"" + email + "\"}");
@@ -158,6 +158,12 @@ class PasswordResetIntegrationTest {
     HttpResponse<String> response = verify(email, signupCode.getValue(), EmailPurpose.PASSWORD_RESET);
 
     assertError(response, 400, MemberErrorCode.EMAIL_CODE_INVALID);
+
+    // 재설정 확인이 가입 번호를 읽거나 지우지 않았는지: 같은 번호로 가입 인증은 성공하고, 응답은 기존 가입 응답 그대로(data 없음)
+    HttpResponse<String> signupVerify = verify(email, signupCode.getValue(), EmailPurpose.SIGNUP);
+    assertThat(signupVerify.statusCode()).isEqualTo(200);
+    assertThat(signupVerify.body()).contains("이메일 인증이 완료되었습니다.").doesNotContain("\"data\"");
+    assertThat(redisTemplate.hasKey("auth:email:verified:signup:" + email)).isTrue();
   }
 
   @Test
