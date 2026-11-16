@@ -25,6 +25,7 @@ import com.justcommit.backend.product.review.domain.enums.RejectReason;
 import com.justcommit.backend.product.review.domain.enums.ReviewDecision;
 import com.justcommit.backend.product.review.domain.enums.ReviewStatus;
 import com.justcommit.backend.product.review.infrastructure.ImageReviewRepository;
+import com.justcommit.backend.product.species.domain.Species;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -167,7 +168,12 @@ public class ImageReviewService implements ReviewRequester {
         boolean repeatedRejections = review.getScope() == ReviewScope.FULL && recentRejections(product.getSellerId()) >= RECENT_REJECTION_LIMIT;
         return new Target(productId, reviewVersion, review.getScope(), product.getTitle(), product.getDescription(),
                 product.getImages().stream().map(ProductImage::getS3Url).toList(),
-                product.getSpecies().getScientificName(), repeatedRejections);
+                sellerSpecies(product.getSpecies()), repeatedRejections);
+    }
+
+    // 「기타」 품종이면 학명 없이 관리자 확인 (「결과별 처리」 8줄)
+    private static SellerSpecies sellerSpecies(Species species) {
+        return species.isOther() ? SellerSpecies.otherSpecies() : SellerSpecies.of(species.getScientificName());
     }
 
     private long recentRejections(Long sellerId) {
@@ -224,7 +230,7 @@ public class ImageReviewService implements ReviewRequester {
         }
 
         BannedTextMatcher.Match text = bannedListService.matchText(target.title(), target.description());
-        ReviewVerdict verdict = judgeProvider.get().judge(moderation, plant, text, SellerSpecies.of(target.sellerScientificName()));
+        ReviewVerdict verdict = judgeProvider.get().judge(moderation, plant, text, target.sellerSpecies());
         return new Outcome(verdict, engineJson(new EngineResult(moderation, plant)), errors.isEmpty() ? null : String.join(" / ", errors));
     }
 
@@ -332,7 +338,7 @@ public class ImageReviewService implements ReviewRequester {
 
     // 검수에 필요한 상품 값 (트랜잭션 밖에서 씀)
     private record Target(Long productId, int reviewVersion, ReviewScope scope, String title, String description,
-                          List<String> imageUrls, String sellerScientificName, boolean repeatedRejections) {
+                          List<String> imageUrls, SellerSpecies sellerSpecies, boolean repeatedRejections) {
     }
 
     private record Claimed(Long productId, int reviewVersion) {
