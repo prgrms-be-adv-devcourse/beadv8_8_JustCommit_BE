@@ -28,13 +28,13 @@ public class AuthController {
 
   @PostMapping("/email/send")
   public ApiResponse<EmailSendResponse> sendEmailCode(@Valid @RequestBody EmailSendRequest request) {
-    EmailSendResult result = emailVerificationService.sendCode(request.email());
+    EmailSendResult result = emailVerificationService.sendCode(request.email(), request.purposeOrDefault());
     return ApiResponse.ok("인증번호를 발송했습니다.", EmailSendResponse.from(result));
   }
 
   @PostMapping("/email/verify")
   public ApiResponse<Void> verifyEmailCode(@Valid @RequestBody EmailVerifyRequest request) {
-    emailVerificationService.verifyCode(request.email(), request.code());
+    emailVerificationService.verifyCode(request.email(), request.code(), request.purposeOrDefault());
     return ApiResponse.ok("이메일 인증이 완료되었습니다.");
   }
 

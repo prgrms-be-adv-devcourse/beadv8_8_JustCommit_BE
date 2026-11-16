@@ -14,6 +14,10 @@ public enum MemberErrorCode implements ErrorCode {
   EMAIL_SEND_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "인증 메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요."),
   EMAIL_CODE_EXPIRED(HttpStatus.BAD_REQUEST, "인증번호가 만료되었거나 요청되지 않았습니다. 인증번호를 다시 요청해주세요."),
   EMAIL_CODE_MISMATCH(HttpStatus.BAD_REQUEST, "인증번호가 일치하지 않습니다."),
+  // 이메일 인증 제한 · 목적 (#412)
+  EMAIL_SEND_DAILY_LIMIT(HttpStatus.TOO_MANY_REQUESTS, "같은 이메일로는 하루 5번까지 인증번호를 받을 수 있습니다. 나중에 다시 시도해주세요."),
+  EMAIL_CODE_ATTEMPTS_EXCEEDED(HttpStatus.BAD_REQUEST, "인증번호를 5번 틀려 더 이상 사용할 수 없습니다. 인증번호를 다시 요청해주세요."),
+  EMAIL_PURPOSE_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "지원하지 않는 인증 목적입니다."),
 
   // 회원가입
   EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증을 먼저 완료해주세요."),
