@@ -8,5 +8,6 @@ public enum ManualReason {
     LOW_CONFIDENCE,         // 후보 없음 또는 1순위 0.3 미만
     SPECIES_MISMATCH,       // 1순위가 판매자 품종과 속이 다름
     ENGINE_ERROR,           // 외부 API 오류(재시도 후에도) · 응답 해석 불가
-    REPEATED_REJECTIONS     // 최근 7일 반려 5건 이상 → 자동 검수 없이
+    REPEATED_REJECTIONS,    // 최근 7일 반려 5건 이상 → 자동 검수 없이
+    APPEAL                  // 판매자가 자동 반려에 이의 신청 (원래 반려 사유는 rejectReason에 남김)
 }

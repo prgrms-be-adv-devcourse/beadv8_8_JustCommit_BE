@@ -48,6 +48,9 @@ public class Product extends BaseTimeEntity {
     private static final Set<ProductStatus> CHANGEABLE_STATUSES =
             EnumSet.of(ProductStatus.ACTIVE, ProductStatus.REJECTED, ProductStatus.REVIEW_PENDING);
 
+    // 재검수는 2번까지 (11/16 결정, docs/flows/image-review.md)
+    public static final int MAX_RESUBMITS = 2;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "species_id", nullable = false)
     private Species species;
@@ -84,6 +87,10 @@ public class Product extends BaseTimeEntity {
 
     @Column(name = "review_version", nullable = false)
     private int reviewVersion;
+
+    // 재검수 횟수: 반려된 상품을 고쳐 엔진 검수를 다시 받은 횟수 (최대 MAX_RESUBMITS, REVIEW_EXPIRED · 엔진 오류 재처리는 세지 않음)
+    @Column(name = "resubmit_count", nullable = false)
+    private int resubmitCount;
 
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("sortOrder ASC")
@@ -174,6 +181,29 @@ public class Product extends BaseTimeEntity {
             throw new BusinessException(ProductErrorCode.PRODUCT_NOT_DELETABLE);
         }
         this.status = ProductStatus.DELETED;
+    }
+
+    // 재검수 1회를 씀 (반려된 상품 · 이의 신청 중인 상품을 고칠 때). 다 썼으면 409, 삭제 후 새로 등록
+    public void useResubmit() {
+        if (resubmitCount >= MAX_RESUBMITS) {
+            throw new BusinessException(ProductErrorCode.RESUBMIT_LIMIT_EXCEEDED);
+        }
+        this.resubmitCount++;
+    }
+
+    public int remainingResubmits() {
+        return Math.max(0, MAX_RESUBMITS - resubmitCount);
+    }
+
+    // 이의 신청: 같은 검수 버전으로 관리자 확인을 기다림 (반려 → 검수 중, 검수 버전은 그대로)
+    public void startAppeal() {
+        this.status = ProductStatus.REVIEW_PENDING;
+    }
+
+    // 기한 초과(REVIEW_EXPIRED)로 반려된 상품을 같은 내용으로 다시 검수 (재검수 횟수에 세지 않음)
+    public void resubmitAfterExpiry() {
+        this.status = ProductStatus.REVIEW_PENDING;
+        this.reviewVersion++;
     }
 
     // 검수 중 · 반려

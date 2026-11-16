@@ -214,6 +214,27 @@ public class  ProductServiceTest {
     }
 
     @Test
+    @DisplayName("반려된 상품을 고치면 재검수 1회를 쓰고, 2번 다 썼으면 409 RESUBMIT_LIMIT_EXCEEDED · 검수 요청 없음")
+    void updateRejectedProductUsesResubmit() {
+        Product product = product(ProductStatus.REJECTED);
+        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
+        given(speciesRepository.findById(NEW_SPECIES_ID)).willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스")));
+        given(reviewRequester.isResubmit(product)).willReturn(true);
+        ReflectionTestUtils.setField(product, "status", ProductStatus.REJECTED);
+
+        productService.updateProduct(SELLER_ID, PRODUCT_ID, updateRequest(List.of("https://example.com/c.jpg")));
+        assertThat(product.remainingResubmits()).isEqualTo(Product.MAX_RESUBMITS - 1);
+
+        ReflectionTestUtils.setField(product, "resubmitCount", Product.MAX_RESUBMITS);
+        ReflectionTestUtils.setField(product, "status", ProductStatus.REJECTED);
+        assertThatThrownBy(() -> productService.updateProduct(SELLER_ID, PRODUCT_ID,
+                updateRequest(List.of("https://example.com/d.jpg"))))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.RESUBMIT_LIMIT_EXCEEDED);
+        verify(reviewRequester, times(1)).request(any(Product.class), any(ReviewScope.class));
+    }
+
+    @Test
     @DisplayName("없는 상품을 수정하면 PRODUCT_NOT_FOUND")
     void updateProductNotFound() {
         given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.empty());

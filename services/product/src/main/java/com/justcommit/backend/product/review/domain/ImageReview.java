@@ -98,6 +98,13 @@ public class ImageReview extends BaseTimeEntity {
     @Column(name = "decided_at")
     private LocalDateTime decidedAt;
 
+    // 이의 신청 메모 (자동 반려에만, 같은 검수 버전 1번)
+    @Column(name = "appeal_memo", length = 200)
+    private String appealMemo;
+
+    @Column(name = "appealed_at")
+    private LocalDateTime appealedAt;
+
     private ImageReview(Long productId, int reviewVersion, Long sellerId, ReviewScope scope) {
         this.productId = productId;
         this.reviewVersion = reviewVersion;
@@ -161,6 +168,37 @@ public class ImageReview extends BaseTimeEntity {
         this.adminId = adminId;
         this.decidedBy = DecidedBy.ADMIN;
         this.decidedAt = now;
+    }
+
+    // 자동 반려(엔진 판정)라서 이의 신청할 수 있는지. 관리자 반려 · 기한 초과 반려는 안 됨
+    public boolean isAppealable() {
+        return status == ReviewStatus.DONE && decision == ReviewDecision.REJECTED && decidedBy == DecidedBy.ENGINE;
+    }
+
+    public boolean isAppealed() {
+        return appealedAt != null;
+    }
+
+    // 이의 신청: 관리자 확인으로 보냄. 원래 반려 사유(rejectReason · detail)는 관리자가 보도록 그대로 두고,
+    // 관리자 확인 기한(24시간)은 이의 신청 시각부터 셈
+    public void appeal(String memo, LocalDateTime now) {
+        this.appealMemo = memo;
+        this.appealedAt = now;
+        this.decision = ReviewDecision.MANUAL;
+        this.manualReason = ManualReason.APPEAL;
+        this.reviewedAt = now;
+        this.decidedBy = null;
+        this.decidedAt = null;
+    }
+
+    // 반려(기한 초과 제외) 또는 이의 신청 중 → 이 상태에서 고치면 재검수 1회
+    public boolean countsAsResubmit() {
+        if (status != ReviewStatus.DONE) {
+            return false;
+        }
+        boolean rejected = decision == ReviewDecision.REJECTED && rejectReason != RejectReason.REVIEW_EXPIRED;
+        boolean appealing = isAwaitingAdmin() && isAppealed();
+        return rejected || appealing;
     }
 
     // 관리자 확인으로 간 지 24시간이 지나 자동 반려
