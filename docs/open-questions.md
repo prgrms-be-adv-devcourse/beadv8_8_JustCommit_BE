@@ -17,7 +17,6 @@
 | 요청 수 제한 값 | 카카오 로그인 시작 · 중복 확인 | Gateway | 시간이 남으면 |
 | 탈퇴 재확인 · 소셜 연결 해제 회원 재로그인 | – | member | – |
 | 메모리 실측 · 모니터링 위치 | 약 7GB / 8GB, 넘치면 데이터 서버로 | 인프라 | Sprint 1 |
-| 인증 메일 키 이름 | 🟨 `auth:email:daily` · `auth:email:attempts` | member | Sprint 1 |
 | 외부 AI 약관 (학습 사용 여부) | OpenAI · Anthropic | 김환희 | – |
 | 검색 임베딩 (상품 의미 검색) | 범위 밖([ADR 0005](decisions/0005-opensearch-pgvector-external-embedding.md)). 넣는다면 product 색인 리스너가 임베딩 API를 직접 부르는 안, 별도 ADR 필요 | 팀 | – |
 | 챗봇 범위 | 보류 (AI 담당 부재) | AI | – |
