@@ -112,6 +112,19 @@ public class Settlement extends BaseTimeEntity {
         );
     }
 
+    // 정산 지급 스케줄러가 이 건을 확보: leasedUntil까지 다른 실행이 다시 잡지 않게 다음 시도 시각을 미룬다 (#429)
+    public void lease(LocalDateTime leasedUntil) {
+        if (isCompleted()) {
+            return;
+        }
+        this.nextAttemptAt = leasedUntil;
+    }
+
+    // 확보한 실행의 임대가 그대로인지 (임대가 끝나 다른 실행이 다시 잡았으면 false)
+    public boolean isLeasedUntil(LocalDateTime leasedUntil) {
+        return !isCompleted() && leasedUntil.equals(this.nextAttemptAt);
+    }
+
     // 지급 성공. 이미 COMPLETED면 처음 완료 시각을 유지한다
     public void complete(LocalDateTime completedAt) {
         if (isCompleted()) {

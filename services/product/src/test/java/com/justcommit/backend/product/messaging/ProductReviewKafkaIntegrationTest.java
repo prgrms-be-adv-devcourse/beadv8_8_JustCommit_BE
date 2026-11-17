@@ -1,5 +1,6 @@
 package com.justcommit.backend.product.messaging;
 
+import com.justcommit.backend.product.product.application.ProductEventPublisher;
 import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.common.messaging.KafkaTopics;
 import com.justcommit.backend.common.messaging.consumer.MessagingConsumerAutoConfiguration;
@@ -72,7 +73,7 @@ import static org.mockito.Mockito.verify;
 @DataJpaTest(properties = "outbox.scheduler.enabled=false")   // 재전송 스케줄러는 끔 (커밋 직후 발행만으로 흐름이 이어지는지 확인)
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ClockConfig.class, ImageReviewService.class, ReviewJudgeProvider.class,
+@Import({JpaAuditingConfig.class, ClockConfig.class, ImageReviewService.class, ProductEventPublisher.class, ReviewJudgeProvider.class,
         ReviewResultPublisher.class, BannedListService.class, ProductReviewListener.class,
         ProductReviewKafkaIntegrationTest.Config.class})
 @ImportAutoConfiguration({KafkaAutoConfiguration.class, MessagingConsumerAutoConfiguration.class,

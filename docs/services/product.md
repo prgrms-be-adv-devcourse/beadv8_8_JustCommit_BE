@@ -17,7 +17,7 @@
 
 | 테이블 | 설명 |
 |---|---|
-| `PRODUCT` | 상품 (`status` · `hidden` · `review_version` · 예약한 `orderId` · 상품 버전 `version` 🟨) |
+| `PRODUCT` | 상품 (`status` · `hidden` · `review_version` · 예약한 `orderId` · 상품 버전 `version`: 상품 행을 바꾸는 UPDATE마다 +1, 엔티티 수정은 `@PreUpdate`가 · 일괄 UPDATE 6개는 쿼리가 올림) |
 | `PRODUCT_IMAGE` | 상품 사진 (1~10장) |
 | `SPECIES` | 품종 (학명 `scientific_name`, 금지 품종 없음) |
 | `SPECIES_IMAGE` | 품종 기준 사진 |

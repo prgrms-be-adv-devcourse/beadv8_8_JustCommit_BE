@@ -1,12 +1,11 @@
 package com.justcommit.backend.product.review.application;
 
+import com.justcommit.backend.product.product.application.ProductEventPublisher;
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.exception.ProductErrorCode;
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.product.domain.ReviewScope;
-import com.justcommit.backend.product.product.event.ProductStatusChanged;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import com.justcommit.backend.product.review.domain.ImageReview;
 import com.justcommit.backend.product.review.domain.enums.RejectReason;
@@ -34,7 +33,7 @@ public class SellerImageReviewService {
     private final ImageReviewRepository imageReviewRepository;
     private final ProductRepository productRepository;
     private final ImageReviewService imageReviewService;
-    private final OutboxPublisher outboxPublisher;
+    private final ProductEventPublisher productEventPublisher;
     private final Clock clock;
 
     // ── 검수 기록 ───────────────────────────────
@@ -75,7 +74,7 @@ public class SellerImageReviewService {
         }
         product.startAppeal();
         review.appeal(memo, LocalDateTime.now(clock));
-        outboxPublisher.publish(new ProductStatusChanged(product.getId()));
+        productEventPublisher.statusChanged(product.getId());
         log.info("이의 신청: productId={}, reviewVersion={}, rejectReason={}",
                 product.getId(), review.getReviewVersion(), review.getRejectReason());
     }
@@ -92,7 +91,7 @@ public class SellerImageReviewService {
             throw new BusinessException(ProductErrorCode.RESUBMIT_NOT_ALLOWED);
         }
         product.resubmitAfterExpiry();
-        outboxPublisher.publish(new ProductStatusChanged(product.getId()));
+        productEventPublisher.statusChanged(product.getId());
         imageReviewService.request(product, ReviewScope.FULL);   // 바로 앞 검수가 기한 초과라 하루 30회를 확인 · 세지 않음
         log.info("기한 초과 재요청: productId={}, reviewVersion={}", product.getId(), product.getReviewVersion());
     }

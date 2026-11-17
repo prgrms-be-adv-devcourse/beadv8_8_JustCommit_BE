@@ -5,15 +5,23 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 
 @Entity
 @Table(name = "shipment")
 @NoArgsConstructor
 @Getter
 public class Shipment extends BaseTimeEntity {
+    // 큐가 집은 배송을 다른 파드가 다시 집지 않게 미루는 시간. 택배사 타임아웃(연결 3초 · 응답 5초)보다 넉넉하게 둔다.
+    static final Duration BOOKING_LEASE = Duration.ofSeconds(30);
+    // 택배 예약 실패 후 다음 시도까지 기다릴 시간 (docs/reference/schedulers.md 「택배 예약 큐」). 마지막 값으로 계속 고정
+    static final List<Duration> BOOKING_RETRY_DELAYS =
+            List.of(Duration.ofSeconds(10), Duration.ofSeconds(30), Duration.ofMinutes(1));
+
     @Column(unique = true, nullable = false)
     private Long sellerOrderId;
 
@@ -39,6 +47,13 @@ public class Shipment extends BaseTimeEntity {
 
     // 택배사 쪽 취소 처리가 끝난 시각. CANCELLED인데 비어 있으면 스케줄러가 택배사 취소를 다시 시도한다.
     private LocalDateTime courierCancelledAt;
+
+    // 예약 큐가 이 배송을 다음에 집을 수 있는 시각. null이면 바로 집는다.
+    private LocalDateTime nextAttemptAt;
+
+    // 택배 예약에 실패한 횟수. 다음 시도까지 기다릴 시간을 정한다.
+    @Column(nullable = false)
+    private int attemptCount;
 
     // 재예약 스케줄러와 주문 취소가 같은 배송을 동시에 저장할 때 늦게 저장하는 쪽을 실패시킨다.
     @Version
@@ -84,6 +99,24 @@ public class Shipment extends BaseTimeEntity {
             this.trackingNo = trackingNo;
         }
         this.courierCancelledAt = courierCancelledAt;
+    }
+
+    // 예약 큐가 이 배송을 집었다. 택배사를 부르는 동안 다른 파드가 다시 집지 않게 다음 시도 시각을 잠깐 뒤로 미룬다.
+    // 택배사 호출이 끝나면 성공(book) 또는 실패(recordBookingFailure)가 이 값을 덮어쓴다.
+    public void leaseForBooking(LocalDateTime now) {
+        this.nextAttemptAt = now.plus(BOOKING_LEASE);
+    }
+
+    // 택배 예약에 실패했다. READY로 남기고 다음 시도를 10초 → 30초 → 1분(이후 고정) 뒤로 둔다.
+    public void recordBookingFailure(LocalDateTime now) {
+        this.attemptCount++;
+        this.nextAttemptAt = now.plus(retryDelay(this.attemptCount));
+    }
+
+    // n번째 실패 뒤 기다릴 시간
+    static Duration retryDelay(int failedCount) {
+        int index = Math.min(failedCount, BOOKING_RETRY_DELAYS.size()) - 1;
+        return BOOKING_RETRY_DELAYS.get(index);
     }
 
     public void book(String trackingNo, LocalDateTime bookedAt) {

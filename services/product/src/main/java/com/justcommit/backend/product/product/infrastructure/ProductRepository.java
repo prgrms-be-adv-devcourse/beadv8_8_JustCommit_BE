@@ -2,6 +2,7 @@ package com.justcommit.backend.product.product.infrastructure;
 
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.product.domain.Product;
+import com.justcommit.backend.product.product.event.ProductEventSource;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -14,6 +15,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
+// 규칙: 상품 행을 바꾸는 일괄 UPDATE 쿼리는 반드시 p.version = p.version + 1을 함께 넣는다 (@PreUpdate는 일괄 UPDATE에서 돌지 않음, ADR 0021)
 public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpecificationExecutor<Product> {
 
     // 판매 중이고 숨김이 아닌 상품만 이 주문으로 예약
@@ -24,6 +26,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             UPDATE Product p
             SET p.status = com.justcommit.backend.product.ProductStatus.PAYMENT_PENDING,
                 p.reservedOrderId = :orderId,
+                p.version = p.version + 1,
                 p.updatedAt = CURRENT_TIMESTAMP
             WHERE p.id IN :productIds
               AND p.status = com.justcommit.backend.product.ProductStatus.ACTIVE
@@ -37,6 +40,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     @Query("""
             UPDATE Product p
             SET p.status = :to,
+                p.version = p.version + 1,
                 p.updatedAt = CURRENT_TIMESTAMP
             WHERE p.id = :productId
               AND p.reviewVersion = :reviewVersion
@@ -57,6 +61,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
                     ELSE com.justcommit.backend.product.ProductStatus.ACTIVE
                 END,
                 p.reservedOrderId = null,
+                p.version = p.version + 1,
                 p.updatedAt = CURRENT_TIMESTAMP
             WHERE p.reservedOrderId = :orderId
               AND p.status = com.justcommit.backend.product.ProductStatus.PAYMENT_PENDING
@@ -68,6 +73,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     @Query("""
             UPDATE Product p
             SET p.status = com.justcommit.backend.product.ProductStatus.SOLD_OUT,
+                p.version = p.version + 1,
                 p.updatedAt = CURRENT_TIMESTAMP
             WHERE p.reservedOrderId = :orderId
               AND p.status = com.justcommit.backend.product.ProductStatus.PAYMENT_PENDING
@@ -89,6 +95,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
                 END,
                 p.reservedOrderId = null,
                 p.hidden = CASE WHEN :hide = true THEN true ELSE p.hidden END,
+                p.version = p.version + 1,
                 p.updatedAt = CURRENT_TIMESTAMP
             WHERE p.id = :productId
               AND p.reservedOrderId = :orderId
@@ -102,6 +109,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     @Query("""
             UPDATE Product p
             SET p.status = com.justcommit.backend.product.ProductStatus.DELETED,
+                p.version = p.version + 1,
                 p.updatedAt = CURRENT_TIMESTAMP
             WHERE p.sellerId = :sellerId
               AND p.status IN (com.justcommit.backend.product.ProductStatus.ACTIVE,
@@ -143,6 +151,16 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
 
     // 같은 orderId로 다시 온 예약인지 확인: 이 주문이 잡고 있는 결제 대기 상품 수
     long countByReservedOrderIdAndStatusAndIdIn(Long reservedOrderId, ProductStatus status, Collection<Long> ids);
+
+    // 상품 이벤트 payload (ADR 0021): 엔티티가 아니라 DB 값을 바로 읽어, 같은 트랜잭션의 일괄 UPDATE · 엔티티 수정 뒤 새 값이 나옴
+    @Query("""
+            SELECT new com.justcommit.backend.product.product.event.ProductEventSource(
+                p.id, p.species.id, p.sellerId, p.status, p.hidden, p.version)
+            FROM Product p
+            WHERE p.id IN :ids
+            ORDER BY p.id
+            """)
+    List<ProductEventSource> findEventSources(@Param("ids") Collection<Long> ids);
 
     // 다른 모듈용 다건 조회: 품종을 함께 조회해 N+1 방지
     @EntityGraph(attributePaths = "species")

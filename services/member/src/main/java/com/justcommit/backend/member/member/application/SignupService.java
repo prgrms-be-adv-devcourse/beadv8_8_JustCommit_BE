@@ -4,6 +4,7 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
+import com.justcommit.backend.member.auth.domain.EmailPurpose;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
@@ -35,7 +36,7 @@ public class SignupService {
     String email = normalizeEmail(command.email());
 
     // 인증 없이 가입 API 직접 호출해도 여기서 막힘
-    if (!verificationStore.isVerified(email)) {
+    if (!verificationStore.isVerified(EmailPurpose.SIGNUP, email)) {
       throw new BusinessException(MemberErrorCode.EMAIL_NOT_VERIFIED);
     }
 
@@ -81,7 +82,7 @@ public class SignupService {
     // 4. 다른 서비스에 가입을 알림 (같은 트랜잭션에 저장, 커밋된 뒤에만 발행). 가입 직후는 판매자가 아님
     outboxPublisher.publish(MemberCreated.from(member, false));
 
-    verificationStore.deleteVerified(email);  // 같은 인증으로 다시 가입x
+    verificationStore.deleteVerified(EmailPurpose.SIGNUP, email);  // 같은 인증으로 다시 가입x
     return new SignupResult(member.getId(), member.getNickname());
   }
 

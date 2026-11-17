@@ -61,6 +61,21 @@ spring:
                     redis-rate-limiter.requestedTokens: 12
                     key-resolver: "#{@clientIpKeyResolver}"
                     throw-on-limit: true
+            # 가입 계정 안내 (#412): 인증번호 발송과 같은 값, 라우트가 달라 따로 셈
+            # (같은 이메일의 발송 예약 제한은 member가 인증 메일과 함께 셈 → 걸려도 같은 200)
+            - id: member-account-reminders
+              uri: ${MEMBER_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/v1/auth/accountReminders
+                - Method=POST
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.burstCapacity: 60
+                    redis-rate-limiter.requestedTokens: 12
+                    key-resolver: "#{@clientIpKeyResolver}"
+                    throw-on-limit: true
             - id: member
               uri: ${MEMBER_SERVICE_URL:http://localhost:8081}
               predicates:

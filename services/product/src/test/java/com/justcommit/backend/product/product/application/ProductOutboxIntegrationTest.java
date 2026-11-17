@@ -38,6 +38,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import com.justcommit.backend.product.member.application.MemberReplicaService;
+import com.justcommit.backend.product.member.infrastructure.MemberReplicaRepository;
 import com.justcommit.backend.product.review.application.ReviewResultPublisher;
 import com.justcommit.backend.product.review.domain.enums.RejectReason;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -49,9 +51,12 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
+import tools.jackson.databind.JsonNode;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -59,12 +64,15 @@ import java.util.stream.StreamSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 // 업무 데이터와 Outbox 행이 같은 트랜잭션: 커밋하면 저장 · 발행, 롤백하면 둘 다 없음 (#338 완료 기준)
+// payload v2에 바뀐 뒤 상태 · 상품 버전이 담김, 같은 상품의 버전은 1씩 증가 (#456, ADR 0021)
 @DataJpaTest(properties = "outbox.scheduler.enabled=false")   // 재전송 스케줄러는 끔 (커밋 직후 발행만 확인)
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ClockConfig.class, ProductService.class, ReviewResultPublisher.class})
+@Import({JpaAuditingConfig.class, ClockConfig.class, ProductService.class, ProductEventPublisher.class,
+        ReviewResultPublisher.class, MemberReplicaService.class})
 @ImportAutoConfiguration({KafkaAutoConfiguration.class, MessagingConsumerAutoConfiguration.class,
         OutboxAutoConfiguration.class})
 @Testcontainers(disabledWithoutDocker = true)
@@ -73,6 +81,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ProductOutboxIntegrationTest {
 
     private static final BigDecimal PRICE = new BigDecimal("10000");
+    private static final Long SELLER_ID = 1L;
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
@@ -96,6 +105,8 @@ class ProductOutboxIntegrationTest {
     @Autowired EventEnvelopeMapper mapper;
     @Autowired ReviewResultPublisher reviewResultPublisher;
     @Autowired PlatformTransactionManager transactionManager;
+    @Autowired MemberReplicaService memberReplicaService;
+    @Autowired MemberReplicaRepository memberReplicaRepository;
 
     // 예약 흐름에서 쓰지 않는 ProductService 의존성
     @MockitoBean MemberQuery memberQuery;
@@ -119,6 +130,7 @@ class ProductOutboxIntegrationTest {
         productRepository.deleteAllInBatch();
         speciesRepository.deleteById(species.getId());
         reservationRepository.deleteAllInBatch();
+        memberReplicaRepository.deleteAllInBatch();
     }
 
     @Test
@@ -142,7 +154,56 @@ class ProductOutboxIntegrationTest {
         EventEnvelope envelope = mapper.fromJson(record.value());
         assertThat(envelope.eventType()).isEqualTo("ProductStatusChanged");
         assertThat(envelope.aggregateId()).isEqualTo(String.valueOf(productId));
-        assertThat(envelope.payload().get("productId").asLong()).isEqualTo(productId);
+        assertThat(envelope.version()).isEqualTo(2);
+        JsonNode payload = envelope.payload();
+        assertThat(payload.get("productId").asLong()).isEqualTo(productId);
+        assertThat(payload.get("speciesId").asLong()).isEqualTo(species.getId());
+        assertThat(payload.get("sellerId").asLong()).isEqualTo(SELLER_ID);
+        assertThat(payload.get("status").asString()).isEqualTo("PAYMENT_PENDING");
+        assertThat(payload.get("hidden").asBoolean()).isFalse();
+        assertThat(payload.get("productVersion").asLong()).isEqualTo(1L);   // 등록 0 → 예약 1
+    }
+
+    @Test
+    @DisplayName("예약 → 판매 완료: payload에 바뀐 뒤 상태가 담기고 상품 버전이 1씩 오른다")
+    void markSoldOutPublishesNewStatusAndVersion() {
+        Long productId = saveActiveProduct();
+
+        productUseCase.reserve(1L, Map.of(productId, PRICE));
+        productUseCase.markSoldOut(1L);
+
+        assertThat(payloadsOf(productId))
+                .extracting(p -> p.get("status").asString(), p -> p.get("productVersion").asLong())
+                .containsExactly(tuple("PAYMENT_PENDING", 1L), tuple("SOLD_OUT", 2L));
+        assertThat(productRepository.findById(productId).orElseThrow().getVersion()).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("예약 → 예약 해제: payload에 ACTIVE와 올라간 상품 버전이 담긴다")
+    void releasePublishesNewStatusAndVersion() {
+        Long productId = saveActiveProduct();
+
+        productUseCase.reserve(1L, Map.of(productId, PRICE));
+        productUseCase.release(1L);
+
+        assertThat(payloadsOf(productId))
+                .extracting(p -> p.get("status").asString(), p -> p.get("productVersion").asLong())
+                .containsExactly(tuple("PAYMENT_PENDING", 1L), tuple("ACTIVE", 2L));
+    }
+
+    @Test
+    @DisplayName("판매자 탈퇴 정리: 삭제된 상품마다 DELETED와 올라간 상품 버전이 담긴다")
+    void withdrawalPublishesDeleted() {
+        Long first = saveActiveProduct();
+        Long second = saveActiveProduct();
+
+        memberReplicaService.applyWithdrawn(SELLER_ID, OffsetDateTime.now());
+
+        for (Long productId : List.of(first, second)) {
+            assertThat(payloadsOf(productId))
+                    .extracting(p -> p.get("status").asString(), p -> p.get("productVersion").asLong())
+                    .containsExactly(tuple("DELETED", 1L));
+        }
     }
 
     @Test
@@ -156,6 +217,8 @@ class ProductOutboxIntegrationTest {
         assertThat(productRepository.findById(productId).orElseThrow().getStatus())
                 .isEqualTo(ProductStatus.ACTIVE);
         assertThat(outboxEventRepository.count()).isZero();
+        // 상품 버전도 롤백되어 그대로
+        assertThat(productRepository.findById(productId).orElseThrow().getVersion()).isZero();
     }
 
     // ── 검수 결과 이벤트 (#345) ───────────────────
@@ -163,14 +226,15 @@ class ProductOutboxIntegrationTest {
     @Test
     @DisplayName("검수 반려가 커밋되면 ProductStatusChanged와 ProductRejected(사유 코드 · 판매자 문구)가 Outbox에 저장 · 발행된다")
     void reviewRejectedPublishes() {
+        Long productId = saveActiveProduct();
         new TransactionTemplate(transactionManager).executeWithoutResult(status ->
-                reviewResultPublisher.rejected(900L, 7L, 2, "몬스테라 중품", RejectReason.HARMFUL_IMAGE, null));
+                reviewResultPublisher.rejected(productId, 7L, 2, "몬스테라 중품", RejectReason.HARMFUL_IMAGE, null));
 
         assertThat(outboxEventRepository.findAll()).extracting(row -> row.getEventType())
                 .containsExactlyInAnyOrder("ProductStatusChanged", "ProductRejected");
 
-        EventEnvelope envelope = pollEvent(KafkaTopics.PRODUCT_EVENTS, "900", "ProductRejected");
-        assertThat(envelope.payload().get("productId").asLong()).isEqualTo(900L);
+        EventEnvelope envelope = pollEvent(KafkaTopics.PRODUCT_EVENTS, String.valueOf(productId), "ProductRejected");
+        assertThat(envelope.payload().get("productId").asLong()).isEqualTo(productId);
         assertThat(envelope.payload().get("sellerId").asLong()).isEqualTo(7L);
         assertThat(envelope.payload().get("reviewVersion").asInt()).isEqualTo(2);
         assertThat(envelope.payload().get("productTitle").asString()).isEqualTo("몬스테라 중품");
@@ -181,10 +245,11 @@ class ProductOutboxIntegrationTest {
     @Test
     @DisplayName("관리자가 OTHER로 반려하면 판매자 문구는 관리자가 입력한 내용 (#344에서 사용)")
     void reviewRejectedOtherUsesMemo() {
+        Long productId = saveActiveProduct();
         new TransactionTemplate(transactionManager).executeWithoutResult(status ->
-                reviewResultPublisher.rejected(901L, 7L, 0, "몬스테라", RejectReason.OTHER, "가격 표기가 사진과 달라요"));
+                reviewResultPublisher.rejected(productId, 7L, 0, "몬스테라", RejectReason.OTHER, "가격 표기가 사진과 달라요"));
 
-        EventEnvelope envelope = pollEvent(KafkaTopics.PRODUCT_EVENTS, "901", "ProductRejected");
+        EventEnvelope envelope = pollEvent(KafkaTopics.PRODUCT_EVENTS, String.valueOf(productId), "ProductRejected");
         assertThat(envelope.payload().get("reasonCode").asString()).isEqualTo("OTHER");
         assertThat(envelope.payload().get("reasonMessage").asString()).isEqualTo("가격 표기가 사진과 달라요");
     }
@@ -192,8 +257,9 @@ class ProductOutboxIntegrationTest {
     @Test
     @DisplayName("검수 통과 반영이 롤백되면 결과 이벤트 Outbox 행도 남지 않는다")
     void reviewResultRollbackLeavesNoRow() {
+        Long productId = saveActiveProduct();
         assertThatThrownBy(() -> new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-            reviewResultPublisher.approved(902L, 7L, 0, "몬스테라");
+            reviewResultPublisher.approved(productId, 7L, 0, "몬스테라");
             throw new IllegalStateException("반영 실패");
         })).isInstanceOf(IllegalStateException.class);
 
@@ -232,8 +298,17 @@ class ProductOutboxIntegrationTest {
         throw new AssertionError(eventType + " 이벤트가 오지 않음: key=" + key);
     }
 
+    // 이 상품의 Outbox 행 payload, 상품 버전 순
+    private List<JsonNode> payloadsOf(Long productId) {
+        return outboxEventRepository.findAll().stream()
+                .filter(row -> row.getAggregateId().equals(String.valueOf(productId)))
+                .map(row -> mapper.fromJson(row.getPayload()).payload())
+                .sorted(Comparator.comparingLong(p -> p.get("productVersion").asLong()))
+                .toList();
+    }
+
     private Long saveActiveProduct() {
-        Product product = Product.create(species, 1L, "몬스테라 중품", "설명", PRICE,
+        Product product = Product.create(species, SELLER_ID, "몬스테라 중품", "설명", PRICE,
                 null, null, null, List.of());
         ReflectionTestUtils.setField(product, "status", ProductStatus.ACTIVE);
         return productRepository.save(product).getId();

@@ -39,9 +39,9 @@ class MemberApplicationTests {
     }
 
     @Test
-    @DisplayName("V1 · V2(Outbox) · V3(인증 버전) · V4(토큰 폐기 작업) 마이그레이션이 적용되고 엔티티와 테이블이 맞는다 (ddl-auto: validate 통과)")
+    @DisplayName("V1 · V2(Outbox) · V3(인증 버전) · V4(토큰 폐기 작업) · V5(재설정 폐기 사유) 마이그레이션이 적용되고 엔티티와 테이블이 맞는다 (ddl-auto: validate 통과)")
     void contextLoads(@Autowired Flyway flyway) {
-        assertThat(flyway.info().applied()).extracting(m -> m.getVersion().getVersion()).containsExactly("1", "2", "3", "4");
+        assertThat(flyway.info().applied()).extracting(m -> m.getVersion().getVersion()).containsExactly("1", "2", "3", "4", "5");
     }
 
     private static KeyPair newKeyPair() {

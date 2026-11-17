@@ -1,5 +1,6 @@
 package com.justcommit.backend.product.review.application;
 
+import com.justcommit.backend.product.product.application.ProductEventPublisher;
 import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
@@ -71,7 +72,7 @@ import static org.mockito.Mockito.verify;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ClockConfig.class, AdminImageReviewService.class, ReviewResultPublisher.class,
+@Import({JpaAuditingConfig.class, ClockConfig.class, AdminImageReviewService.class, ReviewResultPublisher.class, ProductEventPublisher.class,
         AdminImageReviewServiceIntegrationTest.Config.class})
 @Testcontainers(disabledWithoutDocker = true)
 // 서비스가 트랜잭션을 나눠 쓰므로 테스트 메서드는 트랜잭션으로 감싸지 않음
@@ -154,6 +155,13 @@ class AdminImageReviewServiceIntegrationTest {
         return productRepository.findById(product.getId()).orElseThrow();
     }
 
+    // payload v2 (#456): 반영 직후 DB 값(새 상태 · 새 상품 버전)이 그대로 담겨야 함
+    private ProductStatusChanged statusChangedOf(Product product) {
+        Product reloaded = reload(product);
+        return new ProductStatusChanged(reloaded.getId(), reloaded.getSpecies().getId(), reloaded.getSellerId(),
+                reloaded.getStatus().name(), reloaded.isHidden(), reloaded.getVersion());
+    }
+
     // 판매자가 수정해 검수 버전이 올라감
     private void editByseller(Product product) {
         tx.executeWithoutResult(status -> {
@@ -219,7 +227,7 @@ class AdminImageReviewServiceIntegrationTest {
         assertThat(review.getAdminId()).isEqualTo(ADMIN_ID);
         assertThat(review.getDecidedAt()).isNotNull();
         assertThat(review.getManualReason()).isEqualTo(ManualReason.SPECIES_MISMATCH);   // 관리자 확인으로 간 이유는 그대로
-        verify(outboxPublisher).publish(new ProductStatusChanged(product.getId()));
+        verify(outboxPublisher).publish(statusChangedOf(product));
         verify(outboxPublisher).publish(new ProductApproved(product.getId(), SELLER_ID, 0, "몬스테라 팝니다"));
     }
 
