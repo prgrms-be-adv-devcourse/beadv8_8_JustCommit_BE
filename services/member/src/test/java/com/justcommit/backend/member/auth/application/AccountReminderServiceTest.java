@@ -17,10 +17,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.mail.MailSendException;
 
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -125,16 +128,20 @@ class AccountReminderServiceTest {
   }
 
   @Test
-  @DisplayName("SMTP가 실패하면 예외 없이 끝나고 이 요청의 예약만 되돌린다")
-  void smtpFailureReleasesOwnSlot() {
+  @DisplayName("SMTP가 실패하면 예외 없이 끝나고 이 요청의 예약만 되돌린다, 로그에는 이메일 · 예외 메시지 없이 예외 종류만")
+  @ExtendWith(OutputCaptureExtension.class)
+  void smtpFailureReleasesOwnSlot(CapturedOutput output) {
+    String smtpReply = "550 5.1.1 <" + EMAIL + "> recipient rejected";
     givenSlot(SendStatus.ACQUIRED);
     Member local = member(MemberStatus.ACTIVE, Provider.LOCAL);
     given(memberRepository.findByEmail(EMAIL)).willReturn(Optional.of(local));
-    willThrow(new MailSendException("fail")).given(mailSender).send(EMAIL, Provider.LOCAL);
+    willThrow(new MailSendException(smtpReply)).given(mailSender).send(EMAIL, Provider.LOCAL);
 
     service.sendReminder(EMAIL);
 
     then(store).should().releaseReminderSend(EMAIL, REQUEST_ID);
+    assertThat(output.getAll()).contains("cause=MailSendException")
+        .doesNotContain(EMAIL).doesNotContain(smtpReply);
   }
 
   @Test

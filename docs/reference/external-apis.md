@@ -1,7 +1,7 @@
 # 외부 API 목록
 
 > 언제 읽나: 외부 API의 경로 · 담당 서비스를 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-16 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-17 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
 
 ## 서비스별 목록
 
@@ -25,6 +25,9 @@
 | GET | `users/me` | 내 정보 | 로그인 |
 | PATCH | `users/me/nickname` | 닉네임 변경 (지금 닉네임과 같으면 그대로) | 로그인 |
 | PATCH | `users/me/password` | 비밀번호 변경 → 모든 기기 로그아웃. 200이면 이 기기 Refresh 쿠키 만료 · 프론트는 Access를 지우고 로그인 화면으로, `revocationCompleted`는 서버 폐기 기록 완료 여부. 503 `RESULT_UNKNOWN`은 자동 재시도 금지. 같은 인증 버전에서 현재 비밀번호를 5회 틀리면 5번째까지 400, 이후 요청은 첫 오답부터 24시간이 되는 시점까지 429 `PASSWORD_CHANGE_LOCKED` + `Retry-After`(남은 초) | 로그인 (로컬 회원) |
+| POST | `users/me/account/verifications` | 계좌 변경 인증번호 발송(회원 정보의 이메일로) → [계좌 변경](#계좌-변경) | 로그인 |
+| POST | `users/me/account/changeTokens` | 인증번호 확인 → 계좌 변경 토큰 | 로그인 |
+| PATCH | `users/me/account` | 계좌 변경 | 로그인 |
 | GET · POST | `users/me/addresses` | 배송지 목록 · 추가 | 로그인 |
 | PATCH | `users/me/addresses/{id}/default` | 기본 배송지 변경 | 로그인 |
 | PATCH · DELETE | `users/me/addresses/{id}` | 배송지 수정(보낸 항목만. 우편번호나 기본 주소가 바뀌면 상세 주소도 함께 보냄, 비우려면 `""`. 아무 항목도 없으면 400, 지금과 같은 값만 보내면 200 · 변경 · 이벤트 없음) · 삭제(기본 배송지는 409) | 로그인 |
@@ -39,13 +42,13 @@
 |---|---|
 | 생략 · `SIGNUP` | 가입 (생략하면 기존 요청과 같게 가입으로 처리). 가입된 이메일 409 `DUPLICATE_EMAIL`, 발송 제한 429 `EMAIL_SEND_COOLDOWN` · `EMAIL_SEND_DAILY_LIMIT`(+ `Retry-After`), 확인 실패는 `EMAIL_CODE_MISMATCH` · `EMAIL_CODE_EXPIRED` · `EMAIL_CODE_ATTEMPTS_EXCEEDED` |
 | `PASSWORD_RESET` | 비밀번호 재설정 (아래 응답 규칙) |
-| `ACCOUNT_CHANGE` | 정의만 있음. 지금 호출하면 400 `EMAIL_PURPOSE_NOT_SUPPORTED` (계좌 변경 #413에서 연결) |
+| `ACCOUNT_CHANGE` | 공개 경로에서는 받지 않음(400 `EMAIL_PURPOSE_NOT_SUPPORTED`). 계좌 변경 인증은 로그인 필수 전용 경로로 → [계좌 변경](#계좌-변경) |
 
 Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` · `account-change`) → [Redis 키](redis-keys.md)
 
 #### 비밀번호 재설정 · 가입 계정 안내
 
-재설정 인증번호 발송과 가입 계정 안내는 응답으로 가입 여부를 알 수 없게, **유효한 요청에 대해** 대상 여부 · 이메일 발송 제한 · SMTP 실패와 관계없이 같은 200을 반환합니다. 입력 오류는 400, Redis · DB 장애는 서버 오류이고, Gateway IP 제한에 걸리면 429 `TOO_MANY_REQUESTS`입니다. 같은 이메일의 발송 예약 제한 중 60초 1회는 인증 메일과 가입 계정 안내가 공유하고, 첫 예약부터 24시간 5회는 가입 인증 · 비밀번호 재설정 · 가입 계정 안내별로 따로 셉니다. Gateway IP 제한은 경로마다 따로 셉니다.
+재설정 인증번호 발송과 가입 계정 안내는 응답으로 가입 여부를 알 수 없게, **유효한 요청에 대해** 대상 여부 · 이메일 발송 제한 · SMTP 실패와 관계없이 같은 200을 반환합니다. 입력 오류는 400, Redis · DB 장애는 서버 오류이고, Gateway IP 제한에 걸리면 429 `TOO_MANY_REQUESTS`입니다. 같은 이메일의 발송 예약 제한 중 60초 1회는 인증 메일과 가입 계정 안내가 공유하고, 첫 예약부터 24시간 5회는 가입 인증 · 비밀번호 재설정 · 가입 계정 안내 · 계좌 변경별로 따로 셉니다. Gateway IP 제한은 경로마다 따로 셉니다.
 
 | 단계 | 요청 | 동작 · 응답 |
 |---|---|---|
@@ -53,6 +56,20 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | 재설정 인증번호 확인 | `auth/email/verify` `{ email, code, purpose: PASSWORD_RESET }` | 200 `data: { resetToken, expiresIn: 1800 }`. 불일치 · 만료 · 오답 한도 초과 · 대상 또는 인증 버전 불일치(번호를 받은 뒤 비밀번호가 바뀜)는 모두 400 `EMAIL_CODE_INVALID` (입력 검증 오류와 Redis · DB 장애는 별도) |
 | 재설정 | `auth/passwordResets` `{ resetToken, newPassword }` (새 비밀번호는 가입과 같은 규칙) | 커밋되면 200 `data: { revocationCompleted }` (`false`면 비밀번호는 바뀌었고 토큰 폐기 기록 확인만 늦어짐). 토큰 없음 · 만료 · 이미 사용 · 토큰을 받은 뒤 비밀번호가 바뀜 · 회원 없음은 400 `INVALID_RESET_TOKEN`, 회원 잠금 대기 초과 409 `MEMBER_BUSY`, 커밋 결과 불명 503 `RESULT_UNKNOWN`(자동 재요청하지 않고 새 비밀번호로 로그인해 확인). 토큰은 꺼낼 때 지워지므로 그 뒤 처리가 실패해도 복구하지 않음 → 다시 재설정하려면 이메일 인증부터. 쿠키는 바꾸지 않음(이 브라우저에 다른 계정 쿠키가 있을 수 있음, 재설정한 계정의 Refresh는 서버에서 모두 무효) |
 | 가입 계정 안내 | `auth/accountReminders` `{ email }` | 200 "가입된 계정이면 안내 메일을 보내드립니다." 메일은 활동 중인 회원 중 현재 지원하는 로그인 방식(이메일 · 카카오)으로 가입한 계정에만 |
+
+#### 계좌 변경
+
+로그인한 회원이 이메일 재인증으로 받은 일회용 토큰으로 환급 계좌를 바꿉니다. 이메일은 요청으로 받지 않고 회원 정보의 값을 씁니다. 발송 제한은 60초 1회(이메일 공유) · 24시간 5회(계좌 변경 따로)이고, 로그인한 본인이라 429 `EMAIL_SEND_COOLDOWN` · `EMAIL_SEND_DAILY_LIMIT` + `Retry-After`로 알립니다.
+
+| 단계 | 요청 | 동작 · 응답 |
+|---|---|---|
+| 인증번호 발송 | `users/me/account/verifications` (본문 없음) | 200 `data: { expiresIn: 300, resendAvailableIn: 60 }`. 발송 당시 회원 id · 인증 버전을 번호에 묶음. 활동 중인 회원이 아니면 404 `MEMBER_NOT_FOUND` |
+| 변경 토큰 발급 | `users/me/account/changeTokens` `{ code }` | 200 `data: { accountChangeToken, expiresIn: 600 }`. 틀림 · 만료 · 오답 한도는 `EMAIL_CODE_MISMATCH` · `EMAIL_CODE_EXPIRED` · `EMAIL_CODE_ATTEMPTS_EXCEEDED`. 번호는 맞지만 발송 뒤 회원 · 인증 버전 · 상태가 바뀌었으면 400 `ACCOUNT_VERIFICATION_INVALID` |
+| 계좌 변경 | `users/me/account` `{ accountChangeToken, bankCode, accountNo, accountHolder }` (계좌 값은 가입과 같은 규칙) | 200 "계좌가 변경되었습니다."(data 없음, 바뀐 계좌는 `users/me`에서 뒤 4자리로 확인). 토큰 오류(없음 · 만료 · 이미 사용 · 다른 회원 · 발급 뒤 인증 버전 변경)는 400 `INVALID_ACCOUNT_CHANGE_TOKEN`이고 그 토큰은 다시 쓸 수 없음. 다른 회원이 쓰는 계좌 409 `DUPLICATE_ACCOUNT`, 잠금 대기 초과 409 `MEMBER_BUSY` |
+
+토큰 처리: 요청 형식 오류 · 회원 잠금 대기 초과 · 중복 사전 조회 실패는 토큰이 남아 같은 토큰으로 다시 시도할 수 있습니다. 변경 성공 · 같은 계좌(은행 · 계좌번호 · 예금주가 모두 같으면 200 · 변경 없음) · 토큰을 꺼낸 뒤의 DB UNIQUE 위반(동시 등록, 409) · 저장 실패는 토큰이 소모되어 이메일 인증부터 다시 해야 합니다.
+
+외부 계좌 인증이 없어 계좌 실존 · 예금주 일치 · 소유 여부는 확인하지 않습니다. 화면에는 "계좌 변경 완료"로 표시합니다("계좌 인증 완료" 아님).
 
 ### product
 
@@ -110,7 +127,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 
 | 서비스 | 기능 | 설명 |
 |---|---|---|
-| member | 계좌 변경 · 탈퇴 | 노션 2.1 ~ 2.5 |
+| member | 탈퇴 | 노션 2.1 ~ 2.5 |
 | market | 판매자 수락 · 거절 (판매자 주문 › 상품 트리 체크) | 판매 기록 화면 |
 | market | 반품 신청 (사유) · 판매자 승인 · 거절 | 노션 7절 |
 | market | 리뷰 작성 · 삭제 · 판매자 리뷰 목록 (태그 집계) | 노션 6절 |

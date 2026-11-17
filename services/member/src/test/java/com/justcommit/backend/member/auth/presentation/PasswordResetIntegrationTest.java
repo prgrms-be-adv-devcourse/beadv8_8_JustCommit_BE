@@ -281,7 +281,7 @@ class PasswordResetIntegrationTest {
   private Member saveMember() {
     int n = SEQ.incrementAndGet();
     return memberRepository.save(Member.createLocal("reset" + n + "@test.com", passwordEncoder.encode(OLD_PASSWORD),
-        "재설" + n, String.format("016%08d", n), "004", "v1:test-account", "홍길동"));
+        "재설" + n, String.format("016%08d", n), "004", "v1:test-account", null, "홍길동"));
   }
 
   private static KeyPair newKeyPair() {

@@ -316,7 +316,7 @@ class SellerAddressEventIntegrationTest {
         return new TransactionTemplate(transactionManager).execute(status -> {
             int n = SEQ.incrementAndGet();
             Member member = memberRepository.save(Member.createLocal("it" + n + "@test.com", "encoded",
-                    "통합" + n, String.format("010%08d", n), "004", "v1:test-account", "홍길동"));
+                    "통합" + n, String.format("010%08d", n), "004", "v1:test-account", null, "홍길동"));
             for (int i = 0; i < addressCount; i++) {
                 addressRepository.save(Address.create(member, "받는사람" + i, "01012345678", "06236",
                         "서울 강남구 테헤란로 " + i, null, null, i == 0));

@@ -331,7 +331,7 @@ class TokenRevocationServiceIntegrationTest {
     int n = SEQ.incrementAndGet();
     return memberRepository.save(Member.createLocal(
         "revoke" + n + "@test.com", passwordEncoder.encode("plant1234"), "폐기" + n, String.format("013%08d", n),
-        "004", "v1:test-account", "홍길동"));
+        "004", "v1:test-account", null, "홍길동"));
   }
 
   private List<TokenRevocation> revocationsOf(Long memberId) {

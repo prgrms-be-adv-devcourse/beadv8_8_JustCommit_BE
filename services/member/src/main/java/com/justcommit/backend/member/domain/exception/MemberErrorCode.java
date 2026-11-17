@@ -25,11 +25,17 @@ public enum MemberErrorCode implements ErrorCode {
   // 401이 아닌 이유: 로그인과 무관한 요청이라, 프론트 공통 클라이언트가 401에 하는 토큰 재발급이 일어나면 안 됨
   INVALID_RESET_TOKEN(HttpStatus.BAD_REQUEST, "재설정 요청이 만료되었거나 유효하지 않습니다. 이메일 인증을 다시 진행해 주세요."),
 
+  // 계좌 변경 (#413): 인증번호는 맞았지만 발송 뒤 회원 · 인증 버전 · 상태가 바뀌어 변경 토큰을 발급하지 않음
+  ACCOUNT_VERIFICATION_INVALID(HttpStatus.BAD_REQUEST, "인증 정보가 더 이상 유효하지 않습니다. 이메일 인증을 다시 진행해 주세요."),
+  // 계좌 변경 토큰 오류: 없음 · 만료 · 이미 사용 · 다른 회원 · 발급 뒤 인증 버전 변경 모두 같은 응답
+  INVALID_ACCOUNT_CHANGE_TOKEN(HttpStatus.BAD_REQUEST, "계좌 변경 요청이 만료되었거나 유효하지 않습니다. 이메일 인증을 다시 진행해 주세요."),
+
   // 회원가입
   EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증을 먼저 완료해주세요."),
   DUPLICATE_EMAIL(HttpStatus.CONFLICT, "이미 가입된 이메일입니다."),
   DUPLICATE_NICKNAME(HttpStatus.CONFLICT, "이미 사용 중인 닉네임입니다."),
   DUPLICATE_PHONE(HttpStatus.CONFLICT, "이미 가입된 휴대폰 번호입니다."),
+  DUPLICATE_ACCOUNT(HttpStatus.CONFLICT, "이미 등록된 계좌입니다."), // 가입 · 계좌 변경 공통 (#413)
 
   // 로그인
   LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 올바르지 않습니다."),

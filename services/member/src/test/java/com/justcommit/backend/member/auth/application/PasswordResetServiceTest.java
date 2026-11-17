@@ -1,8 +1,8 @@
 package com.justcommit.backend.member.auth.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.member.auth.application.PasswordResetService.ResetTarget;
 import com.justcommit.backend.member.auth.domain.RevocationReason;
+import com.justcommit.backend.member.auth.domain.VerificationBinding;
 import com.justcommit.backend.member.auth.infrastructure.redis.PasswordFailureStore;
 import com.justcommit.backend.member.auth.infrastructure.redis.PasswordResetTokenStore;
 import com.justcommit.backend.member.auth.infrastructure.redis.PasswordResetTokenStore.ResetTokenOwner;
@@ -101,22 +101,10 @@ class PasswordResetServiceTest {
     given(memberRepository.findByEmail("deleted@example.com")).willReturn(Optional.of(deleted));
     given(memberRepository.findByEmail("none@example.com")).willReturn(Optional.empty());
 
-    assertThat(service.findTarget(EMAIL)).contains(new ResetTarget(MEMBER_ID, 3));
+    assertThat(service.findTarget(EMAIL)).contains(new VerificationBinding(MEMBER_ID, 3));
     assertThat(service.findTarget("social@example.com")).isEmpty();
     assertThat(service.findTarget("deleted@example.com")).isEmpty();
     assertThat(service.findTarget("none@example.com")).isEmpty();
-  }
-
-  @Test
-  @DisplayName("묶음 정보는 \"{회원 id}:{인증 버전}\"으로 저장하고, 비었거나 깨졌으면 빈 값")
-  void binding() {
-    assertThat(new ResetTarget(7L, 3).toBinding()).isEqualTo("7:3");
-    assertThat(ResetTarget.fromBinding("7:3")).contains(new ResetTarget(7L, 3));
-    assertThat(ResetTarget.fromBinding("")).isEmpty();
-    assertThat(ResetTarget.fromBinding(null)).isEmpty();
-    assertThat(ResetTarget.fromBinding("broken")).isEmpty();
-    assertThat(ResetTarget.fromBinding("x:3")).isEmpty();
-    assertThat(ResetTarget.fromBinding(":3")).isEmpty();
   }
 
   @Test
@@ -125,7 +113,7 @@ class PasswordResetServiceTest {
     Member active = member(MemberStatus.ACTIVE, "hash", 3);
     given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(active));
 
-    Optional<String> token = service.issueToken(new ResetTarget(MEMBER_ID, 3));
+    Optional<String> token = service.issueToken(new VerificationBinding(MEMBER_ID, 3));
 
     assertThat(token).isPresent();
     assertThat(token.get()).hasSize(43).matches("[A-Za-z0-9_-]+");
@@ -138,7 +126,7 @@ class PasswordResetServiceTest {
     Member changed = member(MemberStatus.ACTIVE, "new-hash", 4);
     given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(changed));
 
-    assertThat(service.issueToken(new ResetTarget(MEMBER_ID, 3))).isEmpty();
+    assertThat(service.issueToken(new VerificationBinding(MEMBER_ID, 3))).isEmpty();
     then(tokenStore).shouldHaveNoInteractions();
   }
 
@@ -151,9 +139,9 @@ class PasswordResetServiceTest {
     given(memberRepository.findById(8L)).willReturn(Optional.of(social));
     given(memberRepository.findById(9L)).willReturn(Optional.empty());
 
-    assertThat(service.issueToken(new ResetTarget(MEMBER_ID, 3))).isEmpty();
-    assertThat(service.issueToken(new ResetTarget(8L, 3))).isEmpty();
-    assertThat(service.issueToken(new ResetTarget(9L, 3))).isEmpty();
+    assertThat(service.issueToken(new VerificationBinding(MEMBER_ID, 3))).isEmpty();
+    assertThat(service.issueToken(new VerificationBinding(8L, 3))).isEmpty();
+    assertThat(service.issueToken(new VerificationBinding(9L, 3))).isEmpty();
     then(tokenStore).shouldHaveNoInteractions();
   }
 

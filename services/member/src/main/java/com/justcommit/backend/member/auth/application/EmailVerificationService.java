@@ -3,6 +3,7 @@ package com.justcommit.backend.member.auth.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.auth.domain.EmailPurpose;
 import com.justcommit.backend.member.auth.domain.EmailSendQuota;
+import com.justcommit.backend.member.auth.domain.VerificationBinding;
 import com.justcommit.backend.member.auth.infrastructure.mail.VerificationMailSender;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.domain.exception.EmailCooldownException;
@@ -20,6 +21,7 @@ import java.util.Optional;
 
 // 이메일 인증번호 발송·확인
 // #412: 목적(가입 · 비밀번호 재설정 · 계좌 변경)별로 인증을 나누고, 같은 이메일 하루 발송 한도 · 틀린 횟수 제한을 둔다
+// #413: 계좌 변경은 로그인 필수 전용 메서드(sendAccountChangeCode · verifyAccountChangeCode)로만 쓴다
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -36,7 +38,7 @@ public class EmailVerificationService {
   private final MemberRepository memberRepository;
   private final PasswordResetService passwordResetService;
 
-  // 인증번호 발송: 목적 확인 -> 가입 여부 확인 -> 재발송 제한 · 하루 한도 확인 -> 번호 생성, 저장 -> 메일 발송
+  // 인증번호 발송 (공개 경로): 목적 확인 -> 가입 여부 확인 -> 번호 발송
   public EmailSendResult sendCode(String rawEmail, EmailPurpose purpose) {
     requireSupported(purpose);
     String email = normalize(rawEmail);
@@ -48,27 +50,10 @@ public class EmailVerificationService {
     if (memberRepository.existsByEmail(email)) {
       throw new BusinessException(MemberErrorCode.DUPLICATE_EMAIL);
     }
-    EmailVerificationRedisStore.SendResult slot = acquireSendSlot(email, purpose);
-    String code = generateCode();
-    if (!store.saveCode(purpose, email, slot.requestId(), code, "", CODE_TTL)) {
-      // 자리를 잡은 뒤 멈춘 사이 재발송 제한이 끝나 다른 요청이 새 번호를 보낸 경우:
-      // 그 번호를 덮어쓰지 않고 메일도 보내지 않는다 (이 요청의 하루 횟수만 되돌림)
-      store.releaseSend(purpose, email, slot.requestId());
-      throw new EmailCooldownException(EmailSendPolicy.COOLDOWN.toSeconds());
-    }
-    try {
-      mailSender.send(email, code, CODE_TTL, purpose);
-    } catch (MailException e) {
-      // 발송 실패 시 이 요청이 만든 번호 · 재발송 제한 · 하루 횟수만 되돌려 다시 시도할 수 있게 함
-      // (늦게 실패해도 그 사이 다른 요청이 만든 번호 · 재발송 제한은 지우지 않음, 서버 쪽 실패는 하루 횟수에 넣지 않음)
-      log.error("인증 메일 발송 실패: email={}", email, e);
-      store.releaseSend(purpose, email, slot.requestId());
-      throw new BusinessException(MemberErrorCode.EMAIL_SEND_FAILED);
-    }
-    return new EmailSendResult(CODE_TTL.toSeconds(), EmailSendPolicy.COOLDOWN.toSeconds());
+    return issueCode(email, purpose, "");
   }
 
-  // 인증번호 확인: 비교 · 틀린 횟수 · 폐기를 Redis에서 한 번에 처리하고, 일치하면 그 목적의 인증 완료를 저장
+  // 인증번호 확인 (공개 경로): 비교 · 틀린 횟수 · 폐기를 Redis에서 한 번에 처리하고, 일치하면 그 목적의 인증 완료를 저장
   // 재설정 목적은 인증 완료 표시 대신 일회용 재설정 토큰을 돌려준다 (가입은 빈 결과)
   public EmailVerifyResult verifyCode(String rawEmail, String code, EmailPurpose purpose) {
     requireSupported(purpose);
@@ -78,13 +63,24 @@ public class EmailVerificationService {
     if (purpose == EmailPurpose.PASSWORD_RESET) {
       return EmailVerifyResult.resetToken(issueResetToken(outcome), PasswordResetService.RESET_TOKEN_TTL);
     }
-    switch (outcome.result()) {
-      case MATCHED -> store.saveVerified(purpose, email, VERIFIED_TTL);
-      case MISMATCH -> throw new BusinessException(MemberErrorCode.EMAIL_CODE_MISMATCH);
-      case EXHAUSTED -> throw new BusinessException(MemberErrorCode.EMAIL_CODE_ATTEMPTS_EXCEEDED);
-      case EXPIRED -> throw new BusinessException(MemberErrorCode.EMAIL_CODE_EXPIRED);
-    }
+    requireMatched(outcome.result());
+    store.saveVerified(purpose, email, VERIFIED_TTL);
     return EmailVerifyResult.none();
+  }
+
+  // 계좌 변경 인증번호 발송 (#413): 로그인한 회원의 이메일로 보내고, 발송 당시 회원 id · 인증 버전을 번호에 묶는다
+  // 로그인한 본인 요청이라 가입처럼 재발송 제한 · 하루 한도를 429로 알린다
+  public EmailSendResult sendAccountChangeCode(String email, VerificationBinding binding) {
+    return issueCode(email, EmailPurpose.ACCOUNT_CHANGE, binding.toBinding());
+  }
+
+  // 계좌 변경 인증번호 확인 (#413): 틀림 · 만료 · 오답 한도는 가입처럼 각 오류로 알리고,
+  // 맞으면 발송 때 묶은 회원 정보를 돌려준다 (깨졌으면 빈 값). 인증 완료 상태는 따로 저장하지 않는다
+  public Optional<VerificationBinding> verifyAccountChangeCode(String email, String code) {
+    EmailVerificationRedisStore.VerifyOutcome outcome =
+        store.verifyCode(EmailPurpose.ACCOUNT_CHANGE, email, code, MAX_WRONG_ATTEMPTS, CODE_TTL);
+    requireMatched(outcome.result());
+    return VerificationBinding.fromBinding(outcome.binding());
   }
 
   // 비밀번호 재설정 인증번호 발송 (#412): 가입 여부 · 로그인 방식이 드러나지 않게 모든 경우 같은 결과로 끝낸다
@@ -99,7 +95,7 @@ public class EmailVerificationService {
     if (slot.status() != EmailVerificationRedisStore.SendStatus.ACQUIRED) {
       return;
     }
-    Optional<PasswordResetService.ResetTarget> target = passwordResetService.findTarget(email);
+    Optional<VerificationBinding> target = passwordResetService.findTarget(email);
     if (target.isEmpty()) {
       return;
     }
@@ -111,7 +107,8 @@ public class EmailVerificationService {
     try {
       mailSender.send(email, code, CODE_TTL, EmailPurpose.PASSWORD_RESET);
     } catch (MailException e) {
-      log.error("재설정 인증 메일 발송 실패: email={}", email, e);
+      // 예외 메시지 · 스택 트레이스에 SMTP 응답(수신 주소 포함 가능)이 들어갈 수 있어, 이메일과 예외 객체 없이 예외 종류만 남김
+      log.error("재설정 인증 메일 발송 실패: cause={}", e.getClass().getSimpleName());
       store.releaseSend(EmailPurpose.PASSWORD_RESET, email, slot.requestId());
     }
   }
@@ -122,9 +119,44 @@ public class EmailVerificationService {
     if (outcome.result() != EmailVerificationRedisStore.VerifyResult.MATCHED) {
       throw new BusinessException(MemberErrorCode.EMAIL_CODE_INVALID);
     }
-    return PasswordResetService.ResetTarget.fromBinding(outcome.binding())
+    return VerificationBinding.fromBinding(outcome.binding())
         .flatMap(passwordResetService::issueToken)
         .orElseThrow(() -> new BusinessException(MemberErrorCode.EMAIL_CODE_INVALID));
+  }
+
+  // 번호 발송 (가입 · 계좌 변경 공통): 자리 확보 -> 번호 생성, 저장(binding을 함께) -> 메일 발송
+  // 재설정은 결과를 숨겨야 해서 이 메서드를 쓰지 않는다 (sendResetCode)
+  private EmailSendResult issueCode(String email, EmailPurpose purpose, String binding) {
+    EmailVerificationRedisStore.SendResult slot = acquireSendSlot(email, purpose);
+    String code = generateCode();
+    if (!store.saveCode(purpose, email, slot.requestId(), code, binding, CODE_TTL)) {
+      // 자리를 잡은 뒤 멈춘 사이 재발송 제한이 끝나 다른 요청이 새 번호를 보낸 경우:
+      // 그 번호를 덮어쓰지 않고 메일도 보내지 않는다 (이 요청의 하루 횟수만 되돌림)
+      store.releaseSend(purpose, email, slot.requestId());
+      throw new EmailCooldownException(EmailSendPolicy.COOLDOWN.toSeconds());
+    }
+    try {
+      mailSender.send(email, code, CODE_TTL, purpose);
+    } catch (MailException e) {
+      // 발송 실패 시 이 요청이 만든 번호 · 재발송 제한 · 하루 횟수만 되돌려 다시 시도할 수 있게 함
+      // (늦게 실패해도 그 사이 다른 요청이 만든 번호 · 재발송 제한은 지우지 않음, 서버 쪽 실패는 하루 횟수에 넣지 않음)
+      // 예외 메시지 · 스택 트레이스에 SMTP 응답(수신 주소 포함 가능)이 들어갈 수 있어, 이메일과 예외 객체 없이 예외 종류만 남김
+      log.error("인증 메일 발송 실패: purpose={}, cause={}", purpose, e.getClass().getSimpleName());
+      store.releaseSend(purpose, email, slot.requestId());
+      throw new BusinessException(MemberErrorCode.EMAIL_SEND_FAILED);
+    }
+    return new EmailSendResult(CODE_TTL.toSeconds(), EmailSendPolicy.COOLDOWN.toSeconds());
+  }
+
+  // 번호 확인 결과가 일치가 아니면 각 오류로 (가입 · 계좌 변경 공통. 재설정은 하나의 오류로 숨기므로 쓰지 않음)
+  private void requireMatched(EmailVerificationRedisStore.VerifyResult result) {
+    switch (result) {
+      case MATCHED -> {
+      }
+      case MISMATCH -> throw new BusinessException(MemberErrorCode.EMAIL_CODE_MISMATCH);
+      case EXHAUSTED -> throw new BusinessException(MemberErrorCode.EMAIL_CODE_ATTEMPTS_EXCEEDED);
+      case EXPIRED -> throw new BusinessException(MemberErrorCode.EMAIL_CODE_EXPIRED);
+    }
   }
 
   // 재발송 제한(60초, 이메일 공유) · 하루 한도(5회, 용도별)를 확인하고 자리를 확보. 막히면 429 + 남은 초(Retry-After)
@@ -142,7 +174,7 @@ public class EmailVerificationService {
     return result;
   }
 
-  // TODO: #413 계좌 변경에서 ACCOUNT_CHANGE를 연다
+  // 공개 경로(sendCode · verifyCode)에서는 계좌 변경을 받지 않는다 (로그인 필수 전용 메서드로만, #413)
   private void requireSupported(EmailPurpose purpose) {
     if (purpose == EmailPurpose.ACCOUNT_CHANGE) {
       throw new BusinessException(MemberErrorCode.EMAIL_PURPOSE_NOT_SUPPORTED);

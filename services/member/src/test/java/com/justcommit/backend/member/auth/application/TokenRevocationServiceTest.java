@@ -137,7 +137,7 @@ class TokenRevocationServiceTest {
   // 본문이 saveAndFlush까지 가도록: 회원 잠금 · DB 시각 · 저장
   private void stubBodyReachesFlush() {
     Member member = Member.createLocal("revoke@test.com", "{bcrypt}x", "폐기", "01300000000",
-        "004", "v1:test-account", "홍길동");
+        "004", "v1:test-account", null, "홍길동");
     given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(member));
     given(databaseClock.now()).willReturn(NOW);
     given(revocationRepository.saveAndFlush(any())).willAnswer(invocation -> invocation.getArgument(0));

@@ -299,7 +299,7 @@ class MemberLockerIntegrationTest {
     int n = SEQ.incrementAndGet();
     return transactionTemplate.execute(status -> memberRepository.save(Member.createLocal(
         "lock" + n + "@test.com", passwordEncoder.encode(PASSWORD), "잠금" + n, String.format("012%08d", n),
-        "004", "v1:test-account", "홍길동")));
+        "004", "v1:test-account", null, "홍길동")));
   }
 
   private static KeyPair newKeyPair() {
