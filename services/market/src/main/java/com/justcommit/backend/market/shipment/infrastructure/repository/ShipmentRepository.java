@@ -36,6 +36,17 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
             """, nativeQuery = true)
     Optional<Shipment> findNextBookable(@Param("now") LocalDateTime now);
 
+    // 택배 취소 큐: 시도할 때가 된 CANCEL_PENDING 배송 한 건을 잠그고 가져온다 (다른 파드가 잠근 행은 건너뜀)
+    @Query(value = """
+            select * from shipment
+            where status = 'CANCEL_PENDING'
+              and (next_attempt_at is null or next_attempt_at <= :now)
+            order by next_attempt_at nulls first, id
+            limit 1
+            for update skip locked
+            """, nativeQuery = true)
+    Optional<Shipment> findNextCancellable(@Param("now") LocalDateTime now);
+
     List<Shipment> findTop100ByStatusAndCourierCancelledAtIsNullAndCancelledAtBeforeOrderByIdAsc(
             ShipmentStatus status, LocalDateTime cancelledAt);
 }

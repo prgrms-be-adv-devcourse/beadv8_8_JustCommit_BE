@@ -10,6 +10,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.time.Duration;
+import java.util.Optional;
 
 @Component
 public class CourierClient {
@@ -56,6 +57,27 @@ public class CourierClient {
             throw new CourierBookingException(
                     "택배 예약 실패: courierOrderNo = " + courierOrderNo + ", " +
                     "택배사 응답 없음 (시간 초과 또는 연결 실패)", e, true);
+        }
+    }
+
+    // 주문번호(courierOrderNo)로 택배사 예약을 찾는다. 택배사에 예약이 없으면 빈 값.
+    // 송장번호를 모르는(READY에서 취소한) 배송을 취소할 때 쓴다.
+    public Optional<CourierShipmentView> findByCourierOrderNo(String courierOrderNo) {
+        try {
+            CourierApiResponse<CourierShipmentView> response = restClient.get()
+                    .uri(BOOKING_PATH + "/by-order-no/{courierOrderNo}", courierOrderNo)
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<>() {});
+            return Optional.ofNullable(response).map(CourierApiResponse::data);
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value() == 404) {
+                return Optional.empty();
+            }
+            throw new CourierCancelException(
+                    "택배 예약 조회 실패: courierOrderNo = " + courierOrderNo + ", status = " + e.getStatusCode().value(), e);
+        } catch (ResourceAccessException e) {
+            throw new CourierCancelException(
+                    "택배 예약 조회 실패: courierOrderNo = " + courierOrderNo + ", 택배사 응답 없음 (시간 초과 또는 연결 실패)", e);
         }
     }
 
