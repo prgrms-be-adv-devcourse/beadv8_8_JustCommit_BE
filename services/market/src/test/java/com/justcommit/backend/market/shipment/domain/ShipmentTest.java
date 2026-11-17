@@ -193,6 +193,50 @@ class ShipmentTest {
         assertThat(shipment.getCourierCancelledAt()).isEqualTo(courierCancelledAt);
     }
 
+    @Test
+    @DisplayName("새 배송은 예약 큐가 바로 집을 수 있다 (다음 시도 시각 없음, 실패 0회)")
+    void newShipmentIsReadyForQueueImmediately() {
+        Shipment shipment = newShipment();
+
+        assertThat(shipment.getNextAttemptAt()).isNull();
+        assertThat(shipment.getAttemptCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("예약 큐가 집으면 다음 시도 시각을 30초 뒤로 미뤄 다른 파드가 다시 집지 않게 한다")
+    void leaseForBookingPushesNextAttempt() {
+        Shipment shipment = newShipment();
+        LocalDateTime now = LocalDateTime.of(2026, 11, 16, 10, 0, 0);
+
+        shipment.leaseForBooking(now);
+
+        assertThat(shipment.getNextAttemptAt()).isEqualTo(now.plusSeconds(30));
+        assertThat(shipment.getAttemptCount()).isZero();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.READY);
+    }
+
+    @Test
+    @DisplayName("택배 예약에 실패하면 READY로 남고 다음 시도까지 10초 → 30초 → 1분, 이후 1분 고정으로 기다린다")
+    void bookingFailureBacksOff() {
+        Shipment shipment = newShipment();
+        LocalDateTime now = LocalDateTime.of(2026, 11, 16, 10, 0, 0);
+
+        shipment.recordBookingFailure(now);
+        assertThat(shipment.getNextAttemptAt()).isEqualTo(now.plusSeconds(10));
+
+        shipment.recordBookingFailure(now);
+        assertThat(shipment.getNextAttemptAt()).isEqualTo(now.plusSeconds(30));
+
+        shipment.recordBookingFailure(now);
+        assertThat(shipment.getNextAttemptAt()).isEqualTo(now.plusMinutes(1));
+
+        shipment.recordBookingFailure(now);
+        assertThat(shipment.getNextAttemptAt()).isEqualTo(now.plusMinutes(1));
+
+        assertThat(shipment.getAttemptCount()).isEqualTo(4);
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.READY);
+    }
+
     private Shipment newShipment() {
         return new Shipment(SELLER_ORDER_ID, "몬스테라");
     }

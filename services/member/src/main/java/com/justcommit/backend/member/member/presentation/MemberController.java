@@ -7,6 +7,7 @@ import com.justcommit.backend.member.auth.presentation.dto.LoginResponse;
 import com.justcommit.backend.member.member.application.*;
 import com.justcommit.backend.member.member.presentation.dto.*;
 import com.justcommit.backend.member.auth.presentation.support.RefreshTokenCookieFactory;
+import com.justcommit.backend.member.domain.exception.PasswordChangeLockedException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -94,6 +95,15 @@ public class MemberController {
     return ResponseEntity.ok()
         .header(HttpHeaders.SET_COOKIE, refreshTokenCookieFactory.expire().toString())
         .body(ApiResponse.ok(message, PasswordChangeResponse.from(result)));
+  }
+
+  // 현재 비밀번호를 여러 번 틀려 막힌 변경 요청 (#412): 공통 응답 형식 + Retry-After 헤더(남은 초)
+  // 컨트롤러 안의 @ExceptionHandler는 GlobalExceptionHandler보다 먼저 적용됨
+  @ExceptionHandler(PasswordChangeLockedException.class)
+  public ResponseEntity<ApiResponse<Void>> handlePasswordChangeLocked(PasswordChangeLockedException e) {
+    return ResponseEntity.status(e.getErrorCode().getStatus())
+        .header(HttpHeaders.RETRY_AFTER, String.valueOf(e.getRetryAfterSeconds()))
+        .body(ApiResponse.error(e.getErrorCode()));
   }
 
   // Bearer {토큰}에서 토큰만 꺼냄. 형식 다르면 null → 서비스에서 401

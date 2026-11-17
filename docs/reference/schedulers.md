@@ -13,7 +13,7 @@
 | 수락 자동 거절 | market | 10분 | – | SKIP LOCKED | 기한 지난 `ACCEPT_PENDING` 주문상품 자동 거절 → 전액 환불 (기한 → [market 정책](../services/market.md#정책)) |
 | 반품 자동 승인 | market | 10분 | – | SKIP LOCKED | 기한 안에 판매자가 응답하지 않은 반품 신청 자동 승인 (기한 → [market 정책](../services/market.md#정책)) |
 | 자동 구매 확정 | market | 1시간 | – | SKIP LOCKED | 기한 지난 `NORMAL` 주문상품 구매 확정, 반품 신청한 주문상품 제외 (기한 → [market 정책](../services/market.md#정책)) |
-| 택배 예약 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `READY` 배송(반품 포함) 택배 예약. 실패하면 다음 시도까지 10초 → 30초 → 1분 고정 (건별 `next_attempt_at`) |
+| 택배 예약 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `READY` 배송(반품 포함) 택배 예약. 한 번 실행할 때 최대 20건을 한 건씩 확보(다음 시도 시각을 30초 뒤로 미루는 임대)하고, 택배사 호출은 임대 후 트랜잭션 밖에서 함. 실패하면 다음 시도까지 10초 → 30초 → 1분 고정 (건별 `next_attempt_at` · `attempt_count`). 결제 · 수락 흐름은 `READY` 행만 만들고 택배사를 부르지 않음 |
 | 택배 취소 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `CANCEL_PENDING` 배송 취소 재요청 |
 | Saga 복구 | market | 1분 | 확인 후 포기 | SKIP LOCKED | 결과 불명 결제(orderId) · 취소 · 환불(orderItemId · sellerOrderId)을 같은 멱등 키로 다시 요청, 5회 안 되면 `REVIEW_REQUIRED` → [주문 · 결제](../flows/order-payment.md#멈춘-주문-복구) |
 | 요금표 버전 대사 | market | 매일 09:30 (EC2가 켜진 시간) | – | ShedLock | 택배사(404-express) 요금표 버전과 비교, 다르면 새로 받음 |

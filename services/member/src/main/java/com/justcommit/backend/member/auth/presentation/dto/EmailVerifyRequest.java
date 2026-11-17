@@ -1,18 +1,27 @@
 package com.justcommit.backend.member.auth.presentation.dto;
 
+import com.justcommit.backend.member.auth.domain.EmailPurpose;
 import com.justcommit.backend.member.presentation.validation.MemberValidation;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
-// 인증번호 확인 요청
+// 인증번호 확인 요청. purpose를 보내지 않으면 가입(SIGNUP) (#412)
 public record EmailVerifyRequest(
         @NotBlank(message = "이메일을 입력해주세요.")
         @Email(regexp = MemberValidation.EMAIL_REGEX, message = "이메일 형식이 올바르지 않습니다.")
         String email,
-
         @NotBlank(message = "인증번호를 입력해주세요.")
         @Pattern(regexp = "\\d{6}", message = "인증번호는 6자리 숫자입니다.")
-        String code
+        String code,
+        EmailPurpose purpose
 ) {
+  // 목적 없이 만드는 기존 방식 (가입)
+  public EmailVerifyRequest(String email, String code) {
+    this(email, code, null);
+  }
+
+  public EmailPurpose purposeOrDefault() {
+    return purpose == null ? EmailPurpose.SIGNUP : purpose;
+  }
 }
