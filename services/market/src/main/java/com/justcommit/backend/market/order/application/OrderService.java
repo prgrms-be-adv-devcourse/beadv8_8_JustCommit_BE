@@ -9,6 +9,7 @@ import com.justcommit.backend.market.*;
 import com.justcommit.backend.market.cart.application.CartService;
 import com.justcommit.backend.market.cart.domain.CartItem;
 import com.justcommit.backend.market.client.member.MemberQuery;
+import com.justcommit.backend.market.client.payment.PaymentOutcome;
 import com.justcommit.backend.market.client.payment.PaymentResult;
 import com.justcommit.backend.market.client.payment.PaymentStatus;
 import com.justcommit.backend.market.client.payment.PaymentUseCase;
@@ -406,19 +407,18 @@ public class OrderService {
         return toResponse(order, null);
     }
 
-    // 응답 타임아웃이면 결제 대기로 두고 사용자가 같은 키(orderId)로 재결제한다. 자동 복구는 #280
+    // TODO(#281 3단계): 트랜잭션 분리 때 결과별 상태 전환으로 바꾼다. 지금은 기존 동작만 유지한다
     private boolean pay(Orders order, Long memberId) {
-        PaymentResult result;
-        try {
-            result = paymentUseCase.pay(order.getId(), memberId, order.getTotalAmount());
-        } catch (InternalApiResultUnknownException e) {
-            log.warn("결제 응답 타임아웃, 결제 대기 유지: orderId={}", order.getId(), e);
-            return false;
-        }
-        if (result.status() == PaymentStatus.WALLET_NOT_FOUND) {
-            throw new BusinessException(OrderErrorCode.WALLET_NOT_FOUND);
-        }
-        return result.isPaid();
+        PaymentOutcome outcome = paymentUseCase.pay(order.getId(), memberId, order.getTotalAmount());
+        return switch (outcome.type()) {
+            case PAID -> true;
+            case INSUFFICIENT_BALANCE -> false;
+            case UNKNOWN -> {
+                log.warn("결제 결과 불명, 결제 대기 유지: orderId={}, reason={}", order.getId(), outcome.reason());
+                yield false;
+            }
+            case REJECTED, NOT_DELIVERED -> throw new BusinessException(OrderErrorCode.WALLET_NOT_FOUND);
+        };
     }
 
     private Orders orderPayment(Orders order) {

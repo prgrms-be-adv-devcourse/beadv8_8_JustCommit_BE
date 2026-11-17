@@ -39,6 +39,7 @@ import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
 import com.justcommit.backend.market.shipment.application.ShipmentService;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import org.junit.jupiter.api.BeforeEach;
+import com.justcommit.backend.market.client.payment.PaymentOutcome;
 import com.justcommit.backend.market.client.payment.PaymentResult;
 import com.justcommit.backend.market.client.payment.PaymentStatus;
 import com.justcommit.backend.market.client.payment.PaymentUseCase;
@@ -315,7 +316,7 @@ class OrderServiceTest {
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
         stubSavedOrder();
         when(paymentUseCase.pay(99L, 10L, money("13000")))
-                .thenThrow(new InternalApiResultUnknownException("payment", new java.net.SocketTimeoutException()));
+                .thenReturn(PaymentOutcome.unknown("TIMEOUT"));
 
         OrderCreateResponse response = orderService.create(10L, request(1L));
 
@@ -383,7 +384,7 @@ class OrderServiceTest {
         stubLookup(List.of(selected(1L, 101L, "10000")),
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
         stubSavedOrder();
-        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentResult.paid(money("0")));
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentOutcome.paid());
         when(orderQuery.getOrder(99L)).thenReturn(orderResult);
         doAnswer(invocation -> {
             assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAID);
@@ -403,7 +404,7 @@ class OrderServiceTest {
     void repaysPendingOrderBeforeExpiry() {
         Orders order = pendingOrder(10L);
         when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
-        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentResult.paid(money("0")));
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentOutcome.paid());
         when(orderQuery.getOrder(99L)).thenReturn(orderResult);
 
         OrderCreateResponse response = orderService.repayment(10L, 99L);
@@ -441,7 +442,7 @@ class OrderServiceTest {
         Orders order = pendingOrder(10L);
         when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
         when(paymentUseCase.pay(99L, 10L, money("13000")))
-                .thenReturn(PaymentResult.insufficientBalance(money("1000")));
+                .thenReturn(PaymentOutcome.insufficientBalance());
 
         OrderCreateResponse response = orderService.repayment(10L, 99L);
 
@@ -456,7 +457,7 @@ class OrderServiceTest {
         stubLookup(List.of(selected(1L, 101L, "10000")),
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
         stubSavedOrder();
-        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentResult.walletNotFound());
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentOutcome.rejected("WALLET_NOT_FOUND"));
 
         assertFailedOrderCommitted(orderService.create(10L, request(1L)));
     }
@@ -467,7 +468,7 @@ class OrderServiceTest {
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
         stubSavedOrder();
         when(paymentUseCase.pay(99L, 10L, money("13000")))
-                .thenThrow(new InternalApiUnavailableException("payment", new java.net.ConnectException()));
+                .thenReturn(PaymentOutcome.notDelivered());
 
         assertFailedOrderCommitted(orderService.create(10L, request(1L)));
     }
@@ -478,7 +479,7 @@ class OrderServiceTest {
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
         stubSavedOrder();
         when(paymentUseCase.pay(99L, 10L, money("13000")))
-                .thenThrow(new InternalApiErrorException("payment", 500, null, "payment 서비스가 500 응답을 보냈습니다."));
+                .thenReturn(PaymentOutcome.unknown("HTTP_500"));
 
         OrderCreateResponse response = orderService.create(10L, request(1L));
 
@@ -886,7 +887,7 @@ class OrderServiceTest {
 
     private void stubInsufficientBalance() {
         when(paymentUseCase.pay(eq(99L), eq(10L), any(BigDecimal.class)))
-                .thenReturn(PaymentResult.insufficientBalance(money("0")));
+                .thenReturn(PaymentOutcome.insufficientBalance());
     }
 
     private Orders pendingOrder(long buyerId) {
