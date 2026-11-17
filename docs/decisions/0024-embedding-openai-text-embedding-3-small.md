@@ -1,4 +1,4 @@
-# 0023. 임베딩 모델은 OpenAI text-embedding-3-small (1536차원)
+# 0024. 임베딩 모델은 OpenAI text-embedding-3-small (1536차원)
 
 > 상태: ✅ 확정 · 결정일 2026-11-14 · 결정한 사람: ai 담당 (#290, PR #450)
 > 대체: - · 대체됨: -
