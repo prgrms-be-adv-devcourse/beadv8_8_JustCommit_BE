@@ -133,6 +133,15 @@ public class Member extends BaseTimeEntity  {
           this.password = encodedPassword;
         }
 
+        // 환급 계좌 변경 (#413): 계좌 값 네 개를 함께 바꾼다 (암호화 · HMAC · 중복 확인은 서비스가 맡음)
+        public void changeAccount(String bankCode, String encryptedAccountNo, String accountHash, String accountHolder) {
+          this.bankCode = bankCode;
+          this.accountNoEnc = encryptedAccountNo;
+          this.accountHash = accountHash;
+          this.accountHolder = accountHolder;
+          this.accountUpdatedAt = LocalDateTime.now();
+        }
+
         // 인증 버전을 1 올린다 (비밀번호 변경 · 탈퇴). DB 값만 바꾸며, 기존 Access 폐기 기록은 별도 처리한다
         // 올리기만 한다: 되돌리면 무효화된 Refresh를 다시 쓸 수 있게 된다
         public void increaseTokenVersion() {

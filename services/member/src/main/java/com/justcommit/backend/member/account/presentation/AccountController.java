@@ -3,6 +3,7 @@ package com.justcommit.backend.member.account.presentation;
 import com.justcommit.backend.common.response.ApiResponse;
 import com.justcommit.backend.common.security.AuthMember;
 import com.justcommit.backend.member.account.application.AccountChangeService;
+import com.justcommit.backend.member.account.presentation.dto.AccountChangeRequest;
 import com.justcommit.backend.member.account.presentation.dto.AccountChangeTokenRequest;
 import com.justcommit.backend.member.account.presentation.dto.AccountChangeTokenResponse;
 import com.justcommit.backend.member.auth.presentation.dto.EmailSendResponse;
@@ -35,6 +36,14 @@ public class AccountController {
                                                                   @Valid @RequestBody AccountChangeTokenRequest request) {
     return ApiResponse.ok("이메일 인증이 완료되었습니다.",
         AccountChangeTokenResponse.from(accountChangeService.issueChangeToken(authMember.memberId(), request.code())));
+  }
+
+  // 계좌 변경 (성공 시 data 없음. 바뀐 계좌는 GET /api/v1/users/me에서 마스킹해 조회)
+  @PatchMapping
+  public ApiResponse<Void> changeAccount(@AuthenticationPrincipal AuthMember authMember,
+                                         @Valid @RequestBody AccountChangeRequest request) {
+    accountChangeService.changeAccount(authMember.memberId(), request.toCommand());
+    return ApiResponse.ok("계좌가 변경되었습니다.");
   }
 
   // 재발송 제한 · 하루 한도: 공통 응답 형식 + Retry-After 헤더(남은 초) (AuthController와 같은 처리)

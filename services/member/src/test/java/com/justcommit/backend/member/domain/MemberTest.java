@@ -3,6 +3,8 @@ package com.justcommit.backend.member.domain;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDateTime;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class MemberTest {
@@ -36,5 +38,21 @@ class MemberTest {
 
     member.increaseTokenVersion();
     assertThat(member.getTokenVersion()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("계좌를 바꾸면 은행 · 암호문 · HMAC · 예금주를 함께 바꾸고 계좌 변경 시각을 갱신한다 (#413)")
+  void changeAccount() {
+    Member member = Member.createLocal("test@gmail.com", "encoded", "떡볶이", "01012345678",
+        "004", "v1:old-account", "old-hash", "홍길동");
+    LocalDateTime before = member.getAccountUpdatedAt();
+
+    member.changeAccount("088", "v1:new-account", "new-hash", "김철수");
+
+    assertThat(member.getBankCode()).isEqualTo("088");
+    assertThat(member.getAccountNoEnc()).isEqualTo("v1:new-account");
+    assertThat(member.getAccountHash()).isEqualTo("new-hash");
+    assertThat(member.getAccountHolder()).isEqualTo("김철수");
+    assertThat(member.getAccountUpdatedAt()).isAfterOrEqualTo(before);
   }
 }

@@ -20,6 +20,9 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
 
   boolean existsByAccountHash(String accountHash);
 
+  // 본인을 뺀 다른 회원이 같은 계좌를 쓰는지 (계좌 변경 #413)
+  boolean existsByAccountHashAndIdNot(String accountHash, Long id);
+
   // 로그인: 정규화한 이메일로 회원 조회
   Optional<Member> findByEmail(String email);
 

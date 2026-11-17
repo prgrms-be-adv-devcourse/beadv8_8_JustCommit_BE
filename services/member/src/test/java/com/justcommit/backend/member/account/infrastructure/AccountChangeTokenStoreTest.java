@@ -68,4 +68,34 @@ class AccountChangeTokenStoreTest {
     assertThat(redisTemplate.getExpire(KEY)).isBetween(1L, 600L);
     assertThat(redisTemplate.hasKey("auth:account-change:" + TOKEN)).isFalse();
   }
+
+  @Test
+  @DisplayName("조회(find)는 지우지 않아 여러 번 읽을 수 있다")
+  void find_keepsToken() {
+    store.save(TOKEN, new VerificationBinding(7L, 3), TTL);
+
+    assertThat(store.find(TOKEN)).contains(new VerificationBinding(7L, 3));
+    assertThat(store.find(TOKEN)).contains(new VerificationBinding(7L, 3));
+    assertThat(redisTemplate.hasKey(KEY)).isTrue();
+  }
+
+  @Test
+  @DisplayName("꺼내기(take)는 지우면서 읽어 같은 토큰을 한 번만 쓸 수 있다")
+  void take_once() {
+    store.save(TOKEN, new VerificationBinding(7L, 3), TTL);
+
+    assertThat(store.take(TOKEN)).contains(new VerificationBinding(7L, 3));
+    assertThat(store.take(TOKEN)).isEmpty();
+    assertThat(store.find(TOKEN)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("모르는 토큰이나 깨진 값은 빈 값")
+  void unknownOrBroken() {
+    assertThat(store.find("unknown-token")).isEmpty();
+    assertThat(store.take("unknown-token")).isEmpty();
+
+    redisTemplate.opsForValue().set(KEY, "broken", TTL);
+    assertThat(store.find(TOKEN)).isEmpty();
+  }
 }
