@@ -7,6 +7,7 @@ import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.domain.*;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
+import com.justcommit.backend.member.auth.domain.EmailPurpose;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
@@ -91,7 +92,7 @@ class SignupServiceTest {
   @DisplayName("회원(정규화 이메일·암호화 비밀번호·계좌)과 기본 배송지를 저장하고 인증 완료 기록 삭제")
   void signup_success() {
     // given
-    given(verificationStore.isVerified(EMAIL)).willReturn(true);
+    given(verificationStore.isVerified(EmailPurpose.SIGNUP, EMAIL)).willReturn(true);
     given(passwordEncoder.encode(PASSWORD)).willReturn("encoded-password");
     given(accountCipher.encrypt(ACCOUNT_NO)).willReturn("v1:encrypted-account");
     givenMemberSaved();
@@ -133,7 +134,7 @@ class SignupServiceTest {
     assertThat(savedAddress.getAddressName()).isEqualTo(ADDRESS_NAME);
 
     // then: 인증 완료 기록 삭제
-    then(verificationStore).should().deleteVerified(EMAIL);
+    then(verificationStore).should().deleteVerified(EmailPurpose.SIGNUP, EMAIL);
 
     // then: 다른 서비스에 가입을 알림 (판매자 아님)
     then(outboxPublisher).should().publish(new MemberCreated(1L, NICKNAME, "MEMBER", false));
@@ -142,7 +143,7 @@ class SignupServiceTest {
   @Test
   @DisplayName("배송지 저장이 실패하면 예외가 그대로 올라가고 인증 완료 기록은 남겨 둠 (다시 가입 가능)")
   void signup_addressSaveFails_keepsVerification() {
-    given(verificationStore.isVerified(EMAIL)).willReturn(true);
+    given(verificationStore.isVerified(EmailPurpose.SIGNUP, EMAIL)).willReturn(true);
     given(passwordEncoder.encode(PASSWORD)).willReturn("encoded-password");
     givenMemberSaved();
     willThrow(new RuntimeException("address save failed"))
@@ -152,13 +153,13 @@ class SignupServiceTest {
             .isInstanceOf(RuntimeException.class)
             .hasMessage("address save failed");
 
-    then(verificationStore).should(never()).deleteVerified(anyString());
+    then(verificationStore).should(never()).deleteVerified(any(), anyString());
   }
 
   @Test
   @DisplayName("이메일 인증을 안 했으면 EMAIL_NOT_VERIFIED, DB는 조회하지 않음")
   void signup_notVerified() {
-    given(verificationStore.isVerified(EMAIL)).willReturn(false);
+    given(verificationStore.isVerified(EmailPurpose.SIGNUP, EMAIL)).willReturn(false);
 
     assertThatThrownBy(() -> signupService.signup(command()))
             .isInstanceOf(BusinessException.class)
@@ -173,7 +174,7 @@ class SignupServiceTest {
   @Test
   @DisplayName("이미 가입된 이메일이면 DUPLICATE_EMAIL, 회원·배송지 모두 저장하지 않음")
   void signup_duplicateEmail() {
-    given(verificationStore.isVerified(EMAIL)).willReturn(true);
+    given(verificationStore.isVerified(EmailPurpose.SIGNUP, EMAIL)).willReturn(true);
     given(memberRepository.existsByEmail(EMAIL)).willReturn(true);
 
     assertThatThrownBy(() -> signupService.signup(command()))
@@ -188,7 +189,7 @@ class SignupServiceTest {
   @Test
   @DisplayName("사용 중인 닉네임이면 DUPLICATE_NICKNAME, 저장하지 않음")
   void signup_duplicateNickname() {
-    given(verificationStore.isVerified(EMAIL)).willReturn(true);
+    given(verificationStore.isVerified(EmailPurpose.SIGNUP, EMAIL)).willReturn(true);
     given(memberRepository.existsByNickname(NICKNAME)).willReturn(true);
 
     assertThatThrownBy(() -> signupService.signup(command()))
@@ -202,7 +203,7 @@ class SignupServiceTest {
   @Test
   @DisplayName("이미 가입된 휴대폰 번호면 DUPLICATE_PHONE, 저장하지 않음")
   void signup_duplicatePhone() {
-    given(verificationStore.isVerified(EMAIL)).willReturn(true);
+    given(verificationStore.isVerified(EmailPurpose.SIGNUP, EMAIL)).willReturn(true);
     given(memberRepository.existsByPhone(PHONE)).willReturn(true);
 
     assertThatThrownBy(() -> signupService.signup(command()))
@@ -216,7 +217,7 @@ class SignupServiceTest {
   @Test
   @DisplayName("동시 가입으로 DB UNIQUE 위반 시 DUPLICATE_NICKNAME으로 변환, 배송지는 저장하지 않음")
   void signup_uniqueViolation_nickname() {
-    given(verificationStore.isVerified(EMAIL)).willReturn(true);
+    given(verificationStore.isVerified(EmailPurpose.SIGNUP, EMAIL)).willReturn(true);
     given(passwordEncoder.encode(anyString())).willReturn("encoded-password");
     willThrow(new DataIntegrityViolationException("could not execute statement",
             new RuntimeException("duplicate key value violates unique constraint \"uk_member_nickname\"")))
@@ -228,13 +229,13 @@ class SignupServiceTest {
             .isEqualTo(MemberErrorCode.DUPLICATE_NICKNAME);
 
     then(addressRepository).shouldHaveNoInteractions();
-    then(verificationStore).should(never()).deleteVerified(anyString());
+    then(verificationStore).should(never()).deleteVerified(any(), anyString());
   }
 
   @Test
   @DisplayName("알 수 없는 제약 위반이면 변환하지 않고 원래 예외를 그대로 던짐")
   void signup_uniqueViolation_unknown() {
-    given(verificationStore.isVerified(EMAIL)).willReturn(true);
+    given(verificationStore.isVerified(EmailPurpose.SIGNUP, EMAIL)).willReturn(true);
     given(passwordEncoder.encode(anyString())).willReturn("encoded-password");
     willThrow(new DataIntegrityViolationException("could not execute statement",
             new RuntimeException("violates check constraint \"member_role_check\"")))

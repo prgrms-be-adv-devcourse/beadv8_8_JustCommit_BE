@@ -14,4 +14,10 @@ public class EmailCooldownException extends BusinessException  {
     super(MemberErrorCode.EMAIL_SEND_COOLDOWN);
     this.retryAfterSeconds = retryAfterSeconds;
   }
+
+  // 하루 발송 한도 초과도 같은 방식(429 + Retry-After)으로 내려준다 (#412)
+  public EmailCooldownException(MemberErrorCode errorCode, long retryAfterSeconds) {
+    super(errorCode);
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
 }
