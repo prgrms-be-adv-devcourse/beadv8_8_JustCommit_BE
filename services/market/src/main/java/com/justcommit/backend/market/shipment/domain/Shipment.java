@@ -47,9 +47,6 @@ public class Shipment extends BaseTimeEntity {
 
     private LocalDateTime cancelledAt;
 
-    // 택배사 쪽 취소 처리가 끝난 시각. CANCELLED인데 비어 있으면 스케줄러가 택배사 취소를 다시 시도한다.
-    private LocalDateTime courierCancelledAt;
-
     // 택배 예약 · 취소 큐가 이 배송을 다음에 집을 수 있는 시각. null이면 바로 집는다.
     // 한 배송은 READY(예약 큐) 아니면 CANCEL_PENDING(취소 큐)이라 두 큐가 같은 칸을 써도 겹치지 않는다.
     private LocalDateTime nextAttemptAt;
@@ -84,31 +81,6 @@ public class Shipment extends BaseTimeEntity {
         return status == ShipmentStatus.PICKED_UP
                 || status == ShipmentStatus.IN_TRANSIT
                 || status == ShipmentStatus.DELIVERED;
-    }
-
-    // 배송을 취소한다. 이미 취소된 배송이면 false (중복 요청)
-    public boolean cancel(LocalDateTime cancelledAt) {
-        if (this.status == ShipmentStatus.CANCELLED) {
-            return false;
-        }
-        if (isPickedUp()) {
-            throw new IllegalStateException("수거된 배송은 취소할 수 없습니다. 현재 상태: " + this.status);
-        }
-
-        this.status = ShipmentStatus.CANCELLED;
-        this.cancelledAt = cancelledAt;
-        return true;
-    }
-
-    // 택배사 쪽 취소 처리가 끝났음을 기록한다. READY에서 취소해 송장번호가 없었다면 다시 받아 온 송장번호로 채운다.
-    public void markCourierCancelled(String trackingNo, LocalDateTime courierCancelledAt) {
-        if (this.status != ShipmentStatus.CANCELLED) {
-            throw new IllegalStateException("취소된 배송만 택배사 취소를 기록할 수 있습니다. 현재 상태: " + this.status);
-        }
-        if (this.trackingNo == null) {
-            this.trackingNo = trackingNo;
-        }
-        this.courierCancelledAt = courierCancelledAt;
     }
 
     // 예약 · 취소 큐가 이 배송을 집었다. 택배사를 부르는 동안 다른 파드가 다시 집지 않게 다음 시도 시각을 잠깐 뒤로 미룬다.

@@ -115,7 +115,7 @@ class ShipmentCancelIntegrationTest {
         assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCEL_PENDING);
         assertThat(shipment.getCancelRequestedAt()).isAfterOrEqualTo(before);
         assertThat(shipment.getNextAttemptAt()).isNull(); // 택배 취소 큐가 바로 집는다
-        verify(courierClient, never()).cancel(anyString());
+        verify(courierClient, never()).cancelByCourierOrderNo(anyString(), any());
     }
 
     @Test
@@ -127,7 +127,7 @@ class ShipmentCancelIntegrationTest {
 
         assertThat(shipment().getStatus()).isEqualTo(ShipmentStatus.CANCEL_PENDING);
         verify(courierClient, never()).book(anyString(), any());
-        verify(courierClient, never()).cancel(anyString());
+        verify(courierClient, never()).cancelByCourierOrderNo(anyString(), any());
     }
 
     @Test
@@ -205,7 +205,7 @@ class ShipmentCancelIntegrationTest {
         });
         assertThatThrownBy(() -> inTransaction(() -> shipmentService.cancelShipment(7L)))
                 .isInstanceOf(BusinessException.class);
-        verify(courierClient, never()).cancel(anyString());
+        verify(courierClient, never()).cancelByCourierOrderNo(anyString(), any());
     }
 
     @Test

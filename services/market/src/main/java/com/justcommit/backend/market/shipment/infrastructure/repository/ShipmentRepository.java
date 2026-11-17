@@ -1,7 +1,6 @@
 package com.justcommit.backend.market.shipment.infrastructure.repository;
 
 import com.justcommit.backend.market.shipment.domain.Shipment;
-import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -47,6 +46,4 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
             """, nativeQuery = true)
     Optional<Shipment> findNextCancellable(@Param("now") LocalDateTime now);
 
-    List<Shipment> findTop100ByStatusAndCourierCancelledAtIsNullAndCancelledAtBeforeOrderByIdAsc(
-            ShipmentStatus status, LocalDateTime cancelledAt);
 }

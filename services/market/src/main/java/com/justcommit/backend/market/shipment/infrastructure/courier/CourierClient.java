@@ -110,27 +110,5 @@ public class CourierClient {
         }
     }
 
-    // 옛 송장번호 취소 (택배사에서 삭제됨). 옛 대사 코드가 지워지면 함께 지운다.
-    public CourierCancelResult cancel(String trackingNo) {
-        try {
-            restClient.post()
-                    .uri(BOOKING_PATH + "/{trackingNo}/cancel", trackingNo)
-                    .retrieve()
-                    .toBodilessEntity();
-            return CourierCancelResult.CANCELLED;
-        } catch (RestClientResponseException e) {
-            int status = e.getStatusCode().value();
-            if (status == 404) {
-                return CourierCancelResult.NOT_FOUND;
-            }
-            if (status == 409) {
-                return CourierCancelResult.NOT_CANCELLABLE;
-            }
-            throw new CourierCancelException(
-                    "택배 취소 실패: trackingNo = " + trackingNo + ", status = " + status, e);
-        } catch (ResourceAccessException e) {
-            throw new CourierCancelException(
-                    "택배 취소 실패: trackingNo = " + trackingNo + ", 택배사 응답 없음 (시간 초과 또는 연결 실패)", e);
-        }
-    }
+
 }

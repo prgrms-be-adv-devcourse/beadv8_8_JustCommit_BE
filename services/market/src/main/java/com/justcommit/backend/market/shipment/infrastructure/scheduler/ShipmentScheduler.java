@@ -7,15 +7,10 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
-
 @Component
 @EnableScheduling
 @RequiredArgsConstructor
 public class ShipmentScheduler {
-
-    // 커밋 직후 택배사 취소가 아직 진행 중인 배송과 겹치지 않게 1분 지난 배송만 다시 시도한다.
-    private static final long RETRY_AFTER_MINUTES = 1;
 
     private final ShipmentService shipmentService;
     private final ShipmentCancelQueueService shipmentCancelQueueService;
@@ -33,8 +28,4 @@ public class ShipmentScheduler {
         shipmentCancelQueueService.cancelPendingShipments();
     }
 
-    @Scheduled(fixedDelay = 300_000, initialDelay = 90_000)
-    public void retryCourierCancels() {
-        shipmentService.retryCourierCancels(LocalDateTime.now().minusMinutes(RETRY_AFTER_MINUTES));
-    }
 }

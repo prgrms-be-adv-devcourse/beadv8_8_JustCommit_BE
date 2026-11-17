@@ -16,10 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
@@ -126,23 +123,6 @@ public class ShipmentService {
         return e.getClass().getSimpleName() + ": " + e.getMessage();
     }
 
-    // 트랜잭션 안이면 커밋 후에, 밖이면 바로 실행한다.
-    // 커밋 후 콜백은 끝난 트랜잭션에 묶여 있어서 그대로 저장하면 커밋되지 않으므로 트랜잭션을 떼어 내고 실행한다.
-    private void runAfterCommit(Runnable task) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            task.run();
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                TransactionTemplate outsideTransaction = new TransactionTemplate(transactionManager);
-                outsideTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_NOT_SUPPORTED);
-                outsideTransaction.executeWithoutResult(status -> task.run());
-            }
-        });
-    }
-
     // 주문 모듈이 판매자 주문의 모든 상품이 취소됐을 때 주문 트랜잭션 안에서 호출한다.
     // 배송을 CANCEL_PENDING + 누른 시각으로 기록만 하고 주문과 함께 커밋한다. 택배사는 부르지 않는다 —
     // 택배 취소 큐가 보내고, 택배사가 누른 시각의 기사 거리로 판정한다 (ADR 0025).
@@ -159,61 +139,6 @@ public class ShipmentService {
             // 기사 2km 안(CANCEL_LOCKED) 또는 수거 이후
             throw new BusinessException(OrderErrorCode.SHIPMENT_NOT_CANCELABLE);
         }
-        shipmentRepository.save(shipment);
-    }
-
-    // 대사: 택배사 취소가 끝나지 않은 CANCELLED 배송을 다시 취소한다. 취소는 멱등이라 그대로 다시 보내도 된다.
-    public void retryCourierCancels(LocalDateTime cancelledBefore) {
-        List<Shipment> shipments = shipmentRepository
-                .findTop100ByStatusAndCourierCancelledAtIsNullAndCancelledAtBeforeOrderByIdAsc(
-                        ShipmentStatus.CANCELLED, cancelledBefore);
-        if (!shipments.isEmpty()) {
-            log.info("택배사 취소 재시도: {}건", shipments.size());
-        }
-        cancelAllAtCourier(shipments);
-    }
-
-    private void cancelAllAtCourier(List<Shipment> shipments) {
-        for (Shipment shipment : shipments) {
-            try {
-                cancelAtCourier(shipment);
-            } catch (RuntimeException e) {
-                // 택배사 응답 없음, 판매자 주소 조회 실패 등. 다음 대사 때 다시 시도한다.
-                log.warn("택배사 취소 실패, 나중에 다시 시도: shipmentId={}", shipment.getId(), e);
-            }
-        }
-    }
-
-    private void cancelAtCourier(Shipment shipment) {
-        String trackingNo = shipment.getTrackingNo();
-        if (trackingNo == null) {
-            // READY에서 취소됨. 예약 응답만 유실돼 택배사에 예약이 있을 수 있으므로 같은 멱등키로 송장번호를 받아 온다.
-            try {
-                OrderShippingInfo orderInfo = orderQuery.getShippingInfo(shipment.getSellerOrderId());
-                trackingNo = courierClient.book(shipment.getCourierOrderNo(), bookingRequest(shipment, orderInfo))
-                        .trackingNo();
-            } catch (CourierBookingException e) {
-                if (e.isRetryable()) {
-                    throw e;
-                }
-                // 택배사가 예약을 받지 않음(400·401 등) → 택배사에 건이 없으므로 서버 취소만으로 끝낸다.
-                log.warn("택배사에 예약이 없어 서버만 취소: shipmentId={}", shipment.getId(), e);
-                markCourierCancelled(shipment, null);
-                return;
-            }
-        }
-
-        CourierCancelResult result = courierClient.cancel(trackingNo);
-        if (result == CourierCancelResult.NOT_CANCELLABLE) {
-            // 취소와 수거가 거의 동시에 일어남. 자동으로 풀 수 없으니 사람이 확인한다.
-            log.error("택배사에서 이미 수거되어 취소 불가, 확인 필요: shipmentId={}, trackingNo={}",
-                    shipment.getId(), trackingNo);
-        }
-        markCourierCancelled(shipment, trackingNo);
-    }
-
-    private void markCourierCancelled(Shipment shipment, String trackingNo) {
-        shipment.markCourierCancelled(trackingNo, LocalDateTime.now());
         shipmentRepository.save(shipment);
     }
 
