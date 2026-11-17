@@ -111,6 +111,21 @@ class OrderWithdrawalCheckIntegrationTest {
     }
 
     @Test
+    @DisplayName("결제 처리 중 · 확인 필요 주문은 결제 결과를 모르므로 진행 중으로 센다")
+    void paymentProcessingAndReviewRequiredBlock() {
+        save(MEMBER, OrderStatus.PAYMENT_PROCESSING, seller(OTHER, OrderItemStatus.NORMAL));
+        save(MEMBER, OrderStatus.REVIEW_REQUIRED, seller(OTHER, OrderItemStatus.NORMAL));
+        save(OTHER, OrderStatus.REVIEW_REQUIRED, seller(MEMBER, OrderItemStatus.NORMAL));
+
+        WithdrawalCheckResponse result = service.check(MEMBER);
+
+        assertThat(result.hasWithdrawalBlocker()).isTrue();
+        assertThat(result.blockingReasons()).containsExactly(
+                WithdrawalBlockingReason.ACTIVE_BUYER_ORDER, WithdrawalBlockingReason.ACTIVE_SELLER_ORDER);
+        assertThat(result.details()).isEqualTo(new WithdrawalCheckResponse.Details(2, 1));
+    }
+
+    @Test
     @DisplayName("구매 확정 · 취소 · 환불 완료 · 만료 · 결제 실패 주문만 있으면 차단하지 않는다")
     void finishedOrdersDoNotBlock() {
         // 구매자로

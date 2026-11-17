@@ -1,7 +1,7 @@
 # 용어집 (유비쿼터스 언어)
 
 > 언제 읽나: 같은 대상을 부르는 표준 이름을 찾을 때, 별칭(다른 이름 · 일상어 · 영문)으로 검색할 때, 코드 이름과 문서 이름을 맞출 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: 노션 「유비쿼터스 언어 정리」, 전체
+> 상태: ✅ 확정 · 마지막 수정 2026-11-17 · 관련: 노션 「유비쿼터스 언어 정리」, 전체
 
 문서 · 코드 · PR · 회의에서는 「표준 용어」만 씁니다. 「별칭」은 검색용이며 본문에 쓰지 않습니다. 시간 · 금액 · 횟수 같은 값은 여기 적지 않고 「원본」 문서를 봅니다.
 
@@ -14,7 +14,8 @@
 | 주문 | `Orders` | 구매, 주문서 | 구매자가 한 번에 결제한 묶음. 여러 판매자의 상품이 섞일 수 있음 | [market](services/market.md) |
 | 판매자 주문 | `SellerOrder` | 판매 주문, 셀러 주문 | 주문을 판매자별로 나눈 단위. 배송 · 배송비 · 정산 · 리뷰 · Kafka Key의 기준 | [market](services/market.md) |
 | 주문상품 | `OrdersItem` | 주문 상품, 주문 아이템 | 주문 안의 상품 하나. 취소 · 반품 · 구매 확정의 단위 | [market](services/market.md) |
-| 결제 대기 | `PAYMENT_PENDING` (주문) | 결제중, 미결제 | 잔액이 부족해 결제를 기다리는 주문 | [market 정책](services/market.md#정책) |
+| 결제 대기 | `PAYMENT_PENDING` (주문) | 미결제 | 잔액이 부족해 결제를 기다리는 주문 | [market 정책](services/market.md#정책) |
+| 결제 처리 중 | `PAYMENT_PROCESSING` (주문) | 결제중, 결제 시도 중 | payment에 결제를 요청했고 아직 결과를 반영하지 못한 주문. 결과를 모르면 이 상태로 남고 Saga 복구가 같은 orderId로 다시 요청. 만료하지 않음 | [주문 · 결제](flows/order-payment.md#멈춘-주문-복구) |
 | 결제 기한 만료 | `PAYMENT_WINDOW_EXPIRED` | 결제 시간 초과 | 결제 대기 기한이 지나 결제를 거절하는 것. 결제할 때 market이 직접 확인 | [market 정책](services/market.md#정책) |
 | 수락 · 거절 | `ACCEPT_PENDING` · `SellerOrderAccepted` · `SellerOrderRejected` | 주문 확인, 주문 승인 | 결제 후 판매자가 주문을 받을지 정하는 단계. 수락해야 배송이 생김 | [market 정책](services/market.md#정책) |
 | 자동 거절 | – | 자동 취소 (구매자 알림 문구) | 판매자가 기한 안에 응답하지 않아 거절된 주문 | [market 정책](services/market.md#정책) |

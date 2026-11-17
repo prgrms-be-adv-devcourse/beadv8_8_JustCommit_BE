@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -49,6 +50,22 @@ public class Orders extends BaseTimeEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private OrderStatus status;
+
+    // 결제 시도 번호. 결제 시작 · 복구 선점 · REVIEW_REQUIRED 전환 때 +1, 결과는 자기 번호일 때만 반영 (ADR 0023)
+    @Column(nullable = false)
+    private int attemptNo = 0;
+
+    // 복구 선점 횟수 (첫 결제 호출은 세지 않음)
+    @Column(nullable = false)
+    private int attemptCount = 0;
+
+    // 마지막 결제 시도 시각 (market 앱 시각)
+    @Column
+    private LocalDateTime attemptedAt;
+
+    // 결과 불명 · 확정 실패 원인 코드
+    @Column(length = 100)
+    private String lastError;
 
     public Orders(String orderNo, Long buyerId, String recipientName, String recipientPhone, String zipcode, String shipAddress1, String shipAddress2, Integer itemCount) {
         this.orderNo = orderNo;
