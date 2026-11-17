@@ -9,29 +9,38 @@ import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.core.task.SyncTaskExecutor;
+import org.springframework.core.task.TaskExecutor;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.mail.MailSendException;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 
 // 가입 계정 안내 서비스 (#412)
@@ -50,8 +59,35 @@ class AccountReminderServiceTest {
   @Mock
   private AccountReminderMailSender mailSender;
 
-  @InjectMocks
   private AccountReminderService service;
+
+  // 기본은 제출한 작업을 바로 실행하는 실행기 (기존 흐름을 순서대로 검증). 비동기 · 제출 거절은 각 테스트에서 따로 만든다 (#421)
+  @BeforeEach
+  void setUp() {
+    service = serviceWith(new SyncTaskExecutor());
+  }
+
+  private AccountReminderService serviceWith(TaskExecutor mailTaskExecutor) {
+    return new AccountReminderService(store, memberRepository, mailSender, mailTaskExecutor);
+  }
+
+  // 대기열이 가득 찬 실행기처럼 제출을 항상 거절
+  private static TaskExecutor rejectingExecutor() {
+    return task -> {
+      throw new TaskRejectedException("mail executor full");
+    };
+  }
+
+  // 실제 스레드 풀 (스레드 1개). 테스트가 끝나면 shutdown
+  private static ThreadPoolTaskExecutor realExecutor() {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(1);
+    executor.setMaxPoolSize(1);
+    executor.setQueueCapacity(1);
+    executor.setThreadNamePrefix("mail-test-");
+    executor.initialize();
+    return executor;
+  }
 
   private void givenSlot(SendStatus status) {
     given(store.tryAcquireSend(EmailSendQuota.ACCOUNT_REMINDER, EMAIL, EmailSendPolicy.COOLDOWN, EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW))
@@ -144,6 +180,78 @@ class AccountReminderServiceTest {
         .doesNotContain(EMAIL).doesNotContain(smtpReply);
   }
 
+  // ===== 메일 작업 제출 (#421) =====
+
+  @Test
+  @DisplayName("메일 작업 제출이 거절되면 예외 없이 끝나고 이 요청의 예약만 되돌린다, 메일 없음, 로그에는 거절 종류만")
+  @ExtendWith(OutputCaptureExtension.class)
+  void submitRejectedReleasesOwnSlot(CapturedOutput output) {
+    service = serviceWith(rejectingExecutor());
+    givenSlot(SendStatus.ACQUIRED);
+    Member local = member(MemberStatus.ACTIVE, Provider.LOCAL);
+    given(memberRepository.findByEmail(EMAIL)).willReturn(Optional.of(local));
+
+    service.sendReminder(EMAIL);
+
+    then(store).should().releaseReminderSend(EMAIL, REQUEST_ID);
+    then(mailSender).shouldHaveNoInteractions();
+    assertThat(output.getAll()).contains("reason=TaskRejectedException").doesNotContain(EMAIL);
+  }
+
+  @Test
+  @DisplayName("SMTP 호출이 끝나지 않아도 안내 요청은 먼저 반환하고, 정상 발송이면 예약을 되돌리지 않는다")
+  void returnsBeforeSmtp() throws Exception {
+    ThreadPoolTaskExecutor executor = realExecutor();
+    CountDownLatch smtpRelease = new CountDownLatch(1);
+    try {
+      service = serviceWith(executor);
+      givenSlot(SendStatus.ACQUIRED);
+      Member local = member(MemberStatus.ACTIVE, Provider.LOCAL);
+      given(memberRepository.findByEmail(EMAIL)).willReturn(Optional.of(local));
+      CountDownLatch smtpStarted = new CountDownLatch(1);
+      CountDownLatch smtpDone = new CountDownLatch(1);
+      willAnswer(invocation -> {
+        smtpStarted.countDown();
+        smtpRelease.await(5, TimeUnit.SECONDS);
+        smtpDone.countDown();
+        return null;
+      }).given(mailSender).send(EMAIL, Provider.LOCAL);
+
+      service.sendReminder(EMAIL);
+
+      // 반환된 시점에 SMTP는 시작됐지만 아직 끝나지 않음
+      assertThat(smtpStarted.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(smtpDone.getCount()).isEqualTo(1);
+
+      smtpRelease.countDown();
+      assertThat(smtpDone.await(5, TimeUnit.SECONDS)).isTrue();
+      then(store).should(after(200).never()).releaseReminderSend(anyString(), anyString());
+    } finally {
+      // 검증이 중간에 실패해도 막아 둔 메일 스레드를 풀고 실행기를 닫는다
+      smtpRelease.countDown();
+      executor.shutdown();
+    }
+  }
+
+  @Test
+  @DisplayName("작업 제출 후 메일 스레드에서 SMTP가 실패하면 이 요청의 예약을 되돌린다")
+  void asyncSmtpFailureReleasesOwnSlot() {
+    ThreadPoolTaskExecutor executor = realExecutor();
+    try {
+      service = serviceWith(executor);
+      givenSlot(SendStatus.ACQUIRED);
+      Member local = member(MemberStatus.ACTIVE, Provider.LOCAL);
+      given(memberRepository.findByEmail(EMAIL)).willReturn(Optional.of(local));
+      willThrow(new MailSendException("fail")).given(mailSender).send(EMAIL, Provider.LOCAL);
+
+      service.sendReminder(EMAIL);
+
+      then(store).should(timeout(5000)).releaseReminderSend(EMAIL, REQUEST_ID);
+    } finally {
+      executor.shutdown();
+    }
+  }
+
   @Test
   @DisplayName("이메일은 앞뒤 공백 제거, 소문자로 바꿔서 사용")
   void normalizeEmail() {
@@ -178,7 +286,7 @@ class AccountReminderServiceTest {
   }
 
   @Test
-  @DisplayName("SMTP 실패 뒤 예약을 되돌리다 Redis 장애가 나면 그대로 올라간다 (성공으로 감추지 않음)")
+  @DisplayName("SMTP 실패 뒤 예약을 되돌리다 Redis 장애가 나면 메일 작업 밖으로 그대로 올라간다 (성공으로 감추지 않음, 바로 실행하는 실행기라 호출자에게 보임)")
   void releaseFailurePropagates() {
     givenSlot(SendStatus.ACQUIRED);
     Member local = member(MemberStatus.ACTIVE, Provider.LOCAL);

@@ -40,15 +40,29 @@
 
 | 요청 `purpose` | 동작 |
 |---|---|
-| 생략 · `SIGNUP` | 가입 (생략하면 기존 요청과 같게 가입으로 처리). 가입된 이메일 409 `DUPLICATE_EMAIL`, 발송 제한 429 `EMAIL_SEND_COOLDOWN` · `EMAIL_SEND_DAILY_LIMIT`(+ `Retry-After`), 확인 실패는 `EMAIL_CODE_MISMATCH` · `EMAIL_CODE_EXPIRED` · `EMAIL_CODE_ATTEMPTS_EXCEEDED` |
+| 생략 · `SIGNUP` | 가입 (생략하면 기존 요청과 같게 가입으로 처리). 가입된 이메일 409 `DUPLICATE_EMAIL`, 발송 제한 429 `EMAIL_SEND_COOLDOWN` · `EMAIL_SEND_DAILY_LIMIT`(+ `Retry-After`), 메일 작업 제출 거절 500 `EMAIL_SEND_FAILED`(→ [메일 발송](#메일-발송)), 확인 실패는 `EMAIL_CODE_MISMATCH` · `EMAIL_CODE_EXPIRED` · `EMAIL_CODE_ATTEMPTS_EXCEEDED` |
 | `PASSWORD_RESET` | 비밀번호 재설정 (아래 응답 규칙) |
 | `ACCOUNT_CHANGE` | 공개 경로에서는 받지 않음(400 `EMAIL_PURPOSE_NOT_SUPPORTED`). 계좌 변경 인증은 로그인 필수 전용 경로로 → [계좌 변경](#계좌-변경) |
 
 Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` · `account-change`) → [Redis 키](redis-keys.md)
 
+#### 메일 발송
+
+인증 메일(가입 · 비밀번호 재설정 · 계좌 변경)과 가입 계정 안내 메일은 요청 안에서 SMTP를 기다리지 않고 member의 메일 전용 실행기에서 보냅니다 (#421). 요청은 발송 예약 · 인증번호 저장(인증 메일만)까지 마치고 메일 작업을 제출한 뒤 응답하므로, 성공 응답은 발송 완료가 아니라 발송 요청 접수입니다(가입 · 계좌 변경 문구 "인증번호 발송을 요청했습니다."). 메일함 도착 시간은 SMTP에 달려 있습니다.
+
+| 상황 | 가입 · 계좌 변경 | 비밀번호 재설정 · 가입 계정 안내 |
+|---|---|---|
+| 메일 작업 제출 거절 (실행기 대기열이 가득 참 · 종료 중 등) | 응답 전에 이 요청의 예약을 정리하고 500 `EMAIL_SEND_FAILED` | 응답 전에 이 요청의 예약을 정리하고 같은 200 |
+| 제출 뒤 SMTP 실패 | 응답(200)과 별개로 메일 스레드가 이 요청의 예약을 정리 | 같음 |
+| 제출 뒤 대기 중 인증번호가 교체 · 만료 · 사용됨 | 메일 스레드가 SMTP 호출 직전에 확인하고 발송을 건너뜀, 예약은 그대로 | 비밀번호 재설정은 같음. 가입 계정 안내는 인증번호가 없어 확인하지 않음 |
+
+메일 스레드는 SMTP 호출 직전에 Redis에서 현재 인증번호가 해당 요청의 것인지 확인합니다. 번호가 교체됐거나 키가 없으면 발송을 건너뛰고 예약은 그대로 둡니다. 확인 직후 번호가 바뀌는 경우는 남습니다.
+
+정리 대상은 인증 메일이면 이 요청이 만든 인증번호 · 재발송 제한 · 하루 발송 횟수, 가입 계정 안내면 재발송 제한 · 하루 발송 횟수입니다. 요청 식별자 기준이라 그 사이 다른 요청이 만든 값은 지우지 않습니다 → [Redis 키](redis-keys.md). SMTP 실패는 작업 제출 후 HTTP 응답과 별개로 메일 스레드에서 처리되므로, 예약 정리가 완료되면 같은 이메일로 다시 요청할 수 있고, 서버가 자동으로 다시 보내지는 않습니다. 응답으로는 SMTP 실패를 알 수 없어, 메일이 오지 않으면 다시 요청하도록 안내합니다. 접수 직후 서버가 재시작되면 대기 중이던 메일은 보내지지 않고, 그 요청의 예약은 그대로 남습니다(재발송 제한 60초가 끝나야 다시 요청할 수 있고, 하루 발송 횟수에도 1회로 남음).
+
 #### 비밀번호 재설정 · 가입 계정 안내
 
-재설정 인증번호 발송과 가입 계정 안내는 응답으로 가입 여부를 알 수 없게, **유효한 요청에 대해** 대상 여부 · 이메일 발송 제한 · SMTP 실패와 관계없이 같은 200을 반환합니다. 입력 오류는 400, Redis · DB 장애는 서버 오류이고, Gateway IP 제한에 걸리면 429 `TOO_MANY_REQUESTS`입니다. 같은 이메일의 발송 예약 제한 중 60초 1회는 인증 메일과 가입 계정 안내가 공유하고, 첫 예약부터 24시간 5회는 가입 인증 · 비밀번호 재설정 · 가입 계정 안내 · 계좌 변경별로 따로 셉니다. Gateway IP 제한은 경로마다 따로 셉니다.
+재설정 인증번호 발송과 가입 계정 안내는 응답으로 가입 여부를 알 수 없게, **유효한 요청에 대해** 대상 여부 · 이메일 발송 제한 · 메일 작업 제출 거절 · SMTP 실패와 관계없이 같은 200을 반환합니다. 입력 오류는 400, Redis · DB 장애는 서버 오류이고, Gateway IP 제한에 걸리면 429 `TOO_MANY_REQUESTS`입니다. 같은 이메일의 발송 예약 제한 중 60초 1회는 인증 메일과 가입 계정 안내가 공유하고, 첫 예약부터 24시간 5회는 가입 인증 · 비밀번호 재설정 · 가입 계정 안내 · 계좌 변경별로 따로 셉니다. Gateway IP 제한은 경로마다 따로 셉니다.
 
 | 단계 | 요청 | 동작 · 응답 |
 |---|---|---|
@@ -63,7 +77,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 
 | 단계 | 요청 | 동작 · 응답 |
 |---|---|---|
-| 인증번호 발송 | `users/me/account/verifications` (본문 없음) | 200 `data: { expiresIn: 300, resendAvailableIn: 60 }`. 발송 당시 회원 id · 인증 버전을 번호에 묶음. 활동 중인 회원이 아니면 404 `MEMBER_NOT_FOUND` |
+| 인증번호 발송 | `users/me/account/verifications` (본문 없음) | 200 `data: { expiresIn: 300, resendAvailableIn: 60 }`. 발송 당시 회원 id · 인증 버전을 번호에 묶음. 활동 중인 회원이 아니면 404 `MEMBER_NOT_FOUND`, 메일 작업 제출 거절 500 `EMAIL_SEND_FAILED`(→ [메일 발송](#메일-발송)) |
 | 변경 토큰 발급 | `users/me/account/changeTokens` `{ code }` | 200 `data: { accountChangeToken, expiresIn: 600 }`. 틀림 · 만료 · 오답 한도는 `EMAIL_CODE_MISMATCH` · `EMAIL_CODE_EXPIRED` · `EMAIL_CODE_ATTEMPTS_EXCEEDED`. 번호는 맞지만 발송 뒤 회원 · 인증 버전 · 상태가 바뀌었으면 400 `ACCOUNT_VERIFICATION_INVALID` |
 | 계좌 변경 | `users/me/account` `{ accountChangeToken, bankCode, accountNo, accountHolder }` (계좌 값은 가입과 같은 규칙) | 200 "계좌가 변경되었습니다."(data 없음, 바뀐 계좌는 `users/me`에서 뒤 4자리로 확인). 토큰 오류(없음 · 만료 · 이미 사용 · 다른 회원 · 발급 뒤 인증 버전 변경)는 400 `INVALID_ACCOUNT_CHANGE_TOKEN`이고 그 토큰은 다시 쓸 수 없음. 다른 회원이 쓰는 계좌 409 `DUPLICATE_ACCOUNT`, 잠금 대기 초과 409 `MEMBER_BUSY` |
 

@@ -181,6 +181,13 @@ public class EmailVerificationRedisStore {
     return saved != null && saved == 1L;
   }
 
+  // 메일 작업이 SMTP 호출 직전에 확인 (#421): 인증번호 키가 아직 이 요청의 번호인지
+  // 키가 없으면(만료 · 이미 사용 · 정리됨) 또는 다른 요청이 새 번호로 바꿨으면 false (그 번호는 보내도 쓸 수 없음)
+  public boolean isCurrentCode(EmailPurpose purpose, String email, String requestId) {
+    String value = redisTemplate.opsForValue().get(key(CODE_KEY, purpose, email));
+    return value != null && value.startsWith(requestId + ":");
+  }
+
   // 비교 · 틀린 횟수 증가 · 폐기를 한 번에 처리 (같은 번호가 동시에 두 번 승인되지 않음)
   public VerifyOutcome verifyCode(EmailPurpose purpose, String email, String code,
                                   int maxWrongAttempts, Duration attemptsTtl) {
