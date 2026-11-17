@@ -53,7 +53,8 @@ public class AccountReminderService {
     try {
       mailSender.send(email, target.get().getProvider());
     } catch (MailException e) {
-      log.error("가입 계정 안내 메일 발송 실패: email={}", email, e);
+      // 예외 메시지 · 스택 트레이스에 SMTP 응답(수신 주소 포함 가능)이 들어갈 수 있어, 이메일과 예외 객체 없이 예외 종류만 남김
+      log.error("가입 계정 안내 메일 발송 실패: cause={}", e.getClass().getSimpleName());
       store.releaseReminderSend(email, slot.requestId());
     }
   }

@@ -229,7 +229,7 @@ class TokenRevocationRetryIntegrationTest {
     int n = SEQ.incrementAndGet();
     return memberRepository.save(Member.createLocal(
         "retry" + n + "@test.com", passwordEncoder.encode("plant1234"), "재처리" + n, String.format("014%08d", n),
-        "004", "v1:test-account", "홍길동"));
+        "004", "v1:test-account", null, "홍길동"));
   }
 
   private static String revokedKey(Long memberId) {

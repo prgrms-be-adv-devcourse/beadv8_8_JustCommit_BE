@@ -293,7 +293,7 @@ class PasswordChangeLimitIntegrationTest {
   private Member saveMember() {
     int n = SEQ.incrementAndGet();
     return memberRepository.save(Member.createLocal("limit" + n + "@test.com", passwordEncoder.encode(OLD_PASSWORD),
-        "제한" + n, String.format("015%08d", n), "004", "v1:test-account", "홍길동"));
+        "제한" + n, String.format("015%08d", n), "004", "v1:test-account", null, "홍길동"));
   }
 
   private static KeyPair newKeyPair() {

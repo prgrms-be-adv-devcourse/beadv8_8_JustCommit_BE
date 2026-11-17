@@ -27,6 +27,7 @@ messaging:
 
 # 폐기 재처리 스케줄러는 테스트에서 끈다 (테스트가 만든 PENDING 작업을 중간에 처리하지 않게). 재처리는 서비스를 직접 불러 확인
 member:
+  hmac-key: Ykrj3QEmlzI3Qklcvkhl/OdmVli7c2FS0nXnisaRXsw=
   token-revocation:
     retry:
       enabled: false

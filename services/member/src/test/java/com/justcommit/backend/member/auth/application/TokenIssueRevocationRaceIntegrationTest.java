@@ -452,14 +452,14 @@ class TokenIssueRevocationRaceIntegrationTest {
     int n = SEQ.incrementAndGet();
     return transactionTemplate.execute(status -> memberRepository.save(Member.createLocal(
         "race" + n + "@test.com", passwordEncoder.encode(PASSWORD), "경쟁" + n, String.format("010%08d", n),
-        "004", "v1:test-account", "홍길동")));
+        "004", "v1:test-account", null, "홍길동")));
   }
 
   private Member socialMember() {
     int n = SEQ.incrementAndGet();
     return transactionTemplate.execute(status -> memberRepository.save(Member.createSocial(
         Provider.KAKAO, "kakao-" + n, "social" + n + "@test.com", "소셜" + n, String.format("011%08d", n),
-        "004", "v1:test-account", "홍길동")));
+        "004", "v1:test-account", null, "홍길동")));
   }
 
   private void flushRedis() {

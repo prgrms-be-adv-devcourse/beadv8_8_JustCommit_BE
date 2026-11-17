@@ -51,9 +51,12 @@ public class VerificationMailSender {
   }
 
   // 본인이 요청하지 않은 메일을 받았을 때의 안내 (재설정은 무시해도 비밀번호가 바뀌지 않음을 알려 줌)
+  // 계좌 변경은 로그인한 사람만 요청할 수 있어, 본인이 요청하지 않았다면 계정 보안을 확인하도록 안내한다 (#413)
   private static String notice(EmailPurpose purpose) {
     return switch (purpose) {
       case PASSWORD_RESET -> "본인이 요청하지 않았다면 이 메일을 무시해주세요. 비밀번호는 바뀌지 않습니다.";
+      case ACCOUNT_CHANGE -> "본인이 요청하지 않았다면 인증번호를 입력하지 마세요. "
+          + "이메일·비밀번호 회원은 비밀번호를 변경하고, 소셜 로그인 회원은 소셜 계정의 보안 설정을 확인해 주세요.";
       default -> "본인이 요청하지 않았다면 이 메일을 무시해주세요.";
     };
   }
