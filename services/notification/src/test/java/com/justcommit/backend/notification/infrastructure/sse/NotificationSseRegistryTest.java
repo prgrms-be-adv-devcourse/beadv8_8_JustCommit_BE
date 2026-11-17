@@ -29,7 +29,7 @@ class NotificationSseRegistryTest {
     }
 
     @Test
-    @DisplayName("한 회원의 탭 두 개 모두에 보내고, 다른 회원에게는 보내지 않는다")
+    @DisplayName("[S-I02] 한 회원의 탭 두 개 모두에 보내고, 다른 회원에게는 보내지 않는다")
     void sendsToAllTabsOfMember() {
         RecordingEmitter tab1 = new RecordingEmitter();
         RecordingEmitter tab2 = new RecordingEmitter();
