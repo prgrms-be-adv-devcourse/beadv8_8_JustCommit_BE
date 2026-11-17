@@ -15,7 +15,7 @@
 | 주문 상태 | `OrderStatus`에 `PAYMENT_PROCESSING`(호출 중 · 결과 불명) · `REVIEW_REQUIRED`(복구 5회 실패) 추가. |
 | TX2 | 조건부 UPDATE: `PAYMENT_PENDING` · 생성 10분 이내면 `PAYMENT_PROCESSING`, `attempt_no + 1`, `attempted_at` 기록. TX2 선점 실패 시 Payment REST를 호출하지 않는다. 해당 주문이 만료되었거나 만료 대상이라면 기존 만료 처리와 Outbox 예약 해제 흐름을 통해 상품 예약을 정리한다. 중복 해제는 orderId 기준 멱등 처리한다 |
 | TX3 | 조건부 UPDATE: `PAYMENT_PROCESSING` · 자기 `attempt_no`일 때만 반영 |
-| 결과 | `PAID` · `ALREADY_PAID` → `PAID` + 기존 `orderPayment()` 같은 TX / 잔액 부족 → `PAYMENT_PENDING` / 확정 실패(지갑 없음 · 4xx · 첫 호출 연결 실패) → `PAYMENT_FAILED` + order-failed / 타임아웃 · 5xx → `PAYMENT_PROCESSING` 유지 |
+| 결과 | `PAID` · `ALREADY_PAID` → `PAID` + 기존 `orderPayment()` 같은 TX / 잔액 부족 → `PAYMENT_PENDING` / 확정 실패(지갑 없음 · 4xx · 연결 실패) → `PAYMENT_FAILED` + order-failed / 타임아웃 · 5xx → `PAYMENT_PROCESSING` 유지 |
 | 예약 실패 | 기존 규칙 그대로: 409 · 연결 실패는 주문 실패만, 타임아웃은 주문 실패 + order-failed |
 | Saga 복구 | 1분 주기, `attempted_at` 10초 지난 `PAYMENT_PROCESSING`을 `SKIP LOCKED`로 선점(`attempt_no` · `attempt_count` +1 커밋) 후 트랜잭션 밖에서 재호출. 복구의 연결 실패는 결과 불명. 5회 안 되면 `REVIEW_REQUIRED` |
 | 만료 | 만료 스케줄러는 기존 `SELECT FOR UPDATE SKIP LOCKED` 방식을 유지한다. 주문 행 잠금 후 `PAYMENT_PENDING` 상태와 10분 경과 여부를 확인하고 만료 처리한다. `PAYMENT_PROCESSING` 주문은 만료하지 않는다. 결제 시작은 TX2의 CAS로 제어하므로 만료 처리까지 CAS로 변경하지 않는다. 시각은 모두 market 앱 시각 |
