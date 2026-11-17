@@ -17,7 +17,8 @@ import java.time.LocalDateTime;
                 @UniqueConstraint(name = "uk_member_email", columnNames = "email"),
                 @UniqueConstraint(name = "uk_member_nickname", columnNames = "nickname"),
                 @UniqueConstraint(name = "uk_member_phone", columnNames = "phone"),
-                @UniqueConstraint(name = "uk_member_provider", columnNames = {"provider", "provider_id"})
+                @UniqueConstraint(name = "uk_member_provider", columnNames = {"provider", "provider_id"}),
+                @UniqueConstraint(name = "uk_member_account_hash", columnNames = "account_hash")
         }
 )
 @Getter
@@ -53,6 +54,9 @@ public class Member extends BaseTimeEntity  {
         @Column(name = "account_no_enc", nullable = false, length = 255)
         private String accountNoEnc; // AES-256-GCM 암호문 ("v1:" + Base64)
 
+        @Column(name = "account_hash", length = 64)
+        private String accountHash; // 계좌 중복 확인용 HMAC (MemberHmac.accountHash, hex 64글자). 기존 회원은 NULL
+
         @Column(name = "account_holder", nullable = false, length = 50) // 예금주
         private String accountHolder;
 
@@ -70,7 +74,7 @@ public class Member extends BaseTimeEntity  {
 
         // 이메일·비밀번호 회원가입 (권한 MEMBER, 상태 ACTIVE로 고정)
         public static Member createLocal(String email, String encodedPassword, String nickname, String phone,
-                                         String bankCode, String encryptedAccountNo, String accountHolder) {
+                                         String bankCode, String encryptedAccountNo, String accountHash, String accountHolder) {
                 Member member = new Member();
                 member.email = email;
                 member.password = encodedPassword;
@@ -81,6 +85,7 @@ public class Member extends BaseTimeEntity  {
                 member.status = MemberStatus.ACTIVE;
                 member.bankCode = bankCode;
                 member.accountNoEnc = encryptedAccountNo;
+                member.accountHash = accountHash;
                 member.accountHolder = accountHolder;
                 member.accountUpdatedAt = LocalDateTime.now();
                 return member;
@@ -90,7 +95,7 @@ public class Member extends BaseTimeEntity  {
         // email·provider·providerId는 가입 토큰에서 꺼낸 값 (카카오가 인증한 정보)
         public static Member createSocial(Provider provider, String providerId, String email,
                                           String nickname, String phone,
-                                          String bankCode, String encryptedAccountNo, String accountHolder) {
+                                          String bankCode, String encryptedAccountNo, String accountHash, String accountHolder) {
                 if (provider == Provider.LOCAL) {
                         throw new IllegalArgumentException("소셜 회원은 소셜 가입 경로로만 생성할 수 있습니다.");
                 }
@@ -105,6 +110,7 @@ public class Member extends BaseTimeEntity  {
                 member.status = MemberStatus.ACTIVE;
                 member.bankCode = bankCode;
                 member.accountNoEnc = encryptedAccountNo;
+                member.accountHash = accountHash;
                 member.accountHolder = accountHolder;
                 member.accountUpdatedAt = LocalDateTime.now();
                 return member;

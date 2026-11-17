@@ -18,6 +18,8 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
 
   boolean existsByPhone(String phone);
 
+  boolean existsByAccountHash(String accountHash);
+
   // 로그인: 정규화한 이메일로 회원 조회
   Optional<Member> findByEmail(String email);
 

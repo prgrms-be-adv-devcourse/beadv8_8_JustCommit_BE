@@ -250,7 +250,7 @@ class AccountReminderIntegrationTest {
   private Member saveMember() {
     int n = SEQ.incrementAndGet();
     return memberRepository.save(Member.createLocal("remind" + n + "@test.com", passwordEncoder.encode("plant1234"),
-        "안내" + n, String.format("014%08d", n), "004", "v1:test-account", "홍길동"));
+        "안내" + n, String.format("014%08d", n), "004", "v1:test-account", null, "홍길동"));
   }
 
   // 소셜 회원: 로컬로 저장한 뒤 DB에서 비밀번호를 비우고 로그인 방식을 바꾼다 (비밀번호 변경 통합 테스트와 같은 방식)

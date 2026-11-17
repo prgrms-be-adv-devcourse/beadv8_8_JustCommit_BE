@@ -7,6 +7,7 @@ import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.domain.*;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
+import com.justcommit.backend.member.infrastructure.crypto.MemberHmac;
 import com.justcommit.backend.member.auth.domain.EmailPurpose;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
@@ -48,6 +49,9 @@ class SignupServiceTest {
   private AccountCipher accountCipher;
 
   @Mock
+  private MemberHmac memberHmac;
+
+  @Mock
   private OutboxPublisher outboxPublisher;
 
   @InjectMocks
@@ -60,6 +64,7 @@ class SignupServiceTest {
   private static final String BANK_CODE = "004";
   private static final String ACCOUNT_NO = "12345678901234";
   private static final String ACCOUNT_HOLDER = "홍길동";
+  private static final String ACCOUNT_HASH = "account-hash";
 
   // 배송지
   private static final String RECIPIENT_NAME = "홍길동";
@@ -95,6 +100,7 @@ class SignupServiceTest {
     given(verificationStore.isVerified(EmailPurpose.SIGNUP, EMAIL)).willReturn(true);
     given(passwordEncoder.encode(PASSWORD)).willReturn("encoded-password");
     given(accountCipher.encrypt(ACCOUNT_NO)).willReturn("v1:encrypted-account");
+    given(memberHmac.accountHash(BANK_CODE, ACCOUNT_NO)).willReturn(ACCOUNT_HASH);
     givenMemberSaved();
 
     // when: 앞뒤 공백·대문자가 섞인 이메일로 요청
@@ -117,6 +123,7 @@ class SignupServiceTest {
     // then: 계좌는 암호문으로 저장 (원문 계좌번호는 저장되지 않음)
     assertThat(savedMember.getBankCode()).isEqualTo(BANK_CODE);
     assertThat(savedMember.getAccountNoEnc()).isEqualTo("v1:encrypted-account");
+    assertThat(savedMember.getAccountHash()).isEqualTo(ACCOUNT_HASH); // 은행 코드 · 계좌번호로 계산한 HMAC
     assertThat(savedMember.getAccountHolder()).isEqualTo(ACCOUNT_HOLDER);
     assertThat(savedMember.getAccountUpdatedAt()).isNotNull();
 
@@ -212,6 +219,39 @@ class SignupServiceTest {
             .isEqualTo(MemberErrorCode.DUPLICATE_PHONE);
 
     then(memberRepository).should(never()).saveAndFlush(any());
+  }
+
+  @Test
+  @DisplayName("다른 회원이 쓰는 계좌면 DUPLICATE_ACCOUNT, 계좌 암호화 · 저장하지 않음")
+  void signup_duplicateAccount() {
+    given(verificationStore.isVerified(EmailPurpose.SIGNUP, EMAIL)).willReturn(true);
+    given(memberHmac.accountHash(BANK_CODE, ACCOUNT_NO)).willReturn(ACCOUNT_HASH);
+    given(memberRepository.existsByAccountHash(ACCOUNT_HASH)).willReturn(true);
+
+    assertThatThrownBy(() -> signupService.signup(command()))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MemberErrorCode.DUPLICATE_ACCOUNT);
+
+    then(memberRepository).should(never()).saveAndFlush(any());
+    then(accountCipher).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("동시 가입으로 계좌 UNIQUE 위반 시 DUPLICATE_ACCOUNT로 변환, 배송지는 저장하지 않음")
+  void signup_uniqueViolation_account() {
+    given(verificationStore.isVerified(EmailPurpose.SIGNUP, EMAIL)).willReturn(true);
+    given(passwordEncoder.encode(anyString())).willReturn("encoded-password");
+    willThrow(new DataIntegrityViolationException("could not execute statement",
+            new RuntimeException("duplicate key value violates unique constraint \"uk_member_account_hash\"")))
+            .given(memberRepository).saveAndFlush(any(Member.class));
+
+    assertThatThrownBy(() -> signupService.signup(command()))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MemberErrorCode.DUPLICATE_ACCOUNT);
+
+    then(addressRepository).shouldHaveNoInteractions();
   }
 
   @Test

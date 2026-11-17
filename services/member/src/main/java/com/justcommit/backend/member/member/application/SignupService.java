@@ -10,6 +10,7 @@ import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.event.MemberCreated;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
+import com.justcommit.backend.member.infrastructure.crypto.MemberHmac;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -28,6 +29,7 @@ public class SignupService {
   private final EmailVerificationRedisStore verificationStore;
   private final PasswordEncoder passwordEncoder;
   private final AccountCipher accountCipher;
+  private final MemberHmac memberHmac;
   private final OutboxPublisher outboxPublisher;
 
   // 회원가입: 이메일 인증 확인 → 중복 검사 → 회원 저장 → 기본 배송지 저장 → 인증 완료 상태 삭제
@@ -50,6 +52,10 @@ public class SignupService {
     if (memberRepository.existsByPhone(command.phone())) {
       throw new BusinessException(MemberErrorCode.DUPLICATE_PHONE);
     }
+    String accountHash = memberHmac.accountHash(command.bankCode(), command.accountNo());
+    if (memberRepository.existsByAccountHash(accountHash)) {
+      throw new BusinessException(MemberErrorCode.DUPLICATE_ACCOUNT);
+    }
 
     Member member = Member.createLocal(
             email,
@@ -58,6 +64,7 @@ public class SignupService {
             command.phone(),
             command.bankCode(),
             accountCipher.encrypt(command.accountNo()),
+            accountHash,
             command.accountHolder()
     );
 
@@ -109,6 +116,9 @@ public class SignupService {
     }
     if (message.contains("uk_member_phone")) {
       return MemberErrorCode.DUPLICATE_PHONE;
+    }
+    if (message.contains("uk_member_account_hash")) {
+      return MemberErrorCode.DUPLICATE_ACCOUNT;
     }
     throw e;  // 예상하지 못한 제약 위반은 숨기지 않고 그대로 던짐 (500 + 로그)
   }

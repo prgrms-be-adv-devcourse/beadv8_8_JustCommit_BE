@@ -14,6 +14,7 @@ import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.event.MemberCreated;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
+import com.justcommit.backend.member.infrastructure.crypto.MemberHmac;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ public class SocialSignupService {
   private final MemberRepository memberRepository;
   private final AddressRepository addressRepository;
   private final AccountCipher accountCipher;
+  private final MemberHmac memberHmac;
   private final JwtProvider jwtProvider;
   private final RefreshTokenIssuer refreshTokenIssuer;
   private final OutboxPublisher outboxPublisher;
@@ -61,6 +63,10 @@ public class SocialSignupService {
     if (memberRepository.existsByPhone(command.phone())) {
       throw new BusinessException(MemberErrorCode.DUPLICATE_PHONE);
     }
+    String accountHash = memberHmac.accountHash(command.bankCode(), command.accountNo());
+    if (memberRepository.existsByAccountHash(accountHash)) {
+      throw new BusinessException(MemberErrorCode.DUPLICATE_ACCOUNT);
+    }
 
     Member member = Member.createSocial(
             provider,
@@ -70,6 +76,7 @@ public class SocialSignupService {
             command.phone(),
             command.bankCode(),
             accountCipher.encrypt(command.accountNo()),
+            accountHash,
             command.accountHolder()
     );
 
@@ -144,6 +151,9 @@ public class SocialSignupService {
     }
     if (message.contains("uk_member_phone")) {
       return MemberErrorCode.DUPLICATE_PHONE;
+    }
+    if (message.contains("uk_member_account_hash")) {
+      return MemberErrorCode.DUPLICATE_ACCOUNT;
     }
     throw e;  // 예상하지 못한 제약 위반은 그대로 던짐 (500 + 로그)
   }

@@ -183,7 +183,7 @@ class SellerProfileIntegrationTest {
   private Member saveMember() {
     int n = SEQ.incrementAndGet();
     return memberRepository.save(Member.createLocal("seller" + n + "@test.com", passwordEncoder.encode("plant1234"),
-        "판매" + n, String.format("016%08d", n), "004", "v1:test-account", "홍길동"));
+        "판매" + n, String.format("016%08d", n), "004", "v1:test-account", null, "홍길동"));
   }
 
   private static KeyPair newKeyPair() {

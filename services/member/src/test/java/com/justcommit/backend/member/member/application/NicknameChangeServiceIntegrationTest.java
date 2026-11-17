@@ -240,7 +240,7 @@ class NicknameChangeServiceIntegrationTest {
   private Member newMember(String nickname) {
     int n = SEQ.incrementAndGet();
     return Member.createLocal("nick" + n + "@test.com", passwordEncoder.encode("plant1234"), nickname,
-        String.format("015%08d", n), "004", "v1:test-account", "홍길동");
+        String.format("015%08d", n), "004", "v1:test-account", null, "홍길동");
   }
 
   private static void await(CountDownLatch latch) {

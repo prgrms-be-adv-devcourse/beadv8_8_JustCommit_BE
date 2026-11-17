@@ -59,7 +59,7 @@ class SellerRegisterServiceTest {
   // 권한별 회원 (id는 DB가 채워 주는 값이라 직접 주입)
   private Member member(Role role) {
     Member member = Member.createLocal("test@gmail.com", "encoded", NICKNAME, "01012345678",
-            "004", "v1:encrypted-account", "홍길동");
+            "004", "v1:encrypted-account", null, "홍길동");
     ReflectionTestUtils.setField(member, "id", MEMBER_ID);
     ReflectionTestUtils.setField(member, "role", role);
     return member;

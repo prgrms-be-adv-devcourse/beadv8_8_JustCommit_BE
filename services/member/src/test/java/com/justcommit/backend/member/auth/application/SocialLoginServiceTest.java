@@ -64,7 +64,7 @@ class SocialLoginServiceTest {
   // 테스트용 회원 (계좌 값은 createLocal이 요구해서 넣은 가짜 값)
   private static Member member(Long id) {
     Member member = Member.createLocal("user@kakao.com", null, "닉네임", "01012345678",
-            "004", "v1:encrypted", "홍길동");
+            "004", "v1:encrypted", null, "홍길동");
     ReflectionTestUtils.setField(member, "id", id);
     return member;
   }

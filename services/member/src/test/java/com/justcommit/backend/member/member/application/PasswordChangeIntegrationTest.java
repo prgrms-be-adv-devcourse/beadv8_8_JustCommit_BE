@@ -253,7 +253,7 @@ class PasswordChangeIntegrationTest {
   private Member saveMember() {
     int n = SEQ.incrementAndGet();
     return memberRepository.save(Member.createLocal("pw" + n + "@test.com", passwordEncoder.encode(OLD_PASSWORD),
-        "비번" + n, String.format("017%08d", n), "004", "v1:test-account", "홍길동"));
+        "비번" + n, String.format("017%08d", n), "004", "v1:test-account", null, "홍길동"));
   }
 
   private static KeyPair newKeyPair() {

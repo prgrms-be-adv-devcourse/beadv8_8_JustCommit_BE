@@ -30,6 +30,7 @@ public enum MemberErrorCode implements ErrorCode {
   DUPLICATE_EMAIL(HttpStatus.CONFLICT, "이미 가입된 이메일입니다."),
   DUPLICATE_NICKNAME(HttpStatus.CONFLICT, "이미 사용 중인 닉네임입니다."),
   DUPLICATE_PHONE(HttpStatus.CONFLICT, "이미 가입된 휴대폰 번호입니다."),
+  DUPLICATE_ACCOUNT(HttpStatus.CONFLICT, "이미 등록된 계좌입니다."), // 가입 · 계좌 변경 공통 (#413)
 
   // 로그인
   LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 올바르지 않습니다."),
