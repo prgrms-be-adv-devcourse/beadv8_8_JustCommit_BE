@@ -82,12 +82,12 @@ class EmailVerificationServiceTest {
     };
   }
 
-  // 실제 스레드 풀 (스레드 1개). 테스트가 끝나면 shutdown
-  private static ThreadPoolTaskExecutor realExecutor() {
+  // 실제 스레드 풀 (스레드 1개, 대기열 크기는 테스트마다). 테스트가 끝나면 shutdown
+  private static ThreadPoolTaskExecutor realExecutor(int queueCapacity) {
     ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
     executor.setCorePoolSize(1);
     executor.setMaxPoolSize(1);
-    executor.setQueueCapacity(1);
+    executor.setQueueCapacity(queueCapacity);
     executor.setThreadNamePrefix("mail-test-");
     executor.initialize();
     return executor;
@@ -106,6 +106,12 @@ class EmailVerificationServiceTest {
         .willReturn(saved);
   }
 
+  // 메일 작업이 SMTP 직전에 확인하는 "현재 번호"가 이 요청의 것이라고 정함 (#421, 정규화된 이메일로 확인해야 함)
+  // 메일 작업이 실제로 실행되는 테스트에만 쓴다 (엄격 모드라 실행되지 않는 테스트에 넣으면 쓰이지 않은 설정 오류)
+  private void givenCurrentCode(EmailPurpose purpose) {
+    given(store.isCurrentCode(eq(purpose), eq(EMAIL), eq(REQUEST_ID))).willReturn(true);
+  }
+
   // 인증번호 확인 결과를 정함 (틀린 횟수 한도 · TTL은 서비스 상수 그대로 넘어가야 함)
   private void givenVerify(String code, VerifyResult result) {
     given(store.verifyCode(SIGNUP, EMAIL, code,
@@ -119,6 +125,7 @@ class EmailVerificationServiceTest {
   void sendCode_success() {
     givenSendSlot(SIGNUP_QUOTA, SendStatus.ACQUIRED, 0);
     givenCodeSaved(true);
+    givenCurrentCode(SIGNUP);
 
     EmailSendResult result = service.sendCode(EMAIL, SIGNUP);
 
@@ -135,6 +142,7 @@ class EmailVerificationServiceTest {
   void sendCode_normalizeEmail() {
     givenSendSlot(SIGNUP_QUOTA, SendStatus.ACQUIRED, 0);
     givenCodeSaved(true);
+    givenCurrentCode(SIGNUP);
 
     service.sendCode("  Test@Example.COM ", SIGNUP);
 
@@ -177,6 +185,7 @@ class EmailVerificationServiceTest {
   void sendCode_mailFail(CapturedOutput output) {
     givenSendSlot(SIGNUP_QUOTA, SendStatus.ACQUIRED, 0);
     givenCodeSaved(true);
+    givenCurrentCode(SIGNUP);
     willThrow(new MailSendException(SMTP_REPLY)).given(mailSender).send(eq(EMAIL), anyString(), any(), any());
 
     EmailSendResult result = service.sendCode(EMAIL, SIGNUP);
@@ -223,11 +232,12 @@ class EmailVerificationServiceTest {
   @Test
   @DisplayName("SMTP 호출이 끝나지 않아도 발송 요청은 먼저 반환하고, 정상 발송이면 예약을 되돌리지 않는다")
   void sendCode_returnsBeforeSmtp() throws Exception {
-    ThreadPoolTaskExecutor executor = realExecutor();
+    ThreadPoolTaskExecutor executor = realExecutor(1);
     try {
       service = serviceWith(executor);
       givenSendSlot(SIGNUP_QUOTA, SendStatus.ACQUIRED, 0);
       givenCodeSaved(true);
+      givenCurrentCode(SIGNUP);
       CountDownLatch smtpStarted = new CountDownLatch(1);
       CountDownLatch smtpRelease = new CountDownLatch(1);
       CountDownLatch smtpDone = new CountDownLatch(1);
@@ -256,17 +266,61 @@ class EmailVerificationServiceTest {
   @Test
   @DisplayName("응답 뒤 메일 스레드에서 SMTP가 실패하면 이 요청의 예약을 되돌린다")
   void sendCode_asyncMailFail() {
-    ThreadPoolTaskExecutor executor = realExecutor();
+    ThreadPoolTaskExecutor executor = realExecutor(1);
     try {
       service = serviceWith(executor);
       givenSendSlot(SIGNUP_QUOTA, SendStatus.ACQUIRED, 0);
       givenCodeSaved(true);
+      givenCurrentCode(SIGNUP);
       willThrow(new MailSendException(SMTP_REPLY)).given(mailSender).send(eq(EMAIL), anyString(), any(), eq(SIGNUP));
 
       assertThat(service.sendCode(EMAIL, SIGNUP).expiresIn()).isEqualTo(300);
 
       then(store).should(timeout(5000)).releaseSend(SIGNUP, EMAIL, REQUEST_ID);
     } finally {
+      executor.shutdown();
+    }
+  }
+
+  @Test
+  @DisplayName("대기열에 있는 동안 인증번호가 교체 · 만료되면 메일 작업은 SMTP 없이 건너뛰고 예약도 되돌리지 않는다, 로그에는 목적만")
+  @ExtendWith(OutputCaptureExtension.class)
+  void sendCode_skipsWhenCodeNoLongerCurrent(CapturedOutput output) throws Exception {
+    // 워커 1개 · 대기열 2칸: 막아 둔 작업이 워커를 점유하고, 대기열에 작업 A와 완료 신호 작업이 차례로 들어간다
+    ThreadPoolTaskExecutor executor = realExecutor(2);
+    CountDownLatch blockerStarted = new CountDownLatch(1);
+    CountDownLatch blockerRelease = new CountDownLatch(1);
+    CountDownLatch afterA = new CountDownLatch(1);
+    try {
+      service = serviceWith(executor);
+      executor.execute(() -> {
+        blockerStarted.countDown();
+        try {
+          blockerRelease.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      });
+      assertThat(blockerStarted.await(5, TimeUnit.SECONDS)).isTrue();
+      givenSendSlot(SIGNUP_QUOTA, SendStatus.ACQUIRED, 0);
+      givenCodeSaved(true);
+
+      service.sendCode(EMAIL, SIGNUP); // 작업 A는 대기열에서 기다림
+
+      // A가 기다리는 사이 다른 요청이 번호를 바꿨거나 번호가 만료 · 사용됨
+      given(store.isCurrentCode(SIGNUP, EMAIL, REQUEST_ID)).willReturn(false);
+      executor.execute(afterA::countDown); // A 다음 차례: 워커가 A를 끝낸 뒤 실행
+      blockerRelease.countDown();
+
+      assertThat(afterA.await(5, TimeUnit.SECONDS)).isTrue();
+      then(store).should().isCurrentCode(SIGNUP, EMAIL, REQUEST_ID);
+      then(mailSender).shouldHaveNoInteractions();
+      then(store).should(never()).releaseSend(any(), any(), any());
+      assertThat(output.getAll()).contains("현재 유효한 인증번호가 없어 발송을 건너뜀: purpose=SIGNUP")
+          .doesNotContain(EMAIL);
+    } finally {
+      // 검증이 중간에 실패해도 막아 둔 워커를 풀고 실행기를 닫는다
+      blockerRelease.countDown();
       executor.shutdown();
     }
   }
@@ -350,6 +404,7 @@ class EmailVerificationServiceTest {
     given(passwordResetService.findTarget(EMAIL)).willReturn(Optional.of(TARGET));
     given(store.saveCode(eq(RESET), eq(EMAIL), eq(REQUEST_ID), anyString(), eq("7:3"), eq(EmailVerificationService.CODE_TTL)))
         .willReturn(true);
+    givenCurrentCode(RESET);
 
     EmailSendResult result = service.sendCode(EMAIL, RESET);
 
@@ -412,6 +467,7 @@ class EmailVerificationServiceTest {
     given(passwordResetService.findTarget(EMAIL)).willReturn(Optional.of(TARGET));
     given(store.saveCode(eq(RESET), eq(EMAIL), eq(REQUEST_ID), anyString(), eq("7:3"), eq(EmailVerificationService.CODE_TTL)))
         .willReturn(true);
+    givenCurrentCode(RESET);
     willThrow(new MailSendException(SMTP_REPLY)).given(mailSender).send(eq(EMAIL), anyString(), any(), eq(RESET));
 
     assertThat(service.sendCode(EMAIL, RESET).expiresIn()).isEqualTo(300);
@@ -508,6 +564,7 @@ class EmailVerificationServiceTest {
     givenSendSlot(EmailSendQuota.ACCOUNT_CHANGE, SendStatus.ACQUIRED, 0);
     given(store.saveCode(eq(EmailPurpose.ACCOUNT_CHANGE), eq(EMAIL), eq(REQUEST_ID), anyString(), eq("7:3"),
         eq(EmailVerificationService.CODE_TTL))).willReturn(true);
+    givenCurrentCode(EmailPurpose.ACCOUNT_CHANGE);
 
     EmailSendResult result = service.sendAccountChangeCode(EMAIL, TARGET);
 

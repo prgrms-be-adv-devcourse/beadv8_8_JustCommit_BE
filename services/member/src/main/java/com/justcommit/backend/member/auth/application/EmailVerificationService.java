@@ -107,6 +107,7 @@ public class EmailVerificationService {
   // - 대상이면 발송 당시 회원 id · 인증 버전을 번호에 묶어 저장하고 재설정 문구로 메일
   // - 번호 저장 거절(다른 요청이 자리를 잡음) · 메일 작업 제출 거절: 이 요청의 예약만 되돌리고 끝
   // - SMTP 실패는 응답과 별개로 메일 스레드에서 이 요청의 예약을 되돌림 (sendCodeMail)
+  // - 메일 스레드는 SMTP 직전에 이 번호가 아직 현재 번호인지 확인하고, 아니면 보내지 않음 (sendCodeMail)
   // - Redis · DB 장애는 감추지 않는다 (예외가 그대로 올라가 서버 오류로 처리됨)
   private void sendResetCode(String email) {
     EmailVerificationRedisStore.SendResult slot = store.tryAcquireSend(EmailSendQuota.PASSWORD_RESET, email,
@@ -168,7 +169,14 @@ public class EmailVerificationService {
   // 다시 요청할 수 있게 함 (늦게 실패해도 그 사이 다른 요청이 만든 번호 · 재발송 제한은 지우지 않음, 서버 쪽 실패는 하루 횟수에 넣지 않음)
   // SMTP 실패만 정리한다: Spring 메일 발송은 전송 · 인증 · 메시지 오류를 MailException으로 바꿔 던짐.
   // 그 밖의 예외와 되돌리기 중 Redis 오류는 작업 밖으로 전파 (정리 실패 시 재발송 제한은 최대 60초, 번호는 자체 TTL까지 남음)
+  // SMTP 직전에 이 번호가 아직 현재 번호인지 확인: 대기열에 있는 동안 다른 요청이 번호를 바꿨거나 번호가 만료 · 사용됐으면
+  // 보내도 쓸 수 없는 번호라 건너뛴다 (예약은 되돌리지 않음: 번호는 이미 다른 요청 것이거나 없고, 하루 횟수는 실제 요청이었음)
+  // 확인 직후 번호가 바뀌는 짧은 구간은 남는다 (발송을 잠그지는 않음)
   private void sendCodeMail(String email, String code, EmailPurpose purpose, String requestId) {
+    if (!store.isCurrentCode(purpose, email, requestId)) {
+      log.warn("현재 유효한 인증번호가 없어 발송을 건너뜀: purpose={}", purpose);
+      return;
+    }
     try {
       mailSender.send(email, code, CODE_TTL, purpose);
     } catch (MailException e) {
