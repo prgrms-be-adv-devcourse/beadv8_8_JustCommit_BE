@@ -35,6 +35,12 @@ spring:
 
 server:
   port: 8083
+# 지표: health(기동 확인)와 prometheus(지표 수집)만 연다. Gateway는 /actuator를 넘기지 않아 내부망에서만 닿는다
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
 jwt:
   public-key: ${JWT_PUBLIC_KEY}
 internal-api:

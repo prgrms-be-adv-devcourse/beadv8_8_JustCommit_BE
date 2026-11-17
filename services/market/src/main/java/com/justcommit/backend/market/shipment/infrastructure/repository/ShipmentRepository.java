@@ -1,6 +1,7 @@
 package com.justcommit.backend.market.shipment.infrastructure.repository;
 
 import com.justcommit.backend.market.shipment.domain.Shipment;
+import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -17,6 +18,12 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
     List<Shipment> findBySellerOrderIdIn(List<Long> sellerOrderIds);
 
     Optional<Shipment> findBySellerOrderId(Long sellerOrderId);
+
+    // 오래 남은 배송 지표: 만든 지 기준 시각이 지났는데 아직 예약 안 된(READY) 배송 수
+    long countByStatusAndCreatedAtBefore(ShipmentStatus status, LocalDateTime createdBefore);
+
+    // 오래 남은 배송 지표: 취소를 누른 지 기준 시각이 지났는데 아직 택배사 결과를 못 받은(CANCEL_PENDING) 배송 수
+    long countByStatusAndCancelRequestedAtBefore(ShipmentStatus status, LocalDateTime requestedBefore);
 
     // 취소 요청: 행을 잠그고 읽어 같은 배송의 동시 취소 · 웹훅이 차례로 반영되게 한다 (잠금 순서: 주문 → 판매자 주문 → 배송)
     @Lock(LockModeType.PESSIMISTIC_WRITE)
