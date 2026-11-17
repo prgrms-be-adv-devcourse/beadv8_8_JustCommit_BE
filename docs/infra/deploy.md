@@ -1,7 +1,7 @@
 # 서버 배치 · 배포
 
 > 언제 읽나: 서버 구성이나 CI/CD를 바꿀 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-11 · 관련: Miro 15, 노션 기획안 「배포 · 운영 변경」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-17 · 관련: Miro 15, 노션 기획안 「배포 · 운영 변경」
 
 ## 서버 배치
 
@@ -20,17 +20,31 @@ Gateway는 K3s Service 이름으로 market에 보내고 K3s가 살아 있는 파
 
 ## CI/CD
 
+워크플로는 `.github/workflows/cd.yml`입니다.
+
 1. develop 머지
-2. 경로 필터로 바뀐 서비스만 빌드 · 테스트 (`common/`이 바뀌면 전체)
-3. 서비스별 Docker 이미지 → GHCR push
-4. compose 서비스는 SSH로 `docker compose pull` · `up -d`, K3s(Gateway · market · ai)는 `kubectl set image` — **롤링 배포**라 배포 중에도 끊기지 않음
+2. 경로 필터로 바뀐 서비스만 고름 (`common/` · `Dockerfile` · Gradle 설정 · `cd.yml`이 바뀌면 전체). 테스트는 하지 않음 (PR CI에서)
+3. 서비스별 Docker 이미지 빌드 → GHCR push
+4. 앱 서버의 self-hosted 러너가 배포: compose 서비스는 `{서비스}_TAG=<커밋7자리>`로 `docker compose pull` · `up -d`, K3s(Gateway · market · ai)는 `kubectl set image` + `rollout status` — **롤링 배포**라 배포 중에도 끊기지 않음
+
+배포 단계는 아래 규칙을 따릅니다.
+
+| 항목 | 규칙 |
+|---|---|
+| 서버 접속 | 앱 서버에 설치한 self-hosted 러너(라벨 `replant-app`)가 서버 안에서 실행. SSH 22번을 GitHub에 열지 않고, AWS 키 · SSH 키를 GitHub에 두지 않음 |
+| 켜고 끄기 | 레포 변수 `CD_DEPLOY`가 `true`일 때만 배포. 아니면 이미지만 올림 |
+| 대상 | 이미 떠 있는 서비스만 새 이미지로 바꿈. 처음 올리기는 수동 (`deploy/k3s/README.md`, `docker-compose.app.yml` 머리말) |
+| GHCR 로그인 | 실행마다 `GITHUB_TOKEN`으로 임시 폴더에 로그인 · 끝나면 지움 (서버 `~/.docker` 설정은 그대로) |
+| 실패 | 빌드가 하나라도 실패하면 배포하지 않음. 롤아웃 실패 시 옛 파드가 계속 응답하고, 되돌리기는 `kubectl -n replant rollout undo` |
+| 서버가 꺼진 시간 | 배포는 서버가 켜질 때까지 대기 (24시간 넘으면 실패) |
+| 외부 PR | 레포가 공개라, 외부 기여자 PR의 워크플로는 승인 후 실행으로 설정 (러너가 있는 서버를 보호) |
 
 이미지는 아래 규칙으로 만듭니다.
 
 | 항목 | 규칙 |
 |---|---|
 | Dockerfile | 루트 `Dockerfile` 하나를 모든 서비스가 같이 씀. 빌드할 모듈 폴더를 `MODULE`로 넘김: `docker build --build-arg MODULE=services/member .` (Gateway는 `MODULE=gateway`) |
-| 이미지 이름 | 서비스마다 저장소 하나: `ghcr.io/prgrms-be-adv-devcourse/replant-{서비스}` (`{서비스}`는 모듈 폴더 이름: `gateway` · `member` · `product` · `market` · `payment` · `settlement` · `notification`) |
+| 이미지 이름 | 서비스마다 저장소 하나: `ghcr.io/prgrms-be-adv-devcourse/replant-{서비스}` (`{서비스}`는 모듈 폴더 이름: `gateway` · `member` · `product` · `market` · `payment` · `settlement` · `notification` · `ai`) |
 | 태그 | 커밋 짧은 해시 7자리 (예: `replant-member:a1b2c3d`) + develop 최신에 `latest`. 배포 · 되돌리기는 항상 커밋 태그로 함 |
 | 컨테이너 안 | 포트 8080(`SERVER_PORT`), `app` 사용자, 시간대 `Asia/Seoul`. 테스트는 이미지 빌드에서 건너뜀(CI에서 실행) |
 
