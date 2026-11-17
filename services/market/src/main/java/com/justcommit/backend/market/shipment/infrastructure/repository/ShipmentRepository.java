@@ -2,7 +2,9 @@ package com.justcommit.backend.market.shipment.infrastructure.repository;
 
 import com.justcommit.backend.market.shipment.domain.Shipment;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -16,6 +18,11 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
     List<Shipment> findBySellerOrderIdIn(List<Long> sellerOrderIds);
 
     Optional<Shipment> findBySellerOrderId(Long sellerOrderId);
+
+    // 취소 요청: 행을 잠그고 읽어 같은 배송의 동시 취소 · 웹훅이 차례로 반영되게 한다 (잠금 순서: 주문 → 판매자 주문 → 배송)
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from Shipment s where s.sellerOrderId = :sellerOrderId")
+    Optional<Shipment> findForUpdateBySellerOrderId(@Param("sellerOrderId") Long sellerOrderId);
 
     // 예약 큐: 시도할 때가 된 READY 배송 한 건을 잠그고 가져온다.
     // 다른 파드가 이미 잠근 행은 기다리지 않고 건너뛴다(SKIP LOCKED). 반품 배송도 READY면 같이 집는다.

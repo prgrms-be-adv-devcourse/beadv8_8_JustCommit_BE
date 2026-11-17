@@ -144,19 +144,22 @@ public class ShipmentService {
     }
 
     // 주문 모듈이 판매자 주문의 모든 상품이 취소됐을 때 주문 트랜잭션 안에서 호출한다.
-    // 배송만 CANCELLED로 바꿔 주문과 함께 커밋하고, 택배사 취소는 커밋 후로 미룬다.
+    // 배송을 CANCEL_PENDING + 누른 시각으로 기록만 하고 주문과 함께 커밋한다. 택배사는 부르지 않는다 —
+    // 택배 취소 큐가 보내고, 택배사가 누른 시각의 기사 거리로 판정한다 (ADR 0025).
+    // 행을 잠그고 바꿔서 같은 취소가 동시에 와도(따닥 · 택배사 웹훅과 겹침) 한 번만 기록된다.
     @Transactional
     public void cancelShipment(Long sellerOrderId) {
-        Shipment shipment = shipmentRepository.findBySellerOrderId(sellerOrderId)
+        Shipment shipment = shipmentRepository.findForUpdateBySellerOrderId(sellerOrderId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.SHIPMENT_NOT_FOUND));
-        if (shipment.isPickedUp()) {
+        try {
+            if (!shipment.requestCancel(LocalDateTime.now())) {
+                return; // 이미 취소 중이거나 취소됨 (처음 누른 시각 유지)
+            }
+        } catch (IllegalStateException e) {
+            // 기사 2km 안(CANCEL_LOCKED) 또는 수거 이후
             throw new BusinessException(OrderErrorCode.SHIPMENT_NOT_CANCELABLE);
         }
-        if (!shipment.cancel(LocalDateTime.now())) {
-            return; // 이미 취소됨
-        }
         shipmentRepository.save(shipment);
-        runAfterCommit(() -> cancelAllAtCourier(List.of(shipment)));
     }
 
     // 대사: 택배사 취소가 끝나지 않은 CANCELLED 배송을 다시 취소한다. 취소는 멱등이라 그대로 다시 보내도 된다.

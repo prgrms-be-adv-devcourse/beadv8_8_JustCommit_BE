@@ -1,26 +1,24 @@
 package com.justcommit.backend.market.shipment.application;
 
-import com.justcommit.backend.market.config.JpaAuditingConfig;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.market.OrderItemStatus;
+import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.OrderResult;
+import com.justcommit.backend.market.OrderShippingInfo;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.OrdersItemResult;
 import com.justcommit.backend.market.SellerOrderResult;
-import com.justcommit.backend.market.shipment.domain.Shipment;
-import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
-import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingException;
-import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingRequest;
-import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingResponse;
-import com.justcommit.backend.market.shipment.infrastructure.courier.CourierCancelException;
-import com.justcommit.backend.market.shipment.infrastructure.courier.CourierCancelResult;
-import com.justcommit.backend.market.shipment.infrastructure.courier.CourierClient;
-import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
-import com.justcommit.backend.market.OrderQuery;
-import com.justcommit.backend.market.OrderShippingInfo;
-import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
 import com.justcommit.backend.market.client.member.MemberAddress;
 import com.justcommit.backend.market.client.member.MemberQuery;
+import com.justcommit.backend.market.config.JpaAuditingConfig;
+import com.justcommit.backend.market.order.domain.OrderErrorCode;
+import com.justcommit.backend.market.shipment.domain.Shipment;
+import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
+import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingRequest;
+import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingResponse;
+import com.justcommit.backend.market.shipment.infrastructure.courier.CourierClient;
+import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
+import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,20 +42,25 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-// 주문 트랜잭션 안에서 배송을 취소할 때, 택배사 취소가 커밋 뒤에만 일어나는지 실제 DB로 확인한다.
+// 주문이 배송 취소를 요청하면 CANCEL_PENDING + 누른 시각만 기록하고 택배사는 부르지 않는지 실제 DB로 확인한다 (#490, ADR 0025).
+// 택배사 취소는 택배 취소 큐가 보낸다.
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -88,8 +91,11 @@ class ShipmentCancelIntegrationTest {
     @Autowired PlatformTransactionManager transactionManager;
 
     @BeforeEach
-    void stubOrderInfo() {
-        when(orderQuery.getShippingInfo(7L)).thenReturn(new OrderShippingInfo(9L, 10L, 20L, new BigDecimal("3000"), "구매자", "01000000000", "부산", null));
+    void stubOrderAndSeller() {
+        when(orderQuery.getShippingInfo(7L)).thenReturn(
+                new OrderShippingInfo(9L, 10L, 20L, new BigDecimal("3000"), "구매자", "01000000000", "부산", null));
+        when(memberQuery.getDefaultAddress(20L))
+                .thenReturn(new MemberAddress(1L, "판매자", "01012345678", "12345", "서울", null));
     }
 
     @AfterEach
@@ -98,130 +104,113 @@ class ShipmentCancelIntegrationTest {
     }
 
     @Test
-    @DisplayName("예약된 배송을 취소하면 커밋 뒤에 택배사 취소를 부르고 완료를 기록한다")
-    void cancelsBookedAfterCommit() {
+    @DisplayName("예약된 배송을 취소하면 CANCEL_PENDING + 누른 시각만 기록하고, 커밋 뒤에도 택배사를 부르지 않는다")
+    void cancelBookedRecordsPendingOnly() {
         createBookedShipment();
+        LocalDateTime before = LocalDateTime.now();
 
-        inTransaction(() -> {
-            shipmentService.cancelShipment(7L);
-            verify(courierClient, never()).cancel(anyString()); // 커밋 전에는 택배사를 부르지 않음
-        });
+        inTransaction(() -> shipmentService.cancelShipment(7L));
 
-        verify(courierClient).cancel(TRACKING_NO);
-        assertThat(shipment()).satisfies(shipment -> {
-            assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCELLED);
-            assertThat(shipment.getCancelledAt()).isNotNull();
-            assertThat(shipment.getCourierCancelledAt()).isNotNull();
-        });
+        Shipment shipment = shipment();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCEL_PENDING);
+        assertThat(shipment.getCancelRequestedAt()).isAfterOrEqualTo(before);
+        assertThat(shipment.getNextAttemptAt()).isNull(); // 택배 취소 큐가 바로 집는다
+        verify(courierClient, never()).cancel(anyString());
     }
 
     @Test
-    @DisplayName("주문 트랜잭션이 롤백되면 배송은 그대로이고 택배사 취소도 부르지 않는다")
+    @DisplayName("예약 전(READY) 배송을 취소해도 CANCEL_PENDING으로 기록한다 — 택배사에 예약이 있을 수 있어 큐가 확인한다")
+    void cancelReadyRecordsPending() {
+        inTransaction(() -> shipmentService.createShipments(order()));
+
+        inTransaction(() -> shipmentService.cancelShipment(7L));
+
+        assertThat(shipment().getStatus()).isEqualTo(ShipmentStatus.CANCEL_PENDING);
+        verify(courierClient, never()).book(anyString(), any());
+        verify(courierClient, never()).cancel(anyString());
+    }
+
+    @Test
+    @DisplayName("주문 트랜잭션이 롤백되면 배송은 그대로다")
     void rollbackKeepsShipment() {
         createBookedShipment();
 
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             shipmentService.cancelShipment(7L);
-            status.setRollbackOnly();
+            status.setRollbackOnly(); // 환불 실패 등으로 주문 취소가 롤백되는 상황
         });
 
-        verify(courierClient, never()).cancel(anyString());
         assertThat(shipment().getStatus()).isEqualTo(ShipmentStatus.BOOKED);
+        assertThat(shipment().getCancelRequestedAt()).isNull();
     }
 
     @Test
-    @DisplayName("이미 취소된 배송을 다시 취소하면 택배사를 다시 부르지 않는다")
-    void cancelTwiceCallsCourierOnce() {
+    @DisplayName("같은 배송을 다시 취소하면 아무것도 바꾸지 않고 처음 누른 시각을 유지한다")
+    void cancelTwiceKeepsFirstRequest() {
         createBookedShipment();
+        inTransaction(() -> shipmentService.cancelShipment(7L));
+        LocalDateTime first = shipment().getCancelRequestedAt();
 
         inTransaction(() -> shipmentService.cancelShipment(7L));
-        inTransaction(() -> shipmentService.cancelShipment(7L));
 
-        verify(courierClient, times(1)).cancel(TRACKING_NO);
+        assertThat(shipment().getStatus()).isEqualTo(ShipmentStatus.CANCEL_PENDING);
+        assertThat(shipment().getCancelRequestedAt()).isEqualTo(first);
     }
 
     @Test
-    @DisplayName("수거된 배송은 취소를 거부한다")
-    void pickedUpCannotBeCancelled() {
+    @DisplayName("같은 배송에 취소가 동시에 와도(따닥) 에러 없이 한 번만 기록된다")
+    void concurrentCancelsRecordOnce() throws Exception {
+        Long shipmentId = createBookedShipment();
+        Long versionBefore = shipmentRepository.findById(shipmentId).orElseThrow().getVersion();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<?>> runs = new ArrayList<>();
+        for (int i = 0; i < 2; i++) {
+            runs.add(pool.submit(() -> {
+                start.await();
+                inTransaction(() -> shipmentService.cancelShipment(7L));
+                return null;
+            }));
+        }
+        start.countDown();
+        for (Future<?> run : runs) {
+            run.get(10, TimeUnit.SECONDS); // 어느 쪽도 예외(낙관적 락 충돌 등)로 실패하지 않음
+        }
+        pool.shutdown();
+
+        Shipment shipment = shipmentRepository.findById(shipmentId).orElseThrow();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCEL_PENDING);
+        assertThat(shipment.getVersion()).isEqualTo(versionBefore + 1); // 저장은 한 번
+    }
+
+    @Test
+    @DisplayName("기사가 2km 안(CANCEL_LOCKED)이거나 수거된 배송은 취소를 거부한다")
+    void rejectsLockedOrPickedUp() {
         createBookedShipment();
         inTransaction(() -> {
             Shipment shipment = shipment();
-            shipment.applyCourierStatus(ShipmentStatus.PICKED_UP, TRACKING_NO, LocalDateTime.of(2026, 10, 16, 10, 3));
+            shipment.applyCourierStatus(ShipmentStatus.CANCEL_LOCKED, TRACKING_NO, LocalDateTime.now());
             shipmentRepository.save(shipment);
         });
 
+        assertThatThrownBy(() -> inTransaction(() -> shipmentService.cancelShipment(7L)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(OrderErrorCode.SHIPMENT_NOT_CANCELABLE));
+
+        inTransaction(() -> {
+            Shipment shipment = shipment();
+            shipment.applyCourierStatus(ShipmentStatus.PICKED_UP, TRACKING_NO, LocalDateTime.now());
+            shipmentRepository.save(shipment);
+        });
         assertThatThrownBy(() -> inTransaction(() -> shipmentService.cancelShipment(7L)))
                 .isInstanceOf(BusinessException.class);
         verify(courierClient, never()).cancel(anyString());
     }
 
     @Test
-    @DisplayName("READY 배송을 취소하면 같은 멱등키로 송장번호를 받아 온 뒤 택배사에서 취소한다")
-    void cancelsReadyByRebookingFirst() {
-        when(memberQuery.getDefaultAddress(20L)).thenReturn(seller()); // 예약 큐가 아직 예약하지 않아 READY
-        when(courierClient.book(anyString(), any(CourierBookingRequest.class))).thenReturn(bookingResponse());
-        when(courierClient.cancel(TRACKING_NO)).thenReturn(CourierCancelResult.CANCELLED);
-        inTransaction(() -> shipmentService.createShipments(order()));
-        String courierOrderNo = shipment().getCourierOrderNo();
-
-        inTransaction(() -> shipmentService.cancelShipment(7L));
-
-        verify(courierClient).book(eq(courierOrderNo), any(CourierBookingRequest.class));
-        verify(courierClient).cancel(TRACKING_NO);
-        assertThat(shipment()).satisfies(shipment -> {
-            assertThat(shipment.getTrackingNo()).isEqualTo(TRACKING_NO);
-            assertThat(shipment.getCourierCancelledAt()).isNotNull();
-        });
-    }
-
-    @Test
-    @DisplayName("READY 배송의 재예약을 택배사가 거부하면 택배사에 건이 없는 것이므로 서버 취소만으로 끝낸다")
-    void cancelsReadyWhenCourierHasNothing() {
-        when(memberQuery.getDefaultAddress(20L)).thenReturn(seller());
-        when(courierClient.book(anyString(), any(CourierBookingRequest.class)))
-                .thenThrow(new CourierBookingException("400", new RuntimeException(), false));
-        inTransaction(() -> shipmentService.createShipments(order()));
-
-        inTransaction(() -> shipmentService.cancelShipment(7L));
-
-        verify(courierClient, never()).cancel(anyString());
-        assertThat(shipment().getCourierCancelledAt()).isNotNull();
-    }
-
-    @Test
-    @DisplayName("택배사 취소가 실패하면 기록하지 않고, 대사 작업이 다시 취소한다")
-    void retriesFailedCourierCancel() {
-        createBookedShipment();
-        when(courierClient.cancel(TRACKING_NO))
-                .thenThrow(new CourierCancelException("타임아웃", new RuntimeException()))
-                .thenReturn(CourierCancelResult.CANCELLED);
-
-        inTransaction(() -> shipmentService.cancelShipment(7L));
-        assertThat(shipment().getCourierCancelledAt()).isNull();
-
-        shipmentService.retryCourierCancels(LocalDateTime.now().plusDays(1));
-
-        verify(courierClient, times(2)).cancel(TRACKING_NO);
-        assertThat(shipment().getCourierCancelledAt()).isNotNull();
-    }
-
-    @Test
-    @DisplayName("택배사에서 이미 수거되어 취소가 거부되면 다시 시도하지 않는다")
-    void notCancellableIsNotRetried() {
-        createBookedShipment();
-        when(courierClient.cancel(TRACKING_NO)).thenReturn(CourierCancelResult.NOT_CANCELLABLE);
-
-        inTransaction(() -> shipmentService.cancelShipment(7L));
-        shipmentService.retryCourierCancels(LocalDateTime.now().plusDays(1));
-
-        verify(courierClient, times(1)).cancel(TRACKING_NO);
-    }
-
-    @Test
-    @DisplayName("예약 큐가 예약하는 사이 주문 취소가 먼저 저장되면 예약이 취소를 덮어쓰지 않고, 택배사 예약도 취소된다")
+    @DisplayName("예약 큐가 택배사를 기다리는 사이 취소가 먼저 저장되면 예약 결과가 취소를 덮어쓰지 않는다")
     void cancelWinsOverConcurrentBooking() {
-        when(memberQuery.getDefaultAddress(20L)).thenReturn(seller());
-        when(courierClient.cancel(TRACKING_NO)).thenReturn(CourierCancelResult.CANCELLED);
         AtomicInteger bookCalls = new AtomicInteger();
         when(courierClient.book(anyString(), any(CourierBookingRequest.class))).thenAnswer(invocation -> {
             if (bookCalls.incrementAndGet() == 1) {
@@ -234,21 +223,16 @@ class ShipmentCancelIntegrationTest {
 
         shipmentService.bookReadyShipments();
 
-        assertThat(shipment()).satisfies(shipment -> {
-            assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCELLED); // BOOKED로 덮어써지지 않음
-            assertThat(shipment.getTrackingNo()).isEqualTo(TRACKING_NO);
-            assertThat(shipment.getCourierCancelledAt()).isNotNull();
-        });
-        verify(courierClient).cancel(TRACKING_NO);
+        // 택배사에 남은 예약은 택배 취소 큐가 같은 주문번호로 취소한다
+        assertThat(shipment().getStatus()).isEqualTo(ShipmentStatus.CANCEL_PENDING);
     }
 
-    private void createBookedShipment() {
-        when(memberQuery.getDefaultAddress(20L)).thenReturn(seller());
+    private Long createBookedShipment() {
         when(courierClient.book(anyString(), any(CourierBookingRequest.class))).thenReturn(bookingResponse());
-        when(courierClient.cancel(TRACKING_NO)).thenReturn(CourierCancelResult.CANCELLED);
         inTransaction(() -> shipmentService.createShipments(order()));
         shipmentService.bookReadyShipments(); // 예약 큐
         assertThat(shipment().getStatus()).isEqualTo(ShipmentStatus.BOOKED);
+        return shipment().getId();
     }
 
     private void inTransaction(Runnable task) {
@@ -259,13 +243,9 @@ class ShipmentCancelIntegrationTest {
         return shipmentRepository.findBySellerOrderId(7L).orElseThrow();
     }
 
-    private MemberAddress seller() {
-        return new MemberAddress(1L, "판매자", "01012345678", "12345", "서울", null);
-    }
-
     private CourierBookingResponse bookingResponse() {
-        return new CourierBookingResponse(TRACKING_NO, "shipment-20261016-000001", "RESERVED",
-                OffsetDateTime.parse("2026-10-16T10:00:00+09:00"));
+        return new CourierBookingResponse(TRACKING_NO, "shipment-20261117-000001", "RESERVED",
+                OffsetDateTime.parse("2026-11-17T10:00:00+09:00"));
     }
 
     private OrderResult order() {
