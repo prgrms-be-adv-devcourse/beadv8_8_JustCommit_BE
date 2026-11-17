@@ -3,6 +3,7 @@ package com.justcommit.backend.member.auth.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.auth.domain.EmailPurpose;
 import com.justcommit.backend.member.auth.domain.EmailSendQuota;
+import com.justcommit.backend.member.auth.domain.VerificationBinding;
 import com.justcommit.backend.member.auth.infrastructure.mail.VerificationMailSender;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore.SendResult;
@@ -38,7 +39,7 @@ class EmailVerificationServiceTest {
   private static final EmailPurpose RESET = EmailPurpose.PASSWORD_RESET;
   private static final EmailSendQuota SIGNUP_QUOTA = EmailSendQuota.SIGNUP;
   private static final EmailSendQuota RESET_QUOTA = EmailSendQuota.PASSWORD_RESET;
-  private static final PasswordResetService.ResetTarget TARGET = new PasswordResetService.ResetTarget(7L, 3);
+  private static final VerificationBinding TARGET = new VerificationBinding(7L, 3);
 
   @Mock
   private EmailVerificationRedisStore store;

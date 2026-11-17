@@ -3,6 +3,7 @@ package com.justcommit.backend.member.auth.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.auth.domain.EmailPurpose;
 import com.justcommit.backend.member.auth.domain.EmailSendQuota;
+import com.justcommit.backend.member.auth.domain.VerificationBinding;
 import com.justcommit.backend.member.auth.infrastructure.mail.VerificationMailSender;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.domain.exception.EmailCooldownException;
@@ -99,7 +100,7 @@ public class EmailVerificationService {
     if (slot.status() != EmailVerificationRedisStore.SendStatus.ACQUIRED) {
       return;
     }
-    Optional<PasswordResetService.ResetTarget> target = passwordResetService.findTarget(email);
+    Optional<VerificationBinding> target = passwordResetService.findTarget(email);
     if (target.isEmpty()) {
       return;
     }
@@ -122,7 +123,7 @@ public class EmailVerificationService {
     if (outcome.result() != EmailVerificationRedisStore.VerifyResult.MATCHED) {
       throw new BusinessException(MemberErrorCode.EMAIL_CODE_INVALID);
     }
-    return PasswordResetService.ResetTarget.fromBinding(outcome.binding())
+    return VerificationBinding.fromBinding(outcome.binding())
         .flatMap(passwordResetService::issueToken)
         .orElseThrow(() -> new BusinessException(MemberErrorCode.EMAIL_CODE_INVALID));
   }

@@ -2,6 +2,7 @@ package com.justcommit.backend.member.auth.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.auth.domain.RevocationReason;
+import com.justcommit.backend.member.auth.domain.VerificationBinding;
 import com.justcommit.backend.member.auth.infrastructure.redis.PasswordFailureStore;
 import com.justcommit.backend.member.auth.infrastructure.redis.PasswordResetTokenStore;
 import com.justcommit.backend.member.domain.Member;
@@ -48,43 +49,17 @@ public class PasswordResetService {
   private final PasswordEncoder passwordEncoder;
   private final PasswordFailureStore failureStore;
 
-  // 재설정 대상: 인증번호를 보낼 때의 회원 id · 인증 버전. 인증번호에 묶어 저장했다가 확인에 성공하면 그대로 돌려받는다
-  public record ResetTarget(Long memberId, int tokenVersion) {
-
-    // 인증번호에 함께 저장하는 형식 "{회원 id}:{인증 버전}"
-    public String toBinding() {
-      return memberId + ":" + tokenVersion;
-    }
-
-    // 저장해 둔 값을 되읽는다. 비었거나 깨졌으면 빈 값 (이때는 토큰을 발급하지 않는다)
-    public static Optional<ResetTarget> fromBinding(String binding) {
-      if (binding == null) {
-        return Optional.empty();
-      }
-      int separator = binding.indexOf(':');
-      if (separator <= 0) {
-        return Optional.empty();
-      }
-      try {
-        return Optional.of(new ResetTarget(Long.parseLong(binding.substring(0, separator)),
-            Integer.parseInt(binding.substring(separator + 1))));
-      } catch (NumberFormatException e) {
-        return Optional.empty();
-      }
-    }
-  }
-
   // 재설정 인증번호를 보낼 대상인지 (활동 중인 로컬 회원). 대상이면 지금의 회원 id · 인증 버전
-  public Optional<ResetTarget> findTarget(String email) {
+  public Optional<VerificationBinding> findTarget(String email) {
     return memberRepository.findByEmail(email)
         .filter(PasswordResetService::resettable)
-        .map(member -> new ResetTarget(member.getId(), member.getTokenVersion()));
+        .map(member -> new VerificationBinding(member.getId(), member.getTokenVersion()));
   }
 
   // 재설정 인증번호 확인에 성공한 뒤 호출. 지금 회원이 발송 당시와 같은 인증 버전일 때만 그 버전으로 토큰을 만들어 저장한다
   // 인증번호를 받은 뒤 비밀번호가 바뀌었거나(버전이 다름) 탈퇴했다면 빈 값 → 새 인증번호를 요청해야 한다
   // 토큰에도 발송 당시 버전을 넣으므로, 확인 직후 비밀번호가 바뀌어도 재설정 때 잠금 안의 버전 비교에서 거절된다
-  public Optional<String> issueToken(ResetTarget target) {
+  public Optional<String> issueToken(VerificationBinding target) {
     return memberRepository.findById(target.memberId())
         .filter(PasswordResetService::resettable)
         .filter(member -> member.getTokenVersion() == target.tokenVersion())
