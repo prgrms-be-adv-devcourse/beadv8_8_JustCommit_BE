@@ -1,4 +1,4 @@
 package com.justcommit.backend.member.seller.application;
 
-public record SellerRegisterCommand(Long memberId, String intro) {
+public record SellerRegisterCommand(Long memberId, String intro, String reviewConsentVersion) {
 }
