@@ -73,7 +73,7 @@ class TokenReissueServiceTest {
   // 판매자 등록을 마친 회원 (DB의 현재 role이 토큰에 반영되는지 확인)
   private Member seller() {
     Member member = Member.createLocal("test@gmail.com", "encoded", "떡볶이", "01012345678",
-        "004", "v1:encrypted-account", "홍길동");
+        "004", "v1:encrypted-account", null, "홍길동");
     ReflectionTestUtils.setField(member, "id", MEMBER_ID);
     ReflectionTestUtils.setField(member, "role", Role.SELLER);
     return member;

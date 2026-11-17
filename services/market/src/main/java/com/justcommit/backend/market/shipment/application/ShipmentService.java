@@ -25,7 +25,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.ArrayList;
 import java.util.List;
 
 // 배송 로직(예약·재예약·취소). 다른 모듈에 여는 조회는 ShipmentQueryService가 맡는다.
@@ -35,6 +34,8 @@ import java.util.List;
 public class ShipmentService {
     // 택배사가 보낸 +09:00 시각을 우리 기준(서울)으로 바꿀 때 쓴다. 현재 시각(now)은 서버 기본 시간대(운영: Asia/Seoul)를 따른다.
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    // 예약 큐가 한 번 실행할 때 처리하는 최대 건수. 한 건씩 집으므로 택배사가 느려도 임대(30초)를 넘기지 않는다.
+    private static final int BOOKING_BATCH_SIZE = 20;
 
     private final ShipmentRepository shipmentRepository;
     private final CourierClient courierClient;
@@ -43,42 +44,80 @@ public class ShipmentService {
     private final ShipmentStatusChangedEventPublisher statusChangedEventPublisher;
     private final OrderQuery orderQuery;
 
-    // 1단계: 결제 트랜잭션 안에서 호출된다.
-    // 배송 행(READY + courierOrderNo + 상품 요약)만 만들어 결제와 함께 커밋하고, 택배사 예약은 커밋 후로 미룬다.
+    // 결제 트랜잭션 안에서 호출된다.
+    // 배송 행(READY + courierOrderNo + 상품 요약)만 만들어 결제와 함께 커밋하고 끝낸다. 택배사는 부르지 않는다.
+    // 택배사 예약은 예약 큐(bookReadyShipments)가 맡는다. 결제 응답이 택배사 지연 · 장애와 무관해진다 (#351).
     public void createShipments(OrderResult order) {
-        List<Shipment> shipments = new ArrayList<>();
         for (SellerOrderResult sellerOrder : order.sellerOrders()) {
             Shipment shipment = shipmentRepository.save(new Shipment(sellerOrder.id(), itemSummary(sellerOrder.items())));
             shipment.assignCourierOrderNo(LocalDate.now());
-            shipments.add(shipmentRepository.save(shipment));
+            shipmentRepository.save(shipment);
         }
-        runAfterCommit(() -> bookAll(shipments));
     }
 
-    // 대사: 예약되지 않고 남은 READY 배송을 같은 courierOrderNo(멱등키)로 다시 예약한다.
-    // 트랜잭션 밖에서 호출해야 택배사를 기다리는 동안 트랜잭션을 잡지 않는다.
-    public void rebookReadyShipments(LocalDateTime createdBefore) {
-        List<Shipment> shipments = shipmentRepository
-                .findTop100ByStatusAndCreatedAtBeforeOrderByIdAsc(ShipmentStatus.READY, createdBefore);
-        if (!shipments.isEmpty()) {
-            log.info("READY 배송 재예약: {}건", shipments.size());
-        }
-        bookAll(shipments);
-    }
-
-    // 2단계: 결제 커밋 후, 트랜잭션 밖에서 택배사에 예약한다.
-    // 실패한 배송은 READY로 남고, 대사 작업이 같은 courierOrderNo로 다시 예약한다.
-    private void bookAll(List<Shipment> shipments) {
-        for (Shipment shipment : shipments) {
-            try {
-                book(shipment);
-            } catch (SellerAddressUnavailableException e) {
-                // 이벤트 지연 · 탈퇴 등 원인은 단정하지 않는다. READY로 남아 대사 작업이 같은 courierOrderNo로 다시 시도한다
-                log.warn("판매자 배송지를 사용할 수 없어 예약을 보류합니다: shipmentId={}", shipment.getId());
-            } catch (RuntimeException e) {
-                // 판매자 주소 조회 실패 등. 한 판매자의 실패가 다른 판매자 예약을 막지 않게 한다.
-                log.error("택배 예약 준비 실패: shipmentId={}", shipment.getId(), e);
+    // 예약 큐: 시도할 때가 된 READY 배송을 한 건씩 확보해 예약한다. 한 번 실행에 최대 BOOKING_BATCH_SIZE건.
+    // 한 건씩 짧은 트랜잭션으로 집고(잠금 + 30초 임대) 바로 커밋한 뒤, 트랜잭션 밖에서 택배사를 부른다.
+    // 택배사를 기다리는 동안 DB 커넥션을 잡지 않는다 (#351 커넥션 교착의 원인).
+    public void bookReadyShipments() {
+        for (int i = 0; i < BOOKING_BATCH_SIZE; i++) {
+            Shipment shipment = claimNextForBooking(LocalDateTime.now());
+            if (shipment == null) {
+                return;
             }
+            bookClaimed(shipment);
+        }
+    }
+
+    private Shipment claimNextForBooking(LocalDateTime now) {
+        return new TransactionTemplate(transactionManager).execute(status -> shipmentRepository.findNextBookable(now)
+                .map(shipment -> {
+                    shipment.leaseForBooking(now);
+                    return shipmentRepository.saveAndFlush(shipment);
+                })
+                .orElse(null));
+    }
+
+    // 큐가 집은 배송을 택배사에 예약한다. 실패하면 READY로 두고 다음 시도 시각을 미룬다 (포기하지 않음).
+    private void bookClaimed(Shipment shipment) {
+        try {
+            OrderShippingInfo orderInfo = orderQuery.getShippingInfo(shipment.getSellerOrderId());
+            CourierBookingResponse response = courierClient.book(shipment.getCourierOrderNo(),
+                    bookingRequest(shipment, orderInfo));
+            shipment.book(response.trackingNo(), response.bookedAt().atZoneSameInstant(SEOUL).toLocalDateTime());
+            new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                shipmentRepository.save(shipment);
+                statusChangedEventPublisher.publishAfterCommit(shipment, orderInfo, shipment.getBookedAt());
+            });
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // 예약하는 사이 주문 취소가 먼저 저장됨. 택배사에 남은 예약은 취소 쪽이 같은 멱등키로 찾아 취소한다.
+            log.info("예약 중 배송이 취소됨: shipmentId={}", shipment.getId());
+        } catch (RuntimeException e) {
+            logBookingFailure(shipment, e);
+            recordBookingFailure(shipment.getId());
+        }
+    }
+
+    private void logBookingFailure(Shipment shipment, RuntimeException e) {
+        if (e instanceof SellerAddressUnavailableException) {
+            // 이벤트 지연 · 탈퇴 등 원인은 단정하지 않는다. READY로 남아 같은 courierOrderNo로 다시 시도한다
+            log.warn("판매자 배송지를 사용할 수 없어 예약을 보류합니다: shipmentId={}", shipment.getId());
+        } else if (e instanceof CourierBookingException booking && booking.isRetryable()) {
+            log.warn("택배 예약 실패, 나중에 다시 시도: shipmentId={}", shipment.getId(), e);
+        } else {
+            // 택배사가 거절(4xx)했거나 판매자 주소 조회 실패 등. 끝까지 재시도하되 사람이 확인하도록 남긴다
+            log.error("택배 예약 실패, 확인 필요: shipmentId={}", shipment.getId(), e);
+        }
+    }
+
+    // 최신 행을 다시 읽어 실패를 기록한다. 그사이 취소 등으로 READY가 아니면 그대로 둔다.
+    private void recordBookingFailure(Long shipmentId) {
+        try {
+            new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                    shipmentRepository.findById(shipmentId)
+                            .filter(shipment -> shipment.getStatus() == ShipmentStatus.READY)
+                            .ifPresent(shipment -> shipment.recordBookingFailure(LocalDateTime.now())));
+        } catch (ObjectOptimisticLockingFailureException e) {
+            log.info("실패 기록 중 배송이 바뀜: shipmentId={}", shipmentId);
         }
     }
 
@@ -97,26 +136,6 @@ public class ShipmentService {
                 outsideTransaction.executeWithoutResult(status -> task.run());
             }
         });
-    }
-
-    private void book(Shipment shipment) {
-        try {
-            OrderShippingInfo orderInfo = orderQuery.getShippingInfo(shipment.getSellerOrderId());
-            CourierBookingResponse response = courierClient.book(shipment.getCourierOrderNo(),
-                    bookingRequest(shipment, orderInfo));
-            shipment.book(response.trackingNo(), response.bookedAt().atZoneSameInstant(SEOUL).toLocalDateTime());
-            shipmentRepository.save(shipment);
-            statusChangedEventPublisher.publishAfterCommit(shipment, orderInfo, shipment.getBookedAt());
-        } catch (CourierBookingException e) {
-            if (e.isRetryable()) {
-                log.warn("택배 예약 실패, 나중에 다시 시도: shipmentId={}", shipment.getId(), e);
-            } else {
-                log.error("택배 예약 실패, 확인 필요: shipmentId={}", shipment.getId(), e);
-            }
-        } catch (ObjectOptimisticLockingFailureException e) {
-            // 예약하는 사이 주문 취소가 먼저 저장됨. 택배사에 남은 예약은 취소 쪽이 같은 멱등키로 찾아 취소한다.
-            log.info("예약 중 배송이 취소됨: shipmentId={}", shipment.getId());
-        }
     }
 
     // 주문 모듈이 판매자 주문의 모든 상품이 취소됐을 때 주문 트랜잭션 안에서 호출한다.

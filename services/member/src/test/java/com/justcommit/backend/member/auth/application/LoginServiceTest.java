@@ -64,7 +64,7 @@ class LoginServiceTest {
 
   private Member member() {
     Member member = Member.createLocal(EMAIL, ENCODED_PASSWORD, "떡볶이", "01012345678",
-            "004", "v1:encrypted-account", "홍길동");
+            "004", "v1:encrypted-account", null, "홍길동");
     ReflectionTestUtils.setField(member, "id", MEMBER_ID);
     return member;
   }

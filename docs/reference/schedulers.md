@@ -13,7 +13,7 @@
 | 수락 자동 거절 | market | 10분 | – | SKIP LOCKED | 기한 지난 `ACCEPT_PENDING` 주문상품 자동 거절 → 전액 환불 (기한 → [market 정책](../services/market.md#정책)) |
 | 반품 자동 승인 | market | 10분 | – | SKIP LOCKED | 기한 안에 판매자가 응답하지 않은 반품 신청 자동 승인 (기한 → [market 정책](../services/market.md#정책)) |
 | 자동 구매 확정 | market | 1시간 | – | SKIP LOCKED | 기한 지난 `NORMAL` 주문상품 구매 확정, 반품 신청한 주문상품 제외 (기한 → [market 정책](../services/market.md#정책)) |
-| 택배 예약 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `READY` 배송(반품 포함) 택배 예약. 실패하면 다음 시도까지 10초 → 30초 → 1분 고정 (건별 `next_attempt_at`) |
+| 택배 예약 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `READY` 배송(반품 포함) 택배 예약. 한 번 실행할 때 최대 20건을 한 건씩 확보(다음 시도 시각을 30초 뒤로 미루는 임대)하고, 택배사 호출은 임대 후 트랜잭션 밖에서 함. 실패하면 다음 시도까지 10초 → 30초 → 1분 고정 (건별 `next_attempt_at` · `attempt_count`). 결제 · 수락 흐름은 `READY` 행만 만들고 택배사를 부르지 않음 |
 | 택배 취소 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `CANCEL_PENDING` 배송 취소 재요청 |
 | Saga 복구 | market | 1분 | 확인 후 포기 | SKIP LOCKED | 결과 불명 결제(orderId) · 취소 · 환불(orderItemId · sellerOrderId)을 같은 멱등 키로 다시 요청, 5회 안 되면 `REVIEW_REQUIRED` → [주문 · 결제](../flows/order-payment.md#멈춘-주문-복구) |
 | 요금표 버전 대사 | market | 매일 09:30 (EC2가 켜진 시간) | – | ShedLock | 택배사(404-express) 요금표 버전과 비교, 다르면 새로 받음 |
@@ -21,7 +21,7 @@
 | 검수 엔진 오류 재처리 | product | 5분 | 확인 후 포기 (3회 → 관리자 확인) | SKIP LOCKED | `IMAGE_REVIEW`가 `ENGINE_ERROR`인 건과 30분이 지나도 `REQUESTED`인 건(멈춘 검수 요청)을 같은 검수 버전으로 다시 검수, 3회 모두 실패하면 관리자 확인(`ENGINE_ERROR`) → [사진 검수](../flows/image-review.md#엔진-오류-재처리) |
 | 관리자 확인 지연 | product | 10분 | – | SKIP LOCKED | 관리자 확인으로 간 지 24시간 지난 건을 `REVIEW_EXPIRED`로 자동 반려(한 번에 최대 50건, 그사이 수정 · 삭제된 상품은 건너뜀). 12시간 지연은 관리자 확인 목록 표시만, 관리자 알림은 notification 연동 때 (⬜). 엔진 오류 재처리 시간은 세지 않음 |
 | 토스 대사 | payment | 하루 1번 (⬜ 실행 시각) | – | ShedLock | 토스 거래와 내부 충전 기록 대조, 잔액을 늘리는 보정(토스 승인 · 내부 미승인)은 자동. ⬜ 잔액을 줄여야 하는 불일치 처리 |
-| 정산 지급 큐 | settlement | 10초 | 끝까지 | SKIP LOCKED | `PENDING` 정산을 건별로 payment에 지급 (`settlementId` 멱등) |
+| 정산 지급 큐 | settlement | 10초 | 끝까지 | SKIP LOCKED | 지급 대상(`PENDING`, `FAILED`이면서 `next_attempt_at`이 지난) 정산을 건별로 payment에 지급 (`settlementId` 멱등). 기본 10초 간격으로 실행하며, 한 번 실행할 때 최대 50건을 한 건씩 확보(다음 시도 시각을 30초 뒤로 미루는 임대)해 처리. payment 호출은 임대 후 트랜잭션 밖에서 실행. 성공하면 `COMPLETED` + `completed_at`, 실패(연결 실패, 응답 타임아웃, 4xx, 5xx 모두)하면 `FAILED` + `attempt_count` 증가, 다음 시도까지 10초 → 30초 → 1분 고정. 늦게 온 실패는 임대가 그대로일 때만 반영. 10분 넘게 미지급인 정산이 있으면 ERROR 로그(→ [관측](../infra/observability.md#알림-규칙) 「정산 지급 지연」) |
 | 토큰 폐기 재처리 | member | 10초 | 보관 기한까지 재시도 | SKIP LOCKED | Redis 기록을 확인하지 못한 폐기 작업(`PENDING`)을 다시 기록. 기본 10초 간격으로 실행하며, 한 번 실행할 때 최대 50건을 한 건씩 확보(다음 시도 시각을 30초 뒤로 미루는 임대)해 처리. Redis 호출은 임대 후 트랜잭션 밖에서 실행. 실패하면 다음 시도까지 10초 → 30초 → 1분, 보관 기한이 지나면 `EXPIRED` → [ADR 0022](../decisions/0022-token-revocation-and-retry.md) |
 | Outbox 재전송 | member · product · market · settlement (payment는 ⬜ 발행 이벤트 없음) | 10초 | 확인 후 포기 (5회 → `FAILED`) | SKIP LOCKED | 미발행 이벤트 다시 보내기, 발행 완료 행 7일 뒤 삭제 |
 | SSE 하트비트 | notification | 30초 | – | – | 연결 유지 ping |

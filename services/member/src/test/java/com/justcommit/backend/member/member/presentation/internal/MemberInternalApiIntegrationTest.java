@@ -145,7 +145,7 @@ class MemberInternalApiIntegrationTest {
   private Long saveMember() {
     int n = SEQ.incrementAndGet();
     Member member = Member.createLocal("account" + n + "@test.com", "encoded", "acct" + n,
-        "010" + String.format("%08d", n), "004", accountCipher.encrypt(ACCOUNT_NO), "홍길동");
+        "010" + String.format("%08d", n), "004", accountCipher.encrypt(ACCOUNT_NO), null, "홍길동");
     return memberRepository.save(member).getId();
   }
 

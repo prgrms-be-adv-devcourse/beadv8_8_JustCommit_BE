@@ -105,6 +105,9 @@ internal-api:
 
 # 회원 행 잠금 대기 제한 (#409). 넘으면 409 MEMBER_BUSY. 잠금 한 번마다의 제한 (MemberLocker)
 member:
+  # 회원 정보 HMAC-SHA256 키 (#413 계좌 중복 확인). 32바이트 Base64, AES 키와 별도
+  # 기본값 없음: 비어 있으면 앱이 시작하지 않음 (운영은 배포 전에 MEMBER_HMAC_KEY 주입 필요)
+  hmac-key: ${MEMBER_HMAC_KEY}
   lock:
     timeout: 3s
   token-revocation:
@@ -114,3 +117,10 @@ member:
     retry:
       enabled: true
       interval: PT10S
+  # 메일 발송 전용 실행기 (#421). 인증 메일 · 가입 계정 안내 메일을 요청 밖에서 보낸다
+  mail:
+    executor:
+      # 스레드 수 (core = max). 측정 전 초기값
+      threads: 2
+      # 대기열 크기. 넘치면 제출 거절. 기다리는 동안에도 인증번호 TTL(5분)이 줄어드므로 대기 시간과 함께 조정. 측정 전 초기값
+      queue-capacity: 20

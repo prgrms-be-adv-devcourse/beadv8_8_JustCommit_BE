@@ -54,7 +54,7 @@ class MemberQueryServiceTest {
   // 회원 1의 기본 배송지 (id는 DB가 채워 주는 값이라 직접 주입)
   private Address address() {
     Member member = Member.createLocal("test@gmail.com", "encoded", "떡볶이", "01012345678",
-            "004", "v1:encrypted-account", "홍길동");
+            "004", "v1:encrypted-account", null, "홍길동");
     ReflectionTestUtils.setField(member, "id", MEMBER_ID);
 
     Address address = Address.createDefault(member, "홍길동", "01087654321",
@@ -67,7 +67,7 @@ class MemberQueryServiceTest {
   @DisplayName("계좌 조회: 암호문을 복호화해 은행 코드·계좌번호·예금주를 반환")
   void getAccount_success() {
     Member member = Member.createLocal("test@gmail.com", "encoded", "떡볶이", "01012345678",
-            "004", "v1:encrypted-account", "홍길동");
+            "004", "v1:encrypted-account", null, "홍길동");
     given(memberRepository.findById(1L)).willReturn(Optional.of(member));
     given(accountCipher.decrypt("v1:encrypted-account")).willReturn(ACCOUNT_NO);
 
@@ -93,7 +93,7 @@ class MemberQueryServiceTest {
   @DisplayName("탈퇴 회원이면 계좌를 주지 않고 MEMBER_NOT_FOUND (없는 회원과 같은 404)")
   void getAccount_deletedMember() {
     Member member = Member.createLocal("test@gmail.com", "encoded", "떡볶이", "01012345678",
-            "004", "v1:encrypted-account", "홍길동");
+            "004", "v1:encrypted-account", null, "홍길동");
     // 탈퇴 기능(#407) 전이라 상태만 바꿔 확인
     ReflectionTestUtils.setField(member, "status", MemberStatus.DELETED);
     given(memberRepository.findById(1L)).willReturn(Optional.of(member));
@@ -186,7 +186,7 @@ class MemberQueryServiceTest {
   @DisplayName("회원 닉네임을 반환한다")
   void getNickname() {
     Member member = Member.createLocal("test@gmail.com", "encoded", "떡볶이", "01012345678",
-            "004", "v1:encrypted-account", "홍길동");
+            "004", "v1:encrypted-account", null, "홍길동");
     given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(member));
 
     assertThat(memberQueryService.getNickname(MEMBER_ID)).isEqualTo("떡볶이");

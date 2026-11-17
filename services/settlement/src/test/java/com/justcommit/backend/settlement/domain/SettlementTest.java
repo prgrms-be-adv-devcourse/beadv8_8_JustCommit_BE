@@ -141,6 +141,31 @@ class SettlementTest {
 
             assertThat(settlement.getLastError()).hasSize(500);
         }
+
+        @Test
+        @DisplayName("임대하면 다음 시도 시각이 임대 시각이 되고, 임대가 그대로일 때만 isLeasedUntil이 참이다")
+        void leases() {
+            Settlement settlement = settlement(null);
+            LocalDateTime leasedUntil = REQUESTED_AT.plusSeconds(30);
+
+            settlement.lease(leasedUntil);
+
+            assertThat(settlement.getNextAttemptAt()).isEqualTo(leasedUntil);
+            assertThat(settlement.isLeasedUntil(leasedUntil)).isTrue();
+            assertThat(settlement.isLeasedUntil(leasedUntil.plusSeconds(1))).isFalse();
+        }
+
+        @Test
+        @DisplayName("COMPLETED 정산은 임대하지 않고 isLeasedUntil도 거짓이다")
+        void doesNotLeaseCompleted() {
+            Settlement settlement = settlement(null);
+            settlement.complete(COMPLETED_AT);
+
+            settlement.lease(NEXT_ATTEMPT_AT);
+
+            assertThat(settlement.getNextAttemptAt()).isNull();
+            assertThat(settlement.isLeasedUntil(NEXT_ATTEMPT_AT)).isFalse();
+        }
     }
 
     private static Settlement settlement(BigDecimal shippingFee) {
