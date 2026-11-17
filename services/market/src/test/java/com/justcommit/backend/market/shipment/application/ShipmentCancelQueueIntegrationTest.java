@@ -8,9 +8,8 @@ import com.justcommit.backend.market.shipment.domain.Shipment;
 import com.justcommit.backend.market.shipment.domain.ShipmentCancelResult;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierCancelException;
-import com.justcommit.backend.market.shipment.infrastructure.courier.CourierCancelResult;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierClient;
-import com.justcommit.backend.market.shipment.infrastructure.courier.CourierShipmentView;
+import com.justcommit.backend.market.shipment.infrastructure.courier.CourierOrderCancelResponse;
 import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentCancelResultRepository;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
@@ -18,6 +17,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
@@ -38,6 +38,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
@@ -52,7 +54,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -101,16 +102,22 @@ class ShipmentCancelQueueIntegrationTest {
     }
 
     @Test
-    @DisplayName("택배사가 취소하면 배송 CANCELLED + 결과 행(취소됨) 하나를 남기고 상태 이벤트를 보낸다")
+    @DisplayName("주문번호 + 누른 시각(+09:00)으로 택배사에 취소하고, 취소되면 배송 CANCELLED + 결과 행(취소됨) 하나를 남기고 상태 이벤트를 보낸다")
     void cancelledByCourier() {
         Shipment shipment = cancelPendingBooked(7L, "404000000007");
-        when(courierClient.cancel("404000000007")).thenReturn(CourierCancelResult.CANCELLED);
+        when(courierClient.cancelByCourierOrderNo(eq(shipment.getCourierOrderNo()), any()))
+                .thenReturn(Optional.of(cancelled(shipment, false)));
 
         cancelQueue.cancelPendingShipments();
 
+        ArgumentCaptor<OffsetDateTime> requestedAt = ArgumentCaptor.forClass(OffsetDateTime.class);
+        verify(courierClient).cancelByCourierOrderNo(eq(shipment.getCourierOrderNo()), requestedAt.capture());
+        assertThat(requestedAt.getValue().toLocalDateTime()).isEqualTo(shipment.getCancelRequestedAt());
+        assertThat(requestedAt.getValue().getOffset()).isEqualTo(ZoneOffset.ofHours(9));
         assertThat(reload(shipment).getStatus()).isEqualTo(ShipmentStatus.CANCELLED);
         assertThat(cancelResultRepository.findByShipmentId(shipment.getId())).hasValueSatisfying(result -> {
             assertThat(result.getResult()).isEqualTo(ShipmentCancelResult.Result.CANCELLED);
+            assertThat(result.isCourierReturn()).isFalse();
             assertThat(result.getSellerOrderId()).isEqualTo(7L);
             assertThat(result.getProcessedAt()).isNull(); // 주문 Saga가 아직 안 읽음
         });
@@ -118,10 +125,10 @@ class ShipmentCancelQueueIntegrationTest {
     }
 
     @Test
-    @DisplayName("택배사가 거절하면(409, 기사 2km 안 · 수거) 배송 CANCEL_LOCKED + 결과 행(취소 불가)")
+    @DisplayName("택배사가 거절하면(409, 누른 시각에 기사 2km 안) 배송 CANCEL_LOCKED + 결과 행(취소 불가)")
     void lockedByCourier() {
         Shipment shipment = cancelPendingBooked(7L, "404000000007");
-        when(courierClient.cancel("404000000007")).thenReturn(CourierCancelResult.NOT_CANCELLABLE);
+        when(courierClient.cancelByCourierOrderNo(anyString(), any())).thenReturn(Optional.empty());
 
         cancelQueue.cancelPendingShipments();
 
@@ -131,12 +138,25 @@ class ShipmentCancelQueueIntegrationTest {
     }
 
     @Test
-    @DisplayName("택배사가 응답하지 않으면 CANCEL_PENDING을 유지하고 원인을 남기며, 10초 전에는 다시 부르지 않고 때가 되면 다시 보낸다")
+    @DisplayName("택배사 장애로 이미 수거된 뒤 취소가 인정되면(반송) 배송 CANCELLED + 결과 행에 반송 표시")
+    void cancelledWithCourierReturn() {
+        Shipment shipment = cancelPendingBooked(7L, "404000000007");
+        when(courierClient.cancelByCourierOrderNo(anyString(), any())).thenReturn(Optional.of(cancelled(shipment, true)));
+
+        cancelQueue.cancelPendingShipments();
+
+        assertThat(reload(shipment).getStatus()).isEqualTo(ShipmentStatus.CANCELLED);
+        assertThat(cancelResultRepository.findByShipmentId(shipment.getId()))
+                .hasValueSatisfying(result -> assertThat(result.isCourierReturn()).isTrue());
+    }
+
+    @Test
+    @DisplayName("택배사가 응답하지 않으면 CANCEL_PENDING을 유지하고 원인을 남기며, 10초 전에는 다시 부르지 않고 때가 되면 같은 누른 시각으로 다시 보낸다")
     void retriesWhenCourierDoesNotAnswer() {
         Shipment shipment = cancelPendingBooked(7L, "404000000007");
-        when(courierClient.cancel("404000000007"))
+        when(courierClient.cancelByCourierOrderNo(anyString(), any()))
                 .thenThrow(new CourierCancelException("타임아웃", new RuntimeException()))
-                .thenReturn(CourierCancelResult.CANCELLED);
+                .thenReturn(Optional.of(cancelled(shipment, false)));
         LocalDateTime before = LocalDateTime.now();
 
         cancelQueue.cancelPendingShipments();
@@ -148,41 +168,28 @@ class ShipmentCancelQueueIntegrationTest {
         assertThat(pending.getLastError()).startsWith("CourierCancelException");
         assertThat(pending.getNextAttemptAt()).isAfterOrEqualTo(before.plusSeconds(10));
         assertThat(cancelResultRepository.findByShipmentId(shipment.getId())).isEmpty();
-        verify(courierClient, times(1)).cancel(anyString());
 
         makeDue(shipment.getId());
         cancelQueue.cancelPendingShipments();
 
         assertThat(reload(shipment).getStatus()).isEqualTo(ShipmentStatus.CANCELLED);
         assertThat(reload(shipment).getLastError()).isNull();
-        verify(courierClient, times(2)).cancel("404000000007");
+        ArgumentCaptor<OffsetDateTime> requestedAt = ArgumentCaptor.forClass(OffsetDateTime.class);
+        verify(courierClient, times(2)).cancelByCourierOrderNo(eq(shipment.getCourierOrderNo()), requestedAt.capture());
+        assertThat(requestedAt.getAllValues().get(0)).isEqualTo(requestedAt.getAllValues().get(1)); // 재시도도 처음 누른 시각
     }
 
     @Test
-    @DisplayName("송장번호가 없는(예약 전 취소) 배송은 주문번호로 찾아서, 택배사에 예약이 없으면 택배사 취소 없이 끝낸다")
-    void readyWithoutReservation() {
+    @DisplayName("송장번호가 없는(예약 전 취소) 배송도 같은 주문번호 취소로 끝낸다")
+    void readyCancelledByOrderNo() {
         Shipment shipment = cancelPendingReady(7L);
-        when(courierClient.findByCourierOrderNo(shipment.getCourierOrderNo())).thenReturn(Optional.empty());
+        when(courierClient.cancelByCourierOrderNo(eq(shipment.getCourierOrderNo()), any()))
+                .thenReturn(Optional.of(new CourierOrderCancelResponse(shipment.getCourierOrderNo(), null, "CANCELLED", false)));
 
         cancelQueue.cancelPendingShipments();
 
         assertThat(reload(shipment).getStatus()).isEqualTo(ShipmentStatus.CANCELLED);
-        verify(courierClient, never()).cancel(anyString());
         assertThat(cancelResultRepository.findByShipmentId(shipment.getId())).isPresent();
-    }
-
-    @Test
-    @DisplayName("송장번호가 없지만 택배사에 예약이 있으면(예약 응답 유실) 찾은 송장번호로 취소한다")
-    void readyWithLostReservation() {
-        Shipment shipment = cancelPendingReady(7L);
-        when(courierClient.findByCourierOrderNo(shipment.getCourierOrderNo()))
-                .thenReturn(Optional.of(new CourierShipmentView("404000000099", shipment.getCourierOrderNo(), "RESERVED")));
-        when(courierClient.cancel("404000000099")).thenReturn(CourierCancelResult.CANCELLED);
-
-        cancelQueue.cancelPendingShipments();
-
-        verify(courierClient).cancel("404000000099");
-        assertThat(reload(shipment).getStatus()).isEqualTo(ShipmentStatus.CANCELLED);
     }
 
     @Test
@@ -195,12 +202,12 @@ class ShipmentCancelQueueIntegrationTest {
         CountDownLatch podAInCourier = new CountDownLatch(1);
         CountDownLatch releasePodA = new CountDownLatch(1);
         AtomicBoolean firstCall = new AtomicBoolean(true);
-        when(courierClient.cancel(anyString())).thenAnswer(inv -> {
+        when(courierClient.cancelByCourierOrderNo(anyString(), any())).thenAnswer(inv -> {
             if (firstCall.compareAndSet(true, false)) {
                 podAInCourier.countDown();
                 releasePodA.await(10, TimeUnit.SECONDS); // 인스턴스 A는 첫 배송에서 택배사 응답을 기다리는 중
             }
-            return CourierCancelResult.CANCELLED;
+            return Optional.of(new CourierOrderCancelResponse(inv.getArgument(0), null, "CANCELLED", false));
         });
 
         ExecutorService podA = Executors.newSingleThreadExecutor();
@@ -212,11 +219,16 @@ class ShipmentCancelQueueIntegrationTest {
         runA.get(10, TimeUnit.SECONDS);
         podA.shutdown();
 
-        verify(courierClient, times(shipments.size())).cancel(anyString());
+        verify(courierClient, times(shipments.size())).cancelByCourierOrderNo(anyString(), any());
         for (Shipment shipment : shipments) {
-            verify(courierClient, times(1)).cancel(eq(shipment.getTrackingNo()));
+            verify(courierClient, times(1)).cancelByCourierOrderNo(eq(shipment.getCourierOrderNo()), any());
             assertThat(reload(shipment).getStatus()).isEqualTo(ShipmentStatus.CANCELLED);
         }
+    }
+
+    private CourierOrderCancelResponse cancelled(Shipment shipment, boolean returning) {
+        return new CourierOrderCancelResponse(shipment.getCourierOrderNo(), shipment.getTrackingNo(),
+                returning ? "RETURNING" : "CANCELLED", returning);
     }
 
     private Shipment cancelPendingBooked(long sellerOrderId, String trackingNo) {

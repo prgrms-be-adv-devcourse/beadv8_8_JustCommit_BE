@@ -10,6 +10,7 @@ import java.time.OffsetDateTime;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
@@ -105,7 +106,7 @@ class CourierClientTest {
     @Test
     @DisplayName("주문번호로 택배사 예약을 찾으면 송장번호를 돌려주고, 404면 예약이 없는 것으로 본다")
     void findByCourierOrderNo() {
-        wireMock.stubFor(get(urlEqualTo(BOOKING_PATH + "/by-order-no/" + COURIER_ORDER_NO))
+        wireMock.stubFor(get(urlEqualTo(BOOKING_PATH + "/byOrderNo/" + COURIER_ORDER_NO))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withHeader("Content-Type", "application/json")
@@ -114,7 +115,7 @@ class CourierClientTest {
                                  "data":{"trackingNo":"404000000001","courierOrderNo":"shipment-20261012-000045",
                                          "status":"RESERVED","remainingDistanceMeters":3400}}
                                 """)));
-        wireMock.stubFor(get(urlEqualTo(BOOKING_PATH + "/by-order-no/shipment-20261012-000046"))
+        wireMock.stubFor(get(urlEqualTo(BOOKING_PATH + "/byOrderNo/shipment-20261012-000046"))
                 .willReturn(aResponse().withStatus(404).withHeader("Content-Type", "application/json")
                         .withBody("{\"status\":404,\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"\"}")));
 
@@ -126,10 +127,48 @@ class CourierClientTest {
     @Test
     @DisplayName("주문번호 조회가 500이면 결과를 모르는 실패로 알려 취소 큐가 다시 시도하게 한다")
     void findByCourierOrderNoServerErrorThrows() {
-        wireMock.stubFor(get(urlEqualTo(BOOKING_PATH + "/by-order-no/" + COURIER_ORDER_NO))
+        wireMock.stubFor(get(urlEqualTo(BOOKING_PATH + "/byOrderNo/" + COURIER_ORDER_NO))
                 .willReturn(aResponse().withStatus(500)));
 
         assertThatThrownBy(() -> courierClient.findByCourierOrderNo(COURIER_ORDER_NO))
+                .isInstanceOf(CourierCancelException.class);
+    }
+
+    @Test
+    @DisplayName("주문번호 취소는 누른 시각을 +09:00 ISO 문자열로 보내고, 200이면 반송 여부와 함께 돌려준다")
+    void cancelByCourierOrderNoSuccess() {
+        wireMock.stubFor(post(urlEqualTo(BOOKING_PATH + "/byOrderNo/" + COURIER_ORDER_NO + "/cancel"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("""
+                                {"status":200,"message":"취소가 인정되어 반송합니다.",
+                                 "data":{"courierOrderNo":"shipment-20261012-000045","trackingNo":"404000000001",
+                                         "status":"RETURNING","returning":true,
+                                         "cancelledAt":"2026-11-17T10:00:05+09:00","returnedAt":null}}
+                                """)));
+
+        assertThat(courierClient.cancelByCourierOrderNo(COURIER_ORDER_NO, OffsetDateTime.parse("2026-11-17T10:00:00+09:00")))
+                .hasValueSatisfying(response -> assertThat(response.returning()).isTrue());
+
+        wireMock.verify(postRequestedFor(urlEqualTo(BOOKING_PATH + "/byOrderNo/" + COURIER_ORDER_NO + "/cancel"))
+                .withHeader("X-Api-Key", equalTo("test-key"))
+                .withRequestBody(equalToJson("{\"cancelRequestedAt\":\"2026-11-17T10:00:00+09:00\"}")));
+    }
+
+    @Test
+    @DisplayName("주문번호 취소가 409면 취소 불가(빈 값), 500이면 결과를 모르는 실패로 알린다")
+    void cancelByCourierOrderNoLockedOrFailed() {
+        wireMock.stubFor(post(urlEqualTo(BOOKING_PATH + "/byOrderNo/" + COURIER_ORDER_NO + "/cancel"))
+                .willReturn(aResponse().withStatus(409).withHeader("Content-Type", "application/json")
+                        .withBody("{\"status\":409,\"code\":\"SHIPMENT_NOT_CANCELLABLE\",\"message\":\"\"}")));
+        wireMock.stubFor(post(urlEqualTo(BOOKING_PATH + "/byOrderNo/shipment-20261012-000046/cancel"))
+                .willReturn(aResponse().withStatus(500)));
+
+        assertThat(courierClient.cancelByCourierOrderNo(COURIER_ORDER_NO, OffsetDateTime.parse("2026-11-17T10:00:00+09:00")))
+                .isEmpty();
+        assertThatThrownBy(() -> courierClient.cancelByCourierOrderNo("shipment-20261012-000046",
+                OffsetDateTime.parse("2026-11-17T10:00:00+09:00")))
                 .isInstanceOf(CourierCancelException.class);
     }
 

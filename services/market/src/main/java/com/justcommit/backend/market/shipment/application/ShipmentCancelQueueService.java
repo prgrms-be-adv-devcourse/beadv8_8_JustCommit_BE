@@ -5,9 +5,7 @@ import com.justcommit.backend.market.OrderShippingInfo;
 import com.justcommit.backend.market.shipment.domain.Shipment;
 import com.justcommit.backend.market.shipment.domain.ShipmentCancelResult;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
-import com.justcommit.backend.market.shipment.infrastructure.courier.CourierCancelResult;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierClient;
-import com.justcommit.backend.market.shipment.infrastructure.courier.CourierShipmentView;
 import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentCancelResultRepository;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
@@ -19,21 +17,23 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
-import java.util.Optional;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 
 // 택배 취소 큐 (ADR 0025): 취소 대기(CANCEL_PENDING) 배송을 택배사에 취소하고 결과를 남긴다.
 // 택배 예약 큐와 같은 방식: 한 건씩 짧은 트랜잭션으로 집고(잠금 + 30초 임대) 바로 커밋 → 트랜잭션 밖에서 택배사 호출 →
 // 짧은 트랜잭션으로 배송 상태 + 결과 행(SHIPMENT_CANCEL_RESULT)을 함께 저장. 실패하면 10초 → 30초 → 1분 뒤 다시 (끝까지).
 //
-// 택배사 호출은 지금 있는 API로 한다 (404-express에 주문번호 취소 · 누른 시각 판정이 생기면 callCourier만 바꾼다):
-//   송장번호가 없으면 주문번호로 예약을 찾고 → 예약이 없으면 택배사에 건이 없으므로 취소 완료
-//   → 있으면 송장번호로 취소: 200 취소됨, 409 취소 불가(기사 2km 안 · 수거), 404 예약 없음
+// 택배사에는 주문번호 + 누른 시각으로 보낸다. 택배사가 누른 시각의 기사 거리로 판정해
+//   200 취소됨(반송 포함, 예약 전 취소도) · 409 취소 불가(누른 시각에 기사 2km 안)를 돌려준다.
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ShipmentCancelQueueService {
     // 한 번 실행에 처리하는 최대 건수. 한 건씩 집으므로 택배사가 느려도 임대(30초)를 넘기지 않는다.
     private static final int CANCEL_BATCH_SIZE = 20;
+    // 누른 시각(서버 기본 시간대 = 서울)을 시간대가 붙은 값으로 바꿔 택배사에 보낸다
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     private final ShipmentRepository shipmentRepository;
     private final ShipmentCancelResultRepository cancelResultRepository;
@@ -84,28 +84,20 @@ public class ShipmentCancelQueueService {
     }
 
     private CourierCancelOutcome callCourier(Shipment shipment) {
-        String trackingNo = shipment.getTrackingNo();
-        if (trackingNo == null) {
-            Optional<CourierShipmentView> found = courierClient.findByCourierOrderNo(shipment.getCourierOrderNo());
-            if (found.isEmpty()) {
-                return CourierCancelOutcome.CANCELLED; // 택배사에 예약이 없음 → 서버 취소만으로 끝
-            }
-            trackingNo = found.get().trackingNo();
-        }
-        CourierCancelResult result = courierClient.cancel(trackingNo);
-        return switch (result) {
-            case CANCELLED, NOT_FOUND -> CourierCancelOutcome.CANCELLED;
-            case NOT_CANCELLABLE -> CourierCancelOutcome.LOCKED;
-        };
+        OffsetDateTime requestedAt = shipment.getCancelRequestedAt().atZone(SEOUL).toOffsetDateTime();
+        return courierClient.cancelByCourierOrderNo(shipment.getCourierOrderNo(), requestedAt)
+                .map(response -> response.returning() ? CourierCancelOutcome.CANCELLED_RETURNING : CourierCancelOutcome.CANCELLED)
+                .orElse(CourierCancelOutcome.LOCKED);
     }
 
     private void saveResult(Shipment shipment, CourierCancelOutcome outcome) {
         LocalDateTime now = LocalDateTime.now();
         OrderShippingInfo orderInfo = orderQuery.getShippingInfo(shipment.getSellerOrderId());
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-            if (outcome == CourierCancelOutcome.CANCELLED) {
+            if (outcome != CourierCancelOutcome.LOCKED) {
                 shipment.completeCancel(now);
-                cancelResultRepository.save(ShipmentCancelResult.cancelled(shipment, false, now));
+                cancelResultRepository.save(ShipmentCancelResult.cancelled(shipment,
+                        outcome == CourierCancelOutcome.CANCELLED_RETURNING, now));
             } else {
                 shipment.lockCancel();
                 cancelResultRepository.save(ShipmentCancelResult.locked(shipment, now));
@@ -130,7 +122,8 @@ public class ShipmentCancelQueueService {
     }
 
     private enum CourierCancelOutcome {
-        CANCELLED, // 취소됨 (택배사에 예약이 없던 경우 포함)
-        LOCKED     // 취소 불가 (기사 2km 안 · 이미 수거)
+        CANCELLED,           // 취소됨 (예약 전 취소 포함)
+        CANCELLED_RETURNING, // 취소됐지만 택배사 장애로 이미 수거돼 택배사가 반송
+        LOCKED               // 취소 불가 (누른 시각에 기사 2km 안)
     }
 }
