@@ -6,6 +6,7 @@ import com.justcommit.backend.market.OrderResult;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.SellerOrderPaidEvent;
 import com.justcommit.backend.market.SellerOrderResult;
+import com.justcommit.backend.market.cart.application.CartService;
 import com.justcommit.backend.market.client.payment.PaymentOutcome;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.event.OrderFailed;
@@ -67,19 +68,22 @@ public class OrderPaymentTransactions {
     private final OrderQuery orderQuery;
     private final SellerOrderEventPublisher sellerOrderEventPublisher;
     private final ShipmentService shipmentService;
+    private final CartService cartService;
 
     public OrderPaymentTransactions(PlatformTransactionManager transactionManager,
                                     OrdersRepository ordersRepository,
                                     OutboxPublisher outboxPublisher,
                                     OrderQuery orderQuery,
                                     SellerOrderEventPublisher sellerOrderEventPublisher,
-                                    ShipmentService shipmentService) {
+                                    ShipmentService shipmentService,
+                                    CartService cartService) {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.ordersRepository = ordersRepository;
         this.outboxPublisher = outboxPublisher;
         this.orderQuery = orderQuery;
         this.sellerOrderEventPublisher = sellerOrderEventPublisher;
         this.shipmentService = shipmentService;
+        this.cartService = cartService;
     }
 
     // TX1: 주문 · 판매자 주문 · 주문상품을 결제 대기로 저장하고 커밋한다
@@ -117,7 +121,8 @@ public class OrderPaymentTransactions {
     // TX3: 결제 처리 중이고 자기 시도 번호일 때만 결과를 반영한다. 반영하지 못하면 false (아무것도 바꾸지 않음).
     // 10분 기한은 보지 않는다. 기한이 지났어도 결제됐으면 결제 완료로 처리한다
     public boolean applyOutcome(Long orderId, int attemptNo, PaymentOutcome outcome, AttemptSource source) {
-        return apply(orderId, attemptNo, outcome, targetStatus(outcome, source));
+        // 첫 호출(create · repayment)은 장바구니를 복원하지 않는다. create는 확정 실패면 지우지 않았고, repayment는 장바구니를 바꾸지 않는다
+        return apply(orderId, attemptNo, outcome, targetStatus(outcome, source), false);
     }
 
     // 복구 결과 반영. 마지막(5번째) 복구까지 결과를 모르면 그 자리에서 확인 필요로 바꾼다
@@ -126,7 +131,8 @@ public class OrderPaymentTransactions {
         if (to == OrderStatus.PAYMENT_PROCESSING && claim.lastAttempt()) {
             return requireReviewAfterLastAttempt(claim, outcome);
         }
-        return apply(claim.orderId(), claim.attemptNo(), outcome, to);
+        // 복구까지 온 주문은 create가 장바구니에서 지웠으므로, 확정 실패면 같은 트랜잭션에서 되돌린다 (만료와 같음)
+        return apply(claim.orderId(), claim.attemptNo(), outcome, to, true);
     }
 
     // 복구 선점 (짧은 TX): 다른 파드 · 요청이 잡은 주문은 건너뛴다. 잠근 뒤 결제 처리 중 · 유예 경과를 다시 본다.
@@ -181,7 +187,8 @@ public class OrderPaymentTransactions {
                 .log();
     }
 
-    private boolean apply(Long orderId, int attemptNo, PaymentOutcome outcome, OrderStatus to) {
+    private boolean apply(Long orderId, int attemptNo, PaymentOutcome outcome, OrderStatus to,
+                          boolean restoreCartOnFailure) {
         String lastError = (to == OrderStatus.PAID || to == OrderStatus.PAYMENT_PENDING) ? null : outcome.reason();
         Boolean applied = transactionTemplate.execute(status -> {
             int updated = ordersRepository.applyPaymentAttempt(orderId, attemptNo, to, lastError,
@@ -194,11 +201,22 @@ public class OrderPaymentTransactions {
             } else if (to == OrderStatus.PAYMENT_FAILED) {
                 // 잡아 둔 예약은 product가 풀도록 알린다. 결과를 모르는 동안은 보내지 않는다
                 outboxPublisher.publish(new OrderFailed(orderId));
+                if (restoreCartOnFailure) {
+                    restoreCart(orderId);
+                }
             }
             return true;
         });
         logOutcome(orderId, attemptNo, outcome, to, Boolean.TRUE.equals(applied));
         return Boolean.TRUE.equals(applied);
+    }
+
+    // 주문상품을 주문 당시 가격으로 장바구니에 되돌린다. 이미 담긴 상품은 건너뛴다 (CartService.restoreItem)
+    private void restoreCart(Long orderId) {
+        Orders order = ordersRepository.findById(orderId).orElseThrow();
+        order.getSellerOrders().stream()
+                .flatMap(sellerOrder -> sellerOrder.getItems().stream())
+                .forEach(item -> cartService.restoreItem(order.getBuyerId(), item.getProductId(), item.getPrice()));
     }
 
     public Orders getOrder(Long orderId) {

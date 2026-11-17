@@ -3,7 +3,9 @@ package com.justcommit.backend.market.order.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -12,6 +14,7 @@ import static org.mockito.Mockito.when;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.OrderResult;
+import com.justcommit.backend.market.cart.application.CartService;
 import com.justcommit.backend.market.client.payment.PaymentOutcome;
 import com.justcommit.backend.market.client.payment.PaymentUseCase;
 import com.justcommit.backend.market.config.JpaAuditingConfig;
@@ -84,6 +87,7 @@ class OrderRecoveryIntegrationTest {
     @MockitoBean OrderQuery orderQuery;
     @MockitoBean SellerOrderEventPublisher sellerOrderEventPublisher;
     @MockitoBean ShipmentService shipmentService;
+    @MockitoBean CartService cartService;
 
     @Autowired OrderRecoveryService recoveryService;
     @Autowired OrderPaymentTransactions transactions;
@@ -106,6 +110,7 @@ class OrderRecoveryIntegrationTest {
         assertThat(row(orderId)).containsEntry("status", "PAID")
                 .containsEntry("attempt_no", 2).containsEntry("attempt_count", 1);
         verify(outboxPublisher).publish(new OrderPaid(orderId));
+        verify(cartService, never()).restoreItem(anyLong(), anyLong(), any());
     }
 
     @Test
@@ -118,10 +123,11 @@ class OrderRecoveryIntegrationTest {
 
         assertThat(row(orderId)).containsEntry("status", "PAYMENT_PENDING");
         verify(outboxPublisher, never()).publish(any());
+        verify(cartService, never()).restoreItem(anyLong(), anyLong(), any());
     }
 
     @Test
-    @DisplayName("복구 중 4xx(401 · 403 포함)는 확정 실패: 주문 실패 + order-failed")
+    @DisplayName("복구 중 4xx(401 · 403 포함)는 확정 실패: 주문 실패 + order-failed + 장바구니 복원")
     void failsOrderWhenRecoveryIsRejected() {
         Long unauthorized = processingOrder(1, 0, 20);
         Long forbidden = processingOrder(1, 0, 20);
@@ -134,6 +140,22 @@ class OrderRecoveryIntegrationTest {
         assertThat(row(forbidden)).containsEntry("status", "PAYMENT_FAILED");
         verify(outboxPublisher).publish(new OrderFailed(unauthorized));
         verify(outboxPublisher).publish(new OrderFailed(forbidden));
+        // create가 지운 주문상품을 주문 당시 가격으로 되돌린다 (주문마다 한 번)
+        verify(cartService, times(2)).restoreItem(eq(BUYER_ID), eq(101L), argThat(price -> price.compareTo(new BigDecimal("10000")) == 0));
+    }
+
+    @Test
+    @DisplayName("장바구니 복원이 실패하면 주문 실패도 함께 되돌려 결제 처리 중으로 남기고 다음 주기에 다시 시도한다")
+    void keepsProcessingWhenCartRestoreFails() {
+        Long orderId = processingOrder(1, 0, 20);
+        when(paymentUseCase.pay(orderId, BUYER_ID, AMOUNT)).thenReturn(PaymentOutcome.rejected("WALLET_NOT_FOUND"));
+        doThrow(new IllegalStateException("cart down")).when(cartService).restoreItem(anyLong(), anyLong(), any());
+
+        recoveryService.recoverProcessingPayments();
+
+        assertThat(row(orderId)).containsEntry("status", "PAYMENT_PROCESSING")
+                .containsEntry("attempt_no", 2).containsEntry("attempt_count", 1);
+        assertThat(row(orderId).get("last_error")).isNull();
     }
 
     @Test
@@ -147,6 +169,7 @@ class OrderRecoveryIntegrationTest {
         assertThat(row(orderId)).containsEntry("status", "PAYMENT_PROCESSING")
                 .containsEntry("last_error", "CONNECTION_FAILED").containsEntry("attempt_count", 1);
         verify(outboxPublisher, never()).publish(any());
+        verify(cartService, never()).restoreItem(anyLong(), anyLong(), any());
     }
 
     @Test
@@ -172,6 +195,7 @@ class OrderRecoveryIntegrationTest {
         assertThat(row(orderId)).containsEntry("status", "REVIEW_REQUIRED").containsEntry("attempt_no", 7)
                 .containsEntry("attempt_count", 5).containsEntry("last_error", "TIMEOUT");
         verify(outboxPublisher, never()).publish(any());
+        verify(cartService, never()).restoreItem(anyLong(), anyLong(), any());
     }
 
     @Test

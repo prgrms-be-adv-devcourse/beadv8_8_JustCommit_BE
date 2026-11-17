@@ -2,6 +2,7 @@ package com.justcommit.backend.market.order.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -9,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.OrderResult;
+import com.justcommit.backend.market.cart.application.CartService;
 import com.justcommit.backend.market.client.payment.PaymentOutcome;
 import com.justcommit.backend.market.config.JpaAuditingConfig;
 import com.justcommit.backend.market.order.application.OrderPaymentTransactions.AttemptSource;
@@ -65,6 +67,7 @@ class OrderPaymentTransactionsIntegrationTest {
     @MockitoBean OrderQuery orderQuery;
     @MockitoBean SellerOrderEventPublisher sellerOrderEventPublisher;
     @MockitoBean ShipmentService shipmentService;
+    @MockitoBean CartService cartService;
 
     @Autowired OrderPaymentTransactions transactions;
     @Autowired JdbcTemplate jdbcTemplate;
@@ -156,6 +159,8 @@ class OrderPaymentTransactionsIntegrationTest {
         assertThat(row(recovery).get("status")).isEqualTo("PAYMENT_PROCESSING");
         assertThat(row(recovery).get("last_error")).isEqualTo("CONNECTION_FAILED");
         verify(outboxPublisher, never()).publish(new OrderFailed(recovery));
+        // 첫 호출의 확정 실패는 장바구니를 복원하지 않는다 (create는 지우지 않았고 repayment는 장바구니를 바꾸지 않음)
+        verify(cartService, never()).restoreItem(anyLong(), anyLong(), any());
     }
 
     @Test

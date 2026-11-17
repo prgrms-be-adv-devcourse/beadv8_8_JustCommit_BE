@@ -75,6 +75,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -115,7 +116,7 @@ class OrderServiceTest {
         // 트랜잭션 경계 순서만 보는 단위 테스트라 실제 커밋 없이 동기화 콜백만 돈다. CAS 동작은 통합 테스트에서 확인
         ReflectionTestUtils.setField(orderService, "orderPaymentTransactions", new OrderPaymentTransactions(
                 new NoOpTransactionManager(), ordersRepository, outboxPublisher, orderQuery,
-                sellerOrderEventPublisher, shipmentService));
+                sellerOrderEventPublisher, shipmentService, cartService));
     }
 
     @Test
@@ -456,6 +457,8 @@ class OrderServiceTest {
         assertThat(response.expiresAt()).isNull();
         verify(outboxPublisher).publish(new OrderPaid(99L));
         verify(shipmentService).createShipments(orderResult);
+        verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+        verify(cartService, never()).restoreItem(anyLong(), anyLong(), any());
     }
 
     @Test
@@ -525,6 +528,7 @@ class OrderServiceTest {
         assertThat(order.getLastError()).isEqualTo("HTTP_403_FORBIDDEN");
         verify(outboxPublisher).publish(new OrderFailed(99L));
         verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+        verify(cartService, never()).restoreItem(anyLong(), anyLong(), any()); // repayment는 장바구니를 바꾸지 않는다
     }
 
     @Test
