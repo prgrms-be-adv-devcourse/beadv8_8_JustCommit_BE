@@ -11,6 +11,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -37,8 +38,10 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -73,6 +76,10 @@ class MailAsyncSendIntegrationTest {
   private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
   private static final Duration WAIT = Duration.ofSeconds(5);
+  // 워커를 막아 두는 한도: HTTP 요청 · 완료 신호 대기(WAIT)보다 충분히 길게 (먼저 풀리면 다른 워커가 완료 신호를 실행할 수 있음)
+  private static final Duration BLOCK_LIMIT = Duration.ofSeconds(30);
+  // 다른 요청이 저장한 것처럼 보이는 인증번호 값 ({요청 식별자}:{번호}:{묶음 정보})
+  private static final String REPLACED_CODE = "other-request:999999:";
 
   @DynamicPropertySource
   static void properties(DynamicPropertyRegistry registry) {
@@ -90,6 +97,11 @@ class MailAsyncSendIntegrationTest {
   @Autowired PasswordEncoder passwordEncoder;
   @Autowired StringRedisTemplate redisTemplate;
   @Autowired JdbcTemplate jdbcTemplate;
+
+  // yml 설정 그대로의 메일 실행기 (스레드 2개). 공유 빈이라 테스트에서 shutdown하지 않는다
+  @Autowired
+  @Qualifier(MailExecutorConfig.MAIL_TASK_EXECUTOR)
+  ThreadPoolTaskExecutor mailExecutor;
 
   @MockitoBean
   VerificationMailSender verificationMailSender;
@@ -214,7 +226,88 @@ class MailAsyncSendIntegrationTest {
     assertThat(applicationExecutor).isNotSameAs(mailExecutor);
   }
 
+  @Test
+  @DisplayName("6. 대기열에 있는 동안 다른 요청이 인증번호를 바꾸면, 작업은 SMTP 없이 건너뛰고 예약 · 바뀐 번호를 그대로 둔다")
+  void skipsWhenCodeReplacedWhileQueued() throws Exception {
+    String email = newEmail();
+
+    runWithCodeChangedWhileQueued(email,
+        () -> redisTemplate.opsForValue().set(codeKey(email), REPLACED_CODE, Duration.ofMinutes(5)));
+
+    assertThat(redisTemplate.opsForValue().get(codeKey(email))).isEqualTo(REPLACED_CODE);
+  }
+
+  @Test
+  @DisplayName("7. 대기열에 있는 동안 인증번호가 사라지면(만료 · 사용), 작업은 SMTP 없이 건너뛰고 예약을 그대로 둔다")
+  void skipsWhenCodeMissingWhileQueued() throws Exception {
+    String email = newEmail();
+
+    runWithCodeChangedWhileQueued(email, () -> redisTemplate.delete(codeKey(email)));
+
+    assertThat(redisTemplate.hasKey(codeKey(email))).isFalse();
+  }
+
   // ===== 도우미 =====
+
+  // 워커 2개를 막아 작업 A를 대기열에 둔 채 번호를 바꾸고, 워커 하나만 풀어 A → 완료 신호 순서로 실행한 뒤 건너뛰기를 확인한다
+  // (A의 SMTP 호출을 막으면 이미 발송 직전 확인을 지난 뒤라 확인 자체를 검증할 수 없어, A가 시작되기 전에 번호를 바꾼다)
+  private void runWithCodeChangedWhileQueued(String email, Runnable changeCode) throws Exception {
+    CountDownLatch blockersStarted = new CountDownLatch(2);
+    CountDownLatch release1 = new CountDownLatch(1);
+    CountDownLatch release2 = new CountDownLatch(1);
+    CountDownLatch blocker1Done = new CountDownLatch(1);
+    CountDownLatch blocker2Done = new CountDownLatch(1);
+    AtomicBoolean blocker1Released = new AtomicBoolean();
+    AtomicBoolean blocker2Released = new AtomicBoolean();
+    CountDownLatch afterA = new CountDownLatch(1);
+    try {
+      mailExecutor.execute(blocker(blockersStarted, release1, blocker1Released, blocker1Done));
+      mailExecutor.execute(blocker(blockersStarted, release2, blocker2Released, blocker2Done));
+      assertThat(blockersStarted.await(WAIT.toSeconds(), TimeUnit.SECONDS)).isTrue();
+
+      assertThat(sendSignupCode(email).statusCode()).isEqualTo(200);
+      // A가 실제로 접수됐는지: 번호가 저장됐고 메일 작업이 대기열에 있음 (A가 제출되지 않았는데 "SMTP 없음"이 통과하는 것을 막음)
+      assertThat(redisTemplate.hasKey(codeKey(email))).isTrue();
+      assertThat(mailExecutor.getQueueSize()).isEqualTo(1);
+      String cooldownBefore = redisTemplate.opsForValue().get(cooldownKey(email));
+      Set<String> dailyBefore = redisTemplate.opsForSet().members(dailyKey(email));
+      assertThat(cooldownBefore).isNotNull();
+      assertThat(dailyBefore).containsExactly(cooldownBefore); // 이 요청의 식별자 하나
+
+      changeCode.run();
+      mailExecutor.execute(afterA::countDown); // A 다음 차례
+      release1.countDown(); // 워커 하나만 푼다: 그 워커가 A를 끝낸 뒤 완료 신호를 실행
+
+      assertThat(afterA.await(WAIT.toSeconds(), TimeUnit.SECONDS)).isTrue();
+      assertThat(blocker2Done.getCount()).isEqualTo(1); // 두 번째 워커는 그동안 계속 막혀 있었음
+      then(verificationMailSender).shouldHaveNoInteractions();
+      assertThat(redisTemplate.opsForValue().get(cooldownKey(email))).isEqualTo(cooldownBefore);
+      assertThat(redisTemplate.opsForSet().members(dailyKey(email))).isEqualTo(dailyBefore);
+    } finally {
+      release1.countDown();
+      release2.countDown();
+    }
+    // 공유 실행기를 다음 테스트에 비워서 넘긴다: 두 막음 작업이 시간 초과가 아니라 해제로 끝났는지
+    assertThat(blocker1Done.await(WAIT.toSeconds(), TimeUnit.SECONDS)).isTrue();
+    assertThat(blocker2Done.await(WAIT.toSeconds(), TimeUnit.SECONDS)).isTrue();
+    assertThat(blocker1Released).isTrue();
+    assertThat(blocker2Released).isTrue();
+  }
+
+  // 해제 래치를 기다리며 워커를 점유하는 작업. 해제로 끝났는지(시간 초과가 아닌지) released에 남긴다
+  private static Runnable blocker(CountDownLatch started, CountDownLatch release, AtomicBoolean released,
+                                  CountDownLatch done) {
+    return () -> {
+      started.countDown();
+      try {
+        released.set(release.await(BLOCK_LIMIT.toSeconds(), TimeUnit.SECONDS));
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      } finally {
+        done.countDown();
+      }
+    };
+  }
 
   private HttpResponse<String> sendSignupCode(String email) throws Exception {
     return post("/api/v1/auth/email/send", "{\"email\":\"" + email + "\"}");
