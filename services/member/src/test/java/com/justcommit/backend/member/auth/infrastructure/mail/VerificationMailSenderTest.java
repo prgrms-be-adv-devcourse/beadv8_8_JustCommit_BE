@@ -52,4 +52,15 @@ class VerificationMailSenderTest {
     assertThat(message.getText()).contains("비밀번호 재설정 인증번호", "123456", "비밀번호는 바뀌지 않습니다");
     assertThat(message.getText()).doesNotContain("회원가입");
   }
+
+  @Test
+  @DisplayName("계좌 변경 인증 메일은 계좌 변경 제목 · 본문과, 요청하지 않았다면 계정 보안을 확인하라는 안내를 담는다 (#413)")
+  void accountChange() {
+    SimpleMailMessage message = sent(EmailPurpose.ACCOUNT_CHANGE);
+
+    assertThat(message.getSubject()).isEqualTo("[RePlant] 계좌 변경 인증번호 안내");
+    assertThat(message.getText()).contains("계좌 변경 인증번호", "123456", "5분",
+        "인증번호를 입력하지 마세요", "비밀번호를 변경", "소셜 계정의 보안 설정");
+    assertThat(message.getText()).doesNotContain("이 메일을 무시해주세요");
+  }
 }

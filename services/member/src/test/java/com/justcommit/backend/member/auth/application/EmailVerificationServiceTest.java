@@ -176,7 +176,7 @@ class EmailVerificationServiceTest {
   }
 
   @Test
-  @DisplayName("아직 열지 않은 목적(계좌 변경)은 EMAIL_PURPOSE_NOT_SUPPORTED, 회원 조회 · 저장 · 메일 없음")
+  @DisplayName("공개 경로는 계좌 변경 목적을 받지 않음 (EMAIL_PURPOSE_NOT_SUPPORTED), 회원 조회 · 저장 · 메일 없음")
   void sendCode_unsupportedPurpose() {
     assertThatThrownBy(() -> service.sendCode(EMAIL, EmailPurpose.ACCOUNT_CHANGE))
         .isInstanceOf(BusinessException.class)
@@ -364,12 +364,87 @@ class EmailVerificationServiceTest {
   }
 
   @Test
-  @DisplayName("아직 열지 않은 목적(계좌 변경)은 확인도 EMAIL_PURPOSE_NOT_SUPPORTED")
+  @DisplayName("공개 경로는 계좌 변경 목적의 확인도 받지 않음 (EMAIL_PURPOSE_NOT_SUPPORTED)")
   void verifyCode_unsupportedPurpose() {
     assertThatThrownBy(() -> service.verifyCode(EMAIL, "123456", EmailPurpose.ACCOUNT_CHANGE))
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode").isEqualTo(MemberErrorCode.EMAIL_PURPOSE_NOT_SUPPORTED);
 
     then(store).shouldHaveNoInteractions();
+  }
+
+  // ===== 계좌 변경 (#413): 로그인 필수 전용 메서드 =====
+
+  @Test
+  @DisplayName("계좌 변경 발송: 계좌 변경 한도로 자리를 잡고, 회원 id · 인증 버전을 번호에 묶어 저장한 뒤 계좌 변경 메일")
+  void sendAccountChangeCode_success() {
+    givenSendSlot(EmailSendQuota.ACCOUNT_CHANGE, SendStatus.ACQUIRED, 0);
+    given(store.saveCode(eq(EmailPurpose.ACCOUNT_CHANGE), eq(EMAIL), eq(REQUEST_ID), anyString(), eq("7:3"),
+        eq(EmailVerificationService.CODE_TTL))).willReturn(true);
+
+    EmailSendResult result = service.sendAccountChangeCode(EMAIL, TARGET);
+
+    ArgumentCaptor<String> code = ArgumentCaptor.forClass(String.class);
+    then(store).should().saveCode(eq(EmailPurpose.ACCOUNT_CHANGE), eq(EMAIL), eq(REQUEST_ID), code.capture(), eq("7:3"),
+        eq(EmailVerificationService.CODE_TTL));
+    then(mailSender).should().send(EMAIL, code.getValue(), EmailVerificationService.CODE_TTL, EmailPurpose.ACCOUNT_CHANGE);
+    then(memberRepository).shouldHaveNoInteractions(); // 가입 목적의 가입 여부(409) 검사는 하지 않음
+    assertThat(result.expiresIn()).isEqualTo(300);
+    assertThat(result.resendAvailableIn()).isEqualTo(60);
+  }
+
+  @Test
+  @DisplayName("계좌 변경 발송: 재발송 제한이면 429 EMAIL_SEND_COOLDOWN과 남은 시간을 알리고 메일 없음 (로그인한 본인)")
+  void sendAccountChangeCode_cooldown() {
+    givenSendSlot(EmailSendQuota.ACCOUNT_CHANGE, SendStatus.COOLDOWN, 42);
+
+    assertThatThrownBy(() -> service.sendAccountChangeCode(EMAIL, TARGET))
+        .isInstanceOfSatisfying(EmailCooldownException.class, e -> {
+          assertThat(e.getErrorCode()).isEqualTo(MemberErrorCode.EMAIL_SEND_COOLDOWN);
+          assertThat(e.getRetryAfterSeconds()).isEqualTo(42L);
+        });
+
+    then(mailSender).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("계좌 변경 확인: 맞으면 발송 때 묶은 회원 정보를 돌려주고, 인증 완료 상태는 저장하지 않음")
+  void verifyAccountChangeCode_matched() {
+    given(store.verifyCode(EmailPurpose.ACCOUNT_CHANGE, EMAIL, "123456",
+        EmailVerificationService.MAX_WRONG_ATTEMPTS, EmailVerificationService.CODE_TTL))
+        .willReturn(new VerifyOutcome(VerifyResult.MATCHED, "7:3"));
+
+    assertThat(service.verifyAccountChangeCode(EMAIL, "123456")).contains(TARGET);
+    then(store).should(never()).saveVerified(any(), any(), any());
+  }
+
+  @Test
+  @DisplayName("계좌 변경 확인: 번호는 맞아도 묶음 정보가 깨졌으면 빈 값")
+  void verifyAccountChangeCode_brokenBinding() {
+    given(store.verifyCode(EmailPurpose.ACCOUNT_CHANGE, EMAIL, "123456",
+        EmailVerificationService.MAX_WRONG_ATTEMPTS, EmailVerificationService.CODE_TTL))
+        .willReturn(new VerifyOutcome(VerifyResult.MATCHED, "broken"));
+
+    assertThat(service.verifyAccountChangeCode(EMAIL, "123456")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("계좌 변경 확인: 틀림 · 만료 · 오답 한도는 가입처럼 각 오류로 알림")
+  void verifyAccountChangeCode_failures() {
+    given(store.verifyCode(EmailPurpose.ACCOUNT_CHANGE, EMAIL, "000000",
+        EmailVerificationService.MAX_WRONG_ATTEMPTS, EmailVerificationService.CODE_TTL))
+        .willReturn(new VerifyOutcome(VerifyResult.MISMATCH, ""),
+            new VerifyOutcome(VerifyResult.EXPIRED, ""),
+            new VerifyOutcome(VerifyResult.EXHAUSTED, ""));
+
+    assertThatThrownBy(() -> service.verifyAccountChangeCode(EMAIL, "000000"))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode").isEqualTo(MemberErrorCode.EMAIL_CODE_MISMATCH);
+    assertThatThrownBy(() -> service.verifyAccountChangeCode(EMAIL, "000000"))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode").isEqualTo(MemberErrorCode.EMAIL_CODE_EXPIRED);
+    assertThatThrownBy(() -> service.verifyAccountChangeCode(EMAIL, "000000"))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode").isEqualTo(MemberErrorCode.EMAIL_CODE_ATTEMPTS_EXCEEDED);
   }
 }
