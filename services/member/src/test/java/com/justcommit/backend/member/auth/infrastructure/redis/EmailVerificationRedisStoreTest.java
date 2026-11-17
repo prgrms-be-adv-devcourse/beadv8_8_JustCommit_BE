@@ -142,7 +142,7 @@ class EmailVerificationRedisStoreTest {
   }
 
   @Test
-  @DisplayName("같은 이메일은 하루 5번까지 확보하고, 6번째는 DAILY_LIMIT · 재발송 제한도 시작하지 않는다")
+  @DisplayName("[S-A09] 같은 이메일은 하루 5번까지 확보하고, 6번째는 DAILY_LIMIT · 재발송 제한도 시작하지 않는다")
   void acquire_dailyLimit() {
     for (int i = 0; i < DAILY_LIMIT; i++) {
       assertThat(acquire().status()).isEqualTo(SendStatus.ACQUIRED);

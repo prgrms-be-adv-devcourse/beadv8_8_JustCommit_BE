@@ -130,10 +130,11 @@ class TokenRevocationServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("성공: 커밋 뒤 Redis에 폐기 시각을 기록하고 COMPLETED, 옛 버전 Refresh는 지워진다")
+  @DisplayName("[S-A08] 성공: 커밋 뒤 Redis에 폐기 시각을 기록하고 COMPLETED, 여러 기기의 옛 버전 Refresh가 모두 지워진다")
   void revokeCompleted() {
     Member member = saveMember();
     refreshTokenRedisStore.save("old-refresh", member.getId(), 0, TTL);
+    refreshTokenRedisStore.save("old-refresh-other-device", member.getId(), 0, TTL);
 
     RevocationResult result = revocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { });
 
@@ -149,6 +150,7 @@ class TokenRevocationServiceIntegrationTest {
     assertThat(redisTemplate.getExpire(revokedKey(member.getId()), TimeUnit.MILLISECONDS))
         .isGreaterThan(Duration.ofMinutes(30).toMillis());
     assertThat(refreshTokenRedisStore.findOwner("old-refresh")).isEmpty();
+    assertThat(refreshTokenRedisStore.findOwner("old-refresh-other-device")).isEmpty();
   }
 
   @Test
