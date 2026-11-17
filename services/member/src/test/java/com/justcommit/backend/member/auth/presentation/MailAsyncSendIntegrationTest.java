@@ -320,6 +320,8 @@ class MailAsyncSendIntegrationTest {
   private HttpResponse<String> post(String path, String json) throws Exception {
     HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
         .header("Content-Type", "application/json")
+        // 응답이 SMTP · 메일 작업을 기다리게 되는 회귀가 생기면 막음 작업 한도(30초)까지 끌지 않고 바로 실패하게
+        .timeout(WAIT)
         .POST(HttpRequest.BodyPublishers.ofString(json))
         .build();
     return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
