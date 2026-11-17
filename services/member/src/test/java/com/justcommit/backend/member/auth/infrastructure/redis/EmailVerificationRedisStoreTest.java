@@ -236,6 +236,41 @@ class EmailVerificationRedisStoreTest {
     assertThat(verify(EmailPurpose.SIGNUP, "222222")).isEqualTo(VerifyResult.MATCHED);
   }
 
+  // ===== 발송 직전 확인 (#421) =====
+
+  @Test
+  @DisplayName("발송 직전 확인: 인증번호 키가 이 요청의 번호면 true")
+  void isCurrentCode_own() {
+    SendResult sent = acquire();
+    assertThat(store.saveCode(EmailPurpose.SIGNUP, EMAIL, sent.requestId(), "111111", "", CODE_TTL)).isTrue();
+
+    assertThat(store.isCurrentCode(EmailPurpose.SIGNUP, EMAIL, sent.requestId())).isTrue();
+  }
+
+  @Test
+  @DisplayName("발송 직전 확인: 다른 요청이 새 번호로 바꿨으면 앞 요청은 false, 새 요청은 true")
+  void isCurrentCode_replaced() {
+    SendResult first = acquire();
+    assertThat(store.saveCode(EmailPurpose.SIGNUP, EMAIL, first.requestId(), "111111", "", CODE_TTL)).isTrue();
+    redisTemplate.delete(COOLDOWN_KEY); // 앞 요청의 메일이 대기열에 있는 동안 60초가 지난 상황
+    SendResult second = acquire();
+    // 두 번호 모두 실제로 저장됐어야, 앞 요청의 false가 번호 교체 때문임이 분명해진다
+    assertThat(store.saveCode(EmailPurpose.SIGNUP, EMAIL, second.requestId(), "222222", "", CODE_TTL)).isTrue();
+
+    assertThat(store.isCurrentCode(EmailPurpose.SIGNUP, EMAIL, first.requestId())).isFalse();
+    assertThat(store.isCurrentCode(EmailPurpose.SIGNUP, EMAIL, second.requestId())).isTrue();
+  }
+
+  @Test
+  @DisplayName("발송 직전 확인: 인증번호 키가 없으면(만료 · 이미 사용) false")
+  void isCurrentCode_missing() {
+    SendResult sent = acquire();
+    assertThat(store.saveCode(EmailPurpose.SIGNUP, EMAIL, sent.requestId(), "111111", "", CODE_TTL)).isTrue();
+    assertThat(verify(EmailPurpose.SIGNUP, "111111")).isEqualTo(VerifyResult.MATCHED); // 사용하면 키가 지워짐
+
+    assertThat(store.isCurrentCode(EmailPurpose.SIGNUP, EMAIL, sent.requestId())).isFalse();
+  }
+
   @Test
   @DisplayName("재발송 제한이 1초 미만 남아도 키가 있는 동안은 COOLDOWN, 남은 시간은 1초로 응답")
   void acquire_cooldownBelowOneSecond() {
