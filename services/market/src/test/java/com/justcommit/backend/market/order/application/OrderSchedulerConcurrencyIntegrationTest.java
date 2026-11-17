@@ -11,6 +11,11 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.market.OrderStatus;
+import com.justcommit.backend.market.client.payment.PaymentOutcome;
+import com.justcommit.backend.market.order.domain.OrderErrorCode;
+import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
 import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
 import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.PurchaseConfirmedEvent;
@@ -155,6 +160,56 @@ class OrderSchedulerConcurrencyIntegrationTest {
     }
 
     @Test
+    @DisplayName("결제 시작 · 만료 경합: 만료가 먼저 주문을 잠그면 결제 시작(TX2)은 잠금이 풀린 뒤 0건이 되어 결제를 부르지 않는다")
+    void paymentStartLosesWhenExpirationLocksFirst() throws Exception {
+        Long orderId = saveOrders(false).getFirst();
+        // 파드 시계 차이로 만료 파드는 기한이 지났다고 보고, 재결제 파드는 아직 기한 안이라고 보는 경계 상황
+        CompletableFuture<Void> locked = new CompletableFuture<>();
+        CompletableFuture<Void> expiration = CompletableFuture.runAsync(() ->
+                new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                    Orders order = ordersRepository.findByIdForUpdateSkipLocked(orderId).orElseThrow();
+                    order.expire(); // 만료 처리와 같은 상태 변경을 잠금 안에서 한다
+                    ordersRepository.saveAndFlush(order);
+                    locked.complete(null);
+                    sleep(HOLD_MILLIS);
+                }));
+        locked.get(5, TimeUnit.SECONDS);
+
+        long started = System.nanoTime();
+        assertThatCode(() -> orderService.repayment(BUYER_ID, orderId))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_NOT_PAYABLE));
+        long waitedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+        expiration.get(5, TimeUnit.SECONDS);
+
+        assertThat(waitedMillis).isGreaterThanOrEqualTo(HOLD_MILLIS / 2); // TX2가 만료의 잠금을 기다렸다
+        assertThat(jdbcTemplate.queryForMap("select status, attempt_no from orders where id = ?", orderId))
+                .containsEntry("status", "EXPIRED").containsEntry("attempt_no", 0);
+        verify(paymentUseCase, never()).pay(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("결제 시작 · 만료 경합: 결제 시작(TX2)이 먼저 커밋되면 결제를 기다리는 동안 기한이 지나도 만료하지 않는다")
+    void expirationSkipsOrderOncePaymentStarted() {
+        Long orderId = saveOrders(false).getFirst();
+        when(paymentUseCase.pay(eq(orderId), eq(BUYER_ID), any())).thenAnswer(invocation -> {
+            // 결제 응답을 기다리는 사이 기한이 지나고 만료 스케줄러가 돈다
+            jdbcTemplate.update("update orders set created_at = ? where id = ?", LocalDateTime.now().minusMinutes(11), orderId);
+            orderService.expirePendingOrders();
+            orderExpirationService.expire(orderId);
+            return PaymentOutcome.unknown("TIMEOUT");
+        });
+
+        OrderCreateResponse response = orderService.repayment(BUYER_ID, orderId);
+
+        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PROCESSING);
+        assertThat(jdbcTemplate.queryForObject("select status from orders where id = ?", String.class, orderId))
+                .isEqualTo("PAYMENT_PROCESSING");
+        verify(outboxPublisher, never()).publish(any(OrderExpired.class));
+        verify(cartService, never()).restoreItem(anyLong(), anyLong(), any());
+    }
+
+    @Test
     @DisplayName("자동 구매 확정을 두 파드가 동시에 돌려도 주문상품마다 한 번만 확정하고, 정산 이벤트는 판매자 주문마다 한 번만 낸다")
     void autoConfirmsEachItemOnceWhenTwoPodsRunTogether() throws Exception {
         saveOrders(true);
@@ -199,6 +254,15 @@ class OrderSchedulerConcurrencyIntegrationTest {
             }
             return ordersRepository.save(order).getId();
         }).toList();
+    }
+
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
     }
 
     // 파드 두 개가 같은 순간에 스케줄러를 시작한다

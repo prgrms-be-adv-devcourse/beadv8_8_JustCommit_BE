@@ -349,6 +349,7 @@ class OrderServiceTest {
         sellerOrder.addItems(List.of(new OrdersItem(sellerOrder, 101L, "몬스테라", money("10000"))));
         order.addSellerOrders(List.of(sellerOrder));
         ReflectionTestUtils.setField(order, "id", 99L);
+        ReflectionTestUtils.setField(order, "createdAt", LocalDateTime.now().minusMinutes(11));
         when(ordersRepository.findByIdForUpdateSkipLocked(99L)).thenReturn(Optional.of(order));
 
         expirationService().expire(99L);
@@ -371,6 +372,32 @@ class OrderServiceTest {
         expirationService().expire(99L);
 
         assertThat(paid.getStatus()).isEqualTo(OrderStatus.PAID);
+        verify(outboxPublisher, never()).publish(any());
+        verify(cartService, never()).restoreItem(any(Long.class), any(Long.class), any());
+    }
+
+    @Test
+    @DisplayName("잠근 뒤 보니 결제 처리 중 · 확인 필요이거나 아직 10분이 안 된 주문은 만료하지 않는다")
+    void expirationRechecksStatusAndPaymentWindowAfterLocking() {
+        Orders processing = pendingOrder(10L);
+        ReflectionTestUtils.setField(processing, "createdAt", LocalDateTime.now().minusMinutes(11));
+        ReflectionTestUtils.setField(processing, "status", OrderStatus.PAYMENT_PROCESSING);
+        Orders reviewRequired = pendingOrder(10L);
+        ReflectionTestUtils.setField(reviewRequired, "createdAt", LocalDateTime.now().minusMinutes(30));
+        ReflectionTestUtils.setField(reviewRequired, "status", OrderStatus.REVIEW_REQUIRED);
+        Orders notYetDue = pendingOrder(10L); // 생성 1분 전
+        when(ordersRepository.findByIdForUpdateSkipLocked(97L)).thenReturn(Optional.of(processing));
+        when(ordersRepository.findByIdForUpdateSkipLocked(98L)).thenReturn(Optional.of(reviewRequired));
+        when(ordersRepository.findByIdForUpdateSkipLocked(99L)).thenReturn(Optional.of(notYetDue));
+
+        expirationService().expire(97L);
+        expirationService().expire(98L);
+        expirationService().expire(99L);
+
+        assertThat(processing.getStatus()).isEqualTo(OrderStatus.PAYMENT_PROCESSING);
+        assertThat(reviewRequired.getStatus()).isEqualTo(OrderStatus.REVIEW_REQUIRED);
+        assertThat(notYetDue.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        verify(ordersRepository, never()).saveAndFlush(any());
         verify(outboxPublisher, never()).publish(any());
         verify(cartService, never()).restoreItem(any(Long.class), any(Long.class), any());
     }
