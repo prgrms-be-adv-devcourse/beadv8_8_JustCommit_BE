@@ -1,0 +1,4 @@
+{ "status": 200, "message": "장바구니 추천 성공", "data": { "items": [
+  { "productId": 201, "reason": "몬스테라처럼 반그늘 실내에서 잘 자라요" },
+  { "productId": 202, "reason": "물주기 간격이 비슷해요" }
+] } }
