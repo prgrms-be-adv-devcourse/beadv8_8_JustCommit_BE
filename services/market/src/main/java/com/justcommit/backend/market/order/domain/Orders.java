@@ -110,6 +110,25 @@ public class Orders extends BaseTimeEntity {
         status = OrderStatus.PAYMENT_FAILED;
     }
 
+    // Saga 복구 선점 (ADR 0023). 주문 행을 잠근 뒤에만 부른다. 새 시도 번호로 결제를 다시 부른다
+    public void claimRecovery(LocalDateTime now) {
+        if (status != OrderStatus.PAYMENT_PROCESSING) {
+            throw new IllegalStateException("결제 처리 중 주문만 복구할 수 있습니다.");
+        }
+        attemptNo++;
+        attemptCount++;
+        attemptedAt = now;
+    }
+
+    // 복구로 결제 결과를 확정하지 못함. 시도 번호를 올려 진행 중이던 시도의 늦은 응답이 반영되지 않게 한다 (ADR 0023)
+    public void requireReview() {
+        if (status != OrderStatus.PAYMENT_PROCESSING) {
+            throw new IllegalStateException("결제 처리 중 주문만 확인 필요로 바꿀 수 있습니다.");
+        }
+        status = OrderStatus.REVIEW_REQUIRED;
+        attemptNo++;
+    }
+
     public void confirm() {
         if (status != OrderStatus.PAID) {
             throw new IllegalStateException("결제된 주문만 확정처리 할 수있습니다.");

@@ -25,6 +25,33 @@ public interface OrdersRepository extends JpaRepository<Orders, Long> {
     // 스케줄러 후보 조회라 잠그지 않는다. 잠금은 주문마다 findByIdForUpdateSkipLocked로 한다.
     List<Orders> findTop100ByStatusAndCreatedAtBeforeOrderByIdAsc(OrderStatus status, LocalDateTime cutoff);
 
+    // Saga 복구 후보: 결제 처리 중이고 마지막 시도에서 유예가 지난 주문 id, 오래된 시도부터 (부분 인덱스 사용)
+    // 잠그지 않는다. 선점은 주문마다 findByIdForUpdateSkipLocked로 한다.
+    @Query("""
+            select o.id from Orders o
+             where o.status = :processing and o.attemptedAt <= :attemptedBefore
+             order by o.attemptedAt asc, o.id asc
+             limit :limit
+            """)
+    List<Long> findRecoveryCandidateIds(@Param("processing") OrderStatus processing,
+                                        @Param("attemptedBefore") LocalDateTime attemptedBefore,
+                                        @Param("limit") int limit);
+
+    // 마지막 복구도 결과 불명: 자기 시도 번호일 때만 확인 필요로 바꾸고 시도 번호를 올린다 (ADR 0023)
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update Orders o
+               set o.status = :reviewRequired, o.attemptNo = o.attemptNo + 1,
+                   o.lastError = :lastError, o.updatedAt = :now
+             where o.id = :orderId and o.status = :processing and o.attemptNo = :attemptNo
+            """)
+    int requireReviewIfAttempt(@Param("orderId") Long orderId,
+                               @Param("attemptNo") int attemptNo,
+                               @Param("lastError") String lastError,
+                               @Param("now") LocalDateTime now,
+                               @Param("processing") OrderStatus processing,
+                               @Param("reviewRequired") OrderStatus reviewRequired);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from Orders o where o.id = :orderId")
     Optional<Orders> findLockedById(@Param("orderId") Long orderId);

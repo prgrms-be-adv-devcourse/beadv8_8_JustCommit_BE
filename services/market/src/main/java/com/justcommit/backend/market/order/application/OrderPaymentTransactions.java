@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.OptionalInt;
@@ -30,6 +31,29 @@ import java.util.OptionalInt;
 public class OrderPaymentTransactions {
 
     static final Duration PAYMENT_WINDOW = Duration.ofMinutes(10);
+    // 마지막 시도에서 이만큼 지나야 복구가 집는다. 결제 호출 한 번의 최악(약 8.2초)보다 길다
+    static final Duration RECOVERY_GRACE = Duration.ofSeconds(10);
+    // 복구 선점 횟수 상한. 이만큼 해도 결과를 모르면 확인 필요 (첫 결제 호출은 세지 않음)
+    static final int MAX_RECOVERY_ATTEMPTS = 5;
+
+    // 복구 선점 결과. RETRY면 트랜잭션 밖에서 같은 orderId로 결제를 다시 부른다
+    public record RecoveryClaim(Type type, Long orderId, int attemptNo, int attemptCount, Long buyerId,
+                                BigDecimal amount) {
+
+        public enum Type {
+            RETRY,
+            REVIEW_REQUIRED,
+            SKIPPED
+        }
+
+        static RecoveryClaim skipped(Long orderId) {
+            return new RecoveryClaim(Type.SKIPPED, orderId, 0, 0, null, null);
+        }
+
+        public boolean lastAttempt() {
+            return attemptCount >= MAX_RECOVERY_ATTEMPTS;
+        }
+    }
 
     // 결제를 누가 불렀는지. 연결 실패를 첫 호출은 확정 실패로, 복구는 결과 불명으로 본다
     public enum AttemptSource {
@@ -93,7 +117,71 @@ public class OrderPaymentTransactions {
     // TX3: 결제 처리 중이고 자기 시도 번호일 때만 결과를 반영한다. 반영하지 못하면 false (아무것도 바꾸지 않음).
     // 10분 기한은 보지 않는다. 기한이 지났어도 결제됐으면 결제 완료로 처리한다
     public boolean applyOutcome(Long orderId, int attemptNo, PaymentOutcome outcome, AttemptSource source) {
-        OrderStatus to = targetStatus(outcome, source);
+        return apply(orderId, attemptNo, outcome, targetStatus(outcome, source));
+    }
+
+    // 복구 결과 반영. 마지막(5번째) 복구까지 결과를 모르면 그 자리에서 확인 필요로 바꾼다
+    public boolean applyRecoveryOutcome(RecoveryClaim claim, PaymentOutcome outcome) {
+        OrderStatus to = targetStatus(outcome, AttemptSource.RECOVERY);
+        if (to == OrderStatus.PAYMENT_PROCESSING && claim.lastAttempt()) {
+            return requireReviewAfterLastAttempt(claim, outcome);
+        }
+        return apply(claim.orderId(), claim.attemptNo(), outcome, to);
+    }
+
+    // 복구 선점 (짧은 TX): 다른 파드 · 요청이 잡은 주문은 건너뛴다. 잠근 뒤 결제 처리 중 · 유예 경과를 다시 본다.
+    // 다른 파드가 막 선점해 커밋했으면 attempted_at이 방금이라 여기서 걸러진다.
+    // 복구를 이미 5번 했으면 결제를 부르지 않고 확인 필요로 바꾼다 (5번째 선점 뒤 반영 없이 유예가 지난 경우 포함)
+    public RecoveryClaim claimForRecovery(Long orderId) {
+        return transactionTemplate.execute(status -> {
+            LocalDateTime now = LocalDateTime.now();
+            Orders order = ordersRepository.findByIdForUpdateSkipLocked(orderId).orElse(null);
+            if (order == null || order.getStatus() != OrderStatus.PAYMENT_PROCESSING
+                    || order.getAttemptedAt() == null || order.getAttemptedAt().isAfter(now.minus(RECOVERY_GRACE))) {
+                return RecoveryClaim.skipped(orderId);
+            }
+            if (order.getAttemptCount() >= MAX_RECOVERY_ATTEMPTS) {
+                order.requireReview();
+                ordersRepository.saveAndFlush(order);
+                logReviewRequired(order.getId(), order.getAttemptNo(), order.getAttemptCount(), order.getLastError(),
+                        "복구 횟수를 다 쓰고 유예가 지남");
+                return new RecoveryClaim(RecoveryClaim.Type.REVIEW_REQUIRED, orderId, order.getAttemptNo(),
+                        order.getAttemptCount(), order.getBuyerId(), order.getTotalAmount());
+            }
+            order.claimRecovery(now);
+            ordersRepository.saveAndFlush(order);
+            return new RecoveryClaim(RecoveryClaim.Type.RETRY, orderId, order.getAttemptNo(),
+                    order.getAttemptCount(), order.getBuyerId(), order.getTotalAmount());
+        });
+    }
+
+    private boolean requireReviewAfterLastAttempt(RecoveryClaim claim, PaymentOutcome outcome) {
+        Boolean applied = transactionTemplate.execute(status -> ordersRepository.requireReviewIfAttempt(
+                claim.orderId(), claim.attemptNo(), outcome.reason(), LocalDateTime.now(),
+                OrderStatus.PAYMENT_PROCESSING, OrderStatus.REVIEW_REQUIRED) == 1);
+        if (Boolean.TRUE.equals(applied)) {
+            logReviewRequired(claim.orderId(), claim.attemptNo() + 1, claim.attemptCount(), outcome.reason(),
+                    "마지막 복구도 결과 불명");
+        } else {
+            log.info("결제 결과를 반영하지 않음(시도 번호 불일치 또는 상태 변경): orderId={}, attemptNo={}, outcome={}",
+                    claim.orderId(), claim.attemptNo(), outcome.type());
+        }
+        return Boolean.TRUE.equals(applied);
+    }
+
+    // 사람이 확인해야 하는 주문. 운영 알림 · 런북의 시작점이라 ERROR 한 줄로 남긴다
+    private void logReviewRequired(Long orderId, int attemptNo, int attemptCount, String lastError, String reason) {
+        log.atError()
+                .setMessage("결제 결과를 확정하지 못해 확인 필요로 전환")
+                .addKeyValue("orderId", orderId)
+                .addKeyValue("attemptNo", attemptNo)
+                .addKeyValue("attemptCount", attemptCount)
+                .addKeyValue("lastError", lastError)
+                .addKeyValue("reason", reason)
+                .log();
+    }
+
+    private boolean apply(Long orderId, int attemptNo, PaymentOutcome outcome, OrderStatus to) {
         String lastError = (to == OrderStatus.PAID || to == OrderStatus.PAYMENT_PENDING) ? null : outcome.reason();
         Boolean applied = transactionTemplate.execute(status -> {
             int updated = ordersRepository.applyPaymentAttempt(orderId, attemptNo, to, lastError,

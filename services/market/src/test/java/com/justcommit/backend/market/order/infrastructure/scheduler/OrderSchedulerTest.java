@@ -1,5 +1,6 @@
 package com.justcommit.backend.market.order.infrastructure.scheduler;
 
+import com.justcommit.backend.market.order.application.OrderRecoveryService;
 import com.justcommit.backend.market.order.application.OrderService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,6 +14,7 @@ import static org.mockito.Mockito.verify;
 class OrderSchedulerTest {
 
     @Mock OrderService orderService;
+    @Mock OrderRecoveryService orderRecoveryService;
     @InjectMocks OrderScheduler orderScheduler;
 
     @Test
@@ -20,6 +22,13 @@ class OrderSchedulerTest {
         orderScheduler.expirePendingOrders();
 
         verify(orderService).expirePendingOrders();
+    }
+
+    @Test
+    void delegatesPaymentRecoveryToRecoveryService() {
+        orderScheduler.recoverProcessingPayments();
+
+        verify(orderRecoveryService).recoverProcessingPayments();
     }
 
     @Test
