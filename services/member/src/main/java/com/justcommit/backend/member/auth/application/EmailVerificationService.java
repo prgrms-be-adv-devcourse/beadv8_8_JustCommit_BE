@@ -6,11 +6,14 @@ import com.justcommit.backend.member.auth.domain.EmailSendQuota;
 import com.justcommit.backend.member.auth.domain.VerificationBinding;
 import com.justcommit.backend.member.auth.infrastructure.mail.VerificationMailSender;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
+import com.justcommit.backend.member.config.MailExecutorConfig;
 import com.justcommit.backend.member.domain.exception.EmailCooldownException;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.TaskExecutor;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.mail.MailException;
 import org.springframework.stereotype.Service;
 
@@ -22,9 +25,9 @@ import java.util.Optional;
 // 이메일 인증번호 발송·확인
 // #412: 목적(가입 · 비밀번호 재설정 · 계좌 변경)별로 인증을 나누고, 같은 이메일 하루 발송 한도 · 틀린 횟수 제한을 둔다
 // #413: 계좌 변경은 로그인 필수 전용 메서드(sendAccountChangeCode · verifyAccountChangeCode)로만 쓴다
+// #421: 메일은 전용 실행기에서 보낸다. 요청은 예약 · 번호 저장 · 작업 제출까지만 하고 응답한다
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class EmailVerificationService {
   // 인증번호 정책 값 (발송 간격 · 하루 한도는 안내 메일과 함께 쓰는 EmailSendPolicy)
   static final Duration CODE_TTL = Duration.ofMinutes(5);
@@ -37,6 +40,21 @@ public class EmailVerificationService {
   private final VerificationMailSender mailSender;
   private final MemberRepository memberRepository;
   private final PasswordResetService passwordResetService;
+  private final TaskExecutor mailTaskExecutor;
+
+  // 메일 실행기는 이름으로만 주입되는 빈이라 생성자 매개변수에 @Qualifier를 직접 붙인다
+  // (Lombok 생성자는 필드의 @Qualifier를 옮기지 않아, 한정자 없이 기본 실행기가 들어갈 수 있음)
+  public EmailVerificationService(EmailVerificationRedisStore store,
+                                  VerificationMailSender mailSender,
+                                  MemberRepository memberRepository,
+                                  PasswordResetService passwordResetService,
+                                  @Qualifier(MailExecutorConfig.MAIL_TASK_EXECUTOR) TaskExecutor mailTaskExecutor) {
+    this.store = store;
+    this.mailSender = mailSender;
+    this.memberRepository = memberRepository;
+    this.passwordResetService = passwordResetService;
+    this.mailTaskExecutor = mailTaskExecutor;
+  }
 
   // 인증번호 발송 (공개 경로): 목적 확인 -> 가입 여부 확인 -> 번호 발송
   public EmailSendResult sendCode(String rawEmail, EmailPurpose purpose) {
@@ -87,7 +105,8 @@ public class EmailVerificationService {
   // - 재발송 제한 · 하루 한도: 자리를 못 잡았으니 되돌릴 것 없이 끝
   // - 자리는 재설정 대상인지와 관계없이 똑같이 잡는다 (하루 횟수도 똑같이 세어, 한도에 걸리는지로 가입 여부를 알 수 없게)
   // - 대상이면 발송 당시 회원 id · 인증 버전을 번호에 묶어 저장하고 재설정 문구로 메일
-  // - 번호 저장 거절(다른 요청이 자리를 잡음) · SMTP 실패: 이 요청의 예약만 되돌리고 끝
+  // - 번호 저장 거절(다른 요청이 자리를 잡음) · 메일 작업 제출 거절: 이 요청의 예약만 되돌리고 끝
+  // - SMTP 실패는 응답과 별개로 메일 스레드에서 이 요청의 예약을 되돌림 (sendCodeMail)
   // - Redis · DB 장애는 감추지 않는다 (예외가 그대로 올라가 서버 오류로 처리됨)
   private void sendResetCode(String email) {
     EmailVerificationRedisStore.SendResult slot = store.tryAcquireSend(EmailSendQuota.PASSWORD_RESET, email,
@@ -105,10 +124,9 @@ public class EmailVerificationService {
       return;
     }
     try {
-      mailSender.send(email, code, CODE_TTL, EmailPurpose.PASSWORD_RESET);
-    } catch (MailException e) {
-      // 예외 메시지 · 스택 트레이스에 SMTP 응답(수신 주소 포함 가능)이 들어갈 수 있어, 이메일과 예외 객체 없이 예외 종류만 남김
-      log.error("재설정 인증 메일 발송 실패: cause={}", e.getClass().getSimpleName());
+      mailTaskExecutor.execute(() -> sendCodeMail(email, code, EmailPurpose.PASSWORD_RESET, slot.requestId()));
+    } catch (TaskRejectedException e) {
+      log.warn("인증 메일 작업 제출 거절: purpose={}, reason={}", EmailPurpose.PASSWORD_RESET, e.getClass().getSimpleName());
       store.releaseSend(EmailPurpose.PASSWORD_RESET, email, slot.requestId());
     }
   }
@@ -124,7 +142,7 @@ public class EmailVerificationService {
         .orElseThrow(() -> new BusinessException(MemberErrorCode.EMAIL_CODE_INVALID));
   }
 
-  // 번호 발송 (가입 · 계좌 변경 공통): 자리 확보 -> 번호 생성, 저장(binding을 함께) -> 메일 발송
+  // 번호 발송 (가입 · 계좌 변경 공통): 자리 확보 -> 번호 생성, 저장(binding을 함께) -> 메일 작업 제출
   // 재설정은 결과를 숨겨야 해서 이 메서드를 쓰지 않는다 (sendResetCode)
   private EmailSendResult issueCode(String email, EmailPurpose purpose, String binding) {
     EmailVerificationRedisStore.SendResult slot = acquireSendSlot(email, purpose);
@@ -136,16 +154,28 @@ public class EmailVerificationService {
       throw new EmailCooldownException(EmailSendPolicy.COOLDOWN.toSeconds());
     }
     try {
-      mailSender.send(email, code, CODE_TTL, purpose);
-    } catch (MailException e) {
-      // 발송 실패 시 이 요청이 만든 번호 · 재발송 제한 · 하루 횟수만 되돌려 다시 시도할 수 있게 함
-      // (늦게 실패해도 그 사이 다른 요청이 만든 번호 · 재발송 제한은 지우지 않음, 서버 쪽 실패는 하루 횟수에 넣지 않음)
-      // 예외 메시지 · 스택 트레이스에 SMTP 응답(수신 주소 포함 가능)이 들어갈 수 있어, 이메일과 예외 객체 없이 예외 종류만 남김
-      log.error("인증 메일 발송 실패: purpose={}, cause={}", purpose, e.getClass().getSimpleName());
+      mailTaskExecutor.execute(() -> sendCodeMail(email, code, purpose, slot.requestId()));
+    } catch (TaskRejectedException e) {
+      // 메일 실행기 대기열이 가득 참: 응답 전이므로 이 요청의 예약을 되돌리고 실패로 알림 (다시 요청 가능)
+      log.warn("인증 메일 작업 제출 거절: purpose={}, reason={}", purpose, e.getClass().getSimpleName());
       store.releaseSend(purpose, email, slot.requestId());
       throw new BusinessException(MemberErrorCode.EMAIL_SEND_FAILED);
     }
     return new EmailSendResult(CODE_TTL.toSeconds(), EmailSendPolicy.COOLDOWN.toSeconds());
+  }
+
+  // 메일 스레드에서 실행 (가입 · 계좌 변경 · 재설정 공통): SMTP 실패면 이 요청이 만든 번호 · 재발송 제한 · 하루 횟수만 되돌려
+  // 다시 요청할 수 있게 함 (늦게 실패해도 그 사이 다른 요청이 만든 번호 · 재발송 제한은 지우지 않음, 서버 쪽 실패는 하루 횟수에 넣지 않음)
+  // SMTP 실패만 정리한다: Spring 메일 발송은 전송 · 인증 · 메시지 오류를 MailException으로 바꿔 던짐.
+  // 그 밖의 예외와 되돌리기 중 Redis 오류는 작업 밖으로 전파 (정리 실패 시 재발송 제한은 최대 60초, 번호는 자체 TTL까지 남음)
+  private void sendCodeMail(String email, String code, EmailPurpose purpose, String requestId) {
+    try {
+      mailSender.send(email, code, CODE_TTL, purpose);
+    } catch (MailException e) {
+      // 예외 메시지 · 스택 트레이스에 SMTP 응답(수신 주소 포함 가능)이 들어갈 수 있어, 이메일과 예외 객체 없이 예외 종류만 남김
+      log.warn("인증 메일 발송 실패: purpose={}, cause={}", purpose, e.getClass().getSimpleName());
+      store.releaseSend(purpose, email, requestId);
+    }
   }
 
   // 번호 확인 결과가 일치가 아니면 각 오류로 (가입 · 계좌 변경 공통. 재설정은 하나의 오류로 숨기므로 쓰지 않음)
