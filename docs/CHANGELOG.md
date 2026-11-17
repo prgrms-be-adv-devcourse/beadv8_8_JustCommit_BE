@@ -1,12 +1,13 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-17 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-18 · decisions/0025-seller-review-consent-versioning.md · services/member.md · reference/external-apis.md · flows/image-review.md · open-questions.md · 판매자 등록 동의 반영: ADR 0025 추가, 판매자 등록 때 상품 검수(외부 AI 이용 · 국외 이전) 동의 1개 필수(학습 이용 동의는 받지 않고 문구에서 안내), `POST sellers`에 `reviewConsentAgreed` · `reviewConsentVersion`(누락 · 미동의 400, 현재 버전과 다르면 409 `REVIEW_CONSENT_VERSION_MISMATCH`), 정책 조회 `GET sellers/consent-policy`(로그인, `content`는 줄바꿈 일반 텍스트), `SELLER`에 동의 버전 · 시각만 저장(Flyway V7), 문구를 바꾸면 버전을 올리고 이전 문구는 `docs/policies/seller-review-consent/{version}.md`로 보존, 이미지 검수 「약관」 행을 「외부 AI 검수 · 데이터 사용 설정」으로 바꾸고 확인 완료, 미정 항목에서 학습 사용 여부 삭제 · 국외 이전 법적 고지 추가 (#418) (#502)
 - 2026-11-17 · reference/external-apis.md · conventions/resilience.md · reference/redis-keys.md · services/member.md · 인증 메일 · 가입 계정 안내 비동기 발송: member 메일 전용 실행기(`member.mail.executor`)에서 보내고 요청은 발송 예약 · 인증번호 저장 · 메일 작업 제출까지만 처리(성공 응답은 발송 요청 접수, 가입 · 계좌 변경 문구 「인증번호 발송을 요청했습니다.」), SMTP 실패는 응답과 별개로 메일 스레드가 그 요청의 예약을 정리(정리 후 재요청 가능, 자동 재시도 없음), 대기 중 교체 · 만료 · 사용된 인증번호는 SMTP 직전 확인으로 보내지 않음, 메일 작업 제출 거절은 응답 전에 예약을 정리하고 가입 · 계좌 변경 500 `EMAIL_SEND_FAILED` · 재설정 · 가입 계정 안내는 같은 200, 외부 API에 「메일 발송」 추가 (#421) (#501)
 - 2026-11-17 · infra/deploy.md · CD 워크플로 `cd.yml` 반영: develop push → 바뀐 서비스만 이미지 빌드 · GHCR push(전체 대상에 `Dockerfile` · Gradle 설정 · `cd.yml` 추가, 테스트는 PR CI 몫), 배포는 앱 서버 self-hosted 러너(라벨 `replant-app`, SSH · AWS 키 미사용), 레포 변수 `CD_DEPLOY`로 켜고 끔, 이미 떠 있는 서비스만 갱신, 이미지 이름에 `ai` 추가 (#301) (#492)
 - 2026-11-17 · decisions/0023-order-payment-transaction-saga.md · ADR 0023 추가: 결제 시도를 먼저 커밋(TX2 조건부 UPDATE로 `PAYMENT_PROCESSING`, `attempt_no` +1, `attempted_at` 기록)하고 Payment REST는 트랜잭션과 행 잠금 밖에서 호출(`Idempotency-Key: orderId`), 결과는 TX3에서 자기 `attempt_no`일 때만 반영, `OrderStatus`에 `PAYMENT_PROCESSING`와 `PAYMENT_REVIEW_REQUIRED` 추가, Saga 복구 1분 주기로 10초 지난 `PAYMENT_PROCESSING` 재호출하고 5회 안 되면 `REVIEW_REQUIRED`, 만료 스케줄러는 기존 잠금 방식 유지하고 `PAYMENT_PROCESSING`은 만료하지 않음, 이전 제안안 파일 `0023-payment-lock-with-attempt-state.md` 삭제 (#280) (#479)

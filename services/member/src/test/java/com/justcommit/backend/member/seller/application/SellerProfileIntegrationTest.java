@@ -2,6 +2,7 @@ package com.justcommit.backend.member.seller.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.seller.domain.SellerReviewConsentPolicy;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -115,6 +116,12 @@ class SellerProfileIntegrationTest {
   }
 
   @Test
+  @DisplayName("로그인 없이 판매자 등록 동의 내용을 조회하면 401 (consent-policy는 공개 경로가 아님)")
+  void getConsentPolicyWithoutLogin() throws Exception {
+    assertThat(get("/api/v1/sellers/consent-policy").statusCode()).isEqualTo(401);
+  }
+
+  @Test
   @DisplayName("판매자 본인은 소개글을 고칠 수 있고, 응답에 닉네임 · 등록일이 함께 온다")
   void changeIntro() {
     Member seller = saveSeller("처음 소개");
@@ -175,8 +182,8 @@ class SellerProfileIntegrationTest {
   private Member saveSeller(String intro) {
     Member member = saveMember();
     jdbcTemplate.update("update member set role = 'SELLER' where id = ?", member.getId());
-    jdbcTemplate.update("insert into seller (member_id, intro, created_at, updated_at) values (?, ?, now(), now())",
-        member.getId(), intro);
+    jdbcTemplate.update("insert into seller (member_id, intro, review_consent_version, review_consented_at, created_at, updated_at) values (?, ?, ?, now(), now(), now())",
+        member.getId(), intro, SellerReviewConsentPolicy.VERSION);
     return member;
   }
 
