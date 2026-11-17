@@ -48,7 +48,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ClockConfig.class, ProductService.class, ProductVersionIntegrationTest.Config.class})
+@Import({JpaAuditingConfig.class, ClockConfig.class, ProductService.class, ProductEventPublisher.class, ProductVersionIntegrationTest.Config.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class ProductVersionIntegrationTest {

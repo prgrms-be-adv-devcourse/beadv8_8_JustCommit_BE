@@ -59,7 +59,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ClockConfig.class, ProductService.class})
+@Import({JpaAuditingConfig.class, ClockConfig.class, ProductService.class, ProductEventPublisher.class})
 @Testcontainers(disabledWithoutDocker = true)
 // 테스트 메서드를 트랜잭션으로 감싸지 않음 → 준비 데이터가 실제로 커밋되어 다른 스레드에서도 보임
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
