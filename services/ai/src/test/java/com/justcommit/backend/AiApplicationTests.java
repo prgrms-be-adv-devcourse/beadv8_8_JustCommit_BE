@@ -55,6 +55,7 @@ class AiApplicationTests {
         registry.add("jwt.public-key", AiApplicationTests::newPublicKey);
         registry.add("spring.ai.openai.base-url", () -> OPENAI.baseUrl() + "/v1");
         registry.add("spring.ai.openai.api-key", () -> "test-key");
+        registry.add("spring.kafka.listener.auto-startup", () -> "false");
     }
 
     @Autowired Flyway flyway;
