@@ -71,7 +71,7 @@ public class ShipmentService {
     private Shipment claimNextForBooking(LocalDateTime now) {
         return new TransactionTemplate(transactionManager).execute(status -> shipmentRepository.findNextBookable(now)
                 .map(shipment -> {
-                    shipment.leaseForBooking(now);
+                    shipment.lease(now);
                     return shipmentRepository.saveAndFlush(shipment);
                 })
                 .orElse(null));
@@ -93,7 +93,7 @@ public class ShipmentService {
             log.info("예약 중 배송이 취소됨: shipmentId={}", shipment.getId());
         } catch (RuntimeException e) {
             logBookingFailure(shipment, e);
-            recordBookingFailure(shipment.getId());
+            recordAttemptFailure(shipment.getId(), ShipmentStatus.READY, describe(e));
         }
     }
 
@@ -109,16 +109,21 @@ public class ShipmentService {
         }
     }
 
-    // 최신 행을 다시 읽어 실패를 기록한다. 그사이 취소 등으로 READY가 아니면 그대로 둔다.
-    private void recordBookingFailure(Long shipmentId) {
+    // 최신 행을 다시 읽어 실패를 기록한다. 그사이 취소 등으로 큐가 집을 때의 상태가 아니면 그대로 둔다.
+    private void recordAttemptFailure(Long shipmentId, ShipmentStatus expected, String reason) {
         try {
             new TransactionTemplate(transactionManager).executeWithoutResult(status ->
                     shipmentRepository.findById(shipmentId)
-                            .filter(shipment -> shipment.getStatus() == ShipmentStatus.READY)
-                            .ifPresent(shipment -> shipment.recordBookingFailure(LocalDateTime.now())));
+                            .filter(shipment -> shipment.getStatus() == expected)
+                            .ifPresent(shipment -> shipment.recordAttemptFailure(LocalDateTime.now(), reason)));
         } catch (ObjectOptimisticLockingFailureException e) {
             log.info("실패 기록 중 배송이 바뀜: shipmentId={}", shipmentId);
         }
+    }
+
+    // last_error에 남길 원인: 예외 종류 + 메시지 (Outbox와 같은 모양)
+    private static String describe(RuntimeException e) {
+        return e.getClass().getSimpleName() + ": " + e.getMessage();
     }
 
     // 트랜잭션 안이면 커밋 후에, 밖이면 바로 실행한다.

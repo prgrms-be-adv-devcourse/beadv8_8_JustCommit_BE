@@ -204,11 +204,11 @@ class ShipmentTest {
 
     @Test
     @DisplayName("예약 큐가 집으면 다음 시도 시각을 30초 뒤로 미뤄 다른 파드가 다시 집지 않게 한다")
-    void leaseForBookingPushesNextAttempt() {
+    void leasePushesNextAttempt() {
         Shipment shipment = newShipment();
         LocalDateTime now = LocalDateTime.of(2026, 11, 16, 10, 0, 0);
 
-        shipment.leaseForBooking(now);
+        shipment.lease(now);
 
         assertThat(shipment.getNextAttemptAt()).isEqualTo(now.plusSeconds(30));
         assertThat(shipment.getAttemptCount()).isZero();
@@ -221,20 +221,146 @@ class ShipmentTest {
         Shipment shipment = newShipment();
         LocalDateTime now = LocalDateTime.of(2026, 11, 16, 10, 0, 0);
 
-        shipment.recordBookingFailure(now);
+        shipment.recordAttemptFailure(now, "TIMEOUT");
         assertThat(shipment.getNextAttemptAt()).isEqualTo(now.plusSeconds(10));
 
-        shipment.recordBookingFailure(now);
+        shipment.recordAttemptFailure(now, "TIMEOUT");
         assertThat(shipment.getNextAttemptAt()).isEqualTo(now.plusSeconds(30));
 
-        shipment.recordBookingFailure(now);
+        shipment.recordAttemptFailure(now, "TIMEOUT");
         assertThat(shipment.getNextAttemptAt()).isEqualTo(now.plusMinutes(1));
 
-        shipment.recordBookingFailure(now);
+        shipment.recordAttemptFailure(now, "TIMEOUT");
         assertThat(shipment.getNextAttemptAt()).isEqualTo(now.plusMinutes(1));
 
         assertThat(shipment.getAttemptCount()).isEqualTo(4);
         assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.READY);
+        assertThat(shipment.getLastError()).isEqualTo("TIMEOUT");
+    }
+
+    @Test
+    @DisplayName("실패 원인은 500자까지만 남긴다")
+    void lastErrorIsTruncated() {
+        Shipment shipment = newShipment();
+
+        shipment.recordAttemptFailure(LocalDateTime.of(2026, 11, 17, 10, 0), "x".repeat(600));
+
+        assertThat(shipment.getLastError()).hasSize(500);
+    }
+
+    @Test
+    @DisplayName("예약에 성공하면 예약 큐의 시도 기록(다음 시도 시각 · 횟수 · 실패 원인)을 비운다")
+    void bookResetsQueue() {
+        Shipment shipment = newShipment();
+        shipment.recordAttemptFailure(LocalDateTime.of(2026, 11, 17, 10, 0), "TIMEOUT");
+
+        shipment.book("404000000001", LocalDateTime.of(2026, 11, 17, 10, 1));
+
+        assertThat(shipment.getNextAttemptAt()).isNull();
+        assertThat(shipment.getAttemptCount()).isZero();
+        assertThat(shipment.getLastError()).isNull();
+    }
+
+    @Test
+    @DisplayName("READY · BOOKED에서 취소를 누르면 CANCEL_PENDING + 누른 시각만 기록하고, 취소 큐가 바로 집게 시도 기록을 비운다")
+    void requestCancelRecordsPending() {
+        LocalDateTime requestedAt = LocalDateTime.of(2026, 11, 17, 10, 0);
+        Shipment ready = newShipment();
+        ready.recordAttemptFailure(requestedAt.minusMinutes(1), "TIMEOUT"); // 예약 큐에서 실패하던 배송
+        Shipment booked = bookedShipment();
+
+        assertThat(ready.requestCancel(requestedAt)).isTrue();
+        assertThat(booked.requestCancel(requestedAt)).isTrue();
+
+        for (Shipment shipment : new Shipment[]{ready, booked}) {
+            assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCEL_PENDING);
+            assertThat(shipment.getCancelRequestedAt()).isEqualTo(requestedAt);
+            assertThat(shipment.getNextAttemptAt()).isNull();
+            assertThat(shipment.getAttemptCount()).isZero();
+            assertThat(shipment.getLastError()).isNull();
+        }
+    }
+
+    @Test
+    @DisplayName("이미 취소 중이거나 취소된 배송에 다시 취소를 누르면 false이고 처음 누른 시각을 유지한다")
+    void requestCancelTwiceIsIgnored() {
+        Shipment shipment = bookedShipment();
+        LocalDateTime first = LocalDateTime.of(2026, 11, 17, 10, 0);
+        shipment.requestCancel(first);
+
+        assertThat(shipment.requestCancel(first.plusSeconds(5))).isFalse();
+        assertThat(shipment.getCancelRequestedAt()).isEqualTo(first);
+
+        shipment.completeCancel(first.plusSeconds(20));
+        assertThat(shipment.requestCancel(first.plusSeconds(30))).isFalse();
+    }
+
+    @Test
+    @DisplayName("기사 2km 안(CANCEL_LOCKED)이거나 수거된 배송은 취소를 기록할 수 없다")
+    void requestCancelRejectedWhenLockedOrPickedUp() {
+        Shipment locked = bookedShipment();
+        locked.applyCourierStatus(ShipmentStatus.CANCEL_LOCKED, "404000000001", LocalDateTime.of(2026, 11, 17, 10, 0));
+        Shipment pickedUp = bookedShipment();
+        pickedUp.applyCourierStatus(ShipmentStatus.PICKED_UP, "404000000001", LocalDateTime.of(2026, 11, 17, 10, 0));
+
+        assertThatThrownBy(() -> locked.requestCancel(LocalDateTime.of(2026, 11, 17, 10, 1)))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> pickedUp.requestCancel(LocalDateTime.of(2026, 11, 17, 10, 1)))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("택배사가 취소하면 CANCELLED, 거절하면 CANCEL_LOCKED가 되고 취소 큐 기록을 비운다")
+    void cancelResultsFromCourier() {
+        LocalDateTime requestedAt = LocalDateTime.of(2026, 11, 17, 10, 0);
+        Shipment cancelled = bookedShipment();
+        cancelled.requestCancel(requestedAt);
+        cancelled.recordAttemptFailure(requestedAt.plusSeconds(10), "TIMEOUT");
+        Shipment locked = bookedShipment();
+        locked.requestCancel(requestedAt);
+
+        cancelled.completeCancel(requestedAt.plusSeconds(30));
+        locked.lockCancel();
+
+        assertThat(cancelled.getStatus()).isEqualTo(ShipmentStatus.CANCELLED);
+        assertThat(cancelled.getCancelledAt()).isEqualTo(requestedAt.plusSeconds(30));
+        assertThat(cancelled.getAttemptCount()).isZero();
+        assertThat(cancelled.getLastError()).isNull();
+        assertThat(locked.getStatus()).isEqualTo(ShipmentStatus.CANCEL_LOCKED);
+    }
+
+    @Test
+    @DisplayName("취소 대기가 아닌 배송에는 택배사 취소 결과를 반영할 수 없다")
+    void cancelResultRequiresPending() {
+        Shipment booked = bookedShipment();
+
+        assertThatThrownBy(() -> booked.completeCancel(LocalDateTime.of(2026, 11, 17, 10, 0)))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(booked::lockCancel).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("취소 대기 중에는 택배사 진행 웹훅(수거 · 배송 중 · 완료)으로 상태가 바뀌지 않는다 — 결과는 취소 큐가 정함")
+    void progressWebhookIgnoredWhileCancelPending() {
+        Shipment shipment = bookedShipment();
+        shipment.requestCancel(LocalDateTime.of(2026, 11, 17, 10, 0));
+
+        assertThat(shipment.applyCourierStatus(ShipmentStatus.PICKED_UP, "404000000001",
+                LocalDateTime.of(2026, 11, 17, 10, 1))).isFalse();
+        assertThat(shipment.applyCourierStatus(ShipmentStatus.DELIVERED, "404000000001",
+                LocalDateTime.of(2026, 11, 17, 10, 2))).isFalse();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCEL_PENDING);
+    }
+
+    @Test
+    @DisplayName("취소 불가(CANCEL_LOCKED) 뒤에는 수거 · 배송 웹훅이 정상으로 이어진다")
+    void lockedThenPickedUp() {
+        Shipment shipment = bookedShipment();
+        shipment.applyCourierStatus(ShipmentStatus.CANCEL_LOCKED, "404000000001", LocalDateTime.of(2026, 11, 17, 10, 0));
+
+        assertThat(shipment.applyCourierStatus(ShipmentStatus.PICKED_UP, "404000000001",
+                LocalDateTime.of(2026, 11, 17, 10, 1))).isTrue();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.PICKED_UP);
     }
 
     private Shipment newShipment() {
