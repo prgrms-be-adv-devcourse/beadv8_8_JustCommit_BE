@@ -1,12 +1,13 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-16 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-17 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-17 · decisions/0023-order-payment-transaction-saga.md · ADR 0023 추가: 결제 시도를 먼저 커밋(TX2 조건부 UPDATE로 `PAYMENT_PROCESSING`, `attempt_no` +1, `attempted_at` 기록)하고 Payment REST는 트랜잭션과 행 잠금 밖에서 호출(`Idempotency-Key: orderId`), 결과는 TX3에서 자기 `attempt_no`일 때만 반영, `OrderStatus`에 `PAYMENT_PROCESSING`와 `PAYMENT_REVIEW_REQUIRED` 추가, Saga 복구 1분 주기로 10초 지난 `PAYMENT_PROCESSING` 재호출하고 5회 안 되면 `REVIEW_REQUIRED`, 만료 스케줄러는 기존 잠금 방식 유지하고 `PAYMENT_PROCESSING`은 만료하지 않음, 이전 제안안 파일 `0023-payment-lock-with-attempt-state.md` 삭제 (#280)
 - 2026-11-16 · reference/internal-apis.md · services/ai.md · services/market.md · services/product.md · conventions/resilience.md · flows/search-recommend.md · overview.md · open-questions.md · 장바구니 추천 확정: 내부 API `POST /internal/v1/recommendations/cart`(요청 장바구니 상품 ID · 최근 90일 구매 확정 상품 ID 최신순 최대 20개 · 기준 시각 `SellerOrder.confirmedAt`, 응답 상품 ID + 이유), 카드 정보 조회 · 본인 · 구매 불가 상품 제외는 market(ai의 최신 상품 채우기 없음), market → ai 응답 2초 · 실패 · 타임아웃이면 빈 목록(「최신 상품」 대체 삭제), 품종 벡터 테이블 `species_vector_store`, 상품 스냅샷 초기 적재는 하지 않음(상품 데이터를 비우고 시작, 시연 상품은 상품 등록 API로), 복제본 재구축용 「전체 상품 이벤트 재발행」 운영 API는 만듦(#293 뒤 별도 Task), 미정 항목에서 삭제 (#289)
 - 2026-11-16 · flows/image-review.md · services/product.md · reference/external-apis.md · testing/scenarios.md · 재검수 1회 → 2회(세 번째 수정 409 `RESUBMIT_LIMIT_EXCEEDED`, 기한 초과 · 엔진 오류 재처리는 세지 않음, 근거: 실판매 실측 정상 상품 9% 오반려 · 1회 제한은 재등록으로 우회돼 효과 작음 · 추가 비용 상품당 약 2원), 이의 신청은 같은 검수 버전으로 관리자 확인(`APPEAL`) · 기한은 이의 신청 시각부터 · 동시 5개에 셈, 판매자 검수 기록 표시 상태 값, 시나리오 S-C11 추가 (#467)
 - 2026-11-16 · reference/external-apis.md · reference/kafka-topics.md · services/member.md · 배송지 수정 · 삭제 API 반영: `PATCH users/me/addresses/{id}`(보낸 항목만 변경, 빈 요청 400 · 같은 값이면 200(변경 · 이벤트 없음), 상세 주소 · 배송지 이름은 빈 문자열로 지움, 우편번호 · 주소는 함께, 주소가 바뀌면 상세 주소도 함께 · 없으면 400 `ADDRESS_DETAIL_REQUIRED`), `DELETE users/me/addresses/{id}`(기본 배송지는 409 `DEFAULT_ADDRESS_NOT_DELETABLE`), 판매자면 바뀐 뒤 배송지 목록 `MemberAddressChanged` 발행 (#469)
