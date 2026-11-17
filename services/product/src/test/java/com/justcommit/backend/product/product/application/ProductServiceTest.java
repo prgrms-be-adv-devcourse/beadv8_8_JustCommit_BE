@@ -1,7 +1,7 @@
 package com.justcommit.backend.product.product.application;
 
+import com.justcommit.backend.product.product.application.ProductEventPublisher;
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.client.member.MemberQuery;
@@ -45,6 +45,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -77,7 +78,7 @@ public class  ProductServiceTest {
     private ProductReservationRepository reservationRepository;
 
     @Mock
-    private OutboxPublisher outboxPublisher;
+    private ProductEventPublisher productEventPublisher;
 
     @Mock
     private ReviewRequester reviewRequester;
@@ -740,7 +741,7 @@ public class  ProductServiceTest {
 
         productService.createProduct(SELLER_ID, createRequest());
 
-        verify(outboxPublisher).publish(new ProductRegistered(PRODUCT_ID));
+        verify(productEventPublisher).registered(PRODUCT_ID);
     }
 
     @Test
@@ -751,7 +752,7 @@ public class  ProductServiceTest {
         assertThatThrownBy(() -> productService.createProduct(SELLER_ID, createRequest()))
                 .isInstanceOf(BusinessException.class);
 
-        verify(outboxPublisher, never()).publish(any());
+        verifyNoInteractions(productEventPublisher);
     }
 
     @Test
@@ -763,7 +764,7 @@ public class  ProductServiceTest {
 
         productService.updateProduct(SELLER_ID, PRODUCT_ID, updateRequest(null));
 
-        verify(outboxPublisher).publish(new ProductUpdated(PRODUCT_ID));
+        verify(productEventPublisher).updated(PRODUCT_ID);
     }
 
     @Test
@@ -777,7 +778,7 @@ public class  ProductServiceTest {
         assertThatThrownBy(() -> productService.updateProduct(SELLER_ID, PRODUCT_ID, updateRequest(null)))
                 .isInstanceOf(BusinessException.class);
 
-        verify(outboxPublisher, never()).publish(any());
+        verifyNoInteractions(productEventPublisher);
     }
 
     @Test
@@ -787,7 +788,7 @@ public class  ProductServiceTest {
 
         productService.deleteProduct(SELLER_ID, PRODUCT_ID);
 
-        verify(outboxPublisher).publish(new ProductStatusChanged(PRODUCT_ID));
+        verify(productEventPublisher).statusChanged(PRODUCT_ID);
     }
 
     @Test
@@ -797,7 +798,7 @@ public class  ProductServiceTest {
 
         productService.changeHidden(SELLER_ID, PRODUCT_ID, true);
 
-        verify(outboxPublisher).publish(new ProductStatusChanged(PRODUCT_ID));
+        verify(productEventPublisher).statusChanged(PRODUCT_ID);
     }
 
     @Test
@@ -808,8 +809,7 @@ public class  ProductServiceTest {
 
         assertThat(productService.markSoldOut(100L)).isTrue();
 
-        verify(outboxPublisher).publish(new ProductStatusChanged(10L));
-        verify(outboxPublisher).publish(new ProductStatusChanged(11L));
+        verify(productEventPublisher).statusChanged(List.of(10L, 11L));
     }
 
     @Test
@@ -820,7 +820,7 @@ public class  ProductServiceTest {
 
         assertThat(productService.markSoldOut(100L)).isFalse();
 
-        verify(outboxPublisher, never()).publish(any());
+        verifyNoInteractions(productEventPublisher);
     }
 
     @Test
@@ -831,7 +831,7 @@ public class  ProductServiceTest {
 
         assertThat(productService.release(100L)).isTrue();
 
-        verify(outboxPublisher, times(2)).publish(any(ProductStatusChanged.class));
+        verify(productEventPublisher).statusChanged(List.of(10L, 11L));
         verify(reservationRepository).upsertReleased(100L);
     }
 
@@ -843,7 +843,7 @@ public class  ProductServiceTest {
 
         assertThat(productService.release(100L)).isFalse();
 
-        verify(outboxPublisher, never()).publish(any());
+        verifyNoInteractions(productEventPublisher);
     }
 
     @Test
@@ -853,7 +853,7 @@ public class  ProductServiceTest {
 
         assertThat(productService.releaseItem(PRODUCT_ID, 100L, true)).isTrue();
 
-        verify(outboxPublisher).publish(new ProductStatusChanged(PRODUCT_ID));
+        verify(productEventPublisher).statusChanged(PRODUCT_ID);
     }
 
     @Test
@@ -863,6 +863,6 @@ public class  ProductServiceTest {
 
         assertThat(productService.releaseItem(PRODUCT_ID, 100L, false)).isFalse();
 
-        verify(outboxPublisher, never()).publish(any());
+        verifyNoInteractions(productEventPublisher);
     }
 }

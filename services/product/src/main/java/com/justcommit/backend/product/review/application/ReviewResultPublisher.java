@@ -1,5 +1,6 @@
 package com.justcommit.backend.product.review.application;
 
+import com.justcommit.backend.product.product.application.ProductEventPublisher;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.product.product.event.ProductApproved;
 import com.justcommit.backend.product.product.event.ProductRejected;
@@ -18,11 +19,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReviewResultPublisher {
 
     private final OutboxPublisher outboxPublisher;
+    private final ProductEventPublisher productEventPublisher;
 
     // 통과 → ACTIVE
     @Transactional(propagation = Propagation.MANDATORY)
     public void approved(Long productId, Long sellerId, int reviewVersion, String productTitle) {
-        outboxPublisher.publish(new ProductStatusChanged(productId));
+        productEventPublisher.statusChanged(productId);
         outboxPublisher.publish(new ProductApproved(productId, sellerId, reviewVersion, productTitle));
     }
 
@@ -31,7 +33,7 @@ public class ReviewResultPublisher {
     public void rejected(Long productId, Long sellerId, int reviewVersion, String productTitle,
                          RejectReason reason, String adminMemo) {
         String message = reason == RejectReason.OTHER ? adminMemo : reason.getMessage();
-        outboxPublisher.publish(new ProductStatusChanged(productId));
+        productEventPublisher.statusChanged(productId);
         outboxPublisher.publish(new ProductRejected(productId, sellerId, reviewVersion, productTitle, reason.name(), message));
     }
 }
