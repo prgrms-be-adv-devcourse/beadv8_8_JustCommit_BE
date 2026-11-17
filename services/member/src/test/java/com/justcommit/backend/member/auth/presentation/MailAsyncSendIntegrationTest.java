@@ -174,7 +174,7 @@ class MailAsyncSendIntegrationTest {
   }
 
   @Test
-  @DisplayName("3. 가입 인증번호: 응답 뒤 SMTP가 실패하면 메일 스레드가 인증번호 · 재발송 제한을 지우고, 같은 이메일로 바로 다시 요청할 수 있다")
+  @DisplayName("3. 가입 인증번호: 작업 제출 후 SMTP가 실패하면 메일 스레드가 인증번호 · 재발송 제한을 지우고, 같은 이메일로 바로 다시 요청할 수 있다")
   void smtpFailureReleasesAndAllowsRetry() throws Exception {
     String email = newEmail();
     willThrow(new MailSendException("smtp down")).willDoNothing()

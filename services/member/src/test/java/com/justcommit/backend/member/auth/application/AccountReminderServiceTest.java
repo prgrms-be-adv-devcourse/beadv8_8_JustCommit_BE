@@ -234,7 +234,7 @@ class AccountReminderServiceTest {
   }
 
   @Test
-  @DisplayName("응답 뒤 메일 스레드에서 SMTP가 실패하면 이 요청의 예약을 되돌린다")
+  @DisplayName("작업 제출 후 메일 스레드에서 SMTP가 실패하면 이 요청의 예약을 되돌린다")
   void asyncSmtpFailureReleasesOwnSlot() {
     ThreadPoolTaskExecutor executor = realExecutor();
     try {
