@@ -20,6 +20,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.mail.MailSendException;
 
 import java.util.Optional;
@@ -34,6 +36,8 @@ import static org.mockito.Mockito.never;
 class EmailVerificationServiceTest {
 
   private static final String EMAIL = "test@example.com";
+  // SMTP 응답처럼 수신 주소가 들어간 예외 메시지 (로그에 남지 않아야 함)
+  private static final String SMTP_REPLY = "550 5.1.1 <" + EMAIL + "> recipient rejected";
   private static final EmailPurpose SIGNUP = EmailPurpose.SIGNUP;
   private static final String REQUEST_ID = "request-1";
   private static final EmailPurpose RESET = EmailPurpose.PASSWORD_RESET;
@@ -135,17 +139,20 @@ class EmailVerificationServiceTest {
   }
 
   @Test
-  @DisplayName("메일 발송 실패 시 이 요청이 만든 번호 · 발송 자리만 되돌리고 EMAIL_SEND_FAILED")
-  void sendCode_mailFail() {
+  @DisplayName("메일 발송 실패 시 이 요청이 만든 번호 · 발송 자리만 되돌리고 EMAIL_SEND_FAILED, 로그에는 이메일 · 예외 메시지 없이 예외 종류만")
+  @ExtendWith(OutputCaptureExtension.class)
+  void sendCode_mailFail(CapturedOutput output) {
     givenSendSlot(SIGNUP_QUOTA, SendStatus.ACQUIRED, 0);
     givenCodeSaved(true);
-    willThrow(new MailSendException("fail")).given(mailSender).send(eq(EMAIL), anyString(), any(), any());
+    willThrow(new MailSendException(SMTP_REPLY)).given(mailSender).send(eq(EMAIL), anyString(), any(), any());
 
     assertThatThrownBy(() -> service.sendCode(EMAIL, SIGNUP))
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode").isEqualTo(MemberErrorCode.EMAIL_SEND_FAILED);
 
     then(store).should().releaseSend(SIGNUP, EMAIL, REQUEST_ID);
+    assertThat(output.getAll()).contains("purpose=SIGNUP, cause=MailSendException")
+        .doesNotContain(EMAIL).doesNotContain(SMTP_REPLY);
   }
 
   @Test
@@ -296,17 +303,20 @@ class EmailVerificationServiceTest {
   }
 
   @Test
-  @DisplayName("재설정 발송: SMTP가 실패하면 이 요청의 예약만 되돌리고 예외 없이 같은 결과")
-  void sendResetCode_mailFail() {
+  @DisplayName("재설정 발송: SMTP가 실패하면 이 요청의 예약만 되돌리고 예외 없이 같은 결과, 로그에는 예외 종류만")
+  @ExtendWith(OutputCaptureExtension.class)
+  void sendResetCode_mailFail(CapturedOutput output) {
     givenSendSlot(RESET_QUOTA, SendStatus.ACQUIRED, 0);
     given(passwordResetService.findTarget(EMAIL)).willReturn(Optional.of(TARGET));
     given(store.saveCode(eq(RESET), eq(EMAIL), eq(REQUEST_ID), anyString(), eq("7:3"), eq(EmailVerificationService.CODE_TTL)))
         .willReturn(true);
-    willThrow(new MailSendException("fail")).given(mailSender).send(eq(EMAIL), anyString(), any(), eq(RESET));
+    willThrow(new MailSendException(SMTP_REPLY)).given(mailSender).send(eq(EMAIL), anyString(), any(), eq(RESET));
 
     assertThat(service.sendCode(EMAIL, RESET).expiresIn()).isEqualTo(300);
 
     then(store).should().releaseSend(RESET, EMAIL, REQUEST_ID);
+    assertThat(output.getAll()).contains("cause=MailSendException")
+        .doesNotContain(EMAIL).doesNotContain(SMTP_REPLY);
   }
 
   // ===== 비밀번호 재설정 확인 (#412) =====

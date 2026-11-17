@@ -107,7 +107,8 @@ public class EmailVerificationService {
     try {
       mailSender.send(email, code, CODE_TTL, EmailPurpose.PASSWORD_RESET);
     } catch (MailException e) {
-      log.error("재설정 인증 메일 발송 실패: email={}", email, e);
+      // 예외 메시지 · 스택 트레이스에 SMTP 응답(수신 주소 포함 가능)이 들어갈 수 있어, 이메일과 예외 객체 없이 예외 종류만 남김
+      log.error("재설정 인증 메일 발송 실패: cause={}", e.getClass().getSimpleName());
       store.releaseSend(EmailPurpose.PASSWORD_RESET, email, slot.requestId());
     }
   }
@@ -139,7 +140,8 @@ public class EmailVerificationService {
     } catch (MailException e) {
       // 발송 실패 시 이 요청이 만든 번호 · 재발송 제한 · 하루 횟수만 되돌려 다시 시도할 수 있게 함
       // (늦게 실패해도 그 사이 다른 요청이 만든 번호 · 재발송 제한은 지우지 않음, 서버 쪽 실패는 하루 횟수에 넣지 않음)
-      log.error("인증 메일 발송 실패: email={}", email, e);
+      // 예외 메시지 · 스택 트레이스에 SMTP 응답(수신 주소 포함 가능)이 들어갈 수 있어, 이메일과 예외 객체 없이 예외 종류만 남김
+      log.error("인증 메일 발송 실패: purpose={}, cause={}", purpose, e.getClass().getSimpleName());
       store.releaseSend(purpose, email, slot.requestId());
       throw new BusinessException(MemberErrorCode.EMAIL_SEND_FAILED);
     }
