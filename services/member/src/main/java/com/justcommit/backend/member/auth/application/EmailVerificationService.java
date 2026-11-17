@@ -2,6 +2,7 @@ package com.justcommit.backend.member.auth.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.auth.domain.EmailPurpose;
+import com.justcommit.backend.member.auth.domain.EmailSendQuota;
 import com.justcommit.backend.member.auth.infrastructure.mail.VerificationMailSender;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.domain.exception.EmailCooldownException;
@@ -47,7 +48,7 @@ public class EmailVerificationService {
     if (memberRepository.existsByEmail(email)) {
       throw new BusinessException(MemberErrorCode.DUPLICATE_EMAIL);
     }
-    EmailVerificationRedisStore.SendResult slot = acquireSendSlot(email);
+    EmailVerificationRedisStore.SendResult slot = acquireSendSlot(email, purpose);
     String code = generateCode();
     if (!store.saveCode(purpose, email, slot.requestId(), code, "", CODE_TTL)) {
       // 자리를 잡은 뒤 멈춘 사이 재발송 제한이 끝나 다른 요청이 새 번호를 보낸 경우:
@@ -93,8 +94,8 @@ public class EmailVerificationService {
   // - 번호 저장 거절(다른 요청이 자리를 잡음) · SMTP 실패: 이 요청의 예약만 되돌리고 끝
   // - Redis · DB 장애는 감추지 않는다 (예외가 그대로 올라가 서버 오류로 처리됨)
   private void sendResetCode(String email) {
-    EmailVerificationRedisStore.SendResult slot =
-        store.tryAcquireSend(email, EmailSendPolicy.COOLDOWN, EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW);
+    EmailVerificationRedisStore.SendResult slot = store.tryAcquireSend(EmailSendQuota.PASSWORD_RESET, email,
+        EmailSendPolicy.COOLDOWN, EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW);
     if (slot.status() != EmailVerificationRedisStore.SendStatus.ACQUIRED) {
       return;
     }
@@ -126,10 +127,11 @@ public class EmailVerificationService {
         .orElseThrow(() -> new BusinessException(MemberErrorCode.EMAIL_CODE_INVALID));
   }
 
-  // 재발송 제한(60초) · 하루 한도(5회)를 확인하고 자리를 확보. 막히면 429 + 남은 초(Retry-After)
-  private EmailVerificationRedisStore.SendResult acquireSendSlot(String email) {
-    EmailVerificationRedisStore.SendResult result =
-        store.tryAcquireSend(email, EmailSendPolicy.COOLDOWN, EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW);
+  // 재발송 제한(60초, 이메일 공유) · 하루 한도(5회, 용도별)를 확인하고 자리를 확보. 막히면 429 + 남은 초(Retry-After)
+  // 하루 한도는 복구(releaseSend(purpose, ...))와 같은 기준인 EmailSendQuota.of(purpose)
+  private EmailVerificationRedisStore.SendResult acquireSendSlot(String email, EmailPurpose purpose) {
+    EmailVerificationRedisStore.SendResult result = store.tryAcquireSend(EmailSendQuota.of(purpose), email,
+        EmailSendPolicy.COOLDOWN, EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW);
     switch (result.status()) {
       case ACQUIRED -> {
       }

@@ -2,6 +2,7 @@ package com.justcommit.backend.member.auth.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.auth.domain.EmailPurpose;
+import com.justcommit.backend.member.auth.domain.EmailSendQuota;
 import com.justcommit.backend.member.auth.infrastructure.mail.VerificationMailSender;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore.SendResult;
@@ -35,6 +36,8 @@ class EmailVerificationServiceTest {
   private static final EmailPurpose SIGNUP = EmailPurpose.SIGNUP;
   private static final String REQUEST_ID = "request-1";
   private static final EmailPurpose RESET = EmailPurpose.PASSWORD_RESET;
+  private static final EmailSendQuota SIGNUP_QUOTA = EmailSendQuota.SIGNUP;
+  private static final EmailSendQuota RESET_QUOTA = EmailSendQuota.PASSWORD_RESET;
   private static final PasswordResetService.ResetTarget TARGET = new PasswordResetService.ResetTarget(7L, 3);
 
   @Mock
@@ -52,9 +55,9 @@ class EmailVerificationServiceTest {
   @InjectMocks
   private EmailVerificationService service;
 
-  // 발송 자리 확보 결과를 정함 (재발송 제한 · 하루 한도는 서비스 상수 그대로 넘어가야 함)
-  private void givenSendSlot(SendStatus status, long retryAfterSeconds) {
-    given(store.tryAcquireSend(EMAIL, EmailSendPolicy.COOLDOWN,
+  // 발송 자리 확보 결과를 정함 (재발송 제한 · 하루 한도는 서비스 상수 그대로, 하루 한도는 그 용도의 것이어야 함)
+  private void givenSendSlot(EmailSendQuota quota, SendStatus status, long retryAfterSeconds) {
+    given(store.tryAcquireSend(quota, EMAIL, EmailSendPolicy.COOLDOWN,
         EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW))
         .willReturn(new SendResult(status, retryAfterSeconds, status == SendStatus.ACQUIRED ? REQUEST_ID : null));
   }
@@ -76,7 +79,7 @@ class EmailVerificationServiceTest {
   @Test
   @DisplayName("발송 성공: 가입 목적으로 6자리 번호를 저장하고 같은 번호로 메일 발송")
   void sendCode_success() {
-    givenSendSlot(SendStatus.ACQUIRED, 0);
+    givenSendSlot(SIGNUP_QUOTA, SendStatus.ACQUIRED, 0);
     givenCodeSaved(true);
 
     EmailSendResult result = service.sendCode(EMAIL, SIGNUP);
@@ -92,7 +95,7 @@ class EmailVerificationServiceTest {
   @Test
   @DisplayName("이메일은 앞뒤 공백 제거, 소문자로 바꿔서 사용")
   void sendCode_normalizeEmail() {
-    givenSendSlot(SendStatus.ACQUIRED, 0);
+    givenSendSlot(SIGNUP_QUOTA, SendStatus.ACQUIRED, 0);
     givenCodeSaved(true);
 
     service.sendCode("  Test@Example.COM ", SIGNUP);
@@ -103,7 +106,7 @@ class EmailVerificationServiceTest {
   @Test
   @DisplayName("재발송 제한 중이면 429 EMAIL_SEND_COOLDOWN과 남은 시간, 저장 · 메일 없음")
   void sendCode_cooldown() {
-    givenSendSlot(SendStatus.COOLDOWN, 42);
+    givenSendSlot(SIGNUP_QUOTA, SendStatus.COOLDOWN, 42);
 
     assertThatThrownBy(() -> service.sendCode(EMAIL, SIGNUP))
         .isInstanceOfSatisfying(EmailCooldownException.class, e -> {
@@ -118,7 +121,7 @@ class EmailVerificationServiceTest {
   @Test
   @DisplayName("하루 한도를 넘으면 429 EMAIL_SEND_DAILY_LIMIT과 하루 기간 남은 시간, 저장 · 메일 없음")
   void sendCode_dailyLimit() {
-    givenSendSlot(SendStatus.DAILY_LIMIT, 3600);
+    givenSendSlot(SIGNUP_QUOTA, SendStatus.DAILY_LIMIT, 3600);
 
     assertThatThrownBy(() -> service.sendCode(EMAIL, SIGNUP))
         .isInstanceOfSatisfying(EmailCooldownException.class, e -> {
@@ -133,7 +136,7 @@ class EmailVerificationServiceTest {
   @Test
   @DisplayName("메일 발송 실패 시 이 요청이 만든 번호 · 발송 자리만 되돌리고 EMAIL_SEND_FAILED")
   void sendCode_mailFail() {
-    givenSendSlot(SendStatus.ACQUIRED, 0);
+    givenSendSlot(SIGNUP_QUOTA, SendStatus.ACQUIRED, 0);
     givenCodeSaved(true);
     willThrow(new MailSendException("fail")).given(mailSender).send(eq(EMAIL), anyString(), any(), any());
 
@@ -147,7 +150,7 @@ class EmailVerificationServiceTest {
   @Test
   @DisplayName("자리를 잡은 사이 다른 요청이 새 번호를 보냈다면 덮어쓰지 않고, 메일 없이 자리를 되돌린 뒤 429 EMAIL_SEND_COOLDOWN")
   void sendCode_superseded() {
-    givenSendSlot(SendStatus.ACQUIRED, 0);
+    givenSendSlot(SIGNUP_QUOTA, SendStatus.ACQUIRED, 0);
     givenCodeSaved(false);
 
     assertThatThrownBy(() -> service.sendCode(EMAIL, SIGNUP))
@@ -233,7 +236,7 @@ class EmailVerificationServiceTest {
   @Test
   @DisplayName("재설정 발송: 대상이면 발송 당시 회원 id · 인증 버전을 번호에 묶어 저장하고 재설정 문구로 메일")
   void sendResetCode_target() {
-    givenSendSlot(SendStatus.ACQUIRED, 0);
+    givenSendSlot(RESET_QUOTA, SendStatus.ACQUIRED, 0);
     given(passwordResetService.findTarget(EMAIL)).willReturn(Optional.of(TARGET));
     given(store.saveCode(eq(RESET), eq(EMAIL), eq(REQUEST_ID), anyString(), eq("7:3"), eq(EmailVerificationService.CODE_TTL)))
         .willReturn(true);
@@ -250,7 +253,7 @@ class EmailVerificationServiceTest {
   @Test
   @DisplayName("재설정 발송: 대상이 아니면(가입 안 됨 · 소셜 · 탈퇴) 자리는 똑같이 잡고 번호 · 메일 없이 같은 결과")
   void sendResetCode_notTarget() {
-    givenSendSlot(SendStatus.ACQUIRED, 0);
+    givenSendSlot(RESET_QUOTA, SendStatus.ACQUIRED, 0);
     given(passwordResetService.findTarget(EMAIL)).willReturn(Optional.empty());
 
     EmailSendResult result = service.sendCode(EMAIL, RESET);
@@ -266,7 +269,7 @@ class EmailVerificationServiceTest {
   @Test
   @DisplayName("재설정 발송: 재발송 제한 · 하루 한도에 걸려도 예외 없이 같은 결과, 대상 조회 · 메일 없음")
   void sendResetCode_limited() {
-    given(store.tryAcquireSend(EMAIL, EmailSendPolicy.COOLDOWN,
+    given(store.tryAcquireSend(RESET_QUOTA, EMAIL, EmailSendPolicy.COOLDOWN,
         EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW))
         .willReturn(new SendResult(SendStatus.COOLDOWN, 42, null), new SendResult(SendStatus.DAILY_LIMIT, 3600, null));
 
@@ -280,7 +283,7 @@ class EmailVerificationServiceTest {
   @Test
   @DisplayName("재설정 발송: 번호 저장이 거절되면(다른 요청이 자리를 잡음) 이 요청의 예약만 되돌리고 메일 없이 같은 결과")
   void sendResetCode_superseded() {
-    givenSendSlot(SendStatus.ACQUIRED, 0);
+    givenSendSlot(RESET_QUOTA, SendStatus.ACQUIRED, 0);
     given(passwordResetService.findTarget(EMAIL)).willReturn(Optional.of(TARGET));
     given(store.saveCode(eq(RESET), eq(EMAIL), eq(REQUEST_ID), anyString(), eq("7:3"), eq(EmailVerificationService.CODE_TTL)))
         .willReturn(false);
@@ -294,7 +297,7 @@ class EmailVerificationServiceTest {
   @Test
   @DisplayName("재설정 발송: SMTP가 실패하면 이 요청의 예약만 되돌리고 예외 없이 같은 결과")
   void sendResetCode_mailFail() {
-    givenSendSlot(SendStatus.ACQUIRED, 0);
+    givenSendSlot(RESET_QUOTA, SendStatus.ACQUIRED, 0);
     given(passwordResetService.findTarget(EMAIL)).willReturn(Optional.of(TARGET));
     given(store.saveCode(eq(RESET), eq(EMAIL), eq(REQUEST_ID), anyString(), eq("7:3"), eq(EmailVerificationService.CODE_TTL)))
         .willReturn(true);

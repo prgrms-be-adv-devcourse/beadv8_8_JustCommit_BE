@@ -1,5 +1,6 @@
 package com.justcommit.backend.member.auth.application;
 
+import com.justcommit.backend.member.auth.domain.EmailSendQuota;
 import com.justcommit.backend.member.auth.infrastructure.mail.AccountReminderMailSender;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore.SendResult;
@@ -50,7 +51,7 @@ class AccountReminderServiceTest {
   private AccountReminderService service;
 
   private void givenSlot(SendStatus status) {
-    given(store.tryAcquireSend(EMAIL, EmailSendPolicy.COOLDOWN, EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW))
+    given(store.tryAcquireSend(EmailSendQuota.ACCOUNT_REMINDER, EMAIL, EmailSendPolicy.COOLDOWN, EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW))
         .willReturn(new SendResult(status, status == SendStatus.ACQUIRED ? 0 : 30, status == SendStatus.ACQUIRED ? REQUEST_ID : null));
   }
 
@@ -71,7 +72,7 @@ class AccountReminderServiceTest {
     service.sendReminder(EMAIL);
 
     then(mailSender).should().send(EMAIL, Provider.LOCAL);
-    then(store).should(never()).releaseSend(anyString(), anyString());
+    then(store).should(never()).releaseReminderSend(anyString(), anyString());
   }
 
   @Test
@@ -105,15 +106,15 @@ class AccountReminderServiceTest {
     }
 
     then(store).should(times(4))
-        .tryAcquireSend(EMAIL, EmailSendPolicy.COOLDOWN, EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW);
+        .tryAcquireSend(EmailSendQuota.ACCOUNT_REMINDER, EMAIL, EmailSendPolicy.COOLDOWN, EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW);
     then(mailSender).shouldHaveNoInteractions();
-    then(store).should(never()).releaseSend(anyString(), anyString());
+    then(store).should(never()).releaseReminderSend(anyString(), anyString());
   }
 
   @Test
   @DisplayName("재발송 제한 · 하루 한도에 걸리면 회원 조회 · 메일 없이 끝난다")
   void limited() {
-    given(store.tryAcquireSend(EMAIL, EmailSendPolicy.COOLDOWN, EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW))
+    given(store.tryAcquireSend(EmailSendQuota.ACCOUNT_REMINDER, EMAIL, EmailSendPolicy.COOLDOWN, EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW))
         .willReturn(new SendResult(SendStatus.COOLDOWN, 42, null), new SendResult(SendStatus.DAILY_LIMIT, 3600, null));
 
     service.sendReminder(EMAIL);
@@ -133,7 +134,7 @@ class AccountReminderServiceTest {
 
     service.sendReminder(EMAIL);
 
-    then(store).should().releaseSend(EMAIL, REQUEST_ID);
+    then(store).should().releaseReminderSend(EMAIL, REQUEST_ID);
   }
 
   @Test
@@ -152,7 +153,7 @@ class AccountReminderServiceTest {
   @Test
   @DisplayName("발송 예약 중 Redis 장애는 그대로 올라간다")
   void reserveFailurePropagates() {
-    given(store.tryAcquireSend(EMAIL, EmailSendPolicy.COOLDOWN, EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW))
+    given(store.tryAcquireSend(EmailSendQuota.ACCOUNT_REMINDER, EMAIL, EmailSendPolicy.COOLDOWN, EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW))
         .willThrow(new RedisConnectionFailureException("redis down"));
 
     assertThatThrownBy(() -> service.sendReminder(EMAIL)).isInstanceOf(RedisConnectionFailureException.class);
@@ -176,7 +177,7 @@ class AccountReminderServiceTest {
     Member local = member(MemberStatus.ACTIVE, Provider.LOCAL);
     given(memberRepository.findByEmail(EMAIL)).willReturn(Optional.of(local));
     willThrow(new MailSendException("fail")).given(mailSender).send(EMAIL, Provider.LOCAL);
-    willThrow(new RedisConnectionFailureException("redis down")).given(store).releaseSend(EMAIL, REQUEST_ID);
+    willThrow(new RedisConnectionFailureException("redis down")).given(store).releaseReminderSend(EMAIL, REQUEST_ID);
 
     assertThatThrownBy(() -> service.sendReminder(EMAIL)).isInstanceOf(RedisConnectionFailureException.class);
   }

@@ -1,5 +1,6 @@
 package com.justcommit.backend.member.auth.presentation;
 
+import com.justcommit.backend.member.auth.domain.EmailPurpose;
 import com.justcommit.backend.member.auth.infrastructure.mail.AccountReminderMailSender;
 import com.justcommit.backend.member.auth.infrastructure.mail.VerificationMailSender;
 import com.justcommit.backend.member.domain.Member;
@@ -38,6 +39,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
@@ -47,8 +49,8 @@ import static org.mockito.Mockito.times;
 /**
  * 가입 계정 안내 (#412)를 실제 PostgreSQL · Redis · HTTP로 확인한다.
  * - 유효한 요청은 가입 여부 · 로그인 방식 · 발송 제한 · SMTP 실패와 관계없이 같은 200 (입력 오류는 400)
- * - 같은 이메일의 발송 예약 제한(60초 · 하루 5회)은 인증 메일과 공유한다. 공유 여부는 제한을 응답으로 드러내는
- *   가입 인증번호 발송으로 확인한다 (가입된 이메일은 예약 전에 409가 나므로 미가입 이메일을 쓴다)
+ * - 60초 재발송 제한은 인증 메일과 공유하고, 하루 5회 한도는 용도별로 따로 센다 (#412 리뷰 반영).
+ *   재설정 · 안내는 제한에 걸려도 200이므로, 응답이 아니라 대체한 메일 발송자의 호출로 실제 발송 여부를 확인한다
  * - IP 기준 제한은 Gateway에서 API별로 따로 센다 (Gateway 테스트에서 확인)
  * - 두 메일 클래스를 가짜로 바꿔 실제로 보내지 않는다
  * - 검증 범위: member 서비스(보안 필터 포함)까지이며 Gateway는 거치지 않는다 (IP 제한은 Gateway 테스트),
@@ -161,26 +163,47 @@ class AccountReminderIntegrationTest {
   }
 
   @Test
-  @DisplayName("4. 안내와 가입 인증번호 발송을 섞어 5건이면 하루 한도를 공유해 다음 가입 발송은 429 EMAIL_SEND_DAILY_LIMIT")
-  void dailyLimitIsShared() throws Exception {
+  @DisplayName("4. 활동 중인 로컬 회원이 안내 하루 한도를 채워도 재설정 인증번호 메일은 발송된다 (안내 6번째는 발송 안 됨)")
+  void reminderDailyLimitDoesNotBlockReset() throws Exception {
+    Member local = saveMember();
+    String email = local.getEmail();
+
+    // 안내 요청 → 실제 발송 확인 → 쿨다운 제거를 5회 반복 (쿨다운이 아니라 하루 한도까지 쌓이게)
+    for (int i = 1; i <= 5; i++) {
+      assertThat(remind(email).statusCode()).isEqualTo(200);
+      then(reminderMailSender).should(times(i)).send(email, Provider.LOCAL);
+      clearCooldown(email);
+    }
+
+    // 같은 용도 6번째: 쿨다운이 없는 상태라 하루 한도로 막혀 발송되지 않는다 (응답은 같은 200)
+    assertThat(remind(email).statusCode()).isEqualTo(200);
+    then(reminderMailSender).should(times(5)).send(email, Provider.LOCAL);
+    assertThat(redisTemplate.hasKey("auth:email:cooldown:" + email)).isFalse();
+
+    assertThat(sendResetCode(email).statusCode()).isEqualTo(200);
+
+    then(verificationMailSender).should().send(eq(email), anyString(), any(), eq(EmailPurpose.PASSWORD_RESET));
+    assertThat(redisTemplate.opsForSet().size("auth:email:daily:account-reminder:" + email)).isEqualTo(5L);
+    assertThat(redisTemplate.opsForSet().size("auth:email:daily:password-reset:" + email)).isEqualTo(1L);
+  }
+
+  @Test
+  @DisplayName("4-2. 미가입 이메일로 안내 하루 한도를 채워도 가입 인증번호는 발송된다")
+  void reminderDailyLimitDoesNotBlockSignup() throws Exception {
     String email = "daily" + SEQ.incrementAndGet() + "@test.com";
 
-    assertThat(remind(email).statusCode()).isEqualTo(200);
-    clearCooldown(email);
-    assertThat(sendSignupCode(email).statusCode()).isEqualTo(200);
-    clearCooldown(email);
-    assertThat(remind(email).statusCode()).isEqualTo(200);
-    clearCooldown(email);
-    assertThat(sendSignupCode(email).statusCode()).isEqualTo(200);
-    clearCooldown(email);
-    assertThat(remind(email).statusCode()).isEqualTo(200);
-    clearCooldown(email);
+    // 미가입이라 안내 메일은 없지만 예약은 똑같이 쌓인다 (매번 쿨다운 제거)
+    for (int i = 0; i < 5; i++) {
+      assertThat(remind(email).statusCode()).isEqualTo(200);
+      clearCooldown(email);
+    }
+    then(reminderMailSender).should(never()).send(eq(email), any());
+    assertThat(redisTemplate.opsForSet().size("auth:email:daily:account-reminder:" + email)).isEqualTo(5L);
 
-    HttpResponse<String> sixth = sendSignupCode(email);
+    assertThat(sendSignupCode(email).statusCode()).isEqualTo(200);
 
-    assertThat(redisTemplate.opsForSet().size("auth:email:daily:" + email)).isEqualTo(5L);
-    assertThat(sixth.statusCode()).isEqualTo(429);
-    assertThat(sixth.body()).contains("\"code\":\"EMAIL_SEND_DAILY_LIMIT\"");
+    then(verificationMailSender).should().send(eq(email), anyString(), any(), eq(EmailPurpose.SIGNUP));
+    assertThat(redisTemplate.opsForSet().size("auth:email:daily:signup:" + email)).isEqualTo(1L);
   }
 
   @Test
@@ -194,7 +217,7 @@ class AccountReminderIntegrationTest {
     assertThat(remind(local.getEmail()).statusCode()).isEqualTo(200);
 
     then(reminderMailSender).should(times(2)).send(local.getEmail(), Provider.LOCAL);
-    assertThat(redisTemplate.opsForSet().size("auth:email:daily:" + local.getEmail())).isEqualTo(1L);
+    assertThat(redisTemplate.opsForSet().size("auth:email:daily:account-reminder:" + local.getEmail())).isEqualTo(1L);
   }
 
   // ===== 도우미 =====
@@ -205,6 +228,10 @@ class AccountReminderIntegrationTest {
 
   private HttpResponse<String> sendSignupCode(String email) throws Exception {
     return post("/api/v1/auth/email/send", "{\"email\":\"" + email + "\"}");
+  }
+
+  private HttpResponse<String> sendResetCode(String email) throws Exception {
+    return post("/api/v1/auth/email/send", "{\"email\":\"" + email + "\",\"purpose\":\"PASSWORD_RESET\"}");
   }
 
   // 60초를 기다리는 대신 재발송 제한 키만 지운다 (하루 횟수는 그대로)

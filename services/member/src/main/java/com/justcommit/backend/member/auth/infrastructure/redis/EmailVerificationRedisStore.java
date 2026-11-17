@@ -1,6 +1,7 @@
 package com.justcommit.backend.member.auth.infrastructure.redis;
 
 import com.justcommit.backend.member.auth.domain.EmailPurpose;
+import com.justcommit.backend.member.auth.domain.EmailSendQuota;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -14,7 +15,8 @@ import java.util.UUID;
 /**
  * 이메일 인증 Redis 키 관리 (키 규칙 도메인:용도:식별자)
  * - 목적별 (#412): 인증번호 · 틀린 횟수 · 인증 완료. 다른 목적으로 받은 인증을 쓰지 못하게 목적을 키에 넣는다
- * - 이메일 단위: 재발송 제한(60초) · 하루 발송 횟수. 목적과 관계없이 같은 이메일로 보내는 메일 수를 함께 센다
+ * - 재발송 제한(60초)은 이메일 단위로 모든 용도가 공유하고, 하루 발송 횟수는 용도(EmailSendQuota)별로 따로 센다
+ *   (한 용도의 요청이 다른 용도의 하루 한도를 소진하지 않게)
  * - 판단과 변경이 함께 필요한 곳(발송 자리 확보 · 되돌리기 · 인증번호 확인)은 Lua 한 번으로 처리해,
  *   동시 요청에도 하루 한도를 넘지 않고 같은 인증번호가 두 번 승인되지 않게 한다
  * - 발송 요청마다 식별자를 만들어 재발송 제한 · 인증번호 값과 하루 발송 Set에 남긴다.
@@ -29,7 +31,7 @@ public class EmailVerificationRedisStore {
   private static final String ATTEMPTS_KEY = "auth:email:attempts:%s:%s";
   private static final String VERIFIED_KEY = "auth:email:verified:%s:%s";
   private static final String COOLDOWN_KEY = "auth:email:cooldown:%s";
-  private static final String DAILY_KEY = "auth:email:daily:%s";
+  private static final String DAILY_KEY = "auth:email:daily:%s:%s";
 
   // KEYS[1] = 재발송 제한 키, KEYS[2] = 하루 발송 키
   // ARGV[1] = 재발송 간격(초), ARGV[2] = 하루 한도, ARGV[3] = 하루 기간(초), ARGV[4] = 요청 식별자
@@ -131,13 +133,14 @@ public class EmailVerificationRedisStore {
   public record VerifyOutcome(VerifyResult result, String binding) {
   }
 
-  // ===== 발송 자리 (이메일 단위) =====
+  // ===== 발송 자리 (재발송 제한은 이메일 단위, 하루 횟수는 용도별) =====
 
-  // 재발송 제한 · 하루 한도를 확인하고, 보낼 수 있으면 하루 횟수 +1 · 재발송 제한 시작까지 한 번에 처리
-  public SendResult tryAcquireSend(String email, Duration cooldown, int dailyLimit, Duration dailyWindow) {
+  // 재발송 제한(이메일 공유) · 하루 한도(용도별)를 확인하고, 보낼 수 있으면 그 용도의 하루 횟수 +1 · 재발송 제한 시작까지 한 번에 처리
+  public SendResult tryAcquireSend(EmailSendQuota quota, String email, Duration cooldown, int dailyLimit,
+                                   Duration dailyWindow) {
     String requestId = UUID.randomUUID().toString();
     List<?> result = redisTemplate.execute(ACQUIRE_SEND_SCRIPT,
-        List.of(key(COOLDOWN_KEY, email), key(DAILY_KEY, email)),
+        List.of(key(COOLDOWN_KEY, email), dailyKey(quota, email)),
         String.valueOf(cooldown.toSeconds()), String.valueOf(dailyLimit),
         String.valueOf(dailyWindow.toSeconds()), requestId);
     int status = ((Number) result.get(0)).intValue();
@@ -150,16 +153,18 @@ public class EmailVerificationRedisStore {
   }
 
   // 메일 발송이 실패하면 그 요청이 만든 상태만 되돌린다 (서버 쪽 실패는 하루 횟수에 넣지 않음)
+  // 하루 횟수는 예약할 때와 같은 한도(EmailSendQuota.of(purpose))에서 뺀다
   public void releaseSend(EmailPurpose purpose, String email, String requestId) {
     redisTemplate.execute(RELEASE_SEND_SCRIPT,
-        List.of(key(COOLDOWN_KEY, email), key(DAILY_KEY, email),
+        List.of(key(COOLDOWN_KEY, email), dailyKey(EmailSendQuota.of(purpose), email),
             key(CODE_KEY, purpose, email), key(ATTEMPTS_KEY, purpose, email)),
         requestId);
   }
 
-  // 인증번호가 없는 메일(가입 계정 안내)의 발송이 실패하면 발송 자리만 되돌린다 (재발송 제한 · 하루 횟수의 자기 몫)
-  public void releaseSend(String email, String requestId) {
-    redisTemplate.execute(RELEASE_SEND_SCRIPT, List.of(key(COOLDOWN_KEY, email), key(DAILY_KEY, email)), requestId);
+  // 가입 계정 안내 메일의 발송이 실패하면 발송 자리만 되돌린다 (재발송 제한 · 안내 하루 횟수의 자기 몫, 인증번호 없음)
+  public void releaseReminderSend(String email, String requestId) {
+    redisTemplate.execute(RELEASE_SEND_SCRIPT,
+        List.of(key(COOLDOWN_KEY, email), dailyKey(EmailSendQuota.ACCOUNT_REMINDER, email)), requestId);
   }
 
   // ===== 인증번호 (목적별) =====
@@ -217,5 +222,9 @@ public class EmailVerificationRedisStore {
 
   private String key(String pattern, EmailPurpose purpose, String email) {
     return String.format(pattern, purpose.getKeySegment(), email);
+  }
+
+  private String dailyKey(EmailSendQuota quota, String email) {
+    return String.format(DAILY_KEY, quota.getKeySegment(), email);
   }
 }
