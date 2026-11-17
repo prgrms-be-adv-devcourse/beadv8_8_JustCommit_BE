@@ -1,12 +1,13 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-16 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-17 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-17 · reference/schedulers.md · infra/observability.md · 정산 지급 스케줄러 반영: 기본 10초 간격, 실행마다 최대 50건을 한 건씩 확보(SKIP LOCKED, 30초 임대), payment 호출은 트랜잭션 밖, 성공하면 `COMPLETED` + `completed_at`, 실패(연결 실패, 응답 타임아웃, 4xx, 5xx 모두)하면 `FAILED` + `attempt_count` 증가 + 다음 시도 10초 → 30초 → 1분 고정(포기 없음), 늦게 온 실패는 임대가 그대로일 때만 반영. 알림 규칙에 「정산 지급 지연」(10분 넘게 미지급 정산 1건 이상, 상태 기준 1번, 반복 1시간, 지표 대신 ERROR 로그) 추가 (#429)
 - 2026-11-16 · reference/kafka-topics.md · 상품 이벤트 payload v2 구현 반영: 발행은 `ProductEventPublisher` 한 곳(바뀐 뒤 DB 값을 바로 읽어 payload), `ProductStatusChanged` 발행 상황에 관리자 확인 전환 · 이의 신청 · 기한 초과 재요청 추가 (#456)
 - 2026-11-16 · services/ai.md · reference/internal-apis.md · ai 품종 프로필 · 임베딩 반영: `species_profile` 215종(Flyway V2 테이블 · V3 시드, 농사로 상세 XML → `generate_ai_seed.py` → 시드 CSV), `species_vector_store`(`vector(1536)` · HNSW 코사인, `metadata.documentHash`), 재임베딩 운영 API `POST /internal/v1/ai/admin/reindex?target=SPECIES`(바뀐 문서만 임베딩) (#292)
 - 2026-11-16 · services/product.md · 상품 버전 `PRODUCT.version` 구현 (V13): 엔티티 수정은 `@PreUpdate`로 UPDATE 한 번에 +1(JPA `@Version`은 낙관적 잠금 예외가 생겨 쓰지 않음), 일괄 UPDATE 6개(`reserve` · `release` · `markSoldOut` · `releaseItem` · `deleteOnSaleBySeller` · `applyReviewResult`)는 쿼리에서 +1. payload v2는 #456 (#444)
