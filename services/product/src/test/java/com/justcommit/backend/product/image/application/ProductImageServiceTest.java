@@ -48,7 +48,7 @@ public class ProductImageServiceTest {
     }
 
     @Test
-    @DisplayName("판매자면 파일마다 업로드 링크와 판매자 경로의 최종 이미지 URL을 발급")
+    @DisplayName("[S-C01] 판매자면 파일마다 업로드 링크와 판매자 경로의 최종 이미지 URL을 발급")
     void issueUploadUrls() {
         //given
         given(memberQuery.isSeller(SELLER_ID)).willReturn(true);

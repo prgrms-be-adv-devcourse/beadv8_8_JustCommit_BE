@@ -202,6 +202,17 @@ class ProductSpecificationsTest {
     }
 
     @Test
+    @DisplayName("[S-C02] 숨긴 상품은 공개 목록 · 검색에서 빠지고(키워드 · 판매 중 필터 모두), 판매자 본인 목록에는 남음")
+    void hiddenProductExcludedFromPublicSearch() {
+        assertThat(search(null, null, null, null, null)).doesNotContain(hidden.getId());
+        assertThat(search(null, null, null, null, true)).doesNotContain(hidden.getId());
+        assertThat(search("숨김", null, null, null, null)).isEmpty();
+        assertThat(idsOf(productRepository.findAll(
+                ProductSpecifications.sellerCondition(SELLER_ID, null, null), LATEST)))
+                .contains(hidden.getId());
+    }
+
+    @Test
     @DisplayName("onSale=true면 판매 중 상품만, false·미전달이면 결제 대기·판매완료도 함께 조회")
     void searchConditionWithOnSale() {
         Product pending = save(species("필레아", null, null, null), SELLER_ID, "결제 대기");
@@ -260,7 +271,7 @@ class ProductSpecificationsTest {
     }
 
     @Test
-    @DisplayName("결제 대기 중 숨긴 상품은 결제 완료 시 판매완료가 되고 숨김이 유지됨")
+    @DisplayName("[S-C02] 결제 대기 중 숨긴 상품은 결제 완료 시 판매완료가 되고 숨김이 유지됨")
     void markSoldOutKeepsHidden() {
         Long orderId = 100L;
         assertThat(productRepository.reserve(orderId, List.of(active.getId()))).isEqualTo(1);
@@ -275,7 +286,7 @@ class ProductSpecificationsTest {
     }
 
     @Test
-    @DisplayName("결제 대기 중 숨긴 상품은 결제 실패·만료 시 판매중으로 돌아오지만 숨김이 유지돼 다시 예약할 수 없음")
+    @DisplayName("[S-C02] 결제 대기 중 숨긴 상품은 결제 실패·만료 시 판매중으로 돌아오지만 숨김이 유지돼 다시 예약할 수 없음")
     void releaseKeepsHiddenAndBlocksReserve() {
         Long orderId = 100L;
         assertThat(productRepository.reserve(orderId, List.of(active.getId()))).isEqualTo(1);

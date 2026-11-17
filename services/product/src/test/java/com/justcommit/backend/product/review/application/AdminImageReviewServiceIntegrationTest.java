@@ -174,7 +174,7 @@ class AdminImageReviewServiceIntegrationTest {
     // ── 목록 ───────────────────────────────
 
     @Test
-    @DisplayName("목록: 관리자 확인 대기만 오래된 순, 12시간 지나면 지연 표시, 기한은 24시간 뒤")
+    @DisplayName("[S-C07] 목록: 관리자 확인 대기만 오래된 순, 12시간 지나면 지연 표시, 기한은 24시간 뒤")
     void listOldestFirst() {
         Product fresh = awaitingAdmin("새 건", 1);
         Product old = awaitingAdmin("오래된 건", 13);
@@ -370,7 +370,7 @@ class AdminImageReviewServiceIntegrationTest {
     // ── 24시간 기한 ───────────────────────────────
 
     @Test
-    @DisplayName("S-C07 24시간이 지난 관리자 확인은 REVIEW_EXPIRED 자동 반려 · 반려 알림 이벤트, 24시간 전은 그대로")
+    @DisplayName("[S-C07] 24시간이 지난 관리자 확인은 REVIEW_EXPIRED 자동 반려 · 반려 알림 이벤트, 24시간 전은 그대로")
     void expireOverdue() {
         Product overdue = awaitingAdmin("기한 지남", 25);
         Product notYet = awaitingAdmin("아직", 23);
@@ -393,7 +393,7 @@ class AdminImageReviewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("S-C07 REVIEW_EXPIRED는 최근 7일 반려 수에 세지 않음")
+    @DisplayName("[S-C07] REVIEW_EXPIRED는 최근 7일 반려 수에 세지 않음")
     void expiredNotCountedAsRejection() {
         awaitingAdmin("기한 지남", 25);
         adminService.expireOverdue();
