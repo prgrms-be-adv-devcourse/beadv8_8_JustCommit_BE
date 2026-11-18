@@ -1,7 +1,7 @@
 # ai-service
 
 > 언제 읽나: ai-service 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-16 · 관련: Miro 5 · 17, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: Miro 5 · 17, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -21,7 +21,7 @@ DB `ai_db` · 계정 `ai_app` (pgvector 확장 `vector`, Flyway V1) → [DB · F
 |---|---|
 | `species_profile` | 농사로 자료로 시드한 품종 프로필 215종 (품종 ID = product `species.id`, Flyway V2 테이블 · V3 시드). 시드 원본은 팀 드라이브 `nongsaro/species_profile_seed.csv` · `generate_ai_seed.py` → [ADR 0020](../decisions/0020-species-profile-ai-seed.md) |
 | `species_vector_store` | 품종 벡터 (pgvector, `vector(1536)` · HNSW 코사인): 품종 문서 임베딩, `id` = speciesId, `metadata.documentHash`로 재임베딩 판단 |
-| `product_snapshot` | 상품 스냅샷: `productId` · `speciesId` · `sellerId` · `status` · `hidden` · `product_version`. 모든 상태를 저장 (최근 구매 상품을 품종으로 바꿀 때 `SOLD_OUT`도 씀) → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md) |
+| `product_snapshot` | 상품 스냅샷 (Flyway V4, `(species_id, status)` 인덱스): `productId` · `speciesId` · `sellerId` · `status` · `hidden` · `product_version`. 모든 상태를 저장 (최근 구매 상품을 품종으로 바꿀 때 `SOLD_OUT`도 씀) → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md) |
 
 ## 외부 API
 
