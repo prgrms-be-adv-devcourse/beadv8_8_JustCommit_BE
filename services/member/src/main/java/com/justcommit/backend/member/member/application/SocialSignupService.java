@@ -17,6 +17,7 @@ import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.infrastructure.crypto.MemberHmac;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
+import com.justcommit.backend.member.withdrawal.application.RejoinRestriction;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -36,6 +37,7 @@ public class SocialSignupService {
   private final AddressRepository addressRepository;
   private final AccountCipher accountCipher;
   private final MemberHmac memberHmac;
+  private final RejoinRestriction rejoinRestriction;
   private final JwtProvider jwtProvider;
   private final RefreshTokenIssuer refreshTokenIssuer;
   private final OutboxPublisher outboxPublisher;
@@ -85,6 +87,9 @@ public class SocialSignupService {
     } catch (DataIntegrityViolationException e) {
       throw new BusinessException(toDuplicateErrorCode(e));
     }
+
+    // 30일 안에 탈퇴한 이메일 · 휴대폰이면 가입 전체를 롤백 (#407). 회원을 INSERT한 뒤, 커밋 전에 확인
+    rejoinRestriction.check(email, command.phone());
 
     addressRepository.save(Address.createDefault(
             member,

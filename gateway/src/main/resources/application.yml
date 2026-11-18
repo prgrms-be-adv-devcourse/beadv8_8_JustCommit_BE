@@ -76,6 +76,14 @@ spring:
                     redis-rate-limiter.requestedTokens: 12
                     key-resolver: "#{@clientIpKeyResolver}"
                     throw-on-limit: true
+            # 최종 탈퇴는 3곳 확인 · 카카오 연결 해제 · DB/Redis 처리가 이어져 기본 10초를 넘을 수 있어 이 경로만 20초 (#407)
+            - id: member-withdrawal
+              uri: ${MEMBER_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/v1/users/me/withdrawal
+                - Method=POST
+              metadata:
+                response-timeout: 20000
             - id: member
               uri: ${MEMBER_SERVICE_URL:http://localhost:8081}
               predicates:

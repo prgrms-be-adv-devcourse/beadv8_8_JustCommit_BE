@@ -2,6 +2,7 @@ package com.justcommit.backend.member.auth.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.security.JwtVerifier;
+import com.justcommit.backend.common.security.TokenHash;
 import com.justcommit.backend.member.auth.domain.RevocationReason;
 import com.justcommit.backend.member.auth.domain.RevocationStatus;
 import com.justcommit.backend.member.auth.domain.TokenRevocation;
@@ -45,6 +46,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.doCallRealMethod;
@@ -95,7 +97,7 @@ class TokenRevocationServiceIntegrationTest {
   @Autowired
   private MemberRepository memberRepository;
 
-  @Autowired
+  @MockitoSpyBean
   private RefreshTokenRedisStore refreshTokenRedisStore;
 
   @Autowired
@@ -165,6 +167,24 @@ class TokenRevocationServiceIntegrationTest {
     // 폐기 뒤 새 로그인: iat >= 끊은 시각. 같은 초면 거절 · 다음 초부터 통과하는 경계는 Gateway S-A08이 확인
     LoginResult after = loginService.login(new LoginCommand(member.getEmail(), "plant1234"));
     assertThat(jwtVerifier.verifyAccessToken(after.accessToken()).issuedAt()).isGreaterThanOrEqualTo(cutoff);
+  }
+
+  @Test
+  @DisplayName("[S-A08] 옛 Refresh 삭제가 실패해도 폐기는 성공하고, 남아 있는 옛 Refresh는 인증 버전 비교로 재발급 실패")
+  void refreshDeleteFailureStillRejectedByVersion() {
+    Member member = saveMember();
+    LoginResult before = loginService.login(new LoginCommand(member.getEmail(), "plant1234"));
+    doThrow(new RedisConnectionFailureException("옛 Refresh 삭제 실패 (테스트)"))
+        .when(refreshTokenRedisStore).deleteOlderVersions(anyLong(), anyInt());
+
+    // 비밀번호 변경 경로(회원은 ACTIVE로 남음)라 재발급을 막는 것은 상태 검사가 아니라 인증 버전 비교다
+    assertThat(revocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { }))
+        .isEqualTo(RevocationResult.COMPLETED);
+
+    assertThat(redisTemplate.hasKey("auth:refresh:" + TokenHash.sha256Hex(before.refreshToken()))).isTrue();
+    assertThatThrownBy(() -> tokenReissueService.reissue(before.refreshToken()))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode").isEqualTo(MemberErrorCode.INVALID_REFRESH_TOKEN);
   }
 
   @Test

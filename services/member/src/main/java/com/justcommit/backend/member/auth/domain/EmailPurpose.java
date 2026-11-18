@@ -11,7 +11,8 @@ public enum EmailPurpose {
 
   SIGNUP("signup"),
   PASSWORD_RESET("password-reset"),
-  ACCOUNT_CHANGE("account-change"); // 계좌 변경 (#413에서 연결)
+  ACCOUNT_CHANGE("account-change"), // 계좌 변경 (#413에서 연결)
+  WITHDRAWAL("withdrawal"); // 탈퇴 재확인 (#407, 카카오 회원)
 
   // Redis 키에 들어가는 이름 (예: auth:email:password-reset:{email})
   private final String keySegment;
