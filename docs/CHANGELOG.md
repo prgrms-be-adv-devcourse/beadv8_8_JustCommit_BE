@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-18 · flows/search-recommend.md · 장바구니 추천 계산 규칙 추가: 기준 품종(장바구니 · 최근 구매, 「기타」 제외) 벡터 평균으로 판매 중 상품이 있는 품종 중 후보 30개, 벡터 0.6 + 환경 0.4(생육 온도 간격 · 광도 단계, 겨울 최저 온도는 쓰지 않음) · 쉬움 기준이면 어려움 -0.1(🟨 출발값), 같은 속은 빼지 않고 뒤로, 품종을 돌아가며 `product_id` 내림차순, 겹치는 조건만 말하는 이유 문장, 요청 검증(`size` 1~20 · 목록 100개 · 받은 `size`만큼) (#294)
 - 2026-11-18 · infra/observability.md · reference/ports.md · glossary.md · 지표 수집 대상 표(actuator · node-exporter · postgres-exporter, Kafka · Redis ⬜), CPU steal로 크레딧 소진 측정 무효 판단, exporter 포트 9100 · 9187, 용어 「exporter」 · 「CPU steal」 (#301)
 - 2026-11-18 · decisions/0027 · decisions/0008 · infra/observability.md · infra/deploy.md · reference/ports.md · conventions/common-modules.md · overview.md · glossary.md · 분산 추적 Tempo 추가: 서비스 → OTLP → Alloy → Tempo(샘플링 100% · 보관 3일), Loki ↔ Tempo traceId 연결, `common-logging`에 OTLP exporter, 데이터 서버 · 포트 3200 · 4317, 용어 「분산 추적」 (#301)
 - 2026-11-18 · reference/internal-apis.md · reference/env-vars.md · 장바구니 추천 연동 반영: ai 추천 요청 · 응답 형식(`cartProductIds` · `purchasedProductIds` · `size`, 응답 `items[{productId, reason}]`, market은 화면 size의 2배 · 최대 20 요청), market 내부 API 그룹 주소 환경변수(`AI_SERVICE_URL` 추가, 기존 product · payment · settlement 주소도 표에 적음) (#296) (#504)
