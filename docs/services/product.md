@@ -74,7 +74,7 @@
 
 ## 스케줄러
 
-검수 엔진 오류 재처리 · 관리자 확인 지연 · Outbox 재전송 → [스케줄러 표](../reference/schedulers.md)
+검수 엔진 오류 재처리 · 관리자 확인 지연 · 상품 검색 인덱스 준비 · Outbox 재전송 → [스케줄러 표](../reference/schedulers.md)
 
 ## 정책
 

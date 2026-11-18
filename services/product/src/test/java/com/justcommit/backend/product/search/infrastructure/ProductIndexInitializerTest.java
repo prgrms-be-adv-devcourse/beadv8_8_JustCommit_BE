@@ -131,6 +131,19 @@ class ProductIndexInitializerTest {
                 new ProductIndexInitializer(config.openSearchClient(config.openSearchTransport()));
 
         assertThatCode(unreachable::initialize).doesNotThrowAnyException();
+        assertThat(unreachable.isReady()).isFalse();
+        // 재시도도 같은 방식으로 예외 없이 넘어가고, 준비되지 않은 상태로 남는다
+        assertThatCode(unreachable::retryUntilReady).doesNotThrowAnyException();
+        assertThat(unreachable.isReady()).isFalse();
+    }
+
+    @Test
+    @DisplayName("시작 때 실패해도 재시도에서 OpenSearch가 살아 있으면 인덱스 · alias를 만들고 준비 상태가 된다")
+    void retryCreatesIndexWhenOpenSearchIsBack() throws Exception {
+        initializer.retryUntilReady();
+
+        assertThat(initializer.isReady()).isTrue();
+        assertThat(client.indices().existsAlias(request -> request.name(ProductIndexInitializer.ALIAS)).value()).isTrue();
     }
 
     private List<String> compactTokens(String text) throws Exception {
