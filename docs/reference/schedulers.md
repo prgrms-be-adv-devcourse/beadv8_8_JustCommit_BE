@@ -13,8 +13,8 @@
 | 수락 자동 거절 | market | 10분 | – | SKIP LOCKED | 기한 지난 `ACCEPT_PENDING` 주문상품 자동 거절 → 전액 환불 (기한 → [market 정책](../services/market.md#정책)) |
 | 반품 자동 승인 | market | 10분 | – | SKIP LOCKED | 기한 안에 판매자가 응답하지 않은 반품 신청 자동 승인 (기한 → [market 정책](../services/market.md#정책)) |
 | 자동 구매 확정 | market | 1시간 | – | SKIP LOCKED | 기한 지난 `NORMAL` 주문상품 구매 확정, 반품 신청한 주문상품 제외 (기한 → [market 정책](../services/market.md#정책)) |
-| 택배 예약 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `READY` 배송(반품 포함) 택배 예약. 한 번 실행할 때 최대 20건을 한 건씩 확보(다음 시도 시각을 30초 뒤로 미루는 임대)하고, 택배사 호출은 임대 후 트랜잭션 밖에서 함. 실패하면 다음 시도까지 10초 → 30초 → 1분 고정 (건별 `next_attempt_at` · `attempt_count`). 결제 · 수락 흐름은 `READY` 행만 만들고 택배사를 부르지 않음 |
-| 택배 취소 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `CANCEL_PENDING` 배송 취소 재요청 |
+| 택배 예약 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `READY` 배송(반품 포함) 택배 예약. 한 번 실행할 때 최대 20건을 한 건씩 확보(다음 시도 시각을 30초 뒤로 미루는 임대)하고, 택배사 호출은 임대 후 트랜잭션 밖에서 함. 실패하면 다음 시도까지 10초 → 30초 → 1분 고정 (건별 `next_attempt_at` · `attempt_count`, 마지막 실패 원인 `last_error`). 결제 · 수락 흐름은 `READY` 행만 만들고 택배사를 부르지 않음 |
+| 택배 취소 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `CANCEL_PENDING` 배송을 택배 예약 큐와 같은 방식(최대 20건을 한 건씩 확보 · 30초 임대 · 트랜잭션 밖 호출)으로 택배사에 주문번호 + 누른 시각으로 취소 요청. 결과는 배송 상태(`CANCELLED` · `CANCEL_LOCKED`) + `SHIPMENT_CANCEL_RESULT` 행 한 트랜잭션. 실패하면 10초 → 30초 → 1분 고정 (`next_attempt_at` · `attempt_count` · `last_error`) → [ADR 0026](../decisions/0026-courier-cancel-queue-and-distance-judgment.md) |
 | Saga 복구 | market | 1분 | 확인 후 포기 | SKIP LOCKED | 결과 불명 결제(orderId) · 취소 · 환불(orderItemId · sellerOrderId)을 같은 멱등 키로 다시 요청, 5회 안 되면 `REVIEW_REQUIRED`. 결제는 `attempted_at`에서 10초 지난 `PAYMENT_PROCESSING` 주문을 한 번에 최대 50건, 주문마다 선점(`attempt_no`, `attempt_count` +1 커밋) 후 트랜잭션 밖에서 재호출하고, 자기 `attempt_no`일 때만 결과 반영. 실행이 끝나면 `REVIEW_REQUIRED` 주문 수 지표를 갱신 → [주문 · 결제](../flows/order-payment.md#멈춘-주문-복구) |
 | 요금표 버전 대사 | market | 매일 09:30 (EC2가 켜진 시간) | – | ShedLock | 택배사(404-express) 요금표 버전과 비교, 다르면 새로 받음 |
 | 토스 결과 불명 조회 | payment | 5분 | 확인 후 포기 (조회 실패 3회 또는 충전 생성 60분 뒤 미확정 → `REVIEW_REQUIRED`) | SKIP LOCKED | PENDING 충전을 토스 orderId로 조회해 결과 확정. 실행당 최대 100건 처리, 결과에 따라 적립·실패·재조회·관리자 확인으로 분기. 승인 재호출 없음 → 충전 복구 상세 |

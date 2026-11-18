@@ -10,6 +10,10 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Map;
+import java.util.Optional;
 
 @Component
 public class CourierClient {
@@ -59,26 +63,52 @@ public class CourierClient {
         }
     }
 
-    public CourierCancelResult cancel(String trackingNo) {
+    // 주문번호(courierOrderNo)로 택배사 예약을 찾는다. 택배사에 예약이 없으면 빈 값.
+    // 송장번호를 모르는(READY에서 취소한) 배송을 취소할 때 쓴다.
+    public Optional<CourierShipmentView> findByCourierOrderNo(String courierOrderNo) {
         try {
-            restClient.post()
-                    .uri(BOOKING_PATH + "/{trackingNo}/cancel", trackingNo)
+            CourierApiResponse<CourierShipmentView> response = restClient.get()
+                    .uri(BOOKING_PATH + "/byOrderNo/{courierOrderNo}", courierOrderNo)
                     .retrieve()
-                    .toBodilessEntity();
-            return CourierCancelResult.CANCELLED;
+                    .body(new ParameterizedTypeReference<>() {});
+            return Optional.ofNullable(response).map(CourierApiResponse::data);
         } catch (RestClientResponseException e) {
-            int status = e.getStatusCode().value();
-            if (status == 404) {
-                return CourierCancelResult.NOT_FOUND;
-            }
-            if (status == 409) {
-                return CourierCancelResult.NOT_CANCELLABLE;
+            if (e.getStatusCode().value() == 404) {
+                return Optional.empty();
             }
             throw new CourierCancelException(
-                    "택배 취소 실패: trackingNo = " + trackingNo + ", status = " + status, e);
+                    "택배 예약 조회 실패: courierOrderNo = " + courierOrderNo + ", status = " + e.getStatusCode().value(), e);
         } catch (ResourceAccessException e) {
             throw new CourierCancelException(
-                    "택배 취소 실패: trackingNo = " + trackingNo + ", 택배사 응답 없음 (시간 초과 또는 연결 실패)", e);
+                    "택배 예약 조회 실패: courierOrderNo = " + courierOrderNo + ", 택배사 응답 없음 (시간 초과 또는 연결 실패)", e);
         }
     }
+
+    // 주문번호로 택배사 예약을 취소한다 (ADR 0026). 택배사는 구매자가 누른 시각의 기사 거리로 판정한다.
+    // 200이면 취소됨(반송 포함), 409면 취소 불가(누른 시각에 기사 2km 안). 같은 주문번호는 첫 판정을 그대로 돌려준다.
+    // 예약 전 취소도 택배사가 기록해 두고, 늦게 도착한 같은 주문번호 예약은 받지 않는다.
+    public Optional<CourierOrderCancelResponse> cancelByCourierOrderNo(String courierOrderNo, OffsetDateTime cancelRequestedAt) {
+        try {
+            CourierApiResponse<CourierOrderCancelResponse> response = restClient.post()
+                    .uri(BOOKING_PATH + "/byOrderNo/{courierOrderNo}/cancel", courierOrderNo)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    // 시간대가 붙은 ISO-8601 문자열로 보낸다 (예: 2026-11-17T10:00:00+09:00)
+                    .body(Map.of("cancelRequestedAt", cancelRequestedAt.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)))
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<>() {});
+            return Optional.ofNullable(response).map(CourierApiResponse::data);
+        } catch (RestClientResponseException e) {
+            int status = e.getStatusCode().value();
+            if (status == 409) {
+                return Optional.empty(); // 취소 불가
+            }
+            throw new CourierCancelException(
+                    "택배 취소 실패: courierOrderNo = " + courierOrderNo + ", status = " + status, e);
+        } catch (ResourceAccessException e) {
+            throw new CourierCancelException(
+                    "택배 취소 실패: courierOrderNo = " + courierOrderNo + ", 택배사 응답 없음 (시간 초과 또는 연결 실패)", e);
+        }
+    }
+
+
 }

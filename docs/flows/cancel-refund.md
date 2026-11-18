@@ -1,43 +1,61 @@
 # 취소 · 환불
 
 > 언제 읽나: 주문 취소, 반품 환불 코드를 고칠 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: 노션 기획안 「주문 취소 → 환불」 「반품 → 환불」, 노션 「정책 정리」 3.11 · 4.5 · 7 · 8.4 · 11.3 · 11.5
+> 상태: ✅ 확정 · 마지막 수정 2026-11-17 · 관련: 노션 기획안 「주문 취소 → 환불」 「반품 → 환불」, 노션 「정책 정리」 3.11 · 4.5 · 7 · 8.4 · 11.3 · 11.5
 
 ## 수거 전 취소
+
+취소 API는 배송에 「취소 대기」만 기록하고 끝납니다. 택배사 취소는 택배 취소 큐가 보내고, 택배사가 구매자가 누른 시각의 기사 거리로 판정합니다 → [ADR 0026](../decisions/0026-courier-cancel-queue-and-distance-judgment.md)
 
 | 배송 상태 | 처리 |
 |---|---|
 | 배송 없음 (`ACCEPT_PENDING`) | 택배사 호출 없이 바로 취소 · 환불 |
-| `READY` | 행을 잠그고 바로 `CANCELLED` · 환불 |
-| `BOOKED` (화면 "픽업 대기") | **택배사 취소 API를 먼저 호출**하고 응답으로 판단 (아래) |
+| `READY` · `BOOKED` | 조건부 UPDATE로 `CANCEL_PENDING` + 누른 시각(`cancel_requested_at`) 기록 → 커밋. 택배사는 부르지 않음. 같은 취소 두 번이면 한 번만 통과 |
+| `CANCEL_LOCKED` (기사 2km 안) | 취소 불가. market이 바로 거절하고 택배사를 부르지 않음 |
 | `PICKED_UP` 이후 | 취소 불가 → 배송 완료 후 반품 |
+
+택배사 판정 (누른 시각 기준):
+
+| 누른 시각의 기사 | 결과 | 비용 |
+|---|---|---|
+| 수거지 2km 밖 | 취소 | – |
+| 2km 안 | 취소 불가 (409) → 배송 `CANCEL_LOCKED` | 없음 (배정 · 5km · 2km 알림과 주문 상세 문구로 미리 고지) |
+| 2km 잠금 직후 30초 안 + 아직 수거 전 | 취소 (화면 갱신이 늦을 수 있어서) | – |
+| 2km 밖이었는데 택배사 장애로 그사이 수거됨 | 취소 + **택배사 반송** (`RETURNING` → `RETURNED`). market은 새 배송 행을 만들지 않고, 판매 재개는 반송 완료 뒤 | 택배사 |
+| 택배사에 예약이 없음 (예약 전 취소) | 택배사가 「취소됨」을 기록하고, 늦게 온 같은 주문번호 예약을 받지 않음 | – |
 
 ```mermaid
 sequenceDiagram
     participant U as 구매자
-    participant M as market
+    participant M as market 주문
+    participant S as market 배송
+    participant Q as 택배 취소 큐 (10초)
     participant C as 모의 택배사
+    participant G as 주문 Saga 복구
     participant P as payment
-    participant K as Kafka
-    participant PR as product
-    U->>M: 주문상품 취소 (BOOKED)
-    M->>C: 택배 예약 취소
-    alt 취소됨
-        M->>M: CANCELLED · Outbox
-        M->>P: 상품 금액 환불 (orderItemId) · 전부 취소면 배송비 환불 (sellerOrderId)
-        M->>M: 환불 성공 뒤 Outbox(market.order-item-cancelled.v1, BUYER)
-        K->>PR: 판매 재개 (숨기지 않음)
-    else 이미 수거됨 (409)
-        alt 수거 시각이 취소 요청보다 늦음
-            M->>M: 취소 인정 · 환불 · 판매자에게 반품 자동 접수 (왕복비 플랫폼)
-        else 수거가 먼저
-            M->>M: 취소 거절 · 배송 PICKED_UP으로 맞춤
-        end
+    U->>M: 주문상품 취소 (READY · BOOKED)
+    M->>S: 배송 CANCEL_PENDING + cancel_requested_at (조건부 UPDATE)
+    M->>M: 주문상품 「취소 중」 · 커밋
+    M-->>U: 취소 요청 받음 (택배사 안 부름)
+    Q->>S: CANCEL_PENDING 1건 SKIP LOCKED · 30초 임대 · 커밋
+    Q->>C: 취소 (courierOrderNo, cancelRequestedAt) — 트랜잭션 밖
+    alt 취소됨 (반송 포함)
+        Q->>S: CANCELLED + 결과 행(SHIPMENT_CANCEL_RESULT) 한 트랜잭션
+    else 취소 불가 (409)
+        Q->>S: CANCEL_LOCKED + 결과 행
     else 응답 없음 (타임아웃 · 5xx)
-        M->>M: CANCEL_PENDING · 취소 요청 시각 저장 (환불 안 함)
-        Note over M,C: 취소 큐가 10초마다 다시 보냄 · 택배사 CANCELLED 웹훅으로도 확정
+        Q->>S: CANCEL_PENDING 유지 · 10초 → 30초 → 1분 뒤 다시 (끝까지) · last_error
+    end
+    G->>S: 결과 행 읽기
+    alt 취소됨
+        G->>P: 상품 금액 환불 (orderItemId) · 전부 취소면 배송비 환불 (sellerOrderId)
+        G->>M: 주문상품 CANCELLED · Outbox(market.order-item-cancelled.v1, BUYER)
+    else 취소 불가
+        G->>M: 주문상품 정상으로 되돌림
     end
 ```
+
+주문 쪽 「취소 중」과 결과 행을 읽는 Saga 복구(#282 · #281)가 들어오기 전까지는 주문 취소가 지금처럼 환불을 먼저 하고, 바뀌는 것은 택배사 호출이 큐로 빠지는 것뿐입니다.
 
 상품 하나만 취소하면 그 상품 금액만 환불하고 배송은 유지합니다. 주문 전체를 취소해도 판매 재개 이벤트는 주문상품마다 발행합니다. 상품은 환불이 성공한 뒤에 되돌립니다 (먼저 되돌리면 환불 실패 때 같은 상품이 다른 사람에게 팔릴 수 있음). 구매자 본인 취소는 구매자에게 알리지 않고, 상품은 숨기지 않습니다.
 
@@ -59,6 +77,6 @@ sequenceDiagram
 | 실패 | 처리 |
 |---|---|
 | 환불 응답 타임아웃 | 결과 불명 → 주문상품을 「취소 중」으로 두고 Saga 복구가 같은 키(orderItemId · sellerOrderId)로 다시 요청. payment는 같은 키면 `ALREADY_REFUNDED`로 처음 결과, 확정 실패는 4xx. 환불이 확정된 뒤 취소 완료 · 판매 재개 이벤트. 5번 안 되면 `REVIEW_REQUIRED` |
-| 택배 취소 응답 없음 | `CANCEL_PENDING` → 취소 큐가 포기 없이 다시 보냄 (주기 → [스케줄러 표](../reference/schedulers.md)) |
+| 택배 취소 응답 없음 | `CANCEL_PENDING` → 택배 취소 큐가 포기 없이 다시 보냄 (주기 → [스케줄러 표](../reference/schedulers.md)) |
 | 판매 재개 이벤트 | Outbox 재전송 · 소비 재시도 · DLT. 취소 · 환불은 그대로 완료 |
 | 같은 취소 두 번 | 환불 1번 · 택배 취소 1번 |

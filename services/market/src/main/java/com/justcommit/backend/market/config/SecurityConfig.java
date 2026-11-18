@@ -18,6 +18,8 @@ public class SecurityConfig {
         .authorizeHttpRequests(auth -> auth
             // 택배사 웹훅 (토큰 대신 컨트롤러가 X-Api-Key를 직접 확인)
             .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/courier").permitAll()
+            // Prometheus 지표 수집. Gateway가 /actuator를 넘기지 않아 내부망(Prometheus)에서만 닿는다
+            .requestMatchers(HttpMethod.GET, "/actuator/prometheus").permitAll()
             .anyRequest().authenticated())
         .build();
   }
