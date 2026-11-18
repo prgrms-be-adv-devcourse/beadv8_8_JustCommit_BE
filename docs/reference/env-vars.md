@@ -26,7 +26,7 @@
 | `KAKAO_ADMIN_KEY` | member | 카카오 대표 어드민 키. 연결 해제 · 연결 상태 조회 호출(`Authorization: KakaoAK`)과 연결 해제 웹훅 인증 헤더 확인에 같은 값을 씀. 서버에만 두고 프론트 · 로그에 남기지 않음. 기본값 없음(없거나 비어 있으면 member가 시작하지 않음). 연결 해제는 구현(#407), 상태 조회 · 웹훅 확인은 ⬜ 미구현(#422). 운영은 인프라 담당이 주입 |
 | `MAIL_USERNAME` · `MAIL_PASSWORD` | member | Gmail SMTP |
 | `FRONTEND_BASE_URL` · `COOKIE_SECURE` | member | 리다이렉트 · 쿠키 Secure |
-| `ACCOUNT_ENCRYPTION_KEY` · `MEMBER_HMAC_KEY` | member | 계좌 암호화(AES) · 회원 정보 HMAC(계좌 중복 확인, 탈퇴 기록의 이메일 · 휴대폰 HMAC ⬜ 미구현 #407. 입력 앞 용도 접두사 `account:` · `email:` · `phone:`로 구분). 둘 다 32바이트 Base64 · 서로 다른 값 · 기본값 없음(없으면 시작 실패). 운영은 배포 전에 인프라 담당이 주입 |
+| `ACCOUNT_ENCRYPTION_KEY` · `MEMBER_HMAC_KEY` | member | 계좌 암호화(AES) · 회원 정보 HMAC(계좌 중복 확인, 탈퇴 기록의 이메일 · 휴대폰 HMAC. 입력 앞 용도 접두사 `account:` · `email:` · `phone:`로 구분). 둘 다 32바이트 Base64 · 서로 다른 값 · 기본값 없음(없으면 시작 실패). 운영은 배포 전에 인프라 담당이 주입 |
 | `TOSS_SECRET_KEY` · `PAYMENT_KEY_ENCRYPTION_KEY` | payment | 토스페이먼츠 |
 | `COURIER_BASE_URL` · `COURIER_API_KEY` · `WEBHOOK_API_KEY` | market | 모의 택배사 · 웹훅 |
 | `AWS_REGION` · S3 버킷 | product | 사진 업로드 (자격 증명은 EC2 IAM 역할) |
