@@ -17,20 +17,20 @@ import com.justcommit.backend.member.member.application.SocialSignupService;
 import com.justcommit.backend.member.withdrawal.domain.MemberWithdrawalRecord;
 import com.justcommit.backend.member.withdrawal.infrastructure.repository.MemberWithdrawalRecordRepository;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
+import com.justcommit.backend.common.testcontainers.SharedRedis;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -58,22 +58,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @ActiveProfiles("test")
 class RejoinRestrictionIntegrationTest {
 
-  @Container
-  @ServiceConnection
-  static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
-
-  @Container
-  static final GenericContainer<?> REDIS = new GenericContainer<>("redis:8-alpine").withExposedPorts(6379);
-
   private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
 
   @DynamicPropertySource
   static void properties(DynamicPropertyRegistry registry) {
+    SharedPostgres.register(registry);
     registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
     registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    registry.add("spring.data.redis.host", REDIS::getHost);
-    registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
+    SharedRedis.register(registry);
   }
 
   @Autowired private SignupService signupService;
@@ -87,6 +80,15 @@ class RejoinRestrictionIntegrationTest {
   @Autowired private DatabaseClock databaseClock;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private TransactionTemplate transactionTemplate;
+  @Autowired private StringRedisTemplate redisTemplate;
+
+  // Redis는 모듈의 테스트가 함께 쓰므로 테스트마다 비운다 (docs/testing/strategy.md 「통합 테스트 컨테이너 규칙」)
+  @AfterEach
+  void flushRedis() {
+    try (var connection = redisTemplate.getRequiredConnectionFactory().getConnection()) {
+      connection.serverCommands().flushAll();
+    }
+  }
 
   @Test
   @DisplayName("[S-B07] 30일 안에 탈퇴한 이메일이면 409 REJOIN_RESTRICTED, 회원 · 기본 배송지 · 가입 이벤트가 남지 않음")

@@ -10,8 +10,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.junit.jupiter.Container;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import com.justcommit.backend.common.testcontainers.SharedRedis;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Duration;
@@ -29,8 +30,10 @@ class WithdrawalTokenStoreTest {
   private static final String KEY = "auth:withdrawal:" + TokenHash.sha256Hex(TOKEN);
   private static final Duration TTL = Duration.ofMinutes(10);
 
-  @Container
-  static final GenericContainer<?> REDIS = new GenericContainer<>("redis:8-alpine").withExposedPorts(6379);
+  @DynamicPropertySource
+  static void containers(DynamicPropertyRegistry registry) {
+    SharedRedis.register(registry);
+  }
 
   private static LettuceConnectionFactory connectionFactory;
   private static StringRedisTemplate redisTemplate;
@@ -40,7 +43,7 @@ class WithdrawalTokenStoreTest {
   @BeforeAll
   static void connect() {
     connectionFactory = new LettuceConnectionFactory(
-        new RedisStandaloneConfiguration(REDIS.getHost(), REDIS.getMappedPort(6379)));
+        new RedisStandaloneConfiguration(SharedRedis.container().getHost(), SharedRedis.container().getMappedPort(6379)));
     connectionFactory.afterPropertiesSet();
     connectionFactory.start();
     redisTemplate = new StringRedisTemplate(connectionFactory);
