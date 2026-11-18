@@ -17,6 +17,7 @@ import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.justcommit.backend.common.client.exception.InternalApiErrorException;
 import com.justcommit.backend.common.client.exception.InternalApiResultUnknownException;
+import com.justcommit.backend.common.client.exception.InternalApiUnavailableException;
 import com.justcommit.backend.market.client.InternalApiClientTestSupport;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.DisplayName;
@@ -66,7 +67,7 @@ class PaymentClientTest {
     }
 
     @Test
-    @DisplayName("잔액 부족 409는 다시 부르지 않고 결제 대기 결과로 바꾼다")
+    @DisplayName("[S-D07] 잔액 부족 409는 다시 부르지 않고 결제 대기 결과로 바꾼다")
     void insufficientBalanceIsNotRetried() {
         payment.stubFor(post(PAYMENTS).willReturn(error(409, "payment/insufficient-balance.json")));
 
@@ -89,7 +90,7 @@ class PaymentClientTest {
     }
 
     @Test
-    @DisplayName("결제 응답 타임아웃은 결과 불명으로 알리고 다시 부르지 않는다")
+    @DisplayName("[S-D07] 결제 응답 타임아웃은 결과 불명으로 알리고 다시 부르지 않는다")
     void paymentTimeoutIsResultUnknown() {
         payment.stubFor(post(PAYMENTS).willReturn(okJson(json("payment/paid.json")).withFixedDelay(1000)));
 
@@ -97,6 +98,35 @@ class PaymentClientTest {
                 .pay(99L, 10L, new BigDecimal("13000")))
                 .isInstanceOf(InternalApiResultUnknownException.class));
         payment.verify(1, postRequestedFor(urlPathEqualTo(PAYMENTS)));
+    }
+
+    @Test
+    @DisplayName("[S-D07] 503은 다시 부르지 않고 InternalApiErrorException(503)으로 알린다")
+    void serviceUnavailableIsNotRetried() {
+        payment.stubFor(post(PAYMENTS).willReturn(aResponse().withStatus(503)));
+
+        runner().run(context -> assertThatThrownBy(() -> context.getBean(PaymentUseCase.class)
+                .pay(99L, 10L, new BigDecimal("13000")))
+                .isInstanceOfSatisfying(InternalApiErrorException.class, e -> assertThat(e.status()).isEqualTo(503)));
+        payment.verify(1, postRequestedFor(urlPathEqualTo(PAYMENTS)));
+    }
+
+    @Test
+    @DisplayName("[S-D07] 연결 실패는 0.2초 뒤 1번만 다시 시도하고 InternalApiUnavailableException으로 알린다")
+    void connectionFailureRetriesOnceAfterDelay() throws Exception {
+        int closedPort;
+        try (java.net.ServerSocket socket = new java.net.ServerSocket(0)) {
+            closedPort = socket.getLocalPort();   // 잠깐 열었다 닫아 아무도 듣지 않는 포트
+        }
+
+        InternalApiClientTestSupport.runner("http://localhost:" + closedPort, PaymentClient.class).run(context -> {
+            long start = System.nanoTime();
+            assertThatThrownBy(() -> context.getBean(PaymentUseCase.class).pay(99L, 10L, new BigDecimal("13000")))
+                    .isInstanceOf(InternalApiUnavailableException.class);
+            // 재시도 대기 200ms가 들어갔는지 (재시도 없이 바로 실패하면 수 ms)
+            assertThat(java.time.Duration.ofNanos(System.nanoTime() - start))
+                    .isGreaterThanOrEqualTo(java.time.Duration.ofMillis(200));
+        });
     }
 
     @Test

@@ -53,7 +53,7 @@ class MessagingConsumerIntegrationTest {
   private ConsumerTestApplication.TestListener listener;
 
   @Test
-  @DisplayName("형식이 깨진 메시지는 리스너까지 가지 않고 원래 문자열 그대로 DLT로 간다")
+  @DisplayName("[S-H04] 형식이 깨진 메시지는 리스너까지 가지 않고 원래 문자열 그대로 DLT로 간다")
   void malformedMessageGoesToDltWithoutRetry() throws Exception {
     String broken = "not-json-" + UUID.randomUUID();
 
@@ -63,7 +63,7 @@ class MessagingConsumerIntegrationTest {
   }
 
   @Test
-  @DisplayName("봉투는 맞지만 payload를 서비스 클래스로 못 바꾸면 재시도 없이 DLT로 간다")
+  @DisplayName("[S-H04] 봉투는 맞지만 payload를 서비스 클래스로 못 바꾸면 재시도 없이 DLT로 간다")
   void payloadMismatchGoesToDltWithoutRetry() throws Exception {
     String eventId = UUID.randomUUID().toString();
     // mode는 문자열이어야 하는데 객체라 TestPayload로 못 바꿈 (Jackson 예외)
@@ -78,7 +78,7 @@ class MessagingConsumerIntegrationTest {
   }
 
   @Test
-  @DisplayName("처리가 계속 실패하면 1 · 2 · 4초 재시도(총 4번 시도) 뒤 봉투 그대로 DLT로 간다")
+  @DisplayName("[S-H03] 처리가 계속 실패하면 1 · 2 · 4초 재시도(총 4번 시도) 뒤 봉투 그대로 DLT로 간다")
   void retriesThreeTimesThenDlt() throws Exception {
     EventEnvelope envelope = send("k3", "fail");
 
