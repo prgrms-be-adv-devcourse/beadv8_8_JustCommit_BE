@@ -30,10 +30,10 @@ public class Member extends BaseTimeEntity  {
         @Column(length = 100)
         private String password; // BCrypt 해시(60자), 소셜 회원은 NULL
 
-        @Column(nullable = false, length = 20)
+        @Column(length = 20)
         private String nickname;
 
-        @Column(nullable = false, length = 20)
+        @Column(length = 20)
         private String phone; // 숫자만 저장
 
         @Enumerated(EnumType.STRING)
@@ -48,19 +48,19 @@ public class Member extends BaseTimeEntity  {
         private String providerId; // 소셜 회원 식별값, 로컬 회원은 NULL
 
         // 계좌 (구매자 예치금 충전·환급, 판매자 정산에 공통 사용) — 가입 시 필수
-        @Column(name = "bank_code", nullable = false, length = 10)
+        @Column(name = "bank_code", length = 10)
         private String bankCode;
 
-        @Column(name = "account_no_enc", nullable = false, length = 255)
+        @Column(name = "account_no_enc", length = 255)
         private String accountNoEnc; // AES-256-GCM 암호문 ("v1:" + Base64)
 
         @Column(name = "account_hash", length = 64)
         private String accountHash; // 계좌 중복 확인용 HMAC (MemberHmac.accountHash, hex 64글자). 기존 회원은 NULL
 
-        @Column(name = "account_holder", nullable = false, length = 50) // 예금주
+        @Column(name = "account_holder", length = 50) // 예금주
         private String accountHolder;
 
-        @Column(name = "account_updated_at", nullable = false)
+        @Column(name = "account_updated_at")
         private LocalDateTime accountUpdatedAt;
 
         @Enumerated(EnumType.STRING)
