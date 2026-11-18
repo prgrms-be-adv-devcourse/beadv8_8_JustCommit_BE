@@ -38,7 +38,7 @@ class ShipmentWebhookServiceTest {
     @InjectMocks ShipmentWebhookService shipmentWebhookService;
 
     @Test
-    @DisplayName("반영된 웹훅마다 배송 상태 알림 이벤트를 보내고, 반영 안 된 웹훅은 보내지 않는다")
+    @DisplayName("[S-F03] 반영된 웹훅마다 배송 상태 알림 이벤트를 보내고, 반영 안 된 웹훅은 보내지 않는다")
     void publishesStatusChangedOnlyWhenApplied() {
         Shipment shipment = bookedShipment();
 

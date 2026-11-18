@@ -29,7 +29,7 @@ class JwtAuthenticationIntegrationTest extends GatewayIntegrationTest {
   private static final String PROTECTED = "/api/v1/cart";
 
   @Test
-  @DisplayName("정상 Access 토큰 → 서비스까지 가고, 토큰은 바꾸지 않고 그대로 전달")
+  @DisplayName("[S-A01] 정상 Access 토큰 → 서비스까지 가고, 토큰은 바꾸지 않고 그대로 전달")
   void validTokenIsForwardedUnchanged() {
     String token = accessToken(1, "MEMBER");
 
@@ -54,7 +54,7 @@ class JwtAuthenticationIntegrationTest extends GatewayIntegrationTest {
   }
 
   @Test
-  @DisplayName("[S-A03] 다른 키로 서명한 위조 토큰 → Gateway 401 INVALID_TOKEN (서비스 직접 호출 쪽은 common-security 테스트)")
+  @DisplayName("[S-A03] 다른 키로 서명한 위조 토큰 → Gateway 401 INVALID_TOKEN (서비스 직접 호출 쪽은 member MemberInternalApiIntegrationTest)")
   void forgedToken() {
     Instant now = Instant.now();
     String forged = token(OTHER_KEY_PAIR.getPrivate(), 1, "ADMIN", "ACCESS", now.minusSeconds(60), now.plusSeconds(600));

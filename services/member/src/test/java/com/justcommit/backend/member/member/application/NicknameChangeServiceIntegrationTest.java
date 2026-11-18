@@ -88,7 +88,7 @@ class NicknameChangeServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("닉네임을 바꾸면 회원 닉네임이 바뀌고, Outbox에 바뀐 뒤 전체 값의 MemberUpdated가 남는다")
+  @DisplayName("[S-B02] 닉네임을 바꾸면 회원 닉네임이 바뀌고, Outbox에 바뀐 뒤 전체 값의 MemberUpdated가 남는다")
   void changeNickname() {
     Member member = saveMember("before" + SEQ.incrementAndGet());
 

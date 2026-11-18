@@ -18,7 +18,10 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import io.jsonwebtoken.Jwts;
+
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -26,6 +29,7 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.Date;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -75,7 +79,7 @@ class MemberInternalApiIntegrationTest {
   private final HttpClient httpClient = HttpClient.newHttpClient();
 
   @Test
-  @DisplayName("내부 키 없이 부르면 401")
+  @DisplayName("[S-A06] 내부 키 없이 부르면 401")
   void noInternalKey() throws Exception {
     Long memberId = saveMember();
 
@@ -83,7 +87,7 @@ class MemberInternalApiIntegrationTest {
   }
 
   @Test
-  @DisplayName("틀린 내부 키로 부르면 401")
+  @DisplayName("[S-A06] 틀린 내부 키로 부르면 401")
   void wrongInternalKey() throws Exception {
     Long memberId = saveMember();
 
@@ -91,7 +95,7 @@ class MemberInternalApiIntegrationTest {
   }
 
   @Test
-  @DisplayName("유효한 회원 Access 토큰만 있고 내부 키가 없으면 401 (로그인한 회원도 부를 수 없음)")
+  @DisplayName("[S-A06] 유효한 회원 Access 토큰만 있고 내부 키가 없으면 401 (로그인한 회원도 부를 수 없음)")
   void memberTokenWithoutInternalKey() throws Exception {
     Long memberId = saveMember();
     String accessToken = jwtProvider.createAccessToken(memberId, "MEMBER", Instant.now());
@@ -103,6 +107,36 @@ class MemberInternalApiIntegrationTest {
     assertThat(httpClient.send(me, HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(200);
 
     assertThat(getAccount(memberId, null, accessToken).statusCode()).isEqualTo(401);
+  }
+
+  @Test
+  @DisplayName("[S-A01] member가 발급한 Access는 RS256 서명이고, Gateway 없이 서비스에 바로 보내도 통과한다")
+  void issuedAccessTokenIsRs256AndAccepted() throws Exception {
+    Long memberId = saveMember();
+    String accessToken = jwtProvider.createAccessToken(memberId, "MEMBER", Instant.now());
+
+    String header = new String(Base64.getUrlDecoder().decode(accessToken.split("[.]")[0]), StandardCharsets.UTF_8);
+    assertThat(header).contains("\"alg\":\"RS256\"");
+    assertThat(getMe(accessToken).statusCode()).isEqualTo(200);
+  }
+
+  @Test
+  @DisplayName("[S-A03] 다른 키로 서명한 위조 토큰으로 Gateway를 거치지 않고 서비스를 직접 불러도 401 INVALID_TOKEN (이중 검증)")
+  void forgedTokenRejectedByServiceDirectly() throws Exception {
+    Long memberId = saveMember();
+    String forged = Jwts.builder()
+        .subject(String.valueOf(memberId))
+        .claim("type", "ACCESS")
+        .claim("role", "ADMIN")
+        .issuedAt(Date.from(Instant.now().minusSeconds(60)))
+        .expiration(Date.from(Instant.now().plusSeconds(600)))
+        .signWith(newKeyPair().getPrivate(), Jwts.SIG.RS256)
+        .compact();
+
+    HttpResponse<String> response = getMe(forged);
+
+    assertThat(response.statusCode()).isEqualTo(401);
+    assertThat(response.body()).contains("\"code\":\"INVALID_TOKEN\"");
   }
 
   @Test
@@ -158,6 +192,13 @@ class MemberInternalApiIntegrationTest {
       builder.header("Authorization", "Bearer " + accessToken);
     }
     return httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+  }
+
+  private HttpResponse<String> getMe(String accessToken) throws Exception {
+    HttpRequest request = HttpRequest.newBuilder(uri("/api/v1/users/me"))
+        .header("Authorization", "Bearer " + accessToken)
+        .GET().build();
+    return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
   }
 
   private URI uri(String path) {

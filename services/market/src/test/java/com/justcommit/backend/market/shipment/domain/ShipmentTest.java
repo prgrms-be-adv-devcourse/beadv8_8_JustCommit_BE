@@ -96,7 +96,7 @@ class ShipmentTest {
     }
 
     @Test
-    @DisplayName("같은 상태가 다시 오면 무시한다")
+    @DisplayName("[S-F03] 같은 상태가 다시 오면 무시한다")
     void applyCourierStatusDuplicateIgnored() {
         Shipment shipment = bookedShipment();
         shipment.applyCourierStatus(ShipmentStatus.PICKED_UP, "404000000001", LocalDateTime.of(2026, 10, 12, 10, 3));
@@ -108,7 +108,7 @@ class ShipmentTest {
     }
 
     @Test
-    @DisplayName("뒤로 가는 상태가 늦게 도착하면 무시한다")
+    @DisplayName("[S-F03] 뒤로 가는 상태가 늦게 도착하면 무시한다")
     void applyCourierStatusOutOfOrderIgnored() {
         Shipment shipment = bookedShipment();
         shipment.applyCourierStatus(ShipmentStatus.IN_TRANSIT, "404000000001", LocalDateTime.of(2026, 10, 12, 10, 5));
@@ -145,7 +145,7 @@ class ShipmentTest {
     }
 
     @Test
-    @DisplayName("이미 취소된 배송을 다시 취소하면 아무것도 바꾸지 않는다")
+    @DisplayName("[S-E04] 이미 취소된 배송을 다시 취소하면 아무것도 바꾸지 않는다")
     void cancelTwiceIgnored() {
         Shipment shipment = newShipment();
         LocalDateTime firstCancelledAt = LocalDateTime.of(2026, 10, 12, 10, 1);
@@ -158,7 +158,7 @@ class ShipmentTest {
     }
 
     @Test
-    @DisplayName("수거된 배송은 취소할 수 없다")
+    @DisplayName("[S-E03] 수거된 배송은 취소할 수 없다")
     void cancelPickedUpFails() {
         Shipment shipment = bookedShipment();
         shipment.applyCourierStatus(ShipmentStatus.PICKED_UP, "404000000001", LocalDateTime.of(2026, 10, 12, 10, 3));
@@ -216,7 +216,7 @@ class ShipmentTest {
     }
 
     @Test
-    @DisplayName("택배 예약에 실패하면 READY로 남고 다음 시도까지 10초 → 30초 → 1분, 이후 1분 고정으로 기다린다")
+    @DisplayName("[S-F02] 택배 예약에 실패하면 READY로 남고 다음 시도까지 10초 → 30초 → 1분, 이후 1분 고정으로 기다린다")
     void bookingFailureBacksOff() {
         Shipment shipment = newShipment();
         LocalDateTime now = LocalDateTime.of(2026, 11, 16, 10, 0, 0);
