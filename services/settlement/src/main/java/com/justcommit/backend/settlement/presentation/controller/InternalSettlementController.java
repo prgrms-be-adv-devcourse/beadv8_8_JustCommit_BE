@@ -22,13 +22,14 @@ public class InternalSettlementController {
     public ApiResponse<SettlementTimeResponse> getSettlementTime(
             @PathVariable Long sellerOrderId
     ) {
-        LocalDateTime settledAt = settlementService
-                .findSettledAtBySellerOrderId(sellerOrderId)
+        // market이 읽는 응답 칸 이름은 settledAt 그대로 두고, 값은 completedAt (지급 전이면 null)
+        LocalDateTime completedAt = settlementService
+                .findCompletedAtBySellerOrderId(sellerOrderId)
                 .orElse(null);
 
         return ApiResponse.ok(
                 "정산 완료 시각 조회 성공",
-                new SettlementTimeResponse(sellerOrderId, settledAt)
+                new SettlementTimeResponse(sellerOrderId, completedAt)
         );
     }
 }

@@ -15,3 +15,19 @@ account:
 custom:
   oauth2:
     state-secret: test-only-oauth2-state-secret-0123456789
+
+# 내부 API 키 (테스트 전용). 내부 호출 그룹이 있으면 키 없이 앱이 시작하지 않음
+internal-api:
+  key: test-internal-key
+
+messaging:
+  address-event-cipher:
+    keys:
+      k1: j67s7+Xp5+E8lvE1U0Z3PPDekVxUOlBFhBp6pSuoMWg=
+
+# 폐기 재처리 스케줄러는 테스트에서 끈다 (테스트가 만든 PENDING 작업을 중간에 처리하지 않게). 재처리는 서비스를 직접 불러 확인
+member:
+  hmac-key: Ykrj3QEmlzI3Qklcvkhl/OdmVli7c2FS0nXnisaRXsw=
+  token-revocation:
+    retry:
+      enabled: false

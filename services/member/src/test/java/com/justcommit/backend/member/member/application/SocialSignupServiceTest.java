@@ -1,5 +1,7 @@
 package com.justcommit.backend.member.member.application;
 
+import com.justcommit.backend.member.event.MemberCreated;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
 import com.justcommit.backend.member.auth.infrastructure.jwt.SignupClaims;
@@ -11,8 +13,10 @@ import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
+import com.justcommit.backend.member.infrastructure.crypto.MemberHmac;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,6 +41,7 @@ import static org.mockito.Mockito.*;
 class SocialSignupServiceTest {
 
   private static final String SIGNUP_TOKEN = "signup-token";
+  private static final java.time.Instant NOW = java.time.Instant.parse("2026-11-14T01:00:00Z");
 
   @Mock
   private MemberRepository memberRepository;
@@ -48,10 +53,19 @@ class SocialSignupServiceTest {
   private AccountCipher accountCipher;
 
   @Mock
+  private MemberHmac memberHmac;
+
+  @Mock
   private JwtProvider jwtProvider;
 
   @Mock
   private RefreshTokenIssuer refreshTokenIssuer;
+
+  @Mock
+  private DatabaseClock databaseClock;
+
+  @Mock
+  private OutboxPublisher outboxPublisher;
 
   @InjectMocks
   private SocialSignupService socialSignupService;
@@ -88,6 +102,8 @@ class SocialSignupServiceTest {
     given(memberRepository.existsByEmail("user@kakao.com")).willReturn(false);
     given(memberRepository.existsByNickname("소셜회원")).willReturn(false);
     given(memberRepository.existsByPhone("01012345678")).willReturn(false);
+    given(memberHmac.accountHash("004", "12345678901")).willReturn("account-hash");
+    given(memberRepository.existsByAccountHash("account-hash")).willReturn(false);
     given(accountCipher.encrypt("12345678901")).willReturn("v1:encrypted");
 
     given(memberRepository.saveAndFlush(any(Member.class))).willAnswer(invocation -> {
@@ -95,8 +111,9 @@ class SocialSignupServiceTest {
       ReflectionTestUtils.setField(saved, "id", 5L);
       return saved;
     });
-    given(jwtProvider.createAccessToken(5L, "MEMBER")).willReturn("access-token");
-    given(refreshTokenIssuer.issue(5L)).willReturn("refresh-token");
+    given(databaseClock.now()).willReturn(NOW);
+    given(jwtProvider.createAccessToken(5L, "MEMBER", NOW)).willReturn("access-token");
+    given(refreshTokenIssuer.issue(5L, 0)).willReturn("refresh-token");
 
     LoginResult result = socialSignupService.signup(SIGNUP_TOKEN, command());
 
@@ -115,8 +132,10 @@ class SocialSignupServiceTest {
     assertThat(saved.getEmail()).isEqualTo("user@kakao.com");
     assertThat(saved.getPassword()).isNull();
     assertThat(saved.getAccountNoEnc()).isEqualTo("v1:encrypted");
+    assertThat(saved.getAccountHash()).isEqualTo("account-hash"); // 은행 코드 · 계좌번호로 계산한 HMAC
 
     verify(addressRepository).save(any(Address.class));
+    verify(outboxPublisher).publish(new MemberCreated(5L, "소셜회원", "MEMBER", false));
   }
 
   @Test
@@ -143,7 +162,7 @@ class SocialSignupServiceTest {
     givenValidToken();
     given(memberRepository.findByProviderAndProviderId(Provider.KAKAO, "123"))
             .willReturn(Optional.of(Member.createSocial(Provider.KAKAO, "123", "user@kakao.com",
-                    "소셜회원", "01012345678", "004", "v1:encrypted", "홍길동")));
+                    "소셜회원", "01012345678", "004", "v1:encrypted", null, "홍길동")));
 
     assertErrorCode(() -> socialSignupService.signup(SIGNUP_TOKEN, command()), MemberErrorCode.DUPLICATE_SOCIAL_ACCOUNT);
     verify(memberRepository, never()).saveAndFlush(any());
@@ -175,6 +194,32 @@ class SocialSignupServiceTest {
             new RuntimeException("duplicate key value violates unique constraint \"uk_member_provider\"")));
 
     assertErrorCode(() -> socialSignupService.signup(SIGNUP_TOKEN, command()), MemberErrorCode.DUPLICATE_SOCIAL_ACCOUNT);
+    verify(addressRepository, never()).save(any());
+  }
+
+  @Test
+  @DisplayName("다른 회원이 쓰는 계좌면 DUPLICATE_ACCOUNT, 계좌 암호화 · 저장하지 않음")
+  void duplicateAccount() {
+    givenValidToken();
+    given(memberRepository.findByProviderAndProviderId(Provider.KAKAO, "123")).willReturn(Optional.empty());
+    given(memberHmac.accountHash("004", "12345678901")).willReturn("account-hash");
+    given(memberRepository.existsByAccountHash("account-hash")).willReturn(true);
+
+    assertErrorCode(() -> socialSignupService.signup(SIGNUP_TOKEN, command()), MemberErrorCode.DUPLICATE_ACCOUNT);
+    verify(memberRepository, never()).saveAndFlush(any());
+    verifyNoInteractions(accountCipher);
+  }
+
+  @Test
+  @DisplayName("동시 요청으로 계좌 UNIQUE 제약에 걸리면 DUPLICATE_ACCOUNT")
+  void concurrentSignup_account() {
+    givenValidToken();
+    given(memberRepository.findByProviderAndProviderId(Provider.KAKAO, "123")).willReturn(Optional.empty());
+    given(memberRepository.saveAndFlush(any(Member.class))).willThrow(new DataIntegrityViolationException(
+            "could not execute statement",
+            new RuntimeException("duplicate key value violates unique constraint \"uk_member_account_hash\"")));
+
+    assertErrorCode(() -> socialSignupService.signup(SIGNUP_TOKEN, command()), MemberErrorCode.DUPLICATE_ACCOUNT);
     verify(addressRepository, never()).save(any());
   }
 }

@@ -1,7 +1,7 @@
 # payment 서비스
 
 > 언제 읽나: payment 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-08 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-15 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -20,7 +20,7 @@
 |---|---|
 | `WALLET` | 지갑 (`wallet_type`: `MEMBER` / `HOLDING` / `REVENUE`, `charge_balance` · `withdrawable_balance` · 미수금) |
 | `WALLET_TRANSACTION` | 거래 내역 (거래 유형 + 대상 ID UK) |
-| `CHARGE` | 충전 (`PENDING` · `APPROVED` · `CANCEL_PENDING` 등) |
+| `CHARGE` | 충전 (`PENDING`, `APPROVED`, `REVIEW_REQUIRED`, `CANCEL_PENDING` 등). 복구 스케줄러용 `attempt_count`(조회 실패 횟수), `next_attempt_at`(다음 조회 시각) |
 | `CASH_OUT` | 인출 (계좌 암호화 저장) |
 | `MEMBER_REPLICA` | 회원 복제본 |
 | `OUTBOX` | ⬜ 발행하는 이벤트가 없어 필요 여부 확인 |
@@ -37,7 +37,7 @@
 | `POST /internal/v1/refunds/order-items/{orderItemId}` | market | orderItemId |
 | `POST /internal/v1/refunds/shipping-fees/{sellerOrderId}` | market | sellerOrderId |
 | `POST /internal/v1/settlement-payouts` | settlement | settlementId |
-| ⬜ 탈퇴 확인 | member | – |
+| `GET /internal/v1/payments/members/{memberId}/withdrawalCheck` | member | – |
 
 상세 → [내부 API 목록](../reference/internal-apis.md)
 
@@ -45,8 +45,8 @@
 
 | 대상 | 용도 |
 |---|---|
-| member | ⬜ 계좌 조회 (인출 신청 때) |
-| 토스페이먼츠 | 충전 승인 · 취소 · 조회 (연결 3초 · 응답 65초) |
+| member | `GET /internal/v1/members/{memberId}/account` 계좌 조회 (인출 신청 때) |
+| 토스페이먼츠 | 충전 승인 · 취소 · 조회 (연결 3초 · 응답 60초) |
 
 ## 발행 이벤트
 
@@ -62,7 +62,7 @@
 
 ## 스케줄러
 
-토스 결과 불명 조회(3회 → `REVIEW_REQUIRED`) · 토스 대사(하루 1번) → [스케줄러 표](../reference/schedulers.md)
+토스 결과 불명 조회(5분 간격, 조회 실패 3회 또는 충전 생성 60분 뒤 미확정 → `REVIEW_REQUIRED`), 토스 대사(하루 1번) → [스케줄러 표](../reference/schedulers.md)
 
 ## 정책
 
@@ -71,7 +71,7 @@
 | 주제 | 규칙 |
 |---|---|
 | 조회 | 예치금 · 거래 내역 조회는 지갑을 만들지 않음 (없으면 잔액 0 · 빈 목록) |
-| 충전 | 10,000원 단위, 최소 10,000원. 승인되면 충전금 증가. 결과를 모르면 `PENDING`("충전 처리 중", 예치금 미반영) → 조회로 확정 (승인은 결제 인증 후 10분 안) |
+| 충전 | 10,000원 단위, 최소 10,000원. 승인되면 충전금 증가. 결과를 모르면 `PENDING`("충전 처리 중", 예치금 미반영) → 복구 스케줄러가 토스 결제 조회로 `APPROVED`, `FAILED`, `REVIEW_REQUIRED` 중 하나로 확정. `FAILED`는 토스가 `ABORTED`, `EXPIRED`를 돌려줄 때만. 자동으로 확정하지 못하면 `REVIEW_REQUIRED`(사람이 확인, 예치금 미반영, 승인을 다시 요청하면 409 `CHARGE_PROCESSING`) → [스케줄러 표](../reference/schedulers.md) |
 | 충전 취소 | 취소 가능 금액이 남아 있는 동안 여러 번. 금액은 회원이 정하지 않고 min(남은 취소 가능 금액 = 충전 금액 − 누적 취소 금액, 취소 시점 충전금), 0원이면 불가. 충전금이 어느 충전 건에서 쓰였는지는 구분하지 않고 회원이 고른 충전 건에 계산. 원래 결제수단으로 (부분 취소가 되는 결제수단만 충전에 씀). 한 충전에 진행 중 취소는 하나만(`CANCEL_PENDING`이면 다음 취소 안 받음). 충전금을 먼저 차감하고 `CANCEL_PENDING` → 토스 거절이면 복원 · `APPROVED`로. 결과 불명이면 `CANCEL_PENDING`으로 두고 토스 조회 3회 → `REVIEW_REQUIRED`(사용 제한 유지, 관리자 · 대사가 확인 후 완료 또는 복원). "이미 취소된 결제" 응답은 거절로 보지 않고 조회로 확인. 토스 취소 기한이 지난 충전 · `PENDING` 충전 · 탈퇴 잔액 정리를 요청한 지갑은 취소 불가 |
 | 결제 | 주문 금액만큼 차감해 `HOLDING`으로, 같은 주문은 한 번만 (같은 orderId로 다시 오면 차감하지 않고 `ALREADY_PAID`). 결제 결과 조회 API는 두지 않음 → [주문 · 결제](../flows/order-payment.md) |
 | 수거 전 취소 환불 | 취소된 상품 금액을 `HOLDING` → 구매자 지갑, 전부 취소면 배송비도. 판매자 거절 · 자동 거절도 같음. 각각 한 번만 (같은 키면 `ALREADY_REFUNDED`로 처음 결과, 확정 실패는 4xx) |

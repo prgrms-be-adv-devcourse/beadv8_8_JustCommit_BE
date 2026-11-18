@@ -1,22 +1,25 @@
 package com.justcommit.backend.payment.application;
 
+import com.justcommit.backend.payment.config.ChargeRecoveryConfig;
+import com.justcommit.backend.payment.config.ClockConfig;
 import com.justcommit.backend.payment.config.JpaAuditingConfig;
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.payment.PaymentResult;
-import com.justcommit.backend.payment.PaymentStatus;
-import com.justcommit.backend.payment.PaymentUseCase;
 import com.justcommit.backend.payment.domain.Charge;
 import com.justcommit.backend.payment.domain.ChargeStatus;
 import com.justcommit.backend.payment.domain.ChargeType;
 import com.justcommit.backend.payment.domain.Wallet;
 import com.justcommit.backend.payment.domain.WalletType;
 import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
-import com.justcommit.backend.payment.infrastructure.pg.TossConfirmResponse;
+import com.justcommit.backend.payment.domain.WalletTransaction;
+import com.justcommit.backend.payment.infrastructure.pg.TossConfirmRejectedException;
+import com.justcommit.backend.payment.infrastructure.pg.TossPaymentResponse;
+import com.justcommit.backend.payment.infrastructure.pg.TossConfirmResultUnknownException;
 import com.justcommit.backend.payment.infrastructure.pg.TossPaymentClient;
 import com.justcommit.backend.payment.infrastructure.repository.ChargeRepository;
 import com.justcommit.backend.payment.infrastructure.repository.WalletRepository;
 import com.justcommit.backend.payment.infrastructure.repository.WalletTransactionRepository;
 import com.justcommit.backend.payment.presentation.dto.ChargeConfirmRequest;
+import com.justcommit.backend.payment.presentation.dto.ChargeConfirmResponse;
 import com.justcommit.backend.payment.infrastructure.crypto.PaymentKeyCipher;
 
 import org.junit.jupiter.api.AfterEach;
@@ -39,6 +42,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -63,7 +67,7 @@ import static org.mockito.Mockito.*;
 })
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ChargeService.class, PaymentService.class, WalletService.class, PaymentKeyCipher.class})
+@Import({JpaAuditingConfig.class, ClockConfig.class, ChargeRecoveryConfig.class, ChargeService.class, ChargeConfirmFacade.class, PaymentService.class, WalletService.class, PaymentKeyCipher.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class ChargeServiceConcurrencyIntegrationTest {
@@ -82,8 +86,8 @@ class ChargeServiceConcurrencyIntegrationTest {
         registry.add("spring.datasource.password", POSTGRES::getPassword);
     }
 
-    @Autowired ChargeService chargeService;
-    @Autowired PaymentUseCase paymentUseCase;
+    @Autowired ChargeConfirmFacade chargeConfirmFacade;
+    @Autowired PaymentService paymentUseCase;
     @Autowired ChargeRepository chargeRepository;
     @Autowired WalletRepository walletRepository;
     @Autowired WalletTransactionRepository walletTransactionRepository;
@@ -99,7 +103,7 @@ class ChargeServiceConcurrencyIntegrationTest {
         given(tossPaymentClient.confirm(any(), any(), any())).willAnswer(inv -> {
             Thread.sleep(100);
             BigDecimal amount = inv.getArgument(2);
-            return new TossConfirmResponse(
+            return new TossPaymentResponse(
                     inv.getArgument(0), inv.getArgument(1), "DONE",
                     amount.longValue(), OffsetDateTime.now());
         });
@@ -120,10 +124,11 @@ class ChargeServiceConcurrencyIntegrationTest {
         ChargeConfirmRequest request = confirmRequest(charge);
 
         List<Object> results = runConcurrently(i ->
-                () -> chargeService.confirmCharge(MEMBER_ID, charge.getId(), request));
+                () -> chargeConfirmFacade.confirmCharge(MEMBER_ID, charge.getId(), request));
 
         assertThat(results).filteredOn(r -> !(r instanceof Throwable)).hasSize(1);
-        assertThat(results).filteredOn(this::isAlreadyProcessed).hasSize(THREADS - 1);
+        // 나머지는 승인 중이면 CHARGE_PROCESSING, 이미 끝났으면 CHARGE_ALREADY_PROCESSED
+        assertThat(results).filteredOn(this::isDuplicateConfirm).hasSize(THREADS - 1);
 
         verify(tossPaymentClient, times(1)).confirm(any(), any(), any());
         assertThat(balanceOf(MEMBER_ID)).isEqualByComparingTo("10000");
@@ -145,7 +150,7 @@ class ChargeServiceConcurrencyIntegrationTest {
 
         List<Object> results = runConcurrently(i -> () -> {
             Charge charge = charges.get(i);
-            return chargeService.confirmCharge(MEMBER_ID, charge.getId(), confirmRequest(charge));
+            return chargeConfirmFacade.confirmCharge(MEMBER_ID, charge.getId(), confirmRequest(charge));
         });
 
         assertThat(results).noneMatch(r -> r instanceof Throwable);
@@ -162,7 +167,7 @@ class ChargeServiceConcurrencyIntegrationTest {
 
         // 0번 스레드는 충전 승인, 나머지 7개는 1,000원짜리 서로 다른 주문 결제
         List<Object> results = runConcurrently(i -> i == 0
-                ? () -> chargeService.confirmCharge(MEMBER_ID, charge.getId(), request)
+                ? () -> chargeConfirmFacade.confirmCharge(MEMBER_ID, charge.getId(), request)
                 : () -> paymentUseCase.pay(2000L + i, MEMBER_ID, new BigDecimal("1000")));
 
         assertThat(results).noneMatch(r -> r instanceof Throwable);
@@ -203,9 +208,14 @@ class ChargeServiceConcurrencyIntegrationTest {
         return walletRepository.findByMemberId(memberId).orElseThrow().getBalance();
     }
 
-    private boolean isAlreadyProcessed(Object result) {
+    private boolean isDuplicateConfirm(Object result) {
         return result instanceof BusinessException e
-                && e.getErrorCode() == PaymentErrorCode.CHARGE_ALREADY_PROCESSED;
+                && (e.getErrorCode() == PaymentErrorCode.CHARGE_PROCESSING
+                || e.getErrorCode() == PaymentErrorCode.CHARGE_ALREADY_PROCESSED);
+    }
+
+    private ChargeStatus statusOf(Charge charge) {
+        return chargeRepository.findById(charge.getId()).orElseThrow().getStatus();
     }
 
     // 모든 스레드를 동시에 출발시키고, 정상 결과 또는 발생한 예외를 그대로 모아 반환
@@ -244,46 +254,102 @@ class ChargeServiceConcurrencyIntegrationTest {
 
 
     @Test
-    @DisplayName("토스 승인 금액이 다르면 예외가 발생하고 충전이 반영되지 않는다")
-    void rejectsMismatchedTossAmount() {
+    @DisplayName("토스 승인 금액이 다르면 적립하지 않고 PENDING으로 남는다")
+    void keepsPendingWhenTossAmountMismatches() {
         Wallet wallet = saveWallet(MEMBER_ID, "0");
         Charge charge = saveCharge(wallet);
         ChargeConfirmRequest request = confirmRequest(charge);
 
-        // 토스에서 잘못된 승인 금액을 반환한 상황
-        doReturn(new TossConfirmResponse(
-                request.getPaymentKey(),
-                request.getOrderId(),
-                "DONE",
-                20000L,
-                OffsetDateTime.now()
+        // 토스는 DONE인데 승인 금액이 우리 기록(10,000원)과 다른 상황
+        doReturn(new TossPaymentResponse(
+                request.getPaymentKey(), request.getOrderId(), "DONE", 20000L, OffsetDateTime.now()
         )).when(tossPaymentClient).confirm(any(), any(), any());
 
-        // 충전 승인 시 예외 발생
-        assertThatThrownBy(() ->
-                chargeService.confirmCharge(
-                        MEMBER_ID,
-                        charge.getId(),
-                        request
-                )
-        ).isInstanceOf(BusinessException.class)
-                .satisfies(e -> assertThat(
-                        ((BusinessException) e).getErrorCode()
-                ).isEqualTo(PaymentErrorCode.PG_CONFIRM_FAILED));
+        ChargeConfirmResponse response = chargeConfirmFacade.confirmCharge(MEMBER_ID, charge.getId(), request);
 
-        // 지갑에 적립되지 않았는지 확인
-        assertThat(balanceOf(MEMBER_ID))
-                .isEqualByComparingTo("0");
-
-        // 충전 상태는 READY 유지
-        assertThat(chargeRepository.findById(charge.getId())
-                .orElseThrow().getStatus())
-                .isEqualTo(ChargeStatus.READY);
-
-        // 거래내역 저장되지 않음
-        assertThat(walletTransactionRepository.count())
-                .isZero();
-
+        assertThat(response.getStatus()).isEqualTo(ChargeStatus.PENDING);
+        assertThat(statusOf(charge)).isEqualTo(ChargeStatus.PENDING);
+        assertThat(balanceOf(MEMBER_ID)).isEqualByComparingTo("0");
+        assertThat(walletTransactionRepository.count()).isZero();
     }
 
+    @Test
+    @DisplayName("토스가 승인을 거절하면 FAILED가 되고 실패 응답을 준다")
+    void failsWhenTossRejects() {
+        Wallet wallet = saveWallet(MEMBER_ID, "0");
+        Charge charge = saveCharge(wallet);
+        ChargeConfirmRequest request = confirmRequest(charge);
+
+        doThrow(new TossConfirmRejectedException("REJECT_CARD_PAYMENT", "카드 승인이 거절되었습니다."))
+                .when(tossPaymentClient).confirm(any(), any(), any());
+
+        assertThatThrownBy(() -> chargeConfirmFacade.confirmCharge(MEMBER_ID, charge.getId(), request))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", PaymentErrorCode.PG_CONFIRM_FAILED);
+
+        assertThat(statusOf(charge)).isEqualTo(ChargeStatus.FAILED);
+        assertThat(balanceOf(MEMBER_ID)).isEqualByComparingTo("0");
+        assertThat(walletTransactionRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("토스 승인 결과를 모르면 PENDING으로 남고 잔액은 그대로다")
+    void keepsPendingWhenTossResultUnknown() {
+        Wallet wallet = saveWallet(MEMBER_ID, "0");
+        Charge charge = saveCharge(wallet);
+        ChargeConfirmRequest request = confirmRequest(charge);
+
+        doThrow(new TossConfirmResultUnknownException("timeout", new RuntimeException()))
+                .when(tossPaymentClient).confirm(any(), any(), any());
+
+        ChargeConfirmResponse response = chargeConfirmFacade.confirmCharge(MEMBER_ID, charge.getId(), request);
+
+        assertThat(response.getStatus()).isEqualTo(ChargeStatus.PENDING);
+        Charge saved = chargeRepository.findById(charge.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(ChargeStatus.PENDING);
+        assertThat(paymentKeyCipher.decrypt(saved.getPgPaymentKeyEnc())).isEqualTo(request.getPaymentKey());
+        // 복구 스케줄러(#363)가 조회할 시각이 TX1에서 기록돼 있어야 한다
+        assertThat(saved.getNextAttemptAt()).isNotNull();
+        assertThat(balanceOf(MEMBER_ID)).isEqualByComparingTo("0");
+        assertThat(walletTransactionRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("PENDING인 충전에 승인 요청이 다시 오면 처리 중 응답을 주고 토스를 호출하지 않는다")
+    void rejectsConfirmWhilePending() {
+        Wallet wallet = saveWallet(MEMBER_ID, "0");
+        Charge charge = saveCharge(wallet);
+        ChargeConfirmRequest request = confirmRequest(charge);
+
+        doThrow(new TossConfirmResultUnknownException("timeout", new RuntimeException()))
+                .when(tossPaymentClient).confirm(any(), any(), any());
+        chargeConfirmFacade.confirmCharge(MEMBER_ID, charge.getId(), request);
+
+        assertThatThrownBy(() -> chargeConfirmFacade.confirmCharge(MEMBER_ID, charge.getId(), request))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", PaymentErrorCode.CHARGE_PROCESSING);
+
+        verify(tossPaymentClient, times(1)).confirm(any(), any(), any());
+        assertThat(statusOf(charge)).isEqualTo(ChargeStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("토스 승인 후 DB 반영이 실패하면 PENDING으로 남고 이중 적립되지 않는다")
+    void keepsPendingWhenApplyFailsAfterTossDone() {
+        Wallet wallet = saveWallet(MEMBER_ID, "0");
+        Charge charge = saveCharge(wallet);
+        ChargeConfirmRequest request = confirmRequest(charge);
+
+        // 같은 충전 건의 거래 내역이 이미 있어 TX2의 거래 내역 저장이 uk_wallet_transaction_ref에 걸리는 상황
+        ReflectionTestUtils.setField(charge, "approvedAt", LocalDateTime.now());
+        walletTransactionRepository.save(WalletTransaction.chargeIn(wallet, charge));
+
+        ChargeConfirmResponse response = chargeConfirmFacade.confirmCharge(MEMBER_ID, charge.getId(), request);
+
+        assertThat(response.getStatus()).isEqualTo(ChargeStatus.PENDING);
+        assertThat(statusOf(charge)).isEqualTo(ChargeStatus.PENDING);
+        // TX2 전체가 롤백돼 잔액이 늘지 않고, 거래 내역도 미리 넣은 1건뿐이다
+        assertThat(balanceOf(MEMBER_ID)).isEqualByComparingTo("0");
+        assertThat(walletTransactionRepository.count()).isEqualTo(1);
+    }
 }

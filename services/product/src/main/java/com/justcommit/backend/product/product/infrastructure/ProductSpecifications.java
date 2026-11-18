@@ -18,16 +18,19 @@ public final class ProductSpecifications {
     private ProductSpecifications() {
     }
 
+    // 검색에 나오는 상태: 검수 중 · 반려 · 삭제는 제외 (정책 상태 표)
+    private static final List<ProductStatus> SEARCHABLE_STATUSES =
+            List.of(ProductStatus.ACTIVE, ProductStatus.PAYMENT_PENDING, ProductStatus.SOLD_OUT);
+
     public static Specification<Product> searchCondition(
             String keyword, Long speciesId, SpeciesCategory category,
             Light light, Watering watering, Difficulty difficulty,
             BigDecimal minPrice, BigDecimal maxPrice, Boolean onSale)  {
         List<Specification<Product>> specs = new ArrayList<>();
 
-        // 항상 적용: 삭제·숨김 상품 제외
-        specs.add((root, query, cb) -> cb.notEqual(root.get("status"), ProductStatus.DELETED));
+        // 항상 적용: 검색 노출 상태만, 숨김 제외
+        specs.add((root, query, cb) -> root.get("status").in(SEARCHABLE_STATUSES));
         specs.add((root, query, cb) -> cb.isFalse(root.get("hidden")));
-
         // 제목 또는 품종명에 키워드가 포함된 상품
         if (StringUtils.hasText(keyword)) {
             String pattern = "%" + keyword.trim() + "%";

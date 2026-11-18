@@ -158,9 +158,7 @@ class ShipmentCancelIntegrationTest {
     @Test
     @DisplayName("READY 배송을 취소하면 같은 멱등키로 송장번호를 받아 온 뒤 택배사에서 취소한다")
     void cancelsReadyByRebookingFirst() {
-        when(memberQuery.getDefaultAddress(20L))
-                .thenThrow(new IllegalStateException("일시적 실패")) // 결제 직후 예약 실패 → READY
-                .thenReturn(seller());
+        when(memberQuery.getDefaultAddress(20L)).thenReturn(seller()); // 예약 큐가 아직 예약하지 않아 READY
         when(courierClient.book(anyString(), any(CourierBookingRequest.class))).thenReturn(bookingResponse());
         when(courierClient.cancel(TRACKING_NO)).thenReturn(CourierCancelResult.CANCELLED);
         inTransaction(() -> shipmentService.createShipments(order()));
@@ -179,9 +177,7 @@ class ShipmentCancelIntegrationTest {
     @Test
     @DisplayName("READY 배송의 재예약을 택배사가 거부하면 택배사에 건이 없는 것이므로 서버 취소만으로 끝낸다")
     void cancelsReadyWhenCourierHasNothing() {
-        when(memberQuery.getDefaultAddress(20L))
-                .thenThrow(new IllegalStateException("일시적 실패"))
-                .thenReturn(seller());
+        when(memberQuery.getDefaultAddress(20L)).thenReturn(seller());
         when(courierClient.book(anyString(), any(CourierBookingRequest.class)))
                 .thenThrow(new CourierBookingException("400", new RuntimeException(), false));
         inTransaction(() -> shipmentService.createShipments(order()));
@@ -222,20 +218,21 @@ class ShipmentCancelIntegrationTest {
     }
 
     @Test
-    @DisplayName("예약하는 사이 주문 취소가 먼저 저장되면 예약이 취소를 덮어쓰지 않고, 택배사 예약도 취소된다")
+    @DisplayName("예약 큐가 예약하는 사이 주문 취소가 먼저 저장되면 예약이 취소를 덮어쓰지 않고, 택배사 예약도 취소된다")
     void cancelWinsOverConcurrentBooking() {
         when(memberQuery.getDefaultAddress(20L)).thenReturn(seller());
         when(courierClient.cancel(TRACKING_NO)).thenReturn(CourierCancelResult.CANCELLED);
         AtomicInteger bookCalls = new AtomicInteger();
         when(courierClient.book(anyString(), any(CourierBookingRequest.class))).thenAnswer(invocation -> {
             if (bookCalls.incrementAndGet() == 1) {
-                // 결제 후 예약이 택배사 응답을 기다리는 사이 주문 취소가 커밋됨
+                // 예약 큐가 택배사 응답을 기다리는 사이 주문 취소가 커밋됨
                 inTransaction(() -> shipmentService.cancelShipment(7L));
             }
             return bookingResponse();
         });
-
         inTransaction(() -> shipmentService.createShipments(order()));
+
+        shipmentService.bookReadyShipments();
 
         assertThat(shipment()).satisfies(shipment -> {
             assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCELLED); // BOOKED로 덮어써지지 않음
@@ -250,6 +247,7 @@ class ShipmentCancelIntegrationTest {
         when(courierClient.book(anyString(), any(CourierBookingRequest.class))).thenReturn(bookingResponse());
         when(courierClient.cancel(TRACKING_NO)).thenReturn(CourierCancelResult.CANCELLED);
         inTransaction(() -> shipmentService.createShipments(order()));
+        shipmentService.bookReadyShipments(); // 예약 큐
         assertThat(shipment().getStatus()).isEqualTo(ShipmentStatus.BOOKED);
     }
 

@@ -1,12 +1,16 @@
 package com.justcommit.backend.member.member.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
+import com.justcommit.backend.member.auth.domain.EmailPurpose;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
+import com.justcommit.backend.member.event.MemberCreated;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
+import com.justcommit.backend.member.infrastructure.crypto.MemberHmac;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -25,6 +29,8 @@ public class SignupService {
   private final EmailVerificationRedisStore verificationStore;
   private final PasswordEncoder passwordEncoder;
   private final AccountCipher accountCipher;
+  private final MemberHmac memberHmac;
+  private final OutboxPublisher outboxPublisher;
 
   // 회원가입: 이메일 인증 확인 → 중복 검사 → 회원 저장 → 기본 배송지 저장 → 인증 완료 상태 삭제
   @Transactional
@@ -32,7 +38,7 @@ public class SignupService {
     String email = normalizeEmail(command.email());
 
     // 인증 없이 가입 API 직접 호출해도 여기서 막힘
-    if (!verificationStore.isVerified(email)) {
+    if (!verificationStore.isVerified(EmailPurpose.SIGNUP, email)) {
       throw new BusinessException(MemberErrorCode.EMAIL_NOT_VERIFIED);
     }
 
@@ -46,6 +52,10 @@ public class SignupService {
     if (memberRepository.existsByPhone(command.phone())) {
       throw new BusinessException(MemberErrorCode.DUPLICATE_PHONE);
     }
+    String accountHash = memberHmac.accountHash(command.bankCode(), command.accountNo());
+    if (memberRepository.existsByAccountHash(accountHash)) {
+      throw new BusinessException(MemberErrorCode.DUPLICATE_ACCOUNT);
+    }
 
     Member member = Member.createLocal(
             email,
@@ -54,6 +64,7 @@ public class SignupService {
             command.phone(),
             command.bankCode(),
             accountCipher.encrypt(command.accountNo()),
+            accountHash,
             command.accountHolder()
     );
 
@@ -75,9 +86,10 @@ public class SignupService {
             command.addressName()
     ));
 
-    // TODO: common-messaging 이후 Outbox로 member.events.v1에 가입 이벤트 발행
+    // 4. 다른 서비스에 가입을 알림 (같은 트랜잭션에 저장, 커밋된 뒤에만 발행). 가입 직후는 판매자가 아님
+    outboxPublisher.publish(MemberCreated.from(member, false));
 
-    verificationStore.deleteVerified(email);  // 같은 인증으로 다시 가입x
+    verificationStore.deleteVerified(EmailPurpose.SIGNUP, email);  // 같은 인증으로 다시 가입x
     return new SignupResult(member.getId(), member.getNickname());
   }
 
@@ -104,6 +116,9 @@ public class SignupService {
     }
     if (message.contains("uk_member_phone")) {
       return MemberErrorCode.DUPLICATE_PHONE;
+    }
+    if (message.contains("uk_member_account_hash")) {
+      return MemberErrorCode.DUPLICATE_ACCOUNT;
     }
     throw e;  // 예상하지 못한 제약 위반은 숨기지 않고 그대로 던짐 (500 + 로그)
   }

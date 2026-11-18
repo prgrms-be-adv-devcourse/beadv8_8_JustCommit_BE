@@ -6,6 +6,7 @@ import com.justcommit.backend.member.address.application.AddressResult;
 import com.justcommit.backend.member.address.application.AddressService;
 import com.justcommit.backend.member.address.presentation.dto.AddressCreateRequest;
 import com.justcommit.backend.member.address.presentation.dto.AddressResponse;
+import com.justcommit.backend.member.address.presentation.dto.AddressUpdateRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -14,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-// 내 배송지 API (목록, 등록, 기본 배송지 변경)
+// 내 배송지 API (목록, 등록, 기본 배송지 변경, 수정, 삭제)
 @RestController
 @RequestMapping("/api/v1/users/me/addresses")
 @RequiredArgsConstructor
@@ -43,5 +44,22 @@ public class AddressController {
                                                     @PathVariable Long addressId) {
     AddressResult result = addressService.changeDefault(authMember.memberId(), addressId);
     return ApiResponse.ok("기본 배송지를 변경했습니다.", AddressResponse.from(result));
+  }
+
+  // 부분 수정: 보낸 항목만 바꾼다 (기본 여부는 PATCH /{addressId}/default로만)
+  @PatchMapping("/{addressId}")
+  public ApiResponse<AddressResponse> updateAddress(@AuthenticationPrincipal AuthMember authMember,
+                                                    @PathVariable Long addressId,
+                                                    @Valid @RequestBody AddressUpdateRequest request) {
+    AddressResult result = addressService.updateAddress(authMember.memberId(), addressId, request.toCommand());
+    return ApiResponse.ok("배송지를 수정했습니다.", AddressResponse.from(result));
+  }
+
+  // 기본 배송지는 삭제할 수 없음 (409 DEFAULT_ADDRESS_NOT_DELETABLE)
+  @DeleteMapping("/{addressId}")
+  public ApiResponse<Void> deleteAddress(@AuthenticationPrincipal AuthMember authMember,
+                                          @PathVariable Long addressId) {
+    addressService.deleteAddress(authMember.memberId(), addressId);
+    return ApiResponse.ok("배송지를 삭제했습니다.");
   }
 }

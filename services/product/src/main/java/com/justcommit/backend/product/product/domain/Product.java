@@ -15,6 +15,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
@@ -24,7 +25,11 @@ import org.hibernate.annotations.BatchSize;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 
 @Entity
 @Table(
@@ -39,6 +44,13 @@ import java.util.List;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Product extends BaseTimeEntity {
+
+    // 판매자가 수정 · 삭제할 수 있는 상태 (정책 「수정」 · 「삭제」)
+    private static final Set<ProductStatus> CHANGEABLE_STATUSES =
+            EnumSet.of(ProductStatus.ACTIVE, ProductStatus.REJECTED, ProductStatus.REVIEW_PENDING);
+
+    // 재검수는 2번까지 (11/16 결정, docs/flows/image-review.md)
+    public static final int MAX_RESUBMITS = 2;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "species_id", nullable = false)
@@ -74,6 +86,19 @@ public class Product extends BaseTimeEntity {
     @Column(name = "reserved_order_id")
     private Long reservedOrderId;
 
+    @Column(name = "review_version", nullable = false)
+    private int reviewVersion;
+
+    // 상품 버전: 상품 행을 바꾸는 UPDATE마다 +1 (이벤트 productVersion의 원본, ADR 0021)
+    // 엔티티 수정은 아래 @PreUpdate가 UPDATE 한 번에 한 번 올리고, 일괄 UPDATE는 ProductRepository 쿼리가 직접 올린다
+    // JPA @Version은 쓰지 않음: 낙관적 잠금 실패(예외)가 새로 생기기 때문. 상품 변경은 행 잠금(findWithLockById)으로 줄을 섬
+    @Column(nullable = false)
+    private long version;
+
+    // 재검수 횟수: 반려된 상품을 고쳐 엔진 검수를 다시 받은 횟수 (최대 MAX_RESUBMITS, REVIEW_EXPIRED · 엔진 오류 재처리는 세지 않음)
+    @Column(name = "resubmit_count", nullable = false)
+    private int resubmitCount;
+
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("sortOrder ASC")
     @BatchSize(size = 100)
@@ -89,7 +114,7 @@ public class Product extends BaseTimeEntity {
         this.heightCm = heightCm;
         this.potSize = potSize;
         this.growNote = growNote;
-        this.status = ProductStatus.ACTIVE;
+        this.status = ProductStatus.REVIEW_PENDING;   // 등록하면 검수부터
         this.hidden = false;
     }
 
@@ -121,12 +146,22 @@ public class Product extends BaseTimeEntity {
         return status == ProductStatus.ACTIVE && !hidden;
     }
 
-    public void update(Species species, String title, String description,
-                       BigDecimal price, Integer heightCm, String potSize, String growNote,
-                       List<String> imageUrls) {
-        if (status != ProductStatus.ACTIVE) {
+    // 반환값: 다시 할 검수 범위 (검수 요청 · image_review에 기록)
+    public ReviewScope update(Species species, String title, String description,
+                              BigDecimal price, Integer heightCm, String potSize, String growNote,
+                              List<String> imageUrls) {
+        if (!CHANGEABLE_STATUSES.contains(status)) {
             throw new BusinessException(ProductErrorCode.PRODUCT_NOT_EDITABLE);
         }
+
+        // 순서만 바뀐 사진은 같은 사진으로 본다. 품종이 바뀌면 품종 대조가 필요해 사진 검수부터
+        // 글 검사만 하는 건 이미 검수를 통과한 판매 중 상품뿐. 검수 중 · 반려 상품은 글만 고쳐도 처음부터 검수
+        // (반려 사유가 사진일 수 있고, 검수 중 상품은 사진 검수가 아직 끝나지 않았을 수 있음)
+        boolean imagesChanged = !new HashSet<>(currentImageUrls()).equals(new HashSet<>(imageUrls));
+        boolean speciesChanged = !Objects.equals(this.species.getId(), species.getId());
+        ReviewScope scope = (status == ProductStatus.ACTIVE && !imagesChanged && !speciesChanged)
+                ? ReviewScope.TEXT_ONLY : ReviewScope.FULL;
+
         this.species = species;
         this.title = title;
         this.description = description;
@@ -135,13 +170,70 @@ public class Product extends BaseTimeEntity {
         this.potSize = potSize;
         this.growNote = growNote;
         replaceImages(imageUrls);
+
+        // 판매 중 상품의 글만 고치면 판매를 멈추지 않고 글 검사만 한다. 걸리면 그때 REJECTED
+        if (scope == ReviewScope.FULL) {
+            this.status = ProductStatus.REVIEW_PENDING;
+        }
+        this.reviewVersion++;
+        return scope;
     }
 
-    public void delete(){
-        if (status != ProductStatus.ACTIVE) {
+    private List<String> currentImageUrls() {
+        return images.stream().map(ProductImage::getS3Url).toList();
+    }
+
+    public void delete() {
+        if (!CHANGEABLE_STATUSES.contains(status)) {
             throw new BusinessException(ProductErrorCode.PRODUCT_NOT_DELETABLE);
         }
         this.status = ProductStatus.DELETED;
+    }
+
+    // 재검수 1회를 씀 (반려된 상품 · 이의 신청 중인 상품을 고칠 때). 다 썼으면 409, 삭제 후 새로 등록
+    public void useResubmit() {
+        if (resubmitCount >= MAX_RESUBMITS) {
+            throw new BusinessException(ProductErrorCode.RESUBMIT_LIMIT_EXCEEDED);
+        }
+        this.resubmitCount++;
+    }
+
+    public int remainingResubmits() {
+        return Math.max(0, MAX_RESUBMITS - resubmitCount);
+    }
+
+    // 이의 신청: 같은 검수 버전으로 관리자 확인을 기다림 (반려 → 검수 중, 검수 버전은 그대로)
+    public void startAppeal() {
+        this.status = ProductStatus.REVIEW_PENDING;
+    }
+
+    // 기한 초과(REVIEW_EXPIRED)로 반려된 상품을 같은 내용으로 다시 검수 (재검수 횟수에 세지 않음)
+    public void resubmitAfterExpiry() {
+        this.status = ProductStatus.REVIEW_PENDING;
+        this.reviewVersion++;
+    }
+
+    // 검수 중 · 반려
+    public boolean isInReview() {
+        return status == ProductStatus.REVIEW_PENDING || status == ProductStatus.REJECTED;
+    }
+
+    // 상세 노출 규칙 (memberId: 로그인하지 않았으면 null)
+    // 삭제 · 검수 중 · 반려는 판매자 본인 외에는 없는 상품처럼 404, 숨김은 본인 외에는 403
+    public void checkViewableBy(Long memberId) {
+        if (status == ProductStatus.DELETED) {
+            throw new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND);
+        }
+        if (isOwnedBy(memberId)) {
+            return;
+        }
+        if (isInReview()) {
+            throw new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND);
+        }
+        // 삭제와 숨김을 구분해서 프론트가 비공개 안내를 띄울 수 있게 함
+        if (hidden) {
+            throw new BusinessException(ProductErrorCode.PRODUCT_HIDDEN);
+        }
     }
 
     public void changeHidden(boolean hidden){
@@ -151,11 +243,10 @@ public class Product extends BaseTimeEntity {
         this.hidden = hidden;
     }
 
-    // 삭제된 상품은 아무에게도, 숨긴 상품은 판매자 본인에게만 보임
-    public boolean isVisibleTo(Long memberId) {
-        if (status == ProductStatus.DELETED) {
-            return false;
-        }
-        return !hidden || isOwnedBy(memberId);
+
+    // 엔티티로 상품을 바꿔 UPDATE가 나갈 때마다 한 번 (한 트랜잭션에서 필드를 여러 개 바꿔도 UPDATE는 한 번이라 +1)
+    @PreUpdate
+    void increaseVersion() {
+        this.version++;
     }
 }

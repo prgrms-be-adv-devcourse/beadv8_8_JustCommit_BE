@@ -1,8 +1,6 @@
 
 package com.justcommit.backend.settlement.client.payment;
 
-import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.common.exception.CommonErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -32,16 +30,6 @@ public class RestSettlementPayoutClient implements SettlementPayoutClient {
         paymentInternalApi.distributeSettlement(
                 String.valueOf(settlementId),
                 request
-        );
-    }
-
-    @Override
-    public void collectShippingFee(
-            Long sellerOrderId,
-            BigDecimal shippingFee
-    ) {
-        throw new BusinessException(
-                CommonErrorCode.INTERNAL_API_UNAVAILABLE
         );
     }
 }

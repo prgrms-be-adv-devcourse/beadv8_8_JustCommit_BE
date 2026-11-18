@@ -18,6 +18,7 @@ dependencies {
     implementation project(':common:common-core')
     implementation project(':common:common-web')
     implementation project(':common:common-security-servlet')
+    implementation project(':common:common-messaging')
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-kafka'
 
@@ -33,6 +34,7 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.testcontainers:testcontainers-postgresql'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-kafka'
 }
 
 tasks.named('test') {

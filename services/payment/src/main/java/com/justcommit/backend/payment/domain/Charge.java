@@ -55,6 +55,14 @@ public class Charge extends BaseTimeEntity {
     @Column(name = "canceled_at")
     private LocalDateTime canceledAt;
 
+    // 토스 결제 조회 실패 횟수 (정상 보류와 키 오류는 세지 않음)
+    @Column(name = "attempt_count", nullable = false)
+    private int attemptCount;
+
+    // 복구 스케줄러의 다음 조회 시각. PENDING이 아니면 null
+    @Column(name = "next_attempt_at")
+    private LocalDateTime nextAttemptAt;
+
     private Charge(Wallet wallet, ChargeType chargeType, String pgOrderNo, BigDecimal amount) {
         this.wallet = wallet;
         this.chargeType = chargeType;
@@ -68,11 +76,34 @@ public class Charge extends BaseTimeEntity {
         return new Charge(wallet, chargeType, generatePgOrderNo(), amount);
     }
 
-    public void approve(String encryptedPaymentKey, LocalDateTime approvedAt) {
+    // TX1: 승인 요청이 들어오면 토스 호출 전에 PENDING으로 바꾸고 paymentKey를 저장한다
+    // 결과를 모른 채 남으면 복구 스케줄러가 nextAttemptAt부터 토스 조회로 확정한다
+    public void startConfirm(String encryptedPaymentKey, LocalDateTime nextAttemptAt) {
         validateReady();
-        this.status = ChargeStatus.APPROVED;
+        this.status = ChargeStatus.PENDING;
         this.pgPaymentKeyEnc = encryptedPaymentKey;
+        this.nextAttemptAt = nextAttemptAt;
+    }
+
+    // TX2: 토스 승인 성공 (사용자 승인 요청 또는 복구 스케줄러)
+    public void completeConfirm(LocalDateTime approvedAt) {
+        validatePending();
+        this.status = ChargeStatus.APPROVED;
         this.approvedAt = approvedAt;
+        this.nextAttemptAt = null;
+    }
+
+    // TX2: 토스가 승인을 명확히 거절했거나 조회 결과가 ABORTED, EXPIRED
+    public void fail() {
+        validatePending();
+        this.status = ChargeStatus.FAILED;
+        this.nextAttemptAt = null;
+    }
+
+    private void validatePending() {
+        if (this.status != ChargeStatus.PENDING) {
+            throw new BusinessException(PaymentErrorCode.CHARGE_ALREADY_PROCESSED);
+        }
     }
 
     public void validateConfirmInfo(String pgOrderNo, BigDecimal amount) {
@@ -89,7 +120,11 @@ public class Charge extends BaseTimeEntity {
         }
     }
 
-    public void validateReady() {
+    // REVIEW_REQUIRED도 아직 결과가 확정되지 않았으므로 "처리 중"으로 응답한다
+    private void validateReady() {
+        if (this.status == ChargeStatus.PENDING || this.status == ChargeStatus.REVIEW_REQUIRED) {
+            throw new BusinessException(PaymentErrorCode.CHARGE_PROCESSING);
+        }
         if (this.status != ChargeStatus.READY) {
             throw new BusinessException(PaymentErrorCode.CHARGE_ALREADY_PROCESSED);
         }

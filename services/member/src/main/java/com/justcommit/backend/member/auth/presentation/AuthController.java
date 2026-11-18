@@ -1,10 +1,11 @@
 package com.justcommit.backend.member.auth.presentation;
 
 import com.justcommit.backend.common.response.ApiResponse;
+import com.justcommit.backend.member.auth.domain.EmailPurpose;
 import com.justcommit.backend.member.auth.application.*;
 import com.justcommit.backend.member.auth.presentation.dto.*;
-import com.justcommit.backend.member.domain.exception.EmailCooldownException;
 import com.justcommit.backend.member.auth.presentation.support.RefreshTokenCookieFactory;
+import com.justcommit.backend.member.domain.exception.EmailCooldownException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -18,7 +19,11 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class AuthController {
 
+  private static final String BEARER_PREFIX = "Bearer ";
+
   private final EmailVerificationService emailVerificationService;
+  private final PasswordResetService passwordResetService;
+  private final AccountReminderService accountReminderService;
   private final LoginService loginService;
   private final TokenReissueService tokenReissueService;
   private final LogoutService logoutService;
@@ -26,14 +31,39 @@ public class AuthController {
 
   @PostMapping("/email/send")
   public ApiResponse<EmailSendResponse> sendEmailCode(@Valid @RequestBody EmailSendRequest request) {
-    EmailSendResult result = emailVerificationService.sendCode(request.email());
-    return ApiResponse.ok("인증번호를 발송했습니다.", EmailSendResponse.from(result));
+    EmailPurpose purpose = request.purposeOrDefault();
+    EmailSendResult result = emailVerificationService.sendCode(request.email(), purpose);
+    // 재설정은 실제 발송 여부와 관계없이 같은 안내 (가입 여부 · 로그인 방식이 드러나지 않게)
+    String message = purpose == EmailPurpose.PASSWORD_RESET
+        ? "재설정 가능한 계정이면 인증번호를 보내드립니다."
+        : "인증번호 발송을 요청했습니다.";
+    return ApiResponse.ok(message, EmailSendResponse.from(result));
   }
 
   @PostMapping("/email/verify")
-  public ApiResponse<Void> verifyEmailCode(@Valid @RequestBody EmailVerifyRequest request) {
-    emailVerificationService.verifyCode(request.email(), request.code());
-    return ApiResponse.ok("이메일 인증이 완료되었습니다.");
+  public ApiResponse<EmailVerifyResponse> verifyEmailCode(@Valid @RequestBody EmailVerifyRequest request) {
+    EmailVerifyResult result =
+        emailVerificationService.verifyCode(request.email(), request.code(), request.purposeOrDefault());
+    // 가입은 data 없이(기존과 같음), 재설정은 일회용 재설정 토큰
+    return ApiResponse.ok("이메일 인증이 완료되었습니다.", EmailVerifyResponse.from(result));
+  }
+
+  // 비밀번호 재설정 (#412): 재설정 목적 이메일 인증으로 받은 일회용 토큰 + 새 비밀번호
+  // 로그인 없이 호출하므로 Refresh 쿠키는 건드리지 않는다 (이 브라우저에 다른 계정 쿠키가 있을 수 있음).
+  // 재설정한 계정의 기존 Refresh는 토큰 폐기(#409)로 서버에서 모두 무효가 된다
+  @PostMapping("/passwordResets")
+  public ApiResponse<PasswordResetResponse> resetPassword(@Valid @RequestBody PasswordResetRequest request) {
+    PasswordResetResult result = passwordResetService.reset(request.resetToken(), request.newPassword());
+    return ApiResponse.ok("비밀번호를 재설정했습니다.", PasswordResetResponse.from(result));
+  }
+
+  // 가입 계정 안내 (#412, 아이디 찾기): 유효한 요청은 가입 여부 · 발송 제한 · SMTP 실패와 관계없이 같은 200
+  // (입력 오류 400, Redis · DB 장애는 서버 오류). IP 기준 요청 수 제한은 Gateway에서 429,
+  // 같은 이메일의 발송 예약 제한은 인증 메일과 함께 member에서 (걸려도 같은 200)
+  @PostMapping("/accountReminders")
+  public ApiResponse<Void> sendAccountReminder(@Valid @RequestBody AccountReminderRequest request) {
+    accountReminderService.sendReminder(request.email());
+    return ApiResponse.ok("가입된 계정이면 안내 메일을 보내드립니다.");
   }
 
   // 로그인: Access 토큰은 Body, Refresh 토큰은 HttpOnly 쿠키
@@ -61,16 +91,27 @@ public class AuthController {
             .body(ApiResponse.ok("토큰이 재발급되었습니다.", TokenReissueResponse.from(result)));
   }
 
-  // 로그아웃: Refresh 토큰 폐기 + 쿠키 삭제 (Access 토큰 불필요)
-  // 쿠키가 없거나 이미 만료·삭제된 경우에도 200 (쿠키만 지움)
+  // 로그아웃: 이 기기 Refresh 폐기 + 함께 온 Access를 블랙리스트에 등록 + Refresh 쿠키 삭제
+  // 두 토큰 모두 선택 (Access는 Authorization 헤더, Refresh는 쿠키). 없거나 유효하지 않아도 200
+  // 공개 경로라 Gateway · 보안 필터가 Access를 먼저 거절하지 않음 → 검증은 LogoutService에서
+  // Redis 처리 실패는 500 (공통 오류 처리, 이때 쿠키 만료는 포함되지 않음)
   @PostMapping("/logout")
   public ResponseEntity<ApiResponse<Void>> logout(
-          @CookieValue(name = RefreshTokenCookieFactory.COOKIE_NAME, required = false) String refreshToken) {
-    logoutService.logout(refreshToken);
+      @RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authorization,
+      @CookieValue(name = RefreshTokenCookieFactory.COOKIE_NAME, required = false) String refreshToken) {
+    logoutService.logout(bearerToken(authorization), refreshToken);
 
     return ResponseEntity.ok()
             .header(HttpHeaders.SET_COOKIE, refreshTokenCookieFactory.expire().toString())
             .body(ApiResponse.ok("로그아웃되었습니다."));
+  }
+
+  // "Bearer {토큰}"에서 토큰만 꺼냄. 형식이 다르면 Access가 없는 것으로 봄 (공통 보안 필터와 같은 규칙)
+  private static String bearerToken(String authorization) {
+    if (authorization == null || !authorization.startsWith(BEARER_PREFIX)) {
+      return null;
+    }
+    return authorization.substring(BEARER_PREFIX.length());
   }
 
   // 재발송 제한: 공통 응답 형식 + Retry-After 헤더(남은 초)

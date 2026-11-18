@@ -1,18 +1,22 @@
 package com.justcommit.backend.member.member.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
-import com.justcommit.backend.member.auth.infrastructure.jwt.SignupClaims;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.common.security.TokenException;
 import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.auth.application.LoginResult;
 import com.justcommit.backend.member.auth.application.RefreshTokenIssuer;
+import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
+import com.justcommit.backend.member.auth.infrastructure.jwt.SignupClaims;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
+import com.justcommit.backend.member.event.MemberCreated;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
+import com.justcommit.backend.member.infrastructure.crypto.MemberHmac;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -20,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Locale;
 
 // 소셜 회원가입: 가입 토큰 검증 → 중복 검사 → 회원·기본 배송지 저장 → 바로 로그인(토큰 발급)
@@ -30,8 +35,11 @@ public class SocialSignupService {
   private final MemberRepository memberRepository;
   private final AddressRepository addressRepository;
   private final AccountCipher accountCipher;
+  private final MemberHmac memberHmac;
   private final JwtProvider jwtProvider;
   private final RefreshTokenIssuer refreshTokenIssuer;
+  private final OutboxPublisher outboxPublisher;
+  private final DatabaseClock databaseClock;
 
   @Value("${jwt.access-token-expiration}")
   private Duration accessTokenExpiration;
@@ -55,6 +63,10 @@ public class SocialSignupService {
     if (memberRepository.existsByPhone(command.phone())) {
       throw new BusinessException(MemberErrorCode.DUPLICATE_PHONE);
     }
+    String accountHash = memberHmac.accountHash(command.bankCode(), command.accountNo());
+    if (memberRepository.existsByAccountHash(accountHash)) {
+      throw new BusinessException(MemberErrorCode.DUPLICATE_ACCOUNT);
+    }
 
     Member member = Member.createSocial(
             provider,
@@ -64,6 +76,7 @@ public class SocialSignupService {
             command.phone(),
             command.bankCode(),
             accountCipher.encrypt(command.accountNo()),
+            accountHash,
             command.accountHolder()
     );
 
@@ -83,7 +96,8 @@ public class SocialSignupService {
             command.addressName()
     ));
 
-    // TODO: common-messaging 이후 Outbox로 member.events.v1에 가입 이벤트 발행
+    // 다른 서비스에 가입을 알림 (같은 트랜잭션에 저장, 커밋된 뒤에만 발행). 가입 직후는 판매자가 아님
+    outboxPublisher.publish(MemberCreated.from(member, false));
 
     // 가입 후 바로 로그인
     return issueTokens(member);
@@ -138,14 +152,19 @@ public class SocialSignupService {
     if (message.contains("uk_member_phone")) {
       return MemberErrorCode.DUPLICATE_PHONE;
     }
+    if (message.contains("uk_member_account_hash")) {
+      return MemberErrorCode.DUPLICATE_ACCOUNT;
+    }
     throw e;  // 예상하지 못한 제약 위반은 그대로 던짐 (500 + 로그)
   }
 
   // Access·Refresh 발급
   private LoginResult issueTokens(Member member) {
+    // 새 회원 저장 후 같은 가입 트랜잭션에서 DB 시각을 읽어 Access 발급 시각으로 (#409)
+    Instant issuedAt = databaseClock.now();
     String role = member.getRole().name();
-    String accessToken = jwtProvider.createAccessToken(member.getId(), role);
-    String refreshToken = refreshTokenIssuer.issue(member.getId());
+    String accessToken = jwtProvider.createAccessToken(member.getId(), role, issuedAt);
+    String refreshToken = refreshTokenIssuer.issue(member.getId(), member.getTokenVersion());
 
     return new LoginResult(
             member.getId(),

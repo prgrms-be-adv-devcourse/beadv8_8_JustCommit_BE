@@ -570,12 +570,15 @@ class ProductControllerTest {
     @DisplayName("탭 개수를 조회하면 로그인 회원 ID와 숨김 필터로 조회해 상태별 개수를 반환")
     void getMyProductCounts() throws Exception {
         loginAs(SELLER_ID, SELLER);
+        // total, reviewPending, rejected, active, paymentPending, soldOut
         given(productService.getMyProductCounts(SELLER_ID, true))
-                .willReturn(new MyProductCountResponse(1, 1, 0, 0));
+                .willReturn(new MyProductCountResponse(4, 2, 1, 1, 0, 0));
 
         mockMvc.perform(get("/api/v1/products/me/counts").param("hidden", "true"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.total").value(4))
+                .andExpect(jsonPath("$.data.reviewPending").value(2))
+                .andExpect(jsonPath("$.data.rejected").value(1))
                 .andExpect(jsonPath("$.data.active").value(1))
                 .andExpect(jsonPath("$.data.paymentPending").value(0))
                 .andExpect(jsonPath("$.data.soldOut").value(0));

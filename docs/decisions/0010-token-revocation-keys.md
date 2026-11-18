@@ -25,3 +25,5 @@
 ## 영향
 
 [인증 규칙](../conventions/auth.md), [Redis 키](../reference/redis-keys.md), 테스트 S-A04 · S-A08
+
+탈퇴 · 비밀번호 변경의 세부 동작(인증 버전 · 회원 행 잠금 · DB 시각 · 보관 기한 · 재처리)은 [ADR 0022](0022-token-revocation-and-retry.md)를 따릅니다.

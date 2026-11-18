@@ -7,6 +7,7 @@ import com.justcommit.backend.member.auth.presentation.dto.LoginResponse;
 import com.justcommit.backend.member.member.application.*;
 import com.justcommit.backend.member.member.presentation.dto.*;
 import com.justcommit.backend.member.auth.presentation.support.RefreshTokenCookieFactory;
+import com.justcommit.backend.member.domain.exception.PasswordChangeLockedException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -16,7 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-// 회원 API (회원가입, 소셜 회원가입, 닉네임 중복 확인, 내 정보 조회)
+// 회원 API (회원가입, 소셜 회원가입, 닉네임 · 휴대폰 중복 확인, 내 정보 조회, 닉네임 · 비밀번호 변경)
 @RestController
 @RequestMapping("/api/v1/users")
 @RequiredArgsConstructor
@@ -27,6 +28,8 @@ public class MemberController {
   private final SignupService signupService;
   private final SocialSignupService socialSignupService;
   private final MyInfoService myInfoService;
+  private final NicknameChangeService nicknameChangeService;
+  private final PasswordChangeService passwordChangeService;
   private final RefreshTokenCookieFactory refreshTokenCookieFactory;
 
   @PostMapping
@@ -51,13 +54,13 @@ public class MemberController {
             .body(ApiResponse.created("회원가입이 완료되었습니다.", LoginResponse.from(result)));
   }
 
-  @GetMapping("/checkNickname")
+  @GetMapping("/nicknameAvailability")
   public ApiResponse<NicknameCheckResponse> checkNickname(@RequestParam String nickname) {
     boolean available = signupService.isNicknameAvailable(nickname);
     return ApiResponse.ok("닉네임 사용 가능 여부를 확인했습니다.", new NicknameCheckResponse(available));
   }
 
-  @GetMapping("/checkPhone")
+  @GetMapping("/phoneAvailability")
   public ApiResponse<PhoneCheckResponse> checkPhone(@RequestParam String phone) {
     boolean available = signupService.isPhoneAvailable(phone);
     return ApiResponse.ok("휴대폰 번호 사용 가능 여부를 확인했습니다.", new PhoneCheckResponse(available));
@@ -67,6 +70,40 @@ public class MemberController {
   public ApiResponse<MyInfoResponse> getMyInfo(@AuthenticationPrincipal AuthMember authMember) {
     MyInfoResult result = myInfoService.getMyInfo(authMember.memberId());
     return ApiResponse.ok("내 정보를 조회했습니다.", MyInfoResponse.from(result));
+  }
+
+  // 닉네임 변경: 지금 닉네임과 같으면 그대로 200 (이벤트 없음)
+  @PatchMapping("/me/nickname")
+  public ApiResponse<NicknameChangeResponse> changeNickname(@AuthenticationPrincipal AuthMember authMember,
+                                                            @Valid @RequestBody NicknameChangeRequest request) {
+    NicknameChangeResult result = nicknameChangeService.changeNickname(authMember.memberId(), request.nickname());
+    return ApiResponse.ok("닉네임을 변경했습니다.", NicknameChangeResponse.from(result));
+  }
+
+  // 비밀번호 변경: 성공(200)이면 이 기기의 Refresh 쿠키를 만료. 프론트는 Access를 지우고 로그인 화면으로 이동
+  // revocationCompleted=false면 다른 기기의 로그아웃 반영이 늦어질 수 있음 (재처리가 보관 기한 안에 기록)
+  // 결과 불명(503 RESULT_UNKNOWN)이면 쿠키를 유지하고, 클라이언트는 자동으로 다시 요청하지 않음
+  @PatchMapping("/me/password")
+  public ResponseEntity<ApiResponse<PasswordChangeResponse>> changePassword(
+      @AuthenticationPrincipal AuthMember authMember,
+      @Valid @RequestBody PasswordChangeRequest request) {
+    PasswordChangeResult result = passwordChangeService.changePassword(
+        authMember.memberId(), request.currentPassword(), request.newPassword());
+    String message = result.revocationCompleted()
+        ? "비밀번호를 변경했습니다."
+        : "비밀번호를 변경했습니다. 다른 기기의 로그아웃이 늦어질 수 있습니다.";
+    return ResponseEntity.ok()
+        .header(HttpHeaders.SET_COOKIE, refreshTokenCookieFactory.expire().toString())
+        .body(ApiResponse.ok(message, PasswordChangeResponse.from(result)));
+  }
+
+  // 현재 비밀번호를 여러 번 틀려 막힌 변경 요청 (#412): 공통 응답 형식 + Retry-After 헤더(남은 초)
+  // 컨트롤러 안의 @ExceptionHandler는 GlobalExceptionHandler보다 먼저 적용됨
+  @ExceptionHandler(PasswordChangeLockedException.class)
+  public ResponseEntity<ApiResponse<Void>> handlePasswordChangeLocked(PasswordChangeLockedException e) {
+    return ResponseEntity.status(e.getErrorCode().getStatus())
+        .header(HttpHeaders.RETRY_AFTER, String.valueOf(e.getRetryAfterSeconds()))
+        .body(ApiResponse.error(e.getErrorCode()));
   }
 
   // Bearer {토큰}에서 토큰만 꺼냄. 형식 다르면 null → 서비스에서 401

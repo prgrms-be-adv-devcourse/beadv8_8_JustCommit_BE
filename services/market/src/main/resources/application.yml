@@ -9,11 +9,6 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     admin:
@@ -21,6 +16,13 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+    consumer:
+      group-id: market
+      # 그룹이 처음 생길 때(첫 배포), 그 전에 쌓인 회원 이벤트부터 읽어 복제본을 채움
+      auto-offset-reset: earliest
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: com.justcommit.backend.common.messaging.consumer.EventEnvelopeDeserializer
   # 내부 API 그룹 주소. 연결 1초 · 응답 3초는 common-web 기본값
   http:
     serviceclient:
@@ -30,6 +32,10 @@ spring:
         base-url: ${PAYMENT_SERVICE_URL:http://localhost:8084}
       settlement:
         base-url: ${SETTLEMENT_SERVICE_URL:http://localhost:8085}
+      # 장바구니 추천. 응답 2초를 넘기면 기다리지 않고 빈 목록 (resilience.md market → ai)
+      ai:
+        base-url: ${AI_SERVICE_URL:http://localhost:8087}
+        read-timeout: 2s
 
 server:
   port: 8083
@@ -38,18 +44,17 @@ jwt:
 internal-api:
   # 빈 기본값: 환경변수가 없으면 common-web이 기동을 막는다 (기본값이 없으면 "${...}" 문자열이 키로 들어감)
   key: ${INTERNAL_API_KEY:}
-  groups: [product, payment, settlement]
+  groups: [product, payment, settlement, ai]
+
+messaging:
+  # 판매자 배송지 이벤트(member.address.events.v1) 복호화 키. member와 같은 값 (env-vars.md)
+  address-event-cipher:
+    current-key: k1
+    keys:
+      # 기본값 없음: 환경변수가 없으면 앱이 시작하지 않는다
+      k1: ${MEMBER_ADDRESS_EVENT_KEY}
 
 custom:
-  kafka:
-    topics:
-      purchase-confirmed: ${PURCHASE_CONFIRMED_TOPIC:market.purchase-confirmed.v1}
-      seller-order-paid: ${SELLER_ORDER_PAID_TOPIC:market.seller-order-paid.v1}
-      seller-order-cancelled: ${SELLER_ORDER_CANCELLED_TOPIC:market.seller-order-cancelled.v1}
-      order-item-cancelled: ${ORDER_ITEM_CANCELLED_TOPIC:market.order-item-cancelled.v1}
-      order-item-auto-confirmed: ${ORDER_ITEM_AUTO_CONFIRMED_TOPIC:market.order-item-auto-confirmed.v1}
-      shipment-picked-up: ${SHIPMENT_PICKED_UP_TOPIC:market.shipment-picked-up.v1}
-      shipment-status-changed: ${SHIPMENT_STATUS_CHANGED_TOPIC:market.shipment-status-changed.v1}
   courier:
     api-key: ${COURIER_API_KEY:}
     base-url: ${COURIER_BASE_URL:http://localhost:3000}

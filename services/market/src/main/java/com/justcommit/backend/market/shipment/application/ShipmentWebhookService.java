@@ -1,11 +1,9 @@
 package com.justcommit.backend.market.shipment.application;
 
-import com.justcommit.backend.market.ShipmentPickedUpEvent;
 import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.OrderShippingInfo;
 import com.justcommit.backend.market.shipment.domain.Shipment;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
-import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentPickedUpEventPublisher;
 import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
 import com.justcommit.backend.market.shipment.presentation.CourierWebhookRequest;
@@ -26,7 +24,6 @@ public class ShipmentWebhookService {
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     private final ShipmentRepository shipmentRepository;
-    private final ShipmentPickedUpEventPublisher pickedUpEventPublisher;
     private final ShipmentStatusChangedEventPublisher statusChangedEventPublisher;
     private final OrderQuery orderQuery;
 
@@ -47,7 +44,6 @@ public class ShipmentWebhookService {
         }
         LocalDateTime occurredAt = request.occurredAt().atZoneSameInstant(SEOUL).toLocalDateTime();
 
-        boolean wasPickedUp = shipment.isPickedUp();
         boolean applied = shipment.applyCourierStatus(newStatus, request.trackingNo(), occurredAt);
         if (!applied) {
             log.info("반영하지 않은 웹훅 (중복 또는 순서 뒤바뀜): eventId={}, courierOrderNo={}, 현재={}, 받은={}",
@@ -56,13 +52,6 @@ public class ShipmentWebhookService {
         }
         OrderShippingInfo orderInfo = orderQuery.getShippingInfo(shipment.getSellerOrderId());
         statusChangedEventPublisher.publishAfterCommit(shipment, orderInfo, occurredAt);
-
-        // 처음으로 수거 이후가 됐을 때 한 번만 보낸다. PICKED_UP 웹훅을 놓치고 IN_TRANSIT이 먼저 와도 여기서 보낸다.
-        if (!wasPickedUp && shipment.isPickedUp()) {
-            LocalDateTime pickedUpAt = shipment.getPickedUpAt() != null ? shipment.getPickedUpAt() : occurredAt;
-            pickedUpEventPublisher.publishAfterCommit(new ShipmentPickedUpEvent(
-                    shipment.getSellerOrderId(), orderInfo.sellerId(), orderInfo.shippingFee(), pickedUpAt));
-        }
     }
 
     // 웹훅으로 오는 택배사 상태만 받는다. 그 밖의 값은 null

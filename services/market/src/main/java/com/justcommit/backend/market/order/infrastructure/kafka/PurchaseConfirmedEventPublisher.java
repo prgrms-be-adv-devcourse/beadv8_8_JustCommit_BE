@@ -1,47 +1,19 @@
 package com.justcommit.backend.market.order.infrastructure.kafka;
 
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.PurchaseConfirmedEvent;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.kafka.core.KafkaTemplate;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-@Slf4j
+// 구매 확정과 같은 트랜잭션에 Outbox 행으로 기록하고, 커밋된 뒤 market.events.v1로 발행한다 (#277)
+// 트랜잭션 밖에서 부르면 OutboxPublisher가 예외를 던진다 (예전과 같은 규칙)
 @Component
+@RequiredArgsConstructor
 public class PurchaseConfirmedEventPublisher {
 
-    private final KafkaTemplate<String, PurchaseConfirmedEvent> kafkaTemplate;
-    private final String topic;
-
-    public PurchaseConfirmedEventPublisher(KafkaTemplate<String, PurchaseConfirmedEvent> kafkaTemplate,
-                                           @Value("${custom.kafka.topics.purchase-confirmed}") String topic) {
-        this.kafkaTemplate = kafkaTemplate;
-        this.topic = topic;
-    }
+    private final OutboxPublisher outboxPublisher;
 
     public void publishAfterCommit(PurchaseConfirmedEvent event) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()
-                || !TransactionSynchronizationManager.isActualTransactionActive()) {
-            throw new IllegalStateException("구매확정 이벤트는 주문 트랜잭션 안에서 등록해야 합니다.");
-        }
-
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                try {
-                    kafkaTemplate.send(topic, event.sellerOrderId().toString(), event)
-                            .whenComplete((result, error) -> {
-                                if (error != null) {
-                                    log.error("구매확정 이벤트 발행 실패: sellerOrderId={}", event.sellerOrderId(), error);
-                                }
-                            });
-                } catch (RuntimeException error) {
-                    log.error("구매확정 이벤트 발행 실패: sellerOrderId={}", event.sellerOrderId(), error);
-                }
-                // TODO: DB 커밋 후 Kafka 장애 시 유실된 정산 요청을 재발행할 Outbox/재처리 경로가 필요하다.
-            }
-        });
+        outboxPublisher.publish(event);
     }
 }

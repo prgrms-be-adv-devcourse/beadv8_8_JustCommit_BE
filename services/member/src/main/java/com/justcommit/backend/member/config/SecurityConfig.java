@@ -29,7 +29,10 @@ public class SecurityConfig {
 
             // 회원가입 · 소셜 가입(가입 토큰은 Access가 아니라 필터에서 통과되고 서비스가 직접 확인)
             .requestMatchers(HttpMethod.POST, "/api/v1/users", "/api/v1/users/social").permitAll()
-            .requestMatchers(HttpMethod.GET, "/api/v1/users/checkNickname", "/api/v1/users/checkPhone").permitAll()
+            .requestMatchers(HttpMethod.GET, "/api/v1/users/nicknameAvailability", "/api/v1/users/phoneAvailability").permitAll()
+
+            // 판매자 공개 정보 (숫자 id만, Gateway PublicPaths와 같은 패턴)
+            .requestMatchers(HttpMethod.GET, "/api/v1/sellers/{sellerId:[0-9]+}").permitAll()
 
             // Swagger (운영 노출 여부는 미정)
             .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()

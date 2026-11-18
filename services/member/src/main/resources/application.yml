@@ -9,6 +9,17 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+  # 내부 API 그룹 주소 (탈퇴 확인 #406). 그룹 이름은 internal-api.groups와 같음. 연결 1초 · 응답 3초는 common-web 기본값
+  http:
+    serviceclient:
+      market:
+        base-url: ${MARKET_SERVICE_URL:http://localhost:8083}
+      payment:
+        base-url: ${PAYMENT_SERVICE_URL:http://localhost:8084}
+      settlement:
+        base-url: ${SETTLEMENT_SERVICE_URL:http://localhost:8085}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -78,3 +89,38 @@ custom:
   frontend:
     # 소셜 로그인 후 돌아갈 프론트 주소
     base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
+
+# 판매자 주소 이벤트 전송 키 (member · market에 같은 값). 기본값 없음: 비어 있으면 앱이 시작하지 않음
+messaging:
+  address-event-cipher:
+    current-key: k1
+    keys:
+      k1: ${MEMBER_ADDRESS_EVENT_KEY}
+
+# 서비스 간 내부 API(/internal/**) 키와 내부 호출 그룹. 모든 서비스가 같은 키
+# 빈 기본값: 키가 없으면 받는 쪽은 /internal/** 요청을 모두 거부하고(common-security), 내부 호출 그룹이 있으면 common-web이 앱 시작을 막는다
+internal-api:
+  key: ${INTERNAL_API_KEY:}
+  groups: [market, payment, settlement]
+
+# 회원 행 잠금 대기 제한 (#409). 넘으면 409 MEMBER_BUSY. 잠금 한 번마다의 제한 (MemberLocker)
+member:
+  # 회원 정보 HMAC-SHA256 키 (#413 계좌 중복 확인). 32바이트 Base64, AES 키와 별도
+  # 기본값 없음: 비어 있으면 앱이 시작하지 않음 (운영은 배포 전에 MEMBER_HMAC_KEY 주입 필요)
+  hmac-key: ${MEMBER_HMAC_KEY}
+  lock:
+    timeout: 3s
+  token-revocation:
+    # 폐기 키 보관 여유 (#409). 보관 기한 = 폐기 시각 + Access 수명 + 여유. 운영 측정값이 나오기 전 초기값
+    retention-margin: 60s
+    # 폐기 기록 재처리 (#409). 끄려면 enabled: false
+    retry:
+      enabled: true
+      interval: PT10S
+  # 메일 발송 전용 실행기 (#421). 인증 메일 · 가입 계정 안내 메일을 요청 밖에서 보낸다
+  mail:
+    executor:
+      # 스레드 수 (core = max). 측정 전 초기값
+      threads: 2
+      # 대기열 크기. 넘치면 제출 거절. 기다리는 동안에도 인증번호 TTL(5분)이 줄어드므로 대기 시간과 함께 조정. 측정 전 초기값
+      queue-capacity: 20

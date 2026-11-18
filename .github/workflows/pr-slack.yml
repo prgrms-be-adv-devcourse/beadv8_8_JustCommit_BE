@@ -1,0 +1,86 @@
+name: PR Slack 알림
+
+# PR이 열리면(초안 제외) 팀 Slack 채널에 제목 · 작성자 · 링크 · Key Changes · To Reviewers를 보낸다
+# 웹훅: 레포 시크릿 SLACK_WEBHOOK_URL (Slack 앱 「JustCommit PR 알림」의 Incoming Webhook)
+# 담당자 멘션은 다음 단계 (바뀐 경로 → 담당자 표 + Slack 멤버 ID)
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  # 이미 열린 PR이나 놓친 PR을 Actions 탭 "Run workflow"에서 번호로 보냄
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 알림을 보낼 PR 번호
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  notify:
+    # 수동 실행이거나, 초안이 아닌 같은 레포 PR일 때만 (포크 PR은 시크릿을 못 읽음)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.draft == false &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: PR 정보 읽기
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --json number,title,url,author,body,baseRefName > pr.json
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Slack으로 보내기
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          PR_NUMBER=$(jq -r .number pr.json)
+          PR_TITLE=$(jq -r .title pr.json)
+          PR_URL=$(jq -r .url pr.json)
+          PR_AUTHOR=$(jq -r .author.login pr.json)
+          PR_BODY=$(jq -r '.body // ""' pr.json)
+          PR_BASE=$(jq -r .baseRefName pr.json)
+
+          # Slack mrkdwn에서 특수문자로 쓰이는 & < > 를 이스케이프
+          esc() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+
+          # PR 본문에서 ## 칸 하나를 꺼냄 (다음 ## 전까지, HTML 주석 · 빈 줄 · 내용 없는 「-」 제거, 최대 줄 수)
+          section() {
+            printf '%s\n' "$PR_BODY" | tr -d '\r' \
+              | awk -v name="$1" '/^## /{p = index($0, name) > 0; next} p' \
+              | sed -e '/<!--.*-->/d' -e '/^[[:space:]]*$/d' -e '/^[[:space:]]*-[[:space:]]*$/d' \
+              | head -"$2" | esc
+          }
+
+          changes=$(section "Key Changes" 15)
+          reviewers=$(section "To Reviewers" 10)
+          [ -z "$changes" ] && changes="(PR 본문에 Key Changes가 없어요)"
+
+          title=$(printf '%s' "$PR_TITLE" | esc)
+          text=$(printf '*<%s|PR #%s %s>*\n작성: %s · 대상: %s\n\n*🔑 Key Changes*\n%s' \
+            "$PR_URL" "$PR_NUMBER" "$title" "$PR_AUTHOR" "$PR_BASE" "$changes")
+          # 리뷰 요청은 작성자가 적었을 때만 붙임
+          [ -n "$reviewers" ] && text=$(printf '%s\n\n*📢 To Reviewers*\n%s' "$text" "$reviewers")
+          # Slack 블록 하나는 3,000자까지라 넘으면 자르고 PR로 안내
+          if [ ${#text} -gt 2800 ]; then
+            text=$(printf '%s\n…(길어서 생략, PR에서 확인)' "${text:0:2800}")
+          fi
+
+          payload=$(jq -n --arg text "$text" --arg fallback "PR #$PR_NUMBER $PR_TITLE" \
+            '{text: $fallback, blocks: [{type: "section", text: {type: "mrkdwn", text: $text}}]}')
+
+          status=$(curl -sS -o slack.out -w '%{http_code}' -X POST \
+            -H 'Content-Type: application/json' --data "$payload" "$SLACK_WEBHOOK_URL")
+          if [ "$status" != "200" ]; then
+            echo "Slack 전송 실패: HTTP $status $(cat slack.out)"
+            exit 1
+          fi
+          echo "Slack 전송 완료 (PR #$PR_NUMBER)"

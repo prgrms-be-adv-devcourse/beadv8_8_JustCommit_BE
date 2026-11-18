@@ -30,9 +30,11 @@ import com.justcommit.backend.market.client.settlement.SettlementQuery;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -171,6 +173,12 @@ public class OrderReadService implements OrderQuery {
         return new OrderShippingInfo(order.getId(), order.getBuyerId(), sellerOrder.getSellerId(),
                 sellerOrder.getShippingFee(), order.getRecipientName(), order.getRecipientPhone(),
                 order.getShipAddress1(), order.getShipAddress2());
+    }
+
+    @Override
+    public List<Long> getRecentConfirmedProductIds(Long buyerId, LocalDateTime since, int limit) {
+        return ordersItemRepository.findRecentProductIdsByBuyer(buyerId, OrderItemStatus.CONFIRMED, since,
+                PageRequest.of(0, limit));
     }
 
     @Override

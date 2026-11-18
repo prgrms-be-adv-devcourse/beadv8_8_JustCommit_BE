@@ -51,6 +51,21 @@ class RateLimitAndCorsIntegrationTest extends GatewayIntegrationTest {
   }
 
   @Test
+  @DisplayName("가입 계정 안내는 인증번호 발송과 따로 제한: 같은 IP의 연속 5회는 통과, 바로 이어지는 6번째는 429")
+  void accountReminderLimitIsSeparate() {
+    for (int i = 0; i < 5; i++) {
+      post("/api/v1/auth/email/send", "10.0.0.5").expectStatus().isOk();
+    }
+    for (int i = 0; i < 5; i++) {
+      post("/api/v1/auth/accountReminders", "10.0.0.5").expectStatus().isOk();
+    }
+    post("/api/v1/auth/accountReminders", "10.0.0.5")
+        .expectStatus().isEqualTo(429)
+        .expectBody()
+        .jsonPath("$.code").isEqualTo("TOO_MANY_REQUESTS");
+  }
+
+  @Test
   @DisplayName("CORS preflight: 허용 출처는 200 + 쿠키 허용 헤더, 허용 안 된 출처는 403")
   void corsPreflight() {
     preflight(ALLOWED_ORIGIN)

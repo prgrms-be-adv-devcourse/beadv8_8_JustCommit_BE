@@ -2,6 +2,7 @@ package com.justcommit.backend.product.product.infrastructure;
 
 import com.justcommit.backend.common.config.JpaAuditingConfig;
 import com.justcommit.backend.product.ProductStatus;
+import com.justcommit.backend.product.config.ClockConfig;
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.species.domain.Species;
 import com.justcommit.backend.product.species.domain.enums.Difficulty;
@@ -39,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DataJpaTest
 @ActiveProfiles("test") //application-test.yml 설정 사용
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(JpaAuditingConfig.class)
+@Import({JpaAuditingConfig.class, ClockConfig.class})
 @Testcontainers(disabledWithoutDocker = true) //테스트할 때 Docker로 진짜 DB 컨테이너를 띄워 주는 라이브러리
 class ProductSpecificationsTest {
 
@@ -112,10 +113,11 @@ class ProductSpecificationsTest {
                         light, watering, difficulty, null, null, onSale), LATEST));
     }
 
-    // 상품 하나 저장
+    // 상품 하나 저장 (검색에 나오는 판매 중 상태로)
     private Product save(Species species, Long sellerId, String title) {
         Product product = Product.create(species, sellerId, title, "설명",
                 new BigDecimal("10000"), null, null, null, List.of());
+        ReflectionTestUtils.setField(product, "status", ProductStatus.ACTIVE);
         entityManager.persist(product);
         return product;
     }
@@ -286,5 +288,43 @@ class ProductSpecificationsTest {
         assertThat(released.getStatus()).isEqualTo(ProductStatus.ACTIVE);
         assertThat(released.isHidden()).isTrue();
         assertThat(productRepository.reserve(200L, List.of(active.getId()))).isZero();
+    }
+
+    // ── 검수 중 · 반려 (#341) ──────────────────────
+
+    @Test
+    @DisplayName("검수 중 · 반려 상품은 공개 검색에 안 나오고, 판매자 본인 목록에는 나옴")
+    void inReviewProductsHiddenFromSearchButShownToSeller() {
+        Species species = species("검수 품종", null, null, null);
+        Product pending = save(species, SELLER_ID, "검수 중");
+        Product rejected = save(species, SELLER_ID, "반려");
+        ReflectionTestUtils.setField(pending, "status", ProductStatus.REVIEW_PENDING);
+        ReflectionTestUtils.setField(rejected, "status", ProductStatus.REJECTED);
+        entityManager.flush();
+
+        assertThat(search(null, null, null, null, null))
+                .contains(active.getId())
+                .doesNotContain(pending.getId(), rejected.getId());
+        assertThat(idsOf(productRepository.findAll(
+                ProductSpecifications.sellerCondition(SELLER_ID, null, null), LATEST)))
+                .contains(pending.getId(), rejected.getId());
+    }
+
+    @Test
+    @DisplayName("등록 제한용 개수: 검수 중 상품 수, 기준 시각 이후 등록 수(삭제 포함)")
+    void countsForRegisterLimit() {
+        Species species = species("개수 품종", null, null, null);
+        Product pending = save(species, SELLER_ID, "검수 중");
+        Product old = save(species, SELLER_ID, "두 시간 전");
+        ReflectionTestUtils.setField(pending, "status", ProductStatus.REVIEW_PENDING);
+        ReflectionTestUtils.setField(old, "status", ProductStatus.REVIEW_PENDING);
+        entityManager.flush();
+        setCreatedAt(pending, 0);
+        setCreatedAt(old, 120);
+
+        assertThat(productRepository.countBySellerIdAndStatus(SELLER_ID, ProductStatus.REVIEW_PENDING)).isEqualTo(2);
+        // setUp의 판매 중 · 숨김 · 판매 완료 · 삭제(1~4분 전) 4건 + 방금 등록한 검수 중 1건. 두 시간 전 상품 · 남의 상품은 제외
+        assertThat(productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(SELLER_ID, LocalDateTime.now().minusHours(1)))
+                .isEqualTo(5);
     }
 }

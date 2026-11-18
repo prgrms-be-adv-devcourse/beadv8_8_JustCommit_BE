@@ -23,7 +23,13 @@ dependencies {
     // 봉투의 payload가 JsonNode라 쓰는 서비스도 Jackson 타입을 알아야 함 → api
     api 'tools.jackson.core:jackson-databind'
 
+    // 받는 쪽 공통 설정(역직렬화 · 재시도 · DLT)
+    implementation 'org.springframework.boot:spring-boot-starter-kafka'
+
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-kafka'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

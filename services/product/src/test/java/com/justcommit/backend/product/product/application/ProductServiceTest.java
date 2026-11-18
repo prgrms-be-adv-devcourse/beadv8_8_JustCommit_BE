@@ -1,24 +1,32 @@
 package com.justcommit.backend.product.product.application;
 
+import com.justcommit.backend.product.product.application.ProductEventPublisher;
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.product.client.member.MemberQuery;
 import com.justcommit.backend.product.ProductResult;
 import com.justcommit.backend.product.ProductStatus;
+import com.justcommit.backend.product.client.member.MemberQuery;
 import com.justcommit.backend.product.exception.ProductErrorCode;
 import com.justcommit.backend.product.image.application.ProductImageCleaner;
 import com.justcommit.backend.product.image.application.ProductImageUrlValidator;
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.product.domain.ProductImage;
+import com.justcommit.backend.product.product.event.ProductRegistered;
+import com.justcommit.backend.product.product.event.ProductStatusChanged;
+import com.justcommit.backend.product.product.event.ProductUpdated;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import com.justcommit.backend.product.product.presentation.dto.*;
+import com.justcommit.backend.product.reservation.infrastructure.ProductReservationRepository;
 import com.justcommit.backend.product.species.domain.Species;
 import com.justcommit.backend.product.species.infrastructure.SpeciesRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.domain.Page;
@@ -27,11 +35,17 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.test.util.ReflectionTestUtils;
+import com.justcommit.backend.product.product.domain.ReviewScope;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -39,6 +53,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class) //JUnit - Mockito 연결
@@ -58,6 +73,19 @@ public class  ProductServiceTest {
 
     @Mock
     private ProductImageUrlValidator imageUrlValidator;
+
+    @Mock
+    private ProductReservationRepository reservationRepository;
+
+    @Mock
+    private ProductEventPublisher productEventPublisher;
+
+    @Mock
+    private ReviewRequester reviewRequester;
+
+    // 등록 제한의 "오늘" 기준을 고정 (2026-11-11 12:00 KST)
+    @Spy
+    private Clock clock = Clock.fixed(Instant.parse("2026-11-11T03:00:00Z"), ZoneId.of("Asia/Seoul"));
 
     @InjectMocks
     private ProductService productService;
@@ -129,6 +157,8 @@ public class  ProductServiceTest {
         //then - 생성된 응답에 제대로 값이 드어갔는지 확인
         assertThat(response.sellerName()).isEqualTo("판매자1");
         assertThat(response.title()).isEqualTo("몬스테라 분양합니다");
+        // 등록하면 사진 검수부터 요청
+        verify(reviewRequester).request(any(Product.class), eq(ReviewScope.FULL));
     }
 
     @Test
@@ -178,6 +208,31 @@ public class  ProductServiceTest {
         assertThat(product.getGrowNote()).isNull();
         assertThat(imageUrlsOf(product))
                 .containsExactly("https://example.com/c.jpg", "https://example.com/d.jpg");
+        // 사진 · 품종이 바뀌어 다시 검수 중, 검수 버전 +1
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
+        assertThat(product.getReviewVersion()).isEqualTo(1);
+        verify(reviewRequester).request(product, ReviewScope.FULL);
+    }
+
+    @Test
+    @DisplayName("반려된 상품을 고치면 재검수 1회를 쓰고, 2번 다 썼으면 409 RESUBMIT_LIMIT_EXCEEDED · 검수 요청 없음")
+    void updateRejectedProductUsesResubmit() {
+        Product product = product(ProductStatus.REJECTED);
+        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
+        given(speciesRepository.findById(NEW_SPECIES_ID)).willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스")));
+        given(reviewRequester.isResubmit(product)).willReturn(true);
+        ReflectionTestUtils.setField(product, "status", ProductStatus.REJECTED);
+
+        productService.updateProduct(SELLER_ID, PRODUCT_ID, updateRequest(List.of("https://example.com/c.jpg")));
+        assertThat(product.remainingResubmits()).isEqualTo(Product.MAX_RESUBMITS - 1);
+
+        ReflectionTestUtils.setField(product, "resubmitCount", Product.MAX_RESUBMITS);
+        ReflectionTestUtils.setField(product, "status", ProductStatus.REJECTED);
+        assertThatThrownBy(() -> productService.updateProduct(SELLER_ID, PRODUCT_ID,
+                updateRequest(List.of("https://example.com/d.jpg"))))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.RESUBMIT_LIMIT_EXCEEDED);
+        verify(reviewRequester, times(1)).request(any(Product.class), any(ReviewScope.class));
     }
 
     @Test
@@ -227,7 +282,7 @@ public class  ProductServiceTest {
     }
     // 결제 대기·판매 완료 상품은 수정 불가 (정책 2.3-1)
     @Test
-    @DisplayName("판매 중이 아닌 상품을 수정하면 PRODUCT_NOT_EDITABLE, 상품은 바뀌지 않음")
+    @DisplayName("결제 대기 상품을 수정하면 PRODUCT_NOT_EDITABLE, 상품은 바뀌지 않음")
     void updateProductNotEditable() {
         Product product = product(ProductStatus.PAYMENT_PENDING);
         given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
@@ -254,7 +309,7 @@ public class  ProductServiceTest {
     }
 
     @Test
-    @DisplayName("판매 중이 아닌 상품을 삭제하면 PRODUCT_NOT_DELETABLE")
+    @DisplayName("결제 대기 상품을 삭제하면 PRODUCT_NOT_DELETABLE")
     void deleteProductNotDeletable() {
         Product product = product(ProductStatus.PAYMENT_PENDING);
         given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
@@ -387,6 +442,19 @@ public class  ProductServiceTest {
         ProductResult result = productService.getProduct(PRODUCT_ID);
 
         assertThat(result.speciesName()).isEqualTo("몬스테라");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ProductStatus.class, names = {"REVIEW_PENDING", "REJECTED"})
+    @DisplayName("다른 모듈용 조회에서 검수 중 · 반려 상품은 썸네일을 비우고 제목을 가림 (장바구니에 반려 사진 · 글이 보이지 않게)")
+    void getProductInReviewIsMasked(ProductStatus status) {
+        given(productRepository.findById(PRODUCT_ID)).willReturn(Optional.of(product(status)));
+
+        ProductResult result = productService.getProduct(PRODUCT_ID);
+
+        assertThat(result.title()).isEqualTo("검수 중인 상품");
+        assertThat(result.thumbnailUrl()).isNull();
+        assertThat(result.status()).isEqualTo(status);
     }
 
     @Test
@@ -542,4 +610,259 @@ public class  ProductServiceTest {
         assertThat(result.soldOut()).isEqualTo(1);
     }
 
+
+    // ── 등록 제한 (#341) ───────────────────────────
+
+    @Test
+    @DisplayName("검수 중 상품이 이미 5개면 REVIEW_PENDING_LIMIT_EXCEEDED, 사진 검사 · 저장을 하지 않음")
+    void createProductOverReviewPendingLimit() {
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
+        given(productRepository.countBySellerIdAndStatus(SELLER_ID, ProductStatus.REVIEW_PENDING)).willReturn(5L);
+
+        assertThatThrownBy(() -> productService.createProduct(SELLER_ID, createRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.REVIEW_PENDING_LIMIT_EXCEEDED);
+        verify(imageUrlValidator, never()).validate(any(), any());
+        verify(productRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("오늘(한국 시간 자정부터) 이미 20건 등록했으면 DAILY_REGISTER_LIMIT_EXCEEDED, 저장하지 않음")
+    void createProductOverDailyRegisterLimit() {
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
+        // 고정 시계가 2026-11-11 12:00 KST라 기준 시각은 그날 00:00
+        given(productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(SELLER_ID, LocalDateTime.of(2026, 11, 11, 0, 0)))
+                .willReturn(20L);
+
+        assertThatThrownBy(() -> productService.createProduct(SELLER_ID, createRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.DAILY_REGISTER_LIMIT_EXCEEDED);
+        verify(productRepository, never()).save(any());
+    }
+
+    // 하루 경계는 서버 시간대(UTC 등)가 아니라 한국 시간 자정
+    @Test
+    @DisplayName("한국 시간 자정 직후(UTC로는 전날 15시)에는 그날 00:00부터 센다")
+    void dailyLimitStartsAtKoreanMidnight() {
+        ReflectionTestUtils.setField(productService, "clock",
+                Clock.fixed(Instant.parse("2026-11-10T15:00:00Z"), ZoneId.of("Asia/Seoul")));   // 2026-11-11 00:00 KST
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
+        given(productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(SELLER_ID, LocalDateTime.of(2026, 11, 11, 0, 0)))
+                .willReturn(20L);
+
+        assertThatThrownBy(() -> productService.createProduct(SELLER_ID, createRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.DAILY_REGISTER_LIMIT_EXCEEDED);
+    }
+
+    @Test
+    @DisplayName("한국 시간 자정 직전(23:59:59)에는 아직 전날 00:00부터 센다")
+    void dailyLimitBeforeKoreanMidnight() {
+        ReflectionTestUtils.setField(productService, "clock",
+                Clock.fixed(Instant.parse("2026-11-10T14:59:59Z"), ZoneId.of("Asia/Seoul")));   // 2026-11-10 23:59:59 KST
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
+        given(productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(SELLER_ID, LocalDateTime.of(2026, 11, 10, 0, 0)))
+                .willReturn(20L);
+
+        assertThatThrownBy(() -> productService.createProduct(SELLER_ID, createRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.DAILY_REGISTER_LIMIT_EXCEEDED);
+    }
+
+    @Test
+    @DisplayName("검수 중 4개 · 오늘 19건이면 등록되고, 새 상품은 검수 중 · 검수 버전 0")
+    void createProductJustUnderLimits() {
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
+        given(productRepository.countBySellerIdAndStatus(SELLER_ID, ProductStatus.REVIEW_PENDING)).willReturn(4L);
+        given(productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(SELLER_ID, LocalDateTime.of(2026, 11, 11, 0, 0)))
+                .willReturn(19L);
+        given(speciesRepository.findById(1L)).willReturn(Optional.of(species(1L, "몬스테라")));
+        given(productRepository.save(any(Product.class))).willAnswer(invocation -> invocation.getArgument(0));
+
+        productService.createProduct(SELLER_ID, createRequest());
+
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        verify(productRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
+        assertThat(captor.getValue().getReviewVersion()).isZero();
+    }
+
+    // ── 검수 중 · 반려 상품 (#341) ──────────────────
+
+    @ParameterizedTest
+    @EnumSource(value = ProductStatus.class, names = {"REVIEW_PENDING", "REJECTED"})
+    @DisplayName("검수 중 · 반려 상품을 다른 회원 · 비회원이 열면 PRODUCT_NOT_FOUND")
+    void getInReviewProductDetailByOthers(ProductStatus status) {
+        given(productRepository.findWithDetailById(PRODUCT_ID)).willReturn(Optional.of(product(status)));
+
+        assertThatThrownBy(() -> productService.getProductDetail(PRODUCT_ID, OTHER_MEMBER_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND);
+        assertThatThrownBy(() -> productService.getProductDetail(PRODUCT_ID, null))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ProductStatus.class, names = {"REVIEW_PENDING", "REJECTED"})
+    @DisplayName("판매자 본인은 검수 중 · 반려 상품의 상세를 볼 수 있음")
+    void getInReviewProductDetailByOwner(ProductStatus status) {
+        given(productRepository.findWithDetailById(PRODUCT_ID)).willReturn(Optional.of(product(status)));
+
+        ProductDetailResponse response = productService.getProductDetail(PRODUCT_ID, SELLER_ID);
+
+        assertThat(response.productId()).isEqualTo(PRODUCT_ID);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ProductStatus.class, names = {"REVIEW_PENDING", "REJECTED"})
+    @DisplayName("검수 중 · 반려 상품도 판매자가 삭제할 수 있음")
+    void deleteInReviewProduct(ProductStatus status) {
+        Product product = product(status);
+        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product));
+
+        productService.deleteProduct(SELLER_ID, PRODUCT_ID);
+
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.DELETED);
+    }
+
+    // ── 상품 이벤트 발행 (#338) ─────────────────────
+
+    @Test
+    @DisplayName("상품을 등록하면 저장된 상품 ID로 ProductRegistered를 발행")
+    void createProductPublishesRegistered() {
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
+        given(speciesRepository.findById(1L)).willReturn(Optional.of(species(1L, "몬스테라")));
+        given(productRepository.save(any(Product.class))).willAnswer(invocation -> {
+            Product saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", PRODUCT_ID);   // DB가 ID를 채운 것처럼
+            return saved;
+        });
+
+        productService.createProduct(SELLER_ID, createRequest());
+
+        verify(productEventPublisher).registered(PRODUCT_ID);
+    }
+
+    @Test
+    @DisplayName("판매자가 아니라 등록이 막히면 이벤트를 발행하지 않음")
+    void createProductByNotSellerPublishesNothing() {
+        given(memberQuery.isSeller(SELLER_ID)).willReturn(false);
+
+        assertThatThrownBy(() -> productService.createProduct(SELLER_ID, createRequest()))
+                .isInstanceOf(BusinessException.class);
+
+        verifyNoInteractions(productEventPublisher);
+    }
+
+    @Test
+    @DisplayName("상품을 수정하면 ProductUpdated를 발행")
+    void updateProductPublishesUpdated() {
+        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product(ProductStatus.ACTIVE)));
+        given(speciesRepository.findById(NEW_SPECIES_ID))
+                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스")));
+
+        productService.updateProduct(SELLER_ID, PRODUCT_ID, updateRequest(null));
+
+        verify(productEventPublisher).updated(PRODUCT_ID);
+    }
+
+    @Test
+    @DisplayName("수정할 수 없는 상품이면 이벤트를 발행하지 않음")
+    void updateProductNotEditablePublishesNothing() {
+        given(productRepository.findWithLockById(PRODUCT_ID))
+                .willReturn(Optional.of(product(ProductStatus.PAYMENT_PENDING)));
+        given(speciesRepository.findById(NEW_SPECIES_ID))
+                .willReturn(Optional.of(species(NEW_SPECIES_ID, "스킨답서스")));
+
+        assertThatThrownBy(() -> productService.updateProduct(SELLER_ID, PRODUCT_ID, updateRequest(null)))
+                .isInstanceOf(BusinessException.class);
+
+        verifyNoInteractions(productEventPublisher);
+    }
+
+    @Test
+    @DisplayName("상품을 삭제하면 ProductStatusChanged를 발행")
+    void deleteProductPublishesStatusChanged() {
+        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product(ProductStatus.ACTIVE)));
+
+        productService.deleteProduct(SELLER_ID, PRODUCT_ID);
+
+        verify(productEventPublisher).statusChanged(PRODUCT_ID);
+    }
+
+    @Test
+    @DisplayName("숨김을 바꾸면 ProductStatusChanged를 발행")
+    void changeHiddenPublishesStatusChanged() {
+        given(productRepository.findWithLockById(PRODUCT_ID)).willReturn(Optional.of(product(ProductStatus.ACTIVE)));
+
+        productService.changeHidden(SELLER_ID, PRODUCT_ID, true);
+
+        verify(productEventPublisher).statusChanged(PRODUCT_ID);
+    }
+
+    @Test
+    @DisplayName("판매 완료: 주문이 잡은 상품마다 ProductStatusChanged를 발행")
+    void markSoldOutPublishesForEachProduct() {
+        given(productRepository.lockByReservedOrder(100L)).willReturn(List.of(10L, 11L));
+        given(productRepository.markSoldOut(100L)).willReturn(2);
+
+        assertThat(productService.markSoldOut(100L)).isTrue();
+
+        verify(productEventPublisher).statusChanged(List.of(10L, 11L));
+    }
+
+    @Test
+    @DisplayName("판매 완료로 바뀐 상품이 없으면 이벤트를 발행하지 않음")
+    void markSoldOutNothingChangedPublishesNothing() {
+        given(productRepository.lockByReservedOrder(100L)).willReturn(List.of(10L));
+        given(productRepository.markSoldOut(100L)).willReturn(0);
+
+        assertThat(productService.markSoldOut(100L)).isFalse();
+
+        verifyNoInteractions(productEventPublisher);
+    }
+
+    @Test
+    @DisplayName("예약 해제: 주문이 잡은 상품마다 ProductStatusChanged를 발행")
+    void releasePublishesForEachProduct() {
+        given(productRepository.lockByReservedOrder(100L)).willReturn(List.of(10L, 11L));
+        given(productRepository.release(100L)).willReturn(2);
+
+        assertThat(productService.release(100L)).isTrue();
+
+        verify(productEventPublisher).statusChanged(List.of(10L, 11L));
+        verify(reservationRepository).upsertReleased(100L);
+    }
+
+    @Test
+    @DisplayName("해제할 상품이 없으면 이벤트를 발행하지 않음")
+    void releaseNothingChangedPublishesNothing() {
+        given(productRepository.lockByReservedOrder(100L)).willReturn(List.of());
+        given(productRepository.release(100L)).willReturn(0);
+
+        assertThat(productService.release(100L)).isFalse();
+
+        verifyNoInteractions(productEventPublisher);
+    }
+
+    @Test
+    @DisplayName("판매 재개: 다시 판매 중이 된 상품의 ProductStatusChanged를 발행")
+    void releaseItemPublishesStatusChanged() {
+        given(productRepository.releaseItem(PRODUCT_ID, 100L, true)).willReturn(1);
+
+        assertThat(productService.releaseItem(PRODUCT_ID, 100L, true)).isTrue();
+
+        verify(productEventPublisher).statusChanged(PRODUCT_ID);
+    }
+
+    @Test
+    @DisplayName("판매 재개 대상이 아니면 이벤트를 발행하지 않음")
+    void releaseItemNothingChangedPublishesNothing() {
+        given(productRepository.releaseItem(PRODUCT_ID, 100L, false)).willReturn(0);
+
+        assertThat(productService.releaseItem(PRODUCT_ID, 100L, false)).isFalse();
+
+        verifyNoInteractions(productEventPublisher);
+    }
 }

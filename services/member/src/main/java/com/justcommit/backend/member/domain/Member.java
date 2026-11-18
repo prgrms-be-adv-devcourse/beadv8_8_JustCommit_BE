@@ -17,7 +17,8 @@ import java.time.LocalDateTime;
                 @UniqueConstraint(name = "uk_member_email", columnNames = "email"),
                 @UniqueConstraint(name = "uk_member_nickname", columnNames = "nickname"),
                 @UniqueConstraint(name = "uk_member_phone", columnNames = "phone"),
-                @UniqueConstraint(name = "uk_member_provider", columnNames = {"provider", "provider_id"})
+                @UniqueConstraint(name = "uk_member_provider", columnNames = {"provider", "provider_id"}),
+                @UniqueConstraint(name = "uk_member_account_hash", columnNames = "account_hash")
         }
 )
 @Getter
@@ -53,6 +54,9 @@ public class Member extends BaseTimeEntity  {
         @Column(name = "account_no_enc", nullable = false, length = 255)
         private String accountNoEnc; // AES-256-GCM 암호문 ("v1:" + Base64)
 
+        @Column(name = "account_hash", length = 64)
+        private String accountHash; // 계좌 중복 확인용 HMAC (MemberHmac.accountHash, hex 64글자). 기존 회원은 NULL
+
         @Column(name = "account_holder", nullable = false, length = 50) // 예금주
         private String accountHolder;
 
@@ -63,9 +67,14 @@ public class Member extends BaseTimeEntity  {
         @Column(nullable = false, length = 20)
         private MemberStatus status;
 
+        // 인증 버전 (#409): 비밀번호 변경 · 탈퇴 때 1 올려, 그 전에 발급한 Refresh를 재발급할 수 없게 한다
+        // JPA @Version은 인증 폐기와 무관한 회원 정보 변경에도 증가하므로 쓰지 않는다
+        @Column(name = "token_version", nullable = false)
+        private int tokenVersion;
+
         // 이메일·비밀번호 회원가입 (권한 MEMBER, 상태 ACTIVE로 고정)
         public static Member createLocal(String email, String encodedPassword, String nickname, String phone,
-                                         String bankCode, String encryptedAccountNo, String accountHolder) {
+                                         String bankCode, String encryptedAccountNo, String accountHash, String accountHolder) {
                 Member member = new Member();
                 member.email = email;
                 member.password = encodedPassword;
@@ -76,6 +85,7 @@ public class Member extends BaseTimeEntity  {
                 member.status = MemberStatus.ACTIVE;
                 member.bankCode = bankCode;
                 member.accountNoEnc = encryptedAccountNo;
+                member.accountHash = accountHash;
                 member.accountHolder = accountHolder;
                 member.accountUpdatedAt = LocalDateTime.now();
                 return member;
@@ -85,7 +95,7 @@ public class Member extends BaseTimeEntity  {
         // email·provider·providerId는 가입 토큰에서 꺼낸 값 (카카오가 인증한 정보)
         public static Member createSocial(Provider provider, String providerId, String email,
                                           String nickname, String phone,
-                                          String bankCode, String encryptedAccountNo, String accountHolder) {
+                                          String bankCode, String encryptedAccountNo, String accountHash, String accountHolder) {
                 if (provider == Provider.LOCAL) {
                         throw new IllegalArgumentException("소셜 회원은 소셜 가입 경로로만 생성할 수 있습니다.");
                 }
@@ -100,6 +110,7 @@ public class Member extends BaseTimeEntity  {
                 member.status = MemberStatus.ACTIVE;
                 member.bankCode = bankCode;
                 member.accountNoEnc = encryptedAccountNo;
+                member.accountHash = accountHash;
                 member.accountHolder = accountHolder;
                 member.accountUpdatedAt = LocalDateTime.now();
                 return member;
@@ -110,5 +121,30 @@ public class Member extends BaseTimeEntity  {
                 if (this.role == Role.MEMBER) {
                         this.role = Role.SELLER;
                 }
+        }
+
+        // 닉네임 변경 (형식은 요청 검증, 중복은 서비스 확인 + DB UNIQUE 제약이 맡음)
+        public void changeNickname(String nickname) {
+          this.nickname = nickname;
+        }
+
+        // 비밀번호 변경 (BCrypt 해시를 받음. 현재 비밀번호 확인은 서비스가 맡음)
+        public void changePassword(String encodedPassword) {
+          this.password = encodedPassword;
+        }
+
+        // 환급 계좌 변경 (#413): 계좌 값 네 개를 함께 바꾼다 (암호화 · HMAC · 중복 확인은 서비스가 맡음)
+        public void changeAccount(String bankCode, String encryptedAccountNo, String accountHash, String accountHolder) {
+          this.bankCode = bankCode;
+          this.accountNoEnc = encryptedAccountNo;
+          this.accountHash = accountHash;
+          this.accountHolder = accountHolder;
+          this.accountUpdatedAt = LocalDateTime.now();
+        }
+
+        // 인증 버전을 1 올린다 (비밀번호 변경 · 탈퇴). DB 값만 바꾸며, 기존 Access 폐기 기록은 별도 처리한다
+        // 올리기만 한다: 되돌리면 무효화된 Refresh를 다시 쓸 수 있게 된다
+        public void increaseTokenVersion() {
+          this.tokenVersion++;
         }
 }

@@ -3,6 +3,7 @@ package com.justcommit.backend.market;
 import com.justcommit.backend.market.config.JpaAuditingConfig;
 import com.justcommit.backend.market.cart.domain.Cart;
 import com.justcommit.backend.market.cart.domain.CartItem;
+import com.justcommit.backend.market.cart.infrastructure.CartItemRepository;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
@@ -60,13 +61,16 @@ class CartAndOrderPersistenceIntegrationTest {
     @Autowired
     private OrdersItemRepository ordersItemRepository;
 
+    @Autowired
+    private CartItemRepository cartItemRepository;
+
     @Test
     void findsPaymentPendingOrderByExpirationCutoffWithOptionalAddress2() {
         Orders order = new Orders("ORD-optional-address", 101L, "홍길동", "010", "06236", "주소1", null, 1);
         entityManager.persist(order);
         entityManager.flush();
 
-        List<Orders> pending = ordersRepository.findByStatusAndCreatedAtBefore(
+        List<Orders> pending = ordersRepository.findTop100ByStatusAndCreatedAtBeforeOrderByIdAsc(
                 OrderStatus.PAYMENT_PENDING, LocalDateTime.now().plusMinutes(1));
 
         assertThat(pending).extracting(Orders::getId).contains(order.getId());
@@ -103,6 +107,75 @@ class CartAndOrderPersistenceIntegrationTest {
                 .extracting(OrdersItem::getProductName).containsExactly("몬스테라");
         assertThat(ordersItemRepository.findBySellerOrderIds(List.of(firstSellerId)))
                 .extracting(OrdersItem::getProductName).containsExactly("몬스테라");
+    }
+
+    @Test
+    void findsRecentConfirmedProductIdsOfBuyerNewestFirst() {
+        Orders order = order("ORD-recent-confirmed");
+        // 확정 1개 + 취소 1개: 취소된 주문상품은 빠짐
+        SellerOrder now = new SellerOrder(order, 201L);
+        OrdersItem confirmedItem = new OrdersItem(now, 1001L, "확정", new BigDecimal("10000"));
+        OrdersItem cancelledItem = new OrdersItem(now, 1002L, "취소", new BigDecimal("10000"));
+        now.addItems(List.of(confirmedItem, cancelledItem));
+        cancelledItem.cancel();
+        confirmedItem.confirm();
+        now.confirmed();
+        SellerOrder yesterday = confirmedSellerOrder(order, 202L, 1004L);
+        SellerOrder old = confirmedSellerOrder(order, 203L, 1003L);
+        SellerOrder notConfirmed = new SellerOrder(order, 204L);
+        notConfirmed.addItems(List.of(new OrdersItem(notConfirmed, 1006L, "배송 중", new BigDecimal("10000"))));
+        order.addSellerOrders(List.of(now, yesterday, old, notConfirmed));
+
+        Orders other = new Orders("ORD-recent-other", 102L, "다른 구매자", "010", "12345", "서울", null, 1);
+        SellerOrder otherSeller = confirmedSellerOrder(other, 201L, 1005L);
+        other.addSellerOrders(List.of(otherSeller));
+
+        entityManager.persist(order);
+        entityManager.persist(other);
+        entityManager.flush();
+        setConfirmedAt(yesterday, LocalDateTime.now().minusDays(1));
+        setConfirmedAt(old, LocalDateTime.now().minusDays(100));
+        entityManager.clear();
+
+        LocalDateTime since = LocalDateTime.now().minusDays(90);
+        assertThat(ordersItemRepository.findRecentProductIdsByBuyer(101L, OrderItemStatus.CONFIRMED, since,
+                PageRequest.of(0, 20))).containsExactly(1001L, 1004L);
+        assertThat(ordersItemRepository.findRecentProductIdsByBuyer(101L, OrderItemStatus.CONFIRMED, since,
+                PageRequest.of(0, 1))).containsExactly(1001L);
+    }
+
+    @Test
+    void findsCartProductIdsOfMember() {
+        Cart cart = new Cart(401L);
+        cart.addItem(new CartItem(cart, 2001L, new BigDecimal("10000")));
+        cart.addItem(new CartItem(cart, 2002L, new BigDecimal("10000")));
+        Cart other = new Cart(402L);
+        other.addItem(new CartItem(other, 2003L, new BigDecimal("10000")));
+        entityManager.persist(cart);
+        entityManager.persist(other);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(cartItemRepository.findProductIdsByMemberId(401L)).containsExactly(2001L, 2002L);
+        assertThat(cartItemRepository.findProductIdsByMemberId(499L)).isEmpty();
+    }
+
+    private static SellerOrder confirmedSellerOrder(Orders order, long sellerId, Long... productIds) {
+        SellerOrder sellerOrder = new SellerOrder(order, sellerId);
+        List<OrdersItem> items = Stream.of(productIds)
+                .map(productId -> new OrdersItem(sellerOrder, productId, "상품 " + productId, new BigDecimal("10000")))
+                .toList();
+        sellerOrder.addItems(items);
+        items.forEach(OrdersItem::confirm);
+        sellerOrder.confirmed();
+        return sellerOrder;
+    }
+
+    private void setConfirmedAt(SellerOrder sellerOrder, LocalDateTime confirmedAt) {
+        entityManager.createNativeQuery("update seller_order set confirmed_at = :at where id = :id")
+                .setParameter("at", confirmedAt)
+                .setParameter("id", sellerOrder.getId())
+                .executeUpdate();
     }
 
     @DynamicPropertySource

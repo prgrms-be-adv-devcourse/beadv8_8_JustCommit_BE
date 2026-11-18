@@ -1,9 +1,7 @@
 package com.justcommit.backend.market.shipment.application;
 
-import com.justcommit.backend.market.ShipmentPickedUpEvent;
 import com.justcommit.backend.market.shipment.domain.Shipment;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
-import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentPickedUpEventPublisher;
 import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
 import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.OrderShippingInfo;
@@ -35,55 +33,9 @@ class ShipmentWebhookServiceTest {
     private static final OrderShippingInfo ORDER_INFO = new OrderShippingInfo(9L, 10L, 20L, new BigDecimal("3000"), "구매자", "01000000000", "부산", null);
 
     @Mock ShipmentRepository shipmentRepository;
-    @Mock ShipmentPickedUpEventPublisher pickedUpEventPublisher;
     @Mock ShipmentStatusChangedEventPublisher statusChangedEventPublisher;
     @Mock OrderQuery orderQuery;
     @InjectMocks ShipmentWebhookService shipmentWebhookService;
-
-    @Test
-    @DisplayName("수거 완료 웹훅을 받으면 택배비 정산 이벤트를 보낸다")
-    void publishesWhenPickedUp() {
-        bookedShipment();
-
-        shipmentWebhookService.receive(webhook("PICKED_UP", "2026-10-15T10:03:00+09:00"));
-
-        verify(pickedUpEventPublisher).publishAfterCommit(new ShipmentPickedUpEvent(
-                7L, 20L, new BigDecimal("3000"), LocalDateTime.of(2026, 10, 15, 10, 3)));
-    }
-
-    @Test
-    @DisplayName("수거 완료 웹훅을 놓치고 배송 중이 먼저 와도 이벤트를 보낸다")
-    void publishesWhenPickedUpSkipped() {
-        bookedShipment();
-
-        shipmentWebhookService.receive(webhook("IN_TRANSIT", "2026-10-15T10:05:00+09:00"));
-
-        verify(pickedUpEventPublisher).publishAfterCommit(new ShipmentPickedUpEvent(
-                7L, 20L, new BigDecimal("3000"), LocalDateTime.of(2026, 10, 15, 10, 5)));
-    }
-
-    @Test
-    @DisplayName("이미 수거된 배송은 다음 상태가 와도 이벤트를 다시 보내지 않는다")
-    void doesNotPublishTwice() {
-        Shipment shipment = bookedShipment();
-        shipment.applyCourierStatus(ShipmentStatus.PICKED_UP, TRACKING_NO, LocalDateTime.of(2026, 10, 15, 10, 3));
-
-        shipmentWebhookService.receive(webhook("IN_TRANSIT", "2026-10-15T10:05:00+09:00"));
-        shipmentWebhookService.receive(webhook("DELIVERED", "2026-10-15T15:00:00+09:00"));
-
-        verify(pickedUpEventPublisher, never()).publishAfterCommit(any());
-    }
-
-    @Test
-    @DisplayName("같은 수거 완료 웹훅이 다시 와도 이벤트를 다시 보내지 않는다")
-    void doesNotPublishOnDuplicate() {
-        bookedShipment();
-
-        shipmentWebhookService.receive(webhook("PICKED_UP", "2026-10-15T10:03:00+09:00"));
-        shipmentWebhookService.receive(webhook("PICKED_UP", "2026-10-15T10:03:00+09:00"));
-
-        verify(pickedUpEventPublisher).publishAfterCommit(any());
-    }
 
     @Test
     @DisplayName("반영된 웹훅마다 배송 상태 알림 이벤트를 보내고, 반영 안 된 웹훅은 보내지 않는다")

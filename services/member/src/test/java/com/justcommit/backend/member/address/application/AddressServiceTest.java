@@ -5,7 +5,10 @@ import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
-import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
+import com.justcommit.backend.member.event.MemberAddressChanged;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
+import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,7 +37,16 @@ class AddressServiceTest {
   AddressRepository addressRepository;
 
   @Mock
-  MemberRepository memberRepository;
+  MemberLocker memberLocker;
+
+  @Mock
+  SellerRepository sellerRepository;
+
+  @Mock
+  SellerAddressEventFactory sellerAddressEventFactory;
+
+  @Mock
+  OutboxPublisher outboxPublisher;
 
   @InjectMocks
   AddressService addressService;
@@ -74,7 +86,8 @@ class AddressServiceTest {
   void addAddress_asDefault() {
     Address oldDefault = address(1L, true);
     given(addressRepository.countByMemberId(MEMBER_ID)).willReturn(1L);
-    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false); // 판매자 아님 → 발행 안 함
     given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.of(oldDefault));
     givenSaveReturnsArgument();
 
@@ -89,7 +102,8 @@ class AddressServiceTest {
   void addAddress_notDefault() {
     Address oldDefault = address(1L, true);
     given(addressRepository.countByMemberId(MEMBER_ID)).willReturn(1L);
-    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false); // 판매자 아님 → 발행 안 함
     given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.of(oldDefault));
     givenSaveReturnsArgument();
 
@@ -103,7 +117,8 @@ class AddressServiceTest {
   @DisplayName("기본 배송지가 없으면 선택하지 않아도 기본 배송지로 등록")
   void addAddress_noDefaultYet() {
     given(addressRepository.countByMemberId(MEMBER_ID)).willReturn(0L);
-    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false); // 판매자 아님 → 발행 안 함
     given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.empty());
     givenSaveReturnsArgument();
 
@@ -113,9 +128,10 @@ class AddressServiceTest {
   }
 
   @Test
-  @DisplayName("배송지가 이미 10개면 등록할 수 없음")
+  @DisplayName("배송지가 이미 4개면 등록할 수 없음")
   void addAddress_limitExceeded() {
-    given(addressRepository.countByMemberId(MEMBER_ID)).willReturn(10L);
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.countByMemberId(MEMBER_ID)).willReturn(4L);
 
     assertThatThrownBy(() -> addressService.addAddress(MEMBER_ID, command(false)))
             .isInstanceOf(BusinessException.class)
@@ -129,7 +145,9 @@ class AddressServiceTest {
   void changeDefault() {
     Address oldDefault = address(1L, true);
     Address target = address(2L, false);
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
     given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false); // 판매자 아님 → 발행 안 함
     given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.of(oldDefault));
 
     AddressResult result = addressService.changeDefault(MEMBER_ID, 2L);
@@ -142,11 +160,270 @@ class AddressServiceTest {
   @Test
   @DisplayName("내 배송지가 아니면 404 ADDRESS_NOT_FOUND")
   void changeDefault_notFound() {
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
     given(addressRepository.findByIdAndMemberId(99L, MEMBER_ID)).willReturn(Optional.empty());
 
     assertThatThrownBy(() -> addressService.changeDefault(MEMBER_ID, 99L))
             .isInstanceOf(BusinessException.class)
             .extracting("errorCode")
             .isEqualTo(MemberErrorCode.ADDRESS_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("판매자가 배송지를 추가하면 바뀐 뒤 배송지 목록 이벤트를 발행")
+  void addAddress_seller_publishes() {
+    MemberAddressChanged event = new MemberAddressChanged(MEMBER_ID, "v1.k1:test");
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.countByMemberId(MEMBER_ID)).willReturn(1L);
+    given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.of(address(1L, true)));
+    givenSaveReturnsArgument();
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(true);
+    given(sellerAddressEventFactory.create(MEMBER_ID)).willReturn(event);
+
+    addressService.addAddress(MEMBER_ID, command(false));
+
+    then(outboxPublisher).should().publish(event);
+  }
+
+  @Test
+  @DisplayName("판매자가 아니면 배송지를 추가해도 발행하지 않음")
+  void addAddress_notSeller_noPublish() {
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.countByMemberId(MEMBER_ID)).willReturn(1L);
+    given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.of(address(1L, true)));
+    givenSaveReturnsArgument();
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
+
+    addressService.addAddress(MEMBER_ID, command(false));
+
+    then(sellerAddressEventFactory).shouldHaveNoInteractions();
+    then(outboxPublisher).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("판매자가 기본 배송지를 바꾸면 기본이 바뀌고 발행")
+  void changeDefault_seller_publishes() {
+    MemberAddressChanged event = new MemberAddressChanged(MEMBER_ID, "v1.k1:test");
+    Address oldDefault = address(1L, true);
+    Address target = address(2L, false);
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+    given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.of(oldDefault));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(true);
+    given(sellerAddressEventFactory.create(MEMBER_ID)).willReturn(event);
+
+    addressService.changeDefault(MEMBER_ID, 2L);
+
+    assertThat(target.isDefault()).isTrue();
+    assertThat(oldDefault.isDefault()).isFalse();
+    then(outboxPublisher).should().publish(event);
+  }
+
+  @Test
+  @DisplayName("판매자가 아니어도 기본 배송지는 바뀌고, 발행만 하지 않음")
+  void changeDefault_notSeller_changesWithoutPublish() {
+    Address oldDefault = address(1L, true);
+    Address target = address(2L, false);
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+    given(addressRepository.findByMemberIdAndIsDefaultTrue(MEMBER_ID)).willReturn(Optional.of(oldDefault));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
+
+    addressService.changeDefault(MEMBER_ID, 2L);
+
+    assertThat(target.isDefault()).isTrue();
+    assertThat(oldDefault.isDefault()).isFalse();
+    then(sellerAddressEventFactory).shouldHaveNoInteractions();
+    then(outboxPublisher).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("이미 기본인 배송지를 다시 기본으로 하면 바뀐 게 없어 판매자 확인 · 발행 없이 끝남")
+  void changeDefault_alreadyDefault_noPublish() {
+    Address target = address(2L, true);
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+
+    AddressResult result = addressService.changeDefault(MEMBER_ID, 2L);
+
+    assertThat(result.isDefault()).isTrue();
+    then(addressRepository).should(never()).findByMemberIdAndIsDefaultTrue(any());
+    then(sellerRepository).shouldHaveNoInteractions();
+    then(sellerAddressEventFactory).shouldHaveNoInteractions();
+    then(outboxPublisher).shouldHaveNoInteractions();
+  }
+
+  // 수정 요청 (null = 그대로, 선택 항목의 "" = 지움)
+  private AddressUpdateCommand update(String recipientName, String recipientPhone, String zipcode,
+                                      String address1, String address2, String addressName) {
+    return new AddressUpdateCommand(recipientName, recipientPhone, zipcode, address1, address2, addressName);
+  }
+
+  @Test
+  @DisplayName("보낸 항목만 바뀌고 나머지는 그대로, 판매자가 아니면 발행하지 않음")
+  void updateAddress_partial() {
+    Address target = address(2L, false);
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
+
+    AddressResult result = addressService.updateAddress(MEMBER_ID, 2L,
+            update(null, "01098765432", null, null, "101동 202호", "회사"));
+
+    assertThat(result.addressId()).isEqualTo(2L);
+    assertThat(target.getRecipientPhone()).isEqualTo("01098765432");
+    assertThat(target.getAddress2()).isEqualTo("101동 202호");
+    assertThat(target.getAddressName()).isEqualTo("회사");
+    assertThat(target.getRecipientName()).isEqualTo("홍길동");
+    assertThat(target.getZipcode()).isEqualTo("06236");
+    assertThat(target.getAddress1()).isEqualTo("서울 강남구 테헤란로 1");
+    then(outboxPublisher).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("선택 항목(상세 주소 · 배송지 이름)에 빈 문자열을 보내면 지운다")
+  void updateAddress_clearOptional() {
+    Address target = address(2L, false);
+    target.update(null, null, null, null, "5층", "회사"); // 지울 값이 있는 상태로 시작
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
+
+    addressService.updateAddress(MEMBER_ID, 2L, update(null, null, null, null, "", ""));
+
+    assertThat(target.getAddress2()).isNull();
+    assertThat(target.getAddressName()).isNull();
+  }
+
+  @Test
+  @DisplayName("지금과 같은 값만 보내면 바뀐 게 없어 판매자 확인 · 발행 없이 끝남")
+  void updateAddress_unchanged_noPublish() {
+    Address target = address(2L, false);
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+
+    addressService.updateAddress(MEMBER_ID, 2L, update("홍길동", "01012345678", null, null, null, null));
+
+    then(sellerRepository).shouldHaveNoInteractions();
+    then(outboxPublisher).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("판매자가 배송지를 수정하면 바뀐 뒤 배송지 목록 이벤트를 발행")
+  void updateAddress_seller_publishes() {
+    MemberAddressChanged event = new MemberAddressChanged(MEMBER_ID, "v1.k1:test");
+    Address target = address(2L, false);
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(true);
+    given(sellerAddressEventFactory.create(MEMBER_ID)).willReturn(event);
+
+    addressService.updateAddress(MEMBER_ID, 2L, update(null, null, null, null, null, "집"));
+
+    then(outboxPublisher).should().publish(event);
+  }
+
+  @Test
+  @DisplayName("내 배송지가 아니면 수정할 수 없음 (404 ADDRESS_NOT_FOUND)")
+  void updateAddress_notFound() {
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(99L, MEMBER_ID)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> addressService.updateAddress(MEMBER_ID, 99L, update(null, null, null, null, null, "집")))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MemberErrorCode.ADDRESS_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("기본 배송지는 삭제할 수 없음 (409 DEFAULT_ADDRESS_NOT_DELETABLE), 삭제 · 발행 없음")
+  void deleteAddress_default_conflict() {
+    Address target = address(1L, true);
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(1L, MEMBER_ID)).willReturn(Optional.of(target));
+
+    assertThatThrownBy(() -> addressService.deleteAddress(MEMBER_ID, 1L))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MemberErrorCode.DEFAULT_ADDRESS_NOT_DELETABLE);
+    then(addressRepository).should(never()).delete(any());
+    then(outboxPublisher).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("판매자가 기본이 아닌 배송지를 삭제하면 삭제 후 배송지 목록 이벤트를 발행")
+  void deleteAddress_seller_publishes() {
+    MemberAddressChanged event = new MemberAddressChanged(MEMBER_ID, "v1.k1:test");
+    Address target = address(2L, false);
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(true);
+    given(sellerAddressEventFactory.create(MEMBER_ID)).willReturn(event);
+
+    addressService.deleteAddress(MEMBER_ID, 2L);
+
+    then(addressRepository).should().delete(target);
+    then(outboxPublisher).should().publish(event);
+  }
+
+  @Test
+  @DisplayName("판매자가 아니면 삭제만 하고 발행하지 않음")
+  void deleteAddress_notSeller_noPublish() {
+    Address target = address(2L, false);
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
+
+    addressService.deleteAddress(MEMBER_ID, 2L);
+
+    then(addressRepository).should().delete(target);
+    then(sellerAddressEventFactory).shouldHaveNoInteractions();
+    then(outboxPublisher).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("내 배송지가 아니면 삭제할 수 없음 (404 ADDRESS_NOT_FOUND)")
+  void deleteAddress_notFound() {
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(99L, MEMBER_ID)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> addressService.deleteAddress(MEMBER_ID, 99L))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MemberErrorCode.ADDRESS_NOT_FOUND);
+    then(addressRepository).should(never()).delete(any());
+  }
+
+  @Test
+  @DisplayName("우편번호 · 주소가 실제로 바뀌는데 상세 주소를 보내지 않으면 400 ADDRESS_DETAIL_REQUIRED, 아무것도 바뀌지 않음")
+  void updateAddress_locationChangedWithoutDetail_rejected() {
+    Address target = address(2L, false);
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+
+    assertThatThrownBy(() -> addressService.updateAddress(MEMBER_ID, 2L,
+            update(null, null, "04524", "서울 중구 세종대로 110", null, null)))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MemberErrorCode.ADDRESS_DETAIL_REQUIRED);
+    assertThat(target.getZipcode()).isEqualTo("06236");
+    assertThat(target.getAddress1()).isEqualTo("서울 강남구 테헤란로 1");
+    then(sellerRepository).shouldHaveNoInteractions();
+    then(outboxPublisher).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("지금과 같은 우편번호 · 주소를 상세 주소 없이 다시 보내면 주소가 바뀌지 않으므로 통과")
+  void updateAddress_sameLocationWithoutDetail_allowed() {
+    Address target = address(2L, false);
+    given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(mock(Member.class)));
+    given(addressRepository.findByIdAndMemberId(2L, MEMBER_ID)).willReturn(Optional.of(target));
+    given(sellerRepository.existsById(MEMBER_ID)).willReturn(false);
+
+    addressService.updateAddress(MEMBER_ID, 2L,
+            update(null, "01098765432", "06236", "서울 강남구 테헤란로 1", null, null));
+
+    assertThat(target.getRecipientPhone()).isEqualTo("01098765432");
+    assertThat(target.getZipcode()).isEqualTo("06236");
   }
 }

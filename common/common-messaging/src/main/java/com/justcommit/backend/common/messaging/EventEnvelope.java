@@ -26,10 +26,20 @@ public record EventEnvelope(
 ) {
   // 빈 칸이 있는 봉투는 만들지 않음 (받는 쪽에서 원인을 찾기 어려워짐)
   public EventEnvelope {
-    Objects.requireNonNull(eventId, "eventId");
-    Objects.requireNonNull(eventType, "eventType");
+    requireText(eventId, "eventId");
+    requireText(eventType, "eventType");
+    requireText(aggregateId, "aggregateId");
     Objects.requireNonNull(occurredAt, "occurredAt");
-    Objects.requireNonNull(aggregateId, "aggregateId");
     Objects.requireNonNull(payload, "payload");
+    if (version < 1) {
+      throw new IllegalArgumentException("version은 1 이상이어야 합니다: " + version);
+    }
+  }
+
+  private static void requireText(String value, String name) {
+    Objects.requireNonNull(value, name);
+    if (value.isBlank()) {
+      throw new IllegalArgumentException(name + "은(는) 비어 있을 수 없습니다");
+    }
   }
 }
