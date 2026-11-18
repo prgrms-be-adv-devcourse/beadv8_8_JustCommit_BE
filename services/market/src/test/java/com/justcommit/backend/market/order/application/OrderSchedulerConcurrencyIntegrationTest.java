@@ -67,8 +67,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 // market 파드 2개가 같은 스케줄러를 동시에 돌려도, SKIP LOCKED로 주문을 나눠 갖고 같은 주문은 한 번만 처리하는지 실제 Postgres로 확인한다
@@ -86,14 +85,9 @@ class OrderSchedulerConcurrencyIntegrationTest {
     // 주문을 잡은 채 머무는 시간. 그 사이 다른 파드가 같은 주문을 만나 건너뛰게 한다.
     private static final long HOLD_MILLIS = 300;
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        SharedPostgres.register(registry);
     }
 
     @MockitoBean CartService cartService;

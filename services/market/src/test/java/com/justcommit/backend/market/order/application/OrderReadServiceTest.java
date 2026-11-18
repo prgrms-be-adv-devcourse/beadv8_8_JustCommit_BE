@@ -289,7 +289,7 @@ class OrderReadServiceTest {
 
     private static ProductResult product(Long productId, String thumbnailUrl) {
         return new ProductResult(productId, 20L, "상품", new BigDecimal("10000"), ProductStatus.SOLD_OUT, false,
-                thumbnailUrl, "품종");
+                thumbnailUrl, "품종", null);
     }
 
     @Test

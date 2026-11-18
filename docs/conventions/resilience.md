@@ -31,7 +31,7 @@
 | market → payment 결제 | 1초 / 3초 | 연결 실패만 1회 | 4xx와 첫 호출의 연결 실패는 확정 실패라 예약 해제 후 실패. 응답 타임아웃, 5xx, Saga 복구 중 연결 실패는 결과 불명 → `PAYMENT_PROCESSING` 유지, Saga 복구가 같은 orderId로 다시 호출 → [ADR 0023](../decisions/0023-order-payment-transaction-saga.md) |
 | market → payment 환불 | 1초 / 3초 | 연결 실패만 1회 | 타임아웃이면 결과 불명 → 주문상품 「취소 중」, Saga 복구가 같은 키로 다시 요청, 5번 안 되면 `REVIEW_REQUIRED` |
 | member → market · payment · settlement (탈퇴 확인) | 1초 / 3초, **병렬** | 연결 실패만 1회 | Fail-closed: 탈퇴 막음. 최악 약 4초라 Gateway 10초 안 |
-| market → ai 추천 | 1초 / 2초 | 없음 | 빈 목록 (장바구니 조회는 영향 없음) |
+| market → ai 추천 | 1초 / 2초 | 연결 실패만 1회 (common-web 공통, 최악 약 4.2초) | 빈 목록 (장바구니 조회는 영향 없음, 화면은 최신 상품으로 대신 → [ADR 0029](../decisions/0029-cart-recommendation-latest-fallback-on-screen.md)) |
 | product → OpenSearch | 1초 / 2초 | 1회 | DB LIKE 검색으로 대신 (관련도 · 오타 허용 · 한국어 분석 없음) |
 | product → OpenAI Moderation · Claude Haiku (사진 검수) | 🟨 3초 / 20초 | 비동기 최대 3회 | 자동 통과 · 자동 반려 없이 관리자 확인 |
 | ai → OpenAI 임베딩 (재임베딩 운영 API) | ⬜ 미정 (따로 설정 안 함) | ⬜ 미정 | ⬜ 미정 |

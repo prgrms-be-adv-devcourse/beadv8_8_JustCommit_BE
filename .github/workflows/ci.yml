@@ -1,3 +1,9 @@
+# PR마다 바뀐 모듈만 컴파일 · 테스트한다. 규칙 원본: docs/testing/strategy.md 「단계」 ② PR CI
+#
+# - common/ · Gradle 설정 · 루트 src/ · 이 파일이 바뀌면 전체(./gradlew build)
+# - gateway/ · services/{서비스}/가 바뀌면 그 모듈만(:gateway:build, :services:{서비스}:build)
+# - 그 밖(docs/ 등)만 바뀌면 빌드 없이 통과
+# job 이름 build는 ruleset develop-ci의 필수 체크라 바꾸지 않는다 (경로와 상관없이 항상 실행돼야 머지가 안 막힌다)
 name: CI
 
 on:
@@ -16,29 +22,60 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40 # 전체 빌드는 모듈 8개 + Testcontainers라 길다
+    env:
+      # 운영 컨테이너와 같은 시간대 (Dockerfile -Duser.timezone=Asia/Seoul, docs/infra/deploy.md)
+      # 러너 기본값 UTC로 돌리면 Clock(Asia/Seoul)과 LocalDateTime.now()를 섞어 쓰는 테스트가 9시간 어긋난다
+      TZ: Asia/Seoul
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # base 브랜치와 비교하려고 이력을 받는다
+
+      - name: 바뀐 모듈 고르기
+        id: pick
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          files="$(git diff --name-only "$BASE_SHA"...HEAD)"
+          echo "바뀐 파일:"; echo "$files"
+
+          if echo "$files" | grep -qE '^(common/|gradle/|src/|build\.gradle$|settings\.gradle$|gradle\.properties$|gradlew$|\.github/workflows/ci\.yml$)'; then
+            tasks="build"
+          else
+            tasks=""
+            if echo "$files" | grep -q '^gateway/'; then tasks=":gateway:build"; fi
+            for s in member product market payment settlement notification ai; do
+              if echo "$files" | grep -q "^services/$s/"; then tasks="$tasks :services:$s:build"; fi
+            done
+          fi
+
+          tasks="$(echo $tasks | xargs)"
+          echo "실행할 작업: ${tasks:-(없음, 빌드할 모듈이 바뀌지 않음)}"
+          echo "tasks=$tasks" >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK 25
+        if: steps.pick.outputs.tasks != ''
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '25'
 
       - name: Set up Gradle
+        if: steps.pick.outputs.tasks != ''
         uses: gradle/actions/setup-gradle@v4
 
-      # 컴파일 + 전체 테스트 + ModulithArchitectureTest(모듈 경계 검사)
+      # 컴파일 + 테스트. --continue: 한 모듈이 실패해도 나머지 모듈 결과까지 본다
       - name: Build
-        run: ./gradlew build
+        if: steps.pick.outputs.tasks != ''
+        run: ./gradlew ${{ steps.pick.outputs.tasks }} --continue
 
       - name: Publish test results
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.pick.outputs.tasks != '' }}
         uses: mikepenz/action-junit-report@v5
         with:
-          report_paths: build/test-results/test/*.xml
+          report_paths: '**/build/test-results/test/*.xml'
           detailed_summary: true
 
       - name: Upload test report
@@ -46,5 +83,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-report
-          path: build/reports/tests/test
+          path: '**/build/reports/tests/test'
           retention-days: 7
