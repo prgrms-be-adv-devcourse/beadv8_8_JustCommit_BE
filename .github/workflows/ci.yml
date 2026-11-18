@@ -23,6 +23,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 40 # 전체 빌드는 모듈 8개 + Testcontainers라 길다
+    env:
+      # 운영 컨테이너와 같은 시간대 (Dockerfile -Duser.timezone=Asia/Seoul, docs/infra/deploy.md)
+      # 러너 기본값 UTC로 돌리면 Clock(Asia/Seoul)과 LocalDateTime.now()를 섞어 쓰는 테스트가 9시간 어긋난다
+      TZ: Asia/Seoul
 
     steps:
       - uses: actions/checkout@v4
