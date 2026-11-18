@@ -38,6 +38,7 @@ public interface ImageReviewRepository extends JpaRepository<ImageReview, Long> 
     List<ImageReview> findByProductIdOrderByReviewVersionDesc(Long productId);
 
     // 상품마다 지금 검수 버전의 검수 기록 (내 상품 목록 한 페이지를 한 번에, N+1 방지)
+    // 상품 ID는 내 판매 목록 한 페이지분만 넘긴다 (PagingRequest.MAX_SIZE 50개 이하라 IN 목록이 커지지 않음)
     @Query("""
             SELECT r FROM ImageReview r JOIN Product p ON p.id = r.productId AND p.reviewVersion = r.reviewVersion
             WHERE p.id IN :productIds
