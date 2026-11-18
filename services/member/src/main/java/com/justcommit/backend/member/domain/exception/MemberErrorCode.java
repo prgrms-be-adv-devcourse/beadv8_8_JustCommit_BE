@@ -29,6 +29,9 @@ public enum MemberErrorCode implements ErrorCode {
   ACCOUNT_VERIFICATION_INVALID(HttpStatus.BAD_REQUEST, "인증 정보가 더 이상 유효하지 않습니다. 이메일 인증을 다시 진행해 주세요."),
   WITHDRAWAL_VERIFICATION_INVALID(HttpStatus.BAD_REQUEST, "인증 정보가 더 이상 유효하지 않습니다. 이메일 인증을 다시 진행해 주세요."), // 탈퇴 (#407)
   SOCIAL_UNLINK_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "카카오 연결 해제에 실패했습니다. 이메일 인증부터 다시 진행해 주세요."), // 탈퇴 (#407, 탈퇴 토큰은 이미 소모됨)
+  INVALID_WITHDRAWAL_TOKEN(HttpStatus.BAD_REQUEST, "탈퇴 요청이 만료되었거나 유효하지 않습니다. 이메일 인증을 다시 진행해 주세요."), // 탈퇴 (#407)
+  WITHDRAWAL_BLOCKED(HttpStatus.CONFLICT, "탈퇴할 수 없는 상태입니다. 탈퇴 가능 여부를 다시 확인해 주세요."), // 탈퇴 (#407, 사유는 사전 확인 GET으로)
+  WITHDRAWAL_CHECK_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "탈퇴 가능 여부를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요."), // 탈퇴 (#407)
   // 계좌 변경 토큰 오류: 없음 · 만료 · 이미 사용 · 다른 회원 · 발급 뒤 인증 버전 변경 모두 같은 응답
   INVALID_ACCOUNT_CHANGE_TOKEN(HttpStatus.BAD_REQUEST, "계좌 변경 요청이 만료되었거나 유효하지 않습니다. 이메일 인증을 다시 진행해 주세요."),
 
@@ -55,7 +58,7 @@ public enum MemberErrorCode implements ErrorCode {
   // 비밀번호 변경 (#411)
   INVALID_CURRENT_PASSWORD(HttpStatus.BAD_REQUEST, "현재 비밀번호가 올바르지 않습니다."),
   // 같은 인증 버전에서 현재 비밀번호를 5번 틀린 뒤의 변경 요청 (#412). Retry-After로 남은 초를 함께 내려줌
-  PASSWORD_CHANGE_LOCKED(HttpStatus.TOO_MANY_REQUESTS, "현재 비밀번호를 여러 번 틀려 비밀번호 변경이 잠시 제한되었습니다. 비밀번호 재설정을 이용해 주세요."),
+  PASSWORD_CHANGE_LOCKED(HttpStatus.TOO_MANY_REQUESTS, "현재 비밀번호를 여러 번 틀려 잠시 제한되었습니다. 비밀번호 재설정을 이용해 주세요."),
   SAME_AS_CURRENT_PASSWORD(HttpStatus.BAD_REQUEST, "새 비밀번호가 현재 비밀번호와 같습니다."),
   PASSWORD_NOT_SET(HttpStatus.BAD_REQUEST, "소셜 로그인 회원은 비밀번호를 변경할 수 없습니다."),
 

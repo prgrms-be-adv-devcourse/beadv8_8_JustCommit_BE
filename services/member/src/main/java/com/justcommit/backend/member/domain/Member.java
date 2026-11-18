@@ -147,4 +147,20 @@ public class Member extends BaseTimeEntity  {
         public void increaseTokenVersion() {
           this.tokenVersion++;
         }
+
+        // 탈퇴 (#407): 개인정보 · 계좌를 지우고 DELETED로. 가입 방식(provider) · 역할은 남긴다 (docs 「익명화」)
+        // 인증 버전은 토큰 폐기(revoke)가 올린다
+        public void withdraw() {
+          this.email = null;
+          this.password = null;
+          this.nickname = null;
+          this.phone = null;
+          this.providerId = null;
+          this.bankCode = null;
+          this.accountNoEnc = null;
+          this.accountHash = null;
+          this.accountHolder = null;
+          this.accountUpdatedAt = null;
+          this.status = MemberStatus.DELETED;
+        }
 }
