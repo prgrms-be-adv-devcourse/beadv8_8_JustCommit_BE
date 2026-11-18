@@ -1,0 +1,116 @@
+# 최종 MSA 데이터 서버(t3.medium)용. PostgreSQL · Kafka · OpenSearch (#295)
+# 앱 서버는 docker-compose.app.yml, 세미 운영(docker-compose.prod.yml)과는 다른 파일이다.
+#
+# 실행 (서버 ~/replant 에서): deploy/data/up.sh
+#   up.sh가 이 서버의 사설 IP를 DATA_IP로 넣어 docker compose -f docker-compose.data.yml up -d 를 실행한다.
+#   처음 한 번은 이어서 deploy/data/init-db.sh 로 서비스별 DB · 계정을 만든다.
+#
+# 비밀값은 서버 ~/secrets/ 에만 둔다 (레포 · 채팅에 올리지 않음)
+#   postgres.env     POSTGRES_PASSWORD (관리자 계정 postgres)
+#   db-accounts.env  서비스 계정 비밀번호 — init-db.sh가 읽는다
+#
+# 포트는 모두 데이터 서버 사설 IP(DATA_IP)에만 연다. 보안 그룹이 앱 서버 보안 그룹에서 오는
+# 5432 · 9092 · 9200만 허용한다 (docs/reference/ports.md). 인터넷에서는 아무 포트도 안 보인다.
+#
+# 메모리 (t3.medium 4GB, 스왑 2GB): postgres 768m + kafka 768m + opensearch 1200m = 약 2.7GB (로컬 실측 130MB · 370MB · 830MB)
+#   나머지는 OS · 관측(Loki · Prometheus · Grafana, #301) 몫
+name: replant-data
+
+x-common: &common
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  postgres:
+    <<: *common
+    # 공식 postgres 17 + pgvector 확장 (ai_db, #290). 로컬 docker-compose.yml과 같은 이미지
+    image: pgvector/pgvector:pg17
+    container_name: replant-postgres
+    env_file: ${HOME}/secrets/postgres.env # POSTGRES_PASSWORD
+    environment:
+      POSTGRES_USER: postgres
+      TZ: Asia/Seoul
+    # 서비스 8개 × 커넥션 풀 10 + market 파드 2개 → 기본 100개로는 모자람
+    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=192MB"]
+    ports:
+      - "${DATA_IP:?DATA_IP is required (deploy/data/up.sh)}:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # init-db.sh가 컨테이너 안에서 실행할 서비스별 DB · 계정 SQL (로컬과 같은 파일)
+      - ./docker/postgres:/sql:ro
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    <<: *common
+    image: apache/kafka:4.2.1
+    container_name: replant-kafka
+    hostname: kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      # 앱 서버가 접속하는 주소 = 데이터 서버 사설 IP. 접속한 클라이언트는 이 광고 주소로 다시 붙는다
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://${DATA_IP}:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3 # docs/reference/kafka-topics.md (#369)
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+    ports:
+      - "${DATA_IP}:9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    mem_limit: 768m
+    healthcheck:
+      # 포트만 본다. kafka-topics.sh는 JVM을 새로 띄워 CPU 크레딧이 떨어지면 시간 초과가 남 (#184)
+      test: ["CMD", "bash", "-c", "</dev/tcp/localhost/9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  opensearch:
+    <<: *common
+    # 공식 이미지 + 한국어 분석기 nori (docs/flows/search-recommend.md)
+    build: ./docker/opensearch
+    image: replant-opensearch:2.19.2
+    container_name: replant-opensearch
+    environment:
+      discovery.type: single-node
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+      # 보안 플러그인(TLS · 계정)을 끔: 보안 그룹이 앱 서버에서 오는 9200만 허용한다
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      bootstrap.memory_lock: "false"
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    ports:
+      - "${DATA_IP}:9200:9200"
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    mem_limit: 1200m # 힙 512MB + 힙 밖(메타스페이스 · 다이렉트 버퍼) — 1g면 실측 830MB로 여유가 적음
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+volumes:
+  postgres-data:
+  kafka-data:
+  opensearch-data:
