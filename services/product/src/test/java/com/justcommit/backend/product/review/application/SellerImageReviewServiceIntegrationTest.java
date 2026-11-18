@@ -252,6 +252,25 @@ class SellerImageReviewServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("[S-C06] 자동 반려 → 이의 신청 → 관리자 통과: 같은 검수 버전으로 ACTIVE, 재검수 횟수는 그대로")
+    void appealThenAdminApproves() {
+        Product product = rejectedByEngine();
+        sellerService.appeal(SELLER_ID, product.getId(), "직접 키운 호접란입니다");
+
+        adminService.decide(reviewOf(product, 0).getId(), ADMIN_ID, ReviewDecision.APPROVED, null, null);
+
+        Product reloaded = reload(product);
+        assertThat(reloaded.getStatus()).isEqualTo(ProductStatus.ACTIVE);
+        assertThat(reloaded.getReviewVersion()).isZero();
+        assertThat(reloaded.remainingResubmits()).isEqualTo(Product.MAX_RESUBMITS);
+        ImageReview review = reviewOf(product, 0);
+        assertThat(review.getDecision()).isEqualTo(ReviewDecision.APPROVED);
+        assertThat(review.getManualReason()).isEqualTo(ManualReason.APPEAL);
+        assertThat(review.getRejectReason()).isNull();
+        assertThat(adminService.findAwaiting(PageRequest.of(0, 20)).getContent()).isEmpty();
+    }
+
+    @Test
     @DisplayName("[S-C06] 관리자 반려 · 기한 초과 반려 · 반려가 아닌 상품은 이의 신청 409 APPEAL_NOT_ALLOWED")
     void appealNotAllowed() {
         Product byAdmin = judged(ReviewVerdict.manual(ManualReason.SPECIES_MISMATCH, null));

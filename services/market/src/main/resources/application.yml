@@ -39,7 +39,7 @@ spring:
 
 server:
   port: 8083
-# Prometheus 수집용. 인증 없이 열지 · 관리 포트를 둘지는 관측 구성(#301)에서 정한다
+# 지표: health(기동 확인)와 prometheus(지표 수집)만 연다. Gateway는 /actuator를 넘기지 않아 내부망에서만 닿는다
 management:
   endpoints:
     web:

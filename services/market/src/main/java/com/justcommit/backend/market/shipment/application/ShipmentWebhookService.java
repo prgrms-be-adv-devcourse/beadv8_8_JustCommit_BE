@@ -57,6 +57,8 @@ public class ShipmentWebhookService {
     // 웹훅으로 오는 택배사 상태만 받는다. 그 밖의 값은 null
     private ShipmentStatus toShipmentStatus(String courierStatus) {
         return switch (courierStatus) {
+            // 기사가 수거지 2km 안: 구매자 취소 불가 (취소 대기 중이면 무시, 결과는 택배 취소 큐가 정함)
+            case "CANCEL_LOCKED" -> ShipmentStatus.CANCEL_LOCKED;
             case "PICKED_UP" -> ShipmentStatus.PICKED_UP;
             case "IN_TRANSIT" -> ShipmentStatus.IN_TRANSIT;
             case "DELIVERED" -> ShipmentStatus.DELIVERED;

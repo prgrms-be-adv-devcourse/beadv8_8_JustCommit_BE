@@ -24,6 +24,8 @@
 | 수거 | `PICKED_UP` | 픽업, 가져감, 집하 | 택배사가 상품을 가져간 상태. 이후에는 취소 대신 반품 | [market 정책](services/market.md#정책) |
 | 배송 완료 | `DELIVERED` | 도착 | 구매자에게 도착한 상태. 자동 구매 확정 · 반품 기간의 기준 시점 | [market 정책](services/market.md#정책) |
 | 취소 대기 | `CANCEL_PENDING` (배송) | – | 택배사 취소 결과를 기다리는 배송 상태 | [취소 · 환불](flows/cancel-refund.md) |
+| 취소 불가 | `CANCEL_LOCKED` (배송) | 수거 임박, 기사 근접 | 기사가 수거지 2km 안에 들어와 구매자가 취소할 수 없는 배송 상태 | [취소 · 환불](flows/cancel-refund.md) |
+| 반송 | `RETURNING` · `RETURNED` (택배사) | 취소 반송 | 취소가 인정됐지만 택배사 장애로 이미 수거된 상품을 택배사가 판매자에게 돌려보내는 것 (택배사 비용). 구매자가 신청하는 반품과 다름 | [취소 · 환불](flows/cancel-refund.md) |
 | 택배사 | – | 404-express, 모의 택배사, courier | 배송을 맡는 외부 서비스 (지금은 모의 택배사 404-express) | [market](services/market.md) |
 | 웹훅 | – | webhook, 콜백 | 택배사가 배송 상태 · 취소 · 요금표 변경을 알려 주는 HTTP 요청 | [market 정책](services/market.md#정책) |
 | 배송비 요금표 | ⬜ 테이블 이름 미정 | 운임표 | 지역 구분(기본 + 제주 · 도서산간) 배송비 표. market이 버전과 함께 보관 | [market 정책](services/market.md#정책) |

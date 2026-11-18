@@ -134,16 +134,20 @@ class MarketEventKafkaIntegrationTest {
     }
 
     @Test
-    @DisplayName("형식이 깨진 메시지는 재시도 없이 원래토픽.DLT로 간다")
+    @DisplayName("[S-H04] 형식이 깨진 메시지는 재시도 없이 원래토픽.DLT로 가고, 같은 파티션의 다음 메시지는 계속 처리한다")
     void malformedMessageGoesToDltWithoutRetry() {
         kafkaTemplate.send(KafkaTopics.MARKET_ORDER_EXPIRED, "200", "not-json");
 
         List<ConsumerRecord<String, String>> dlt = pollDlt(KafkaTopics.MARKET_ORDER_EXPIRED + ".DLT", "200");
         assertThat(dlt).singleElement().satisfies(r -> assertThat(r.value()).isEqualTo("not-json"));
+
+        // 같은 key(같은 파티션)로 정상 메시지를 보내면 소비자가 멈추지 않고 처리
+        kafkaTemplate.send(KafkaTopics.MARKET_ORDER_EXPIRED, "200", envelope("OrderExpired", 200, Map.of("orderId", 200)));
+        verify(productUseCase, timeout(20_000)).release(200L);
     }
 
     @Test
-    @DisplayName("처리에 계속 실패하면 1 · 2 · 4초 제자리 재시도 뒤 DLT로 간다")
+    @DisplayName("[S-H03] 처리에 계속 실패하면 1 · 2 · 4초 제자리 재시도 뒤 DLT로 간다")
     void failingMessageRetriesThenGoesToDlt() {
         when(productUseCase.release(anyLong())).thenThrow(new IllegalStateException("DB 장애"));
 
