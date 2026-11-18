@@ -1,7 +1,7 @@
 # Kafka 토픽 · 이벤트 표
 
 > 언제 읽나: 어떤 이벤트를 누가 발행 · 구독하는지 정확히 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: Miro 9 · 10, 노션 기획안 「Kafka 이벤트」, 노션 「정책 정리」 3.10 · 8.7
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 9 · 10, 노션 기획안 「Kafka 이벤트」, 노션 「정책 정리」 3.10 · 8.7
 
 ## 토픽 목록
 
@@ -43,7 +43,7 @@
 | `market.order-item-cancelled.v1` | 판매 재개 (`orderId` · `orderItemId` · `productId` · `reason`: `BUYER` · `SELLER` · `AUTO`) | product | 환불 성공 뒤 발행. `BUYER`면 `ACTIVE`, `SELLER` · `AUTO`면 `ACTIVE` + 숨김. 주문 전체 취소도 주문상품마다 |
 | `market.order-item-returned.v1` | 판매 재개 (`orderId` · `orderItemId` · `productId`) | product | 반품 환불 뒤 발행. `ACTIVE` + 숨김 |
 | `product.events.v1` | 상품 변경 — `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged` | product(색인 리스너) · ai | product: DB에서 최신 상품을 읽어 OpenSearch 문서를 덮어씀. ai: payload로 상품 스냅샷 upsert (`productVersion`이 저장값보다 클 때만) → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md) |
-| `product.events.v1` | `ProductApproved` | product(색인) · notification | 색인, 판매자에게 통과 알림 |
+| `product.events.v1` | `ProductApproved` | notification | 판매자에게 통과 알림 (색인 리스너는 건너뜀, 상태는 함께 나가는 `ProductStatusChanged`로 색인) |
 | `product.events.v1` | `ProductRejected` | notification | 판매자에게 반려 사유와 함께 알림 |
 | `product.review.v1` | `ProductReviewRequested` (`review_version` 포함) | product | 사진 검수 (비동기) |
 | `settlement.events.v1` | `SettlementCompleted` | notification | 정산 알림 |
