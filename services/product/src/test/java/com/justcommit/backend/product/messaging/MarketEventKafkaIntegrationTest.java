@@ -28,9 +28,8 @@ import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedKafka;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.kafka.KafkaContainer;
 
 import java.time.Duration;
 import java.util.HashSet;
@@ -55,13 +54,10 @@ import static org.mockito.Mockito.when;
 @Testcontainers(disabledWithoutDocker = true)
 class MarketEventKafkaIntegrationTest {
 
-    @Container
-    static final KafkaContainer KAFKA = new KafkaContainer("apache/kafka:4.2.1");
-
     // 그룹 · 직렬화 설정은 application.yml을 그대로 쓰고, 주소만 테스트 컨테이너로 바꿈
     @DynamicPropertySource
     static void kafkaProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
+        SharedKafka.register(registry);
     }
 
     @Autowired KafkaTemplate<String, String> kafkaTemplate;
@@ -87,7 +83,7 @@ class MarketEventKafkaIntegrationTest {
         }
         String groupId = kafkaProperties.getConsumer().getGroupId();
 
-        try (Admin admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers()))) {
+        try (Admin admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, SharedKafka.container().getBootstrapServers()))) {
             long deadline = System.currentTimeMillis() + 60_000;
             while (System.currentTimeMillis() < deadline) {
                 if (isStable(admin, groupId, topics, expectedMembers)) {
@@ -162,7 +158,7 @@ class MarketEventKafkaIntegrationTest {
     // DLT에서 이 key의 메시지가 올 때까지 읽는다 (재시도 1 + 2 + 4초를 넘게 기다림)
     private List<ConsumerRecord<String, String>> pollDlt(String dltTopic, String key) {
         Map<String, Object> props = Map.of(
-                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, SharedKafka.container().getBootstrapServers(),
                 ConsumerConfig.GROUP_ID_CONFIG, "test-" + UUID.randomUUID(),
                 ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
                 ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,

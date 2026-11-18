@@ -16,16 +16,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedKafka;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.kafka.KafkaContainer;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
@@ -52,22 +51,18 @@ import static org.mockito.Mockito.verify;
 // 실제 Kafka · PostgreSQL로 구매 확정 수신 → 정산 생성을 확인 (payment 호출만 목)
 @SpringBootTest
 @Testcontainers(disabledWithoutDocker = true)
+// 리스너가 공유 Kafka의 다른 클래스 메시지를 읽지 않게 끝나면 컨텍스트를 닫는다
+@DirtiesContext
 class PurchaseConfirmedKafkaIntegrationTest {
 
     private static final String LEGACY_TOPIC = "market.purchase-confirmed.v1";
     private static final String DLT = KafkaTopics.MARKET_EVENTS + ".DLT";
 
-    @Container
-    @ServiceConnection
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
-
-    @Container
-    static final KafkaContainer KAFKA = new KafkaContainer("apache/kafka:4.2.1");
-
     // 그룹 · 역직렬화 · offset 설정은 application.yml 그대로, 주소만 테스트 컨테이너로 바꿈
     @DynamicPropertySource
     static void testProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
+        SharedPostgres.register(registry);
+        SharedKafka.register(registry);
         registry.add("jwt.public-key", PurchaseConfirmedKafkaIntegrationTest::newPublicKey);
         registry.add("internal-api.key", () -> "test-internal-key");
     }
@@ -201,7 +196,7 @@ class PurchaseConfirmedKafkaIntegrationTest {
     // DLT에서 이 key의 메시지를 기다린다 (없으면 빈 목록)
     private List<ConsumerRecord<String, String>> pollDlt(String key, Duration wait) {
         Map<String, Object> props = Map.of(
-                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, SharedKafka.container().getBootstrapServers(),
                 ConsumerConfig.GROUP_ID_CONFIG, "test-" + UUID.randomUUID(),
                 ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
                 ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,

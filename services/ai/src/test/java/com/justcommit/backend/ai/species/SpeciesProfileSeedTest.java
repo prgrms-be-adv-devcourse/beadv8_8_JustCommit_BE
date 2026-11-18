@@ -18,10 +18,8 @@ import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 // 품종 프로필 시드(V3)가 product 품종 기준 데이터(V4)와 같은 ID · 이름인지 확인 (ADR 0020)
 @Testcontainers
@@ -32,14 +30,12 @@ class SpeciesProfileSeedTest {
             Path.of("../product/src/main/resources/db/migration/V4__insert_species_data.sql");
     private static final Pattern SPECIES_ROW = Pattern.compile("^\\s*\\((\\d+), '((?:[^']|'')*)',");
 
-    @Container
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer(
-            DockerImageName.parse("pgvector/pgvector:pg17").asCompatibleSubstituteFor("postgres"));
+    private static final String DB_URL = SharedPostgres.createDatabase();
 
     @BeforeAll
     static void migrate() {
         Flyway.configure()
-                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .dataSource(DB_URL, SharedPostgres.container().getUsername(), SharedPostgres.container().getPassword())
                 .locations("classpath:db/migration")
                 .load()
                 .migrate();
@@ -63,7 +59,7 @@ class SpeciesProfileSeedTest {
     private static Map<Integer, String> loadProfiles() throws SQLException {
         Map<Integer, String> profiles = new LinkedHashMap<>();
         try (Connection connection = DriverManager.getConnection(
-                        POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+                        DB_URL, SharedPostgres.container().getUsername(), SharedPostgres.container().getPassword());
                 Statement statement = connection.createStatement();
                 ResultSet rs = statement.executeQuery("SELECT species_id, name FROM species_profile")) {
             while (rs.next()) {

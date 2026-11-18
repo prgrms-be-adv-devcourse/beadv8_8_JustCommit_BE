@@ -23,7 +23,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest
 @Testcontainers
-// 앱 전체를 띄우면 주문 만료 · 배송 예약 스케줄러도 돈다. 공유 DB에서 다른 테스트의 데이터를 건드리지 않게 끝나면 컨텍스트를 닫는다
+// 앱 전체를 띄우면 스케줄러 · 커넥션 풀이 계속 돈다. 다른 클래스가 실행되는 동안 남지 않게 끝나면 컨텍스트를 닫는다
 @DirtiesContext
 class MarketApplicationTests {
 

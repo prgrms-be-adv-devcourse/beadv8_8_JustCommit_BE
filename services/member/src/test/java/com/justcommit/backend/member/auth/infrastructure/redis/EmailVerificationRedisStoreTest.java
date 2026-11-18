@@ -14,8 +14,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.junit.jupiter.Container;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import com.justcommit.backend.common.testcontainers.SharedRedis;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Duration;
@@ -37,6 +38,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers(disabledWithoutDocker = true)
 class EmailVerificationRedisStoreTest {
 
+  @DynamicPropertySource
+  static void containers(DynamicPropertyRegistry registry) {
+    SharedRedis.register(registry);
+  }
+
   private static final String EMAIL = "test@example.com";
   private static final Duration COOLDOWN = Duration.ofSeconds(60);
   private static final int DAILY_LIMIT = 5;
@@ -49,9 +55,6 @@ class EmailVerificationRedisStoreTest {
   private static final String CODE_KEY = "auth:email:signup:" + EMAIL;
   private static final String ATTEMPTS_KEY = "auth:email:attempts:signup:" + EMAIL;
 
-  @Container
-  static final GenericContainer<?> REDIS = new GenericContainer<>("redis:8-alpine").withExposedPorts(6379);
-
   private static LettuceConnectionFactory connectionFactory;
   private static StringRedisTemplate redisTemplate;
 
@@ -60,7 +63,7 @@ class EmailVerificationRedisStoreTest {
   @BeforeAll
   static void connect() {
     connectionFactory = new LettuceConnectionFactory(
-        new RedisStandaloneConfiguration(REDIS.getHost(), REDIS.getMappedPort(6379)));
+        new RedisStandaloneConfiguration(SharedRedis.container().getHost(), SharedRedis.container().getMappedPort(6379)));
     connectionFactory.afterPropertiesSet();
     connectionFactory.start();
     redisTemplate = new StringRedisTemplate(connectionFactory);

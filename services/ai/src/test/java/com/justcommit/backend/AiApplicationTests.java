@@ -25,24 +25,20 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 @SpringBootTest
 @Testcontainers
+// 앱 전체를 띄우면 스케줄러도 돈다. 공유 DB를 건드리지 않게 끝나면 컨텍스트를 닫는다
+@DirtiesContext
 class AiApplicationTests {
 
     // 로컬 compose와 같은 pgvector 이미지. postgres와 호환된다고 알려야 PostgreSQLContainer가 받아 준다
-    @Container
-    @ServiceConnection
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer(
-            DockerImageName.parse("pgvector/pgvector:pg17").asCompatibleSubstituteFor("postgres"));
 
     // OpenAI 대신 응답하는 스텁 서버 (실제 API 키 · 비용 없이 임베딩 호출 확인)
     @RegisterExtension
@@ -52,6 +48,7 @@ class AiApplicationTests {
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
+        SharedPostgres.register(registry);
         registry.add("jwt.public-key", AiApplicationTests::newPublicKey);
         registry.add("spring.ai.openai.base-url", () -> OPENAI.baseUrl() + "/v1");
         registry.add("spring.ai.openai.api-key", () -> "test-key");
