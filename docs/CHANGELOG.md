@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-18 · flows/order-payment.md · conventions/resilience.md · reference/schedulers.md · services/market.md · reference/internal-apis.md · infra/observability.md · open-questions.md · decisions/0023-order-payment-transaction-saga.md · infra/payment-review-runbook.md · Saga 결제 복구 반영: 결제 결과 불명은 `PAYMENT_PROCESSING` 유지, 첫 호출 연결 실패는 확정 실패이고 복구 중 연결 실패는 결과 불명, 복구는 10초 유예 후 `SKIP LOCKED` 선점과 `attempt_no` 확인, 5회 뒤 `REVIEW_REQUIRED`와 `market_orders_review_required` 지표, 탈퇴 확인의 진행 중 주문에 `PAYMENT_PROCESSING`과 `REVIEW_REQUIRED` 추가, ADR 0023 장바구니 칸을 고쳐 재결제 확정 실패도 장바구니 복원, Q41 삭제, 결제 확인 필요 주문 처리 런북 추가 (#281)
 - 2026-11-18 · testing/strategy.md · 도구 표에 「공유 컨테이너」 줄 추가: `common-core` testFixtures의 `SharedPostgres` · `SharedRedis` · `SharedKafka`를 모듈마다 한 번 띄워 공유, 커밋 테스트 `@AfterEach` 정리 · Kafka 그룹 · key 분리 · `@SpringBootTest`는 `@DirtiesContext` (#511)
 - 2026-11-18 · decisions/0029 · flows/search-recommend.md · conventions/resilience.md · overview.md · services/ai.md · 장바구니 추천이 비면(실패 · 타임아웃 · 결과 없음) 화면이 `GET products?onSale=true`(최신순)로 「새로 올라온 식물」을 대신 보여 줌(AI 추천 표시 · 이유 없음, 판매 중 상품도 없으면 영역 숨김). 추천 API는 계속 빈 목록, 11/16에 지운 「최신 상품」 대체를 화면 쪽으로 되살림 (ADR 0029) (#289) (#518)
 - 2026-11-18 · reference/internal-apis.md · 상품 일괄 조회 `GET /internal/v1/products?ids=` 응답에 상품 등록 시각 `createdAt` 추가, market 장바구니 추천 카드 응답에도 `createdAt`(상품 등록 시각, 장바구니 목록의 `createdAt`은 담은 시각이라 다름) (#518)

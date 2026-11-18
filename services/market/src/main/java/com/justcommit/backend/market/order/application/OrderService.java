@@ -9,6 +9,8 @@ import com.justcommit.backend.market.*;
 import com.justcommit.backend.market.cart.application.CartService;
 import com.justcommit.backend.market.cart.domain.CartItem;
 import com.justcommit.backend.market.client.member.MemberQuery;
+import com.justcommit.backend.market.client.payment.PaymentOutcome;
+import com.justcommit.backend.market.order.application.OrderPaymentTransactions.AttemptSource;
 import com.justcommit.backend.market.client.payment.PaymentResult;
 import com.justcommit.backend.market.client.payment.PaymentStatus;
 import com.justcommit.backend.market.client.payment.PaymentUseCase;
@@ -52,7 +54,7 @@ import static com.justcommit.backend.market.order.domain.OrderErrorCode.CHECKOUT
 @RequiredArgsConstructor
 public class OrderService {
 
-    private static final Duration PAYMENT_WINDOW = Duration.ofMinutes(10);
+    private static final Duration PAYMENT_WINDOW = OrderPaymentTransactions.PAYMENT_WINDOW;
 
     private final OrdersRepository ordersRepository;
     private final SellerOrderRepository sellerOrderRepository;
@@ -63,14 +65,13 @@ public class OrderService {
     private final ProductUseCase productUseCase;
     private final OutboxPublisher outboxPublisher;
     private final PaymentUseCase paymentUseCase;
-    private final OrderQuery orderQuery;
     private final ShipmentService shipmentService;
     private final OrderItemConfirmationService orderItemConfirmationService;
     private final OrderExpirationService orderExpirationService;
     private final ShipmentQuery shipmentQuery;
     private final SellerOrderEventPublisher sellerOrderEventPublisher;
+    private final OrderPaymentTransactions orderPaymentTransactions;
 
-    @Transactional
     public OrderCreateResponse create(Long memberId, CartOrderCreateRequest request) {
         // 탈퇴한 회원의 주문을 막는 2차 방어 (1차는 Gateway의 토큰 폐기)
         if (memberQuery.isWithdrawn(memberId)) {
@@ -129,67 +130,88 @@ public class OrderService {
         });
         order.addSellerOrders(sellerOrders);
 
-        Orders saved = ordersRepository.saveAndFlush(order);
+        // TX1: 주문을 결제 대기로 먼저 커밋한다. 이후 REST는 트랜잭션 밖에서 부른다 (ADR 0023)
+        Orders saved = orderPaymentTransactions.saveNewOrder(order);
+        Long orderId = saved.getId();
 
-        // 예약을 부른 뒤로는 확정 실패만 롤백한다. 롤백하면 product에 남은 예약을 풀 주문이 없어진다 (해제는 OrderFailed 이벤트)
         try {
-            productUseCase.reserve(saved.getId(), selectedItems.stream()
+            productUseCase.reserve(orderId, selectedItems.stream()
                     .map(item -> new ReservationItem(item.getProductId(), item.getPrice()))
                     .toList());
         } catch (BusinessException | InternalApiUnavailableException e) {
-            throw e; // 409 · 연결 실패: 예약이 안 된 게 확실하다
+            // 409 · PRICE_CHANGED · 연결 실패: 예약이 안 된 게 확실하다. 주문만 실패로 끝내고 원래 에러로 응답한다
+            orderPaymentTransactions.failBeforePayment(orderId, false);
+            throw e;
         } catch (RuntimeException e) {
-            // 타임아웃 · 5xx · 본문 읽기 실패: 예약은 다시 부르지 않고 주문을 실패로 끝낸다
-            return failOrder(saved, "상품 예약 결과를 알 수 없음", e);
+            // 타임아웃 · 5xx · 본문 읽기 실패: 예약은 다시 부르지 않고 주문 실패 + 예약 해제 이벤트
+            log.warn("상품 예약 결과를 알 수 없음, 주문 실패: orderId={}", orderId, e);
+            orderPaymentTransactions.failBeforePayment(orderId, true);
+            return toResponse(orderPaymentTransactions.getOrder(orderId));
         }
 
-        LocalDateTime expiresAt = null;
-        boolean paid;
-        try {
-            paid = pay(saved, memberId);
-        } catch (BusinessException | InternalApiUnavailableException e) {
-            // 지갑 없음 · 연결 실패: 결제가 안 된 게 확실하다
-            return failOrder(saved, "결제 실패", e);
-        } catch (RuntimeException e) {
-            // 5xx · 본문 읽기 실패: 결과를 단정할 수 없어 결제 대기로 두고 같은 키로 재결제한다
-            log.warn("결제 응답 오류, 결제 대기 유지: orderId={}", saved.getId(), e);
-            paid = false;
-        }
-        if (paid) {
-            saved = orderPayment(saved);
-        } else {
-            expiresAt = saved.getCreatedAt().plus(PAYMENT_WINDOW);
-        }
+        payInAttempt(orderId, saved.getBuyerId(), saved.getTotalAmount(), false);
 
-        cartService.removeSelectedItems(memberId, request.cartItemIds()); //이후 다시담기
-
-        return new OrderCreateResponse(saved.getId(), saved.getOrderNo(), saved.getTotalAmount(),
-                saved.getItemCount(), saved.getCreatedAt(), saved.getStatus(), expiresAt);
+        // 예약 실패 · 결제 확정 실패가 아니면 선택 항목을 비운다 (잔액 부족 · 결과 불명 포함, ADR 0023 장바구니)
+        // 결제 결과가 아니라 DB에 반영된 상태로 판단한다. TX3가 실패해 결제 처리 중으로 남으면 복구가 결제할 수 있으므로 비우고,
+        // 복구가 확정 실패로 끝나면 그때 장바구니를 되돌린다
+        Orders current = orderPaymentTransactions.getOrder(orderId);
+        if (current.getStatus() != OrderStatus.PAYMENT_FAILED) {
+            removeCartItems(memberId, request.cartItemIds(), orderId);
+        }
+        return toResponse(current);
     }
 
-    @Transactional
     public OrderCreateResponse repayment(Long memberId, Long orderId) {
-        Orders order = ordersRepository.findLockedById(orderId)
+        Orders order = ordersRepository.findById(orderId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
         if (!order.getBuyerId().equals(memberId)) {
             throw new BusinessException(OrderErrorCode.ORDER_NOT_FOUND);
         }
         if (order.getStatus() == OrderStatus.PAID) {
-            return toResponse(order, null);
+            return toResponse(order);
         }
-        if (order.getStatus() != OrderStatus.PAYMENT_PENDING) {
-            throw new BusinessException(OrderErrorCode.ORDER_NOT_PAYABLE);
+        // 재결제는 확정 실패일 때만 장바구니를 되돌린다 (create가 이미 지웠으므로). 그 밖의 결과는 장바구니를 바꾸지 않는다
+        payInAttempt(orderId, order.getBuyerId(), order.getTotalAmount(), true);
+        return toResponse(orderPaymentTransactions.getOrder(orderId));
+    }
+
+    // TX2 → 결제 REST → TX3. 결제 시작을 선점하지 못하면 결제를 부르지 않고 지금 상태에 맞는 에러로 끝낸다
+    private PaymentOutcome payInAttempt(Long orderId, Long buyerId, BigDecimal amount, boolean restoreCartOnFailure) {
+        OptionalInt attemptNo = orderPaymentTransactions.startAttempt(orderId);
+        if (attemptNo.isEmpty()) {
+            return rejectNotStarted(orderId);
         }
-        LocalDateTime expiresAt = order.getCreatedAt().plus(PAYMENT_WINDOW);
-        if (!LocalDateTime.now().isBefore(expiresAt)) {
+        PaymentOutcome outcome = paymentUseCase.pay(orderId, buyerId, amount);
+        try {
+            orderPaymentTransactions.applyOutcome(orderId, attemptNo.getAsInt(), outcome, AttemptSource.FIRST_CALL,
+                    restoreCartOnFailure);
+        } catch (RuntimeException e) {
+            // 반영 실패(DB 오류 등): 주문은 결제 처리 중으로 남아 Saga 복구가 같은 orderId로 확정한다
+            log.error("결제 결과 반영 실패, Saga 복구에 맡김: orderId={}, attemptNo={}, outcome={}",
+                    orderId, attemptNo.getAsInt(), outcome.type(), e);
+        }
+        return outcome;
+    }
+
+    // TX2가 0건: 이미 결제됐으면 완료 응답, 기한 지난 결제 대기면 PAYMENT_WINDOW_EXPIRED, 그 밖은 결제할 수 없는 주문
+    private PaymentOutcome rejectNotStarted(Long orderId) {
+        Orders current = orderPaymentTransactions.getOrder(orderId);
+        if (current.getStatus() == OrderStatus.PAID) {
+            return PaymentOutcome.paid();
+        }
+        if (current.getStatus() == OrderStatus.PAYMENT_PENDING) {
             throw new BusinessException(OrderErrorCode.PAYMENT_WINDOW_EXPIRED);
         }
+        throw new BusinessException(OrderErrorCode.ORDER_NOT_PAYABLE);
+    }
 
-        if (pay(order, memberId)) {
-            order = orderPayment(order);
-            return toResponse(order, null);
+    // 삭제 실패는 주문 상태에 영향을 주지 않는다 (이미 커밋됨)
+    private void removeCartItems(Long memberId, List<Long> cartItemIds, Long orderId) {
+        try {
+            cartService.removeSelectedItems(memberId, cartItemIds);
+        } catch (RuntimeException e) {
+            log.warn("주문 후 장바구니 비우기 실패, 주문은 그대로: orderId={}", orderId, e);
         }
-        return toResponse(order, expiresAt);
     }
 
     // 트랜잭션 없이 후보만 읽고, 주문마다 따로 커밋한다. 한 주문이 실패해도 나머지는 계속한다.
@@ -397,46 +419,10 @@ public class OrderService {
         return sellerOrderCancelled;
     }
 
-    // 주문을 실패로 커밋한다. 장바구니는 그대로 둔다
-    private OrderCreateResponse failOrder(Orders order, String reason, RuntimeException e) {
-        log.warn("{}, 주문 실패: orderId={}", reason, order.getId(), e);
-        order.fail();
-        // 잡아 둔 예약은 product가 풀도록 알린다. 결제 결과를 모르는 경우는 여기로 오지 않는다 (결제 대기 유지)
-        outboxPublisher.publish(new OrderFailed(order.getId()));
-        return toResponse(order, null);
-    }
-
-    // 응답 타임아웃이면 결제 대기로 두고 사용자가 같은 키(orderId)로 재결제한다. 자동 복구는 #280
-    private boolean pay(Orders order, Long memberId) {
-        PaymentResult result;
-        try {
-            result = paymentUseCase.pay(order.getId(), memberId, order.getTotalAmount());
-        } catch (InternalApiResultUnknownException e) {
-            log.warn("결제 응답 타임아웃, 결제 대기 유지: orderId={}", order.getId(), e);
-            return false;
-        }
-        if (result.status() == PaymentStatus.WALLET_NOT_FOUND) {
-            throw new BusinessException(OrderErrorCode.WALLET_NOT_FOUND);
-        }
-        return result.isPaid();
-    }
-
-    private Orders orderPayment(Orders order) {
-        order.paid();
-        // 판매 완료는 product에 알린다. 같은 트랜잭션에 기록하고 커밋 뒤 발행 (ADR 0016)
-        outboxPublisher.publish(new OrderPaid(order.getId()));
-
-        OrderResult result = orderQuery.getOrder(order.getId());
-        LocalDateTime paidAt = LocalDateTime.now();
-        for (SellerOrderResult sellerOrder : result.sellerOrders()) {
-            sellerOrderEventPublisher.publishAfterCommit(new SellerOrderPaidEvent(
-                    sellerOrder.id(), sellerOrder.sellerId(), result.buyerId(), paidAt));
-        }
-        shipmentService.createShipments(result);
-        return order;
-    }
-
-    private OrderCreateResponse toResponse(Orders order, LocalDateTime expiresAt) {
+    // 결제 대기일 때만 결제 기한을 알려 준다
+    private OrderCreateResponse toResponse(Orders order) {
+        LocalDateTime expiresAt = order.getStatus() == OrderStatus.PAYMENT_PENDING
+                ? order.getCreatedAt().plus(PAYMENT_WINDOW) : null;
         return new OrderCreateResponse(order.getId(), order.getOrderNo(), order.getTotalAmount(),
                 order.getItemCount(), order.getCreatedAt(), order.getStatus(), expiresAt);
     }

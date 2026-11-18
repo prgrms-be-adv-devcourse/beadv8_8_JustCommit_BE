@@ -39,6 +39,7 @@ import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
 import com.justcommit.backend.market.shipment.application.ShipmentService;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import org.junit.jupiter.api.BeforeEach;
+import com.justcommit.backend.market.client.payment.PaymentOutcome;
 import com.justcommit.backend.market.client.payment.PaymentResult;
 import com.justcommit.backend.market.client.payment.PaymentStatus;
 import com.justcommit.backend.market.client.payment.PaymentUseCase;
@@ -56,6 +57,9 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
@@ -69,12 +73,15 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -106,6 +113,10 @@ class OrderServiceTest {
     void setUpConfirmationService() {
         confirmationServiceUnderTest = new OrderItemConfirmationService(ordersRepository, ordersItemRepository,
                 sellerOrderRepository, shipmentQuery, purchaseConfirmedEventPublisher, sellerOrderEventPublisher);
+        // 트랜잭션 경계 순서만 보는 단위 테스트라 실제 커밋 없이 동기화 콜백만 돈다. CAS 동작은 통합 테스트에서 확인
+        ReflectionTestUtils.setField(orderService, "orderPaymentTransactions", new OrderPaymentTransactions(
+                new NoOpTransactionManager(), ordersRepository, outboxPublisher, orderQuery,
+                sellerOrderEventPublisher, shipmentService, cartService));
     }
 
     @Test
@@ -289,6 +300,10 @@ class OrderServiceTest {
 
         verify(productUseCase).reserve(99L, List.of(new ReservationItem(101L, money("10000"))));
         verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+        // 주문은 실패로 커밋하고, 예약이 안 됐으므로 해제 이벤트는 없다
+        assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+        verify(outboxPublisher, never()).publish(any());
+        verify(paymentUseCase, never()).pay(any(), any(), any());
     }
 
     @Test
@@ -310,19 +325,22 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("[S-D04] 결제 응답 타임아웃이면 보상하지 않고 결제 대기(기한 10분)로 둔다")
-    void keepsOrderPendingWhenPaymentTimesOut() {
+    @DisplayName("[S-D04] 결제 응답 타임아웃이면 바로 보상하지 않고 결제 처리 중으로 두며, 장바구니는 비운다")
+    void keepsOrderProcessingWhenPaymentTimesOut() {
         stubLookup(List.of(selected(1L, 101L, "10000")),
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
         stubSavedOrder();
         when(paymentUseCase.pay(99L, 10L, money("13000")))
-                .thenThrow(new InternalApiResultUnknownException("payment", new java.net.SocketTimeoutException()));
+                .thenReturn(PaymentOutcome.unknown("TIMEOUT"));
 
         OrderCreateResponse response = orderService.create(10L, request(1L));
 
-        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PENDING);
-        assertThat(response.expiresAt()).isEqualTo(response.createdAt().plusMinutes(10));
-        verify(outboxPublisher, never()).publish(any(OrderPaid.class));
+        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PROCESSING);
+        assertThat(response.expiresAt()).isNull();
+        assertThat(savedOrder.getAttemptNo()).isEqualTo(1);
+        assertThat(savedOrder.getLastError()).isEqualTo("TIMEOUT");
+        verify(outboxPublisher, never()).publish(any());
+        verify(cartService).removeSelectedItems(10L, List.of(1L));
     }
 
     @Test
@@ -333,6 +351,7 @@ class OrderServiceTest {
         sellerOrder.addItems(List.of(new OrdersItem(sellerOrder, 101L, "몬스테라", money("10000"))));
         order.addSellerOrders(List.of(sellerOrder));
         ReflectionTestUtils.setField(order, "id", 99L);
+        ReflectionTestUtils.setField(order, "createdAt", LocalDateTime.now().minusMinutes(11));
         when(ordersRepository.findByIdForUpdateSkipLocked(99L)).thenReturn(Optional.of(order));
 
         expirationService().expire(99L);
@@ -355,6 +374,32 @@ class OrderServiceTest {
         expirationService().expire(99L);
 
         assertThat(paid.getStatus()).isEqualTo(OrderStatus.PAID);
+        verify(outboxPublisher, never()).publish(any());
+        verify(cartService, never()).restoreItem(any(Long.class), any(Long.class), any());
+    }
+
+    @Test
+    @DisplayName("잠근 뒤 보니 결제 처리 중 · 확인 필요이거나 아직 10분이 안 된 주문은 만료하지 않는다")
+    void expirationRechecksStatusAndPaymentWindowAfterLocking() {
+        Orders processing = pendingOrder(10L);
+        ReflectionTestUtils.setField(processing, "createdAt", LocalDateTime.now().minusMinutes(11));
+        ReflectionTestUtils.setField(processing, "status", OrderStatus.PAYMENT_PROCESSING);
+        Orders reviewRequired = pendingOrder(10L);
+        ReflectionTestUtils.setField(reviewRequired, "createdAt", LocalDateTime.now().minusMinutes(30));
+        ReflectionTestUtils.setField(reviewRequired, "status", OrderStatus.REVIEW_REQUIRED);
+        Orders notYetDue = pendingOrder(10L); // 생성 1분 전
+        when(ordersRepository.findByIdForUpdateSkipLocked(97L)).thenReturn(Optional.of(processing));
+        when(ordersRepository.findByIdForUpdateSkipLocked(98L)).thenReturn(Optional.of(reviewRequired));
+        when(ordersRepository.findByIdForUpdateSkipLocked(99L)).thenReturn(Optional.of(notYetDue));
+
+        expirationService().expire(97L);
+        expirationService().expire(98L);
+        expirationService().expire(99L);
+
+        assertThat(processing.getStatus()).isEqualTo(OrderStatus.PAYMENT_PROCESSING);
+        assertThat(reviewRequired.getStatus()).isEqualTo(OrderStatus.REVIEW_REQUIRED);
+        assertThat(notYetDue.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        verify(ordersRepository, never()).saveAndFlush(any());
         verify(outboxPublisher, never()).publish(any());
         verify(cartService, never()).restoreItem(any(Long.class), any(Long.class), any());
     }
@@ -386,7 +431,7 @@ class OrderServiceTest {
         stubLookup(List.of(selected(1L, 101L, "10000")),
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
         stubSavedOrder();
-        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentResult.paid(money("0")));
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentOutcome.paid());
         when(orderQuery.getOrder(99L)).thenReturn(orderResult);
         doAnswer(invocation -> {
             assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAID);
@@ -404,9 +449,8 @@ class OrderServiceTest {
 
     @Test
     void repaysPendingOrderBeforeExpiry() {
-        Orders order = pendingOrder(10L);
-        when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
-        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentResult.paid(money("0")));
+        stubOrderRows(pendingOrder(10L));
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentOutcome.paid());
         when(orderQuery.getOrder(99L)).thenReturn(orderResult);
 
         OrderCreateResponse response = orderService.repayment(10L, 99L);
@@ -415,12 +459,14 @@ class OrderServiceTest {
         assertThat(response.expiresAt()).isNull();
         verify(outboxPublisher).publish(new OrderPaid(99L));
         verify(shipmentService).createShipments(orderResult);
+        verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+        verify(cartService, never()).restoreItem(anyLong(), anyLong(), any());
     }
 
     @Test
     @DisplayName("[S-A07] 남의 주문을 재결제하면 ORDER_NOT_FOUND(404), 결제를 부르지 않음")
     void rejectsRepaymentFromAnotherMember() {
-        when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(pendingOrder(10L)));
+        when(ordersRepository.findById(99L)).thenReturn(Optional.of(pendingOrder(10L)));
 
         assertThatThrownBy(() -> orderService.repayment(20L, 99L))
                 .isInstanceOfSatisfying(BusinessException.class,
@@ -429,25 +475,27 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("[S-D10] 결제 기한 10분이 지나면 아직 PAYMENT_PENDING이어도(만료 스케줄러 전) PAYMENT_WINDOW_EXPIRED, 결제를 부르지 않음")
+    @DisplayName("S-D10] 결제 기한 10분이 지나면 아직 PAYMENT_PENDING이어도(만료 스케줄러 전) 결제 처리 중으로 바꾸지 않고 PAYMENT_WINDOW_EXPIRED, 결제를 부르지 않음")
     void rejectsRepaymentAfterPaymentWindow() {
         Orders order = pendingOrder(10L);
         ReflectionTestUtils.setField(order, "createdAt", LocalDateTime.now().minusMinutes(11));
-        when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
+        stubOrderRows(order);
 
         assertThatThrownBy(() -> orderService.repayment(10L, 99L))
                 .isInstanceOfSatisfying(BusinessException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.PAYMENT_WINDOW_EXPIRED));
         verify(paymentUseCase, never()).pay(any(), any(), any());
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        assertThat(order.getAttemptNo()).isZero();
     }
 
     @Test
     @DisplayName("[S-D02] 재결제 때 예치금이 부족하면 결제 대기를 유지하고 기한은 주문 후 10분 그대로")
     void keepsPendingOrderWhenRepaymentBalanceIsInsufficient() {
         Orders order = pendingOrder(10L);
-        when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
+        stubOrderRows(order);
         when(paymentUseCase.pay(99L, 10L, money("13000")))
-                .thenReturn(PaymentResult.insufficientBalance(money("1000")));
+                .thenReturn(PaymentOutcome.insufficientBalance());
 
         OrderCreateResponse response = orderService.repayment(10L, 99L);
 
@@ -455,6 +503,129 @@ class OrderServiceTest {
         assertThat(response.expiresAt()).isEqualTo(order.getCreatedAt().plusMinutes(10));
         verify(outboxPublisher, never()).publish(any(OrderPaid.class));
         verify(shipmentService, never()).createShipments(any());
+        verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+    }
+
+    @Test
+    @DisplayName("결제 처리 중인 주문을 다시 결제하면 결제를 부르지 않고 ORDER_NOT_PAYABLE")
+    void rejectsRepaymentWhilePaymentIsProcessing() {
+        Orders order = pendingOrder(10L);
+        ReflectionTestUtils.setField(order, "status", OrderStatus.PAYMENT_PROCESSING);
+        stubOrderRows(order);
+
+        assertThatThrownBy(() -> orderService.repayment(10L, 99L))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_NOT_PAYABLE));
+        verify(paymentUseCase, never()).pay(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("재결제가 확정 실패(4xx)면 주문 실패 + order-failed, create가 지운 장바구니를 주문 당시 가격으로 되돌린다")
+    void failsOrderWhenRepaymentIsRejected() {
+        Orders order = pendingOrderWithItem(10L);
+        stubOrderRows(order);
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentOutcome.rejected("HTTP_403_FORBIDDEN"));
+
+        OrderCreateResponse response = orderService.repayment(10L, 99L);
+
+        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+        assertThat(order.getLastError()).isEqualTo("HTTP_403_FORBIDDEN");
+        verify(outboxPublisher).publish(new OrderFailed(99L));
+        verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+        verify(cartService).restoreItem(10L, 101L, money("10000"));
+    }
+
+    @Test
+    @DisplayName("재결제 요청이 payment에 닿지 않으면(연결 실패) 확정 실패로 주문 실패 + 장바구니 복원")
+    void failsOrderAndRestoresCartWhenRepaymentIsNotDelivered() {
+        Orders order = pendingOrderWithItem(10L);
+        stubOrderRows(order);
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentOutcome.notDelivered());
+
+        OrderCreateResponse response = orderService.repayment(10L, 99L);
+
+        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+        assertThat(order.getLastError()).isEqualTo("CONNECTION_FAILED");
+        verify(outboxPublisher).publish(new OrderFailed(99L));
+        verify(cartService).restoreItem(10L, 101L, money("10000"));
+    }
+
+    @Test
+    @DisplayName("재결제가 잔액 부족이면 결제 대기로 두고 장바구니는 바꾸지 않는다")
+    void keepsPendingWithoutTouchingCartWhenRepaymentBalanceIsInsufficient() {
+        Orders order = pendingOrderWithItem(10L);
+        stubOrderRows(order);
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentOutcome.insufficientBalance());
+
+        OrderCreateResponse response = orderService.repayment(10L, 99L);
+
+        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        verify(cartService, never()).restoreItem(anyLong(), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("[S-D12] 결제 응답을 기다리는 사이 다른 시도가 선점했으면 늦게 온 결과는 반영하지 않는다")
+    void ignoresStaleOutcomeWhenAnotherAttemptTookOver() {
+        Orders order = pendingOrder(10L);
+        stubOrderRows(order);
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenAnswer(invocation -> {
+            ReflectionTestUtils.setField(order, "attemptNo", 2); // 복구가 새 시도로 선점
+            return PaymentOutcome.rejected("WALLET_NOT_FOUND");
+        });
+
+        OrderCreateResponse response = orderService.repayment(10L, 99L);
+
+        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PROCESSING);
+        verify(outboxPublisher, never()).publish(any());
+    }
+
+    @Test
+    @DisplayName("결과 반영(TX3)이 DB 오류로 실패해도 결제 처리 중으로 남기고 장바구니는 비운다")
+    void leavesOrderProcessingWhenApplyingOutcomeFails() {
+        stubLookup(List.of(selected(1L, 101L, "10000")),
+                List.of(product(101L, 20L, "몬스테라", "10000", true)));
+        stubSavedOrder();
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentOutcome.paid());
+        when(ordersRepository.applyPaymentAttempt(eq(99L), anyInt(), any(), any(), any(), any()))
+                .thenThrow(new IllegalStateException("DB 오류"));
+
+        OrderCreateResponse response = orderService.create(10L, request(1L));
+
+        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PROCESSING);
+        verify(outboxPublisher, never()).publish(any());
+        verify(cartService).removeSelectedItems(10L, List.of(1L));
+    }
+
+    @Test
+    @DisplayName("첫 결제 요청이 안 닿았는데 결과 반영(TX3)도 실패하면, 결제 처리 중으로 남아 복구가 결제할 수 있으므로 장바구니를 비운다")
+    void removesCartWhenNotDeliveredButApplyingOutcomeFails() {
+        stubLookup(List.of(selected(1L, 101L, "10000")),
+                List.of(product(101L, 20L, "몬스테라", "10000", true)));
+        stubSavedOrder();
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentOutcome.notDelivered());
+        when(ordersRepository.applyPaymentAttempt(eq(99L), anyInt(), any(), any(), any(), any()))
+                .thenThrow(new IllegalStateException("DB 오류"));
+
+        OrderCreateResponse response = orderService.create(10L, request(1L));
+
+        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PROCESSING);
+        verify(outboxPublisher, never()).publish(any());
+        verify(cartService).removeSelectedItems(10L, List.of(1L));
+    }
+
+    @Test
+    @DisplayName("장바구니 비우기가 실패해도 주문 응답은 그대로 나간다")
+    void cartRemovalFailureDoesNotAffectOrder() {
+        stubLookup(List.of(selected(1L, 101L, "10000")),
+                List.of(product(101L, 20L, "몬스테라", "10000", true)));
+        stubSavedOrder();
+        stubInsufficientBalance();
+        doThrow(new BusinessException(CommonErrorCode.RESOURCE_NOT_FOUND))
+                .when(cartService).removeSelectedItems(10L, List.of(1L));
+
+        OrderCreateResponse response = orderService.create(10L, request(1L));
+
+        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PENDING);
     }
 
     @Test
@@ -462,7 +633,7 @@ class OrderServiceTest {
         stubLookup(List.of(selected(1L, 101L, "10000")),
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
         stubSavedOrder();
-        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentResult.walletNotFound());
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentOutcome.rejected("WALLET_NOT_FOUND"));
 
         assertFailedOrderCommitted(orderService.create(10L, request(1L)));
     }
@@ -473,26 +644,29 @@ class OrderServiceTest {
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
         stubSavedOrder();
         when(paymentUseCase.pay(99L, 10L, money("13000")))
-                .thenThrow(new InternalApiUnavailableException("payment", new java.net.ConnectException()));
+                .thenReturn(PaymentOutcome.notDelivered());
 
         assertFailedOrderCommitted(orderService.create(10L, request(1L)));
     }
 
     @Test
-    void keepsOrderPendingWhenPaymentReturnsServerError() {
+    @DisplayName("[S-D07] 결제 5xx는 결과 불명으로 결제 처리 중을 유지한다")
+    void keepsOrderProcessingWhenPaymentReturnsServerError() {
         stubLookup(List.of(selected(1L, 101L, "10000")),
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
         stubSavedOrder();
         when(paymentUseCase.pay(99L, 10L, money("13000")))
-                .thenThrow(new InternalApiErrorException("payment", 500, null, "payment 서비스가 500 응답을 보냈습니다."));
+                .thenReturn(PaymentOutcome.unknown("HTTP_500"));
 
         OrderCreateResponse response = orderService.create(10L, request(1L));
 
-        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PROCESSING);
+        assertThat(savedOrder.getLastError()).isEqualTo("HTTP_500");
+        verify(outboxPublisher, never()).publish(any());
     }
 
     @Test
-    void rollsBackWhenProductIsUnreachableBeforeReservation() {
+    void failsOrderWithoutEventWhenProductIsUnreachableBeforeReservation() {
         stubLookup(List.of(selected(1L, 101L, "10000")),
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
         stubSavedOrder();
@@ -502,6 +676,8 @@ class OrderServiceTest {
         assertThatThrownBy(() -> orderService.create(10L, request(1L)))
                 .isInstanceOf(InternalApiUnavailableException.class);
         verify(paymentUseCase, never()).pay(any(), any(), any());
+        assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+        verify(outboxPublisher, never()).publish(any());
     }
 
     // 예약을 부른 뒤라 예외 없이 PAYMENT_FAILED로 돌려줘야 주문 행이 커밋된다
@@ -512,6 +688,7 @@ class OrderServiceTest {
         verify(outboxPublisher).publish(new OrderFailed(99L));
         verify(outboxPublisher, never()).publish(any(OrderPaid.class));
         verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+        verify(cartService, never()).restoreItem(anyLong(), anyLong(), any()); // 지우지 않았으니 되돌릴 것도 없음
     }
 
     @Test
@@ -667,7 +844,7 @@ class OrderServiceTest {
     void returnsPaidOrderWithoutChargingAgainOnRepeatedRequest() {
         Orders order = pendingOrder(10L);
         order.paid();
-        when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
+        when(ordersRepository.findById(99L)).thenReturn(Optional.of(order));
 
         OrderCreateResponse response = orderService.repayment(10L, 99L);
 
@@ -916,15 +1093,77 @@ class OrderServiceTest {
         when(ordersRepository.saveAndFlush(any(Orders.class))).thenAnswer(invocation -> {
             Orders order = invocation.getArgument(0);
             ReflectionTestUtils.setField(order, "id", 99L);
-            ReflectionTestUtils.setField(order, "createdAt", LocalDateTime.of(2026, 10, 10, 12, 0));
+            ReflectionTestUtils.setField(order, "createdAt", LocalDateTime.now());
             savedOrder = order;
             return order;
         });
+        stubOrderRowsLazily();
+    }
+
+    private void stubOrderRows(Orders order) {
+        savedOrder = order;
+        stubOrderRowsLazily();
+    }
+
+    // 조건부 UPDATE(CAS)를 savedOrder에 흉내 낸다. 실제 SQL 동작은 통합 테스트에서 확인한다
+    private void stubOrderRowsLazily() {
+        lenient().when(ordersRepository.findById(99L)).thenAnswer(invocation -> Optional.of(savedOrder));
+        lenient().when(ordersRepository.findLockedById(99L)).thenAnswer(invocation -> Optional.of(savedOrder));
+        lenient().when(ordersRepository.startPaymentAttempt(eq(99L), any(), any(),
+                eq(OrderStatus.PAYMENT_PENDING), eq(OrderStatus.PAYMENT_PROCESSING))).thenAnswer(invocation -> {
+            LocalDateTime createdAfter = invocation.getArgument(2);
+            if (savedOrder.getStatus() != OrderStatus.PAYMENT_PENDING || !savedOrder.getCreatedAt().isAfter(createdAfter)) {
+                return 0;
+            }
+            ReflectionTestUtils.setField(savedOrder, "status", OrderStatus.PAYMENT_PROCESSING);
+            ReflectionTestUtils.setField(savedOrder, "attemptNo", savedOrder.getAttemptNo() + 1);
+            return 1;
+        });
+        lenient().when(ordersRepository.applyPaymentAttempt(eq(99L), anyInt(), any(), any(), any(),
+                eq(OrderStatus.PAYMENT_PROCESSING))).thenAnswer(invocation -> {
+            int attemptNo = invocation.getArgument(1);
+            if (savedOrder.getStatus() != OrderStatus.PAYMENT_PROCESSING || savedOrder.getAttemptNo() != attemptNo) {
+                return 0;
+            }
+            ReflectionTestUtils.setField(savedOrder, "status", invocation.getArgument(2));
+            ReflectionTestUtils.setField(savedOrder, "lastError", invocation.getArgument(3));
+            return 1;
+        });
+    }
+
+    // 실제 트랜잭션 없이 커밋 · 동기화 콜백만 도는 매니저
+    private static final class NoOpTransactionManager extends AbstractPlatformTransactionManager {
+        @Override
+        protected Object doGetTransaction() {
+            return new Object();
+        }
+
+        @Override
+        protected void doBegin(Object transaction, TransactionDefinition definition) {
+        }
+
+        @Override
+        protected void doCommit(DefaultTransactionStatus status) {
+        }
+
+        @Override
+        protected void doRollback(DefaultTransactionStatus status) {
+        }
     }
 
     private void stubInsufficientBalance() {
         when(paymentUseCase.pay(eq(99L), eq(10L), any(BigDecimal.class)))
-                .thenReturn(PaymentResult.insufficientBalance(money("0")));
+                .thenReturn(PaymentOutcome.insufficientBalance());
+    }
+
+    // 재결제 장바구니 복원용: 상품 1개(101, 10000원) + 배송비 3000원 = 13000원
+    private Orders pendingOrderWithItem(long buyerId) {
+        Orders order = pendingOrder(buyerId);
+        SellerOrder sellerOrder = new SellerOrder(order, 20L);
+        sellerOrder.addItems(List.of(new OrdersItem(sellerOrder, 101L, "몬스테라", money("10000"))));
+        sellerOrder.setShippingFee(money("3000"));
+        order.addSellerOrders(List.of(sellerOrder));
+        return order;
     }
 
     private Orders pendingOrder(long buyerId) {
