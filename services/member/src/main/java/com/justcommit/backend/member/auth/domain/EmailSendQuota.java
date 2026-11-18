@@ -13,6 +13,7 @@ public enum EmailSendQuota {
   SIGNUP("signup"),
   PASSWORD_RESET("password-reset"),
   ACCOUNT_CHANGE("account-change"),
+  WITHDRAWAL("withdrawal"),
   ACCOUNT_REMINDER("account-reminder"); // 가입 계정 안내 (인증번호 없는 메일이라 EmailPurpose에는 없음)
 
   // Redis 키에 들어가는 이름 (예: auth:email:daily:account-reminder:{email})
@@ -24,6 +25,7 @@ public enum EmailSendQuota {
       case SIGNUP -> SIGNUP;
       case PASSWORD_RESET -> PASSWORD_RESET;
       case ACCOUNT_CHANGE -> ACCOUNT_CHANGE;
+      case WITHDRAWAL -> WITHDRAWAL;
     };
   }
 }

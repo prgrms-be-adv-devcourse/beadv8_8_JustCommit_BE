@@ -4,6 +4,7 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.seller.domain.SellerReviewConsentPolicy;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
+import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,6 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.support.TransactionTemplate;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -26,6 +28,11 @@ import java.net.http.HttpResponse;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.util.Base64;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,6 +66,8 @@ class SellerProfileIntegrationTest {
   @Autowired MemberRepository memberRepository;
   @Autowired PasswordEncoder passwordEncoder;
   @Autowired JdbcTemplate jdbcTemplate;
+  @Autowired MemberLocker memberLocker;
+  @Autowired TransactionTemplate transactionTemplate;
 
   private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -160,6 +169,67 @@ class SellerProfileIntegrationTest {
     assertThatThrownBy(() -> sellerProfileService.changeIntro(seller.getId(), "수정 시도"))
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode").isEqualTo(MemberErrorCode.MEMBER_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("탈퇴가 회원을 잠근 동안 온 소개글 수정은 기다렸다가 404 MEMBER_NOT_FOUND, 탈퇴가 지운 소개글이 다시 저장되지 않음 (#407)")
+  void introChangeDuringWithdrawal() throws Exception {
+    Long memberId = saveSeller("원래 소개").getId();
+    CountDownLatch anonymized = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      // 탈퇴의 최종 처리처럼: 회원 행을 잠그고 익명화 · 소개글 NULL을 반영한 뒤 커밋 전에 멈춤
+      Future<?> withdrawal = executor.submit(() -> transactionTemplate.executeWithoutResult(status -> {
+        memberLocker.lockById(memberId).orElseThrow();
+        jdbcTemplate.update("update member set status = 'DELETED', email = null, nickname = null, phone = null where id = ?", memberId);
+        jdbcTemplate.update("update seller set intro = null where member_id = ?", memberId);
+        anonymized.countDown();
+        awaitQuietly(release);
+      }));
+      assertThat(anonymized.await(10, TimeUnit.SECONDS)).isTrue();
+
+      // 연락처를 넣으려는 소개글 수정: 같은 회원 행 잠금에서 기다려야 한다
+      Future<Throwable> change = executor.submit(() -> {
+        try {
+          sellerProfileService.changeIntro(memberId, "010-1234-5678로 연락 주세요");
+          return null;
+        } catch (Throwable t) {
+          return t;
+        }
+      });
+      waitForLockWaiter();
+      release.countDown();
+      withdrawal.get(10, TimeUnit.SECONDS);
+
+      assertThat(change.get(10, TimeUnit.SECONDS)).isInstanceOfSatisfying(BusinessException.class,
+          e -> assertThat(e.getErrorCode()).isEqualTo(MemberErrorCode.MEMBER_NOT_FOUND));
+      assertThat(introOf(memberId)).isNull();
+    } finally {
+      release.countDown();
+      executor.shutdownNow();
+    }
+  }
+
+  // 다른 트랜잭션이 행 잠금을 기다리기 시작할 때까지 (MemberLocker 대기 제한 3초 안에서 확인)
+  private void waitForLockWaiter() throws InterruptedException {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+    while (System.nanoTime() < deadline) {
+      Integer waiting = jdbcTemplate.queryForObject("select count(*) from pg_locks where not granted", Integer.class);
+      if (waiting != null && waiting > 0) {
+        return;
+      }
+      Thread.sleep(20);
+    }
+    throw new AssertionError("소개글 수정이 행 잠금을 기다리지 않음");
+  }
+
+  private static void awaitQuietly(CountDownLatch latch) {
+    try {
+      latch.await(10, TimeUnit.SECONDS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   private HttpResponse<String> get(String path) throws Exception {

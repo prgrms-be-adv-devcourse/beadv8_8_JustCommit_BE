@@ -4,7 +4,7 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
-import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.seller.domain.Seller;
 import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class SellerProfileService {
 
   private final SellerRepository sellerRepository;
-  private final MemberRepository memberRepository;
+  private final MemberLocker memberLocker;
 
   @Transactional(readOnly = true)
   public SellerResult getSeller(Long sellerId) {
@@ -32,11 +32,12 @@ public class SellerProfileService {
     return toResult(seller);
   }
 
-  // 본인 소개글 수정: 탈퇴 회원은 404 MEMBER_NOT_FOUND, 판매자 행이 없으면 403 NOT_SELLER
-  // 마지막에 저장된 값이 남는 정책이라 잠금 · 이벤트 없음 (소개글은 MemberUpdated에 없음)
+  // 본인 소개글 수정: 탈퇴 회원은 404 MEMBER_NOT_FOUND, 판매자 행이 없으면 403 NOT_SELLER. 이벤트 없음 (소개글은 MemberUpdated에 없음)
+  // 탈퇴(#407)와 같은 회원 행 잠금을 먼저 잡는다: 탈퇴가 소개글을 지운 뒤에 옛 상태로 읽은 수정이 다시 저장하지 않게.
+  // 수정이 먼저 끝나면 탈퇴가 그 값을 지우고, 탈퇴가 먼저 끝나면 수정은 404 (대기 제한을 넘으면 409 MEMBER_BUSY)
   @Transactional
   public SellerResult changeIntro(Long memberId, String intro) {
-    Member member = memberRepository.findById(memberId)
+    Member member = memberLocker.lockById(memberId)
         .filter(m -> m.getStatus() != MemberStatus.DELETED)
         .orElseThrow(() -> new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
     Seller seller = sellerRepository.findById(memberId)

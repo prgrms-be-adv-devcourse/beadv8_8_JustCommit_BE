@@ -101,6 +101,19 @@ public class EmailVerificationService {
     return VerificationBinding.fromBinding(outcome.binding());
   }
 
+  // 탈퇴 인증번호 발송 · 확인 (#407): 계좌 변경과 같은 방식. 로그인한 카카오 회원의 이메일로 보내고,
+  // 발송 당시 회원 id · 인증 버전을 번호에 묶는다. 확인은 틀림 · 만료 · 오답 한도를 각 오류로 알리고, 맞으면 묶은 정보를 돌려준다
+  public EmailSendResult sendWithdrawalCode(String email, VerificationBinding binding) {
+    return issueCode(email, EmailPurpose.WITHDRAWAL, binding.toBinding());
+  }
+
+  public Optional<VerificationBinding> verifyWithdrawalCode(String email, String code) {
+    EmailVerificationRedisStore.VerifyOutcome outcome =
+        store.verifyCode(EmailPurpose.WITHDRAWAL, email, code, MAX_WRONG_ATTEMPTS, CODE_TTL);
+    requireMatched(outcome.result());
+    return VerificationBinding.fromBinding(outcome.binding());
+  }
+
   // 비밀번호 재설정 인증번호 발송 (#412): 가입 여부 · 로그인 방식이 드러나지 않게 모든 경우 같은 결과로 끝낸다
   // - 재발송 제한 · 하루 한도: 자리를 못 잡았으니 되돌릴 것 없이 끝
   // - 자리는 재설정 대상인지와 관계없이 똑같이 잡는다 (하루 횟수도 똑같이 세어, 한도에 걸리는지로 가입 여부를 알 수 없게)
@@ -212,9 +225,10 @@ public class EmailVerificationService {
     return result;
   }
 
-  // 공개 경로(sendCode · verifyCode)에서는 계좌 변경을 받지 않는다 (로그인 필수 전용 메서드로만, #413)
+  // 공개 경로(sendCode · verifyCode)는 가입 · 비밀번호 재설정만 받는다 (허용 목록)
+  // 계좌 변경(#413) · 탈퇴(#407)처럼 로그인이 필요한 목적은 전용 메서드로만. 목적이 늘어나도 기본은 거절
   private void requireSupported(EmailPurpose purpose) {
-    if (purpose == EmailPurpose.ACCOUNT_CHANGE) {
+    if (purpose != EmailPurpose.SIGNUP && purpose != EmailPurpose.PASSWORD_RESET) {
       throw new BusinessException(MemberErrorCode.EMAIL_PURPOSE_NOT_SUPPORTED);
     }
   }
