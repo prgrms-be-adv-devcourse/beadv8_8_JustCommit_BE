@@ -86,5 +86,5 @@ replant(팀 JustCommit)는 직접 키운 식물을 사고파는 C2C 식물 마�
 ```bash
 ./gradlew build          # 빌드 + 테스트
 ./gradlew test           # 테스트만
-docker compose up -d     # 로컬 의존 서비스 (PostgreSQL · Redis · Kafka · RustFS)
+docker compose up -d     # 로컬 의존 서비스 (PostgreSQL · Redis · Kafka · OpenSearch · RustFS)
 ```

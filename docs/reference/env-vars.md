@@ -32,6 +32,7 @@
 | `AWS_REGION` · S3 버킷 | product | 사진 업로드 (자격 증명은 EC2 IAM 역할) |
 | `OPENAI_API_KEY` | product | OpenAI Moderation (사진 · 글 유해 검사). 없으면 검수가 관리자 확인으로 |
 | `ANTHROPIC_API_KEY` | product | Claude Haiku 식물 식별. 없으면 검수가 관리자 확인으로 |
+| `OPENSEARCH_URL` | product | 상품 검색 OpenSearch 주소(`http://{호스트}:9200`, 보안 플러그인을 꺼서 계정 없음). 운영은 `make-env.sh`가 데이터 서버 주소로 넣음, 로컬은 `docker-compose.yml`의 `opensearch`(`http://localhost:9200`). 앱 설정 · 기본값은 #484 |
 | `OPENAI_API_KEY` | ai-service | 외부 임베딩 (OpenAI). 없어도 앱은 뜨고 임베딩 호출만 실패 |
 | `EMBEDDING_MODEL` · `EMBEDDING_DIMENSIONS` | ai-service | 임베딩 모델 이름 · 차원 (`custom.embedding.*`, Spring AI 설정도 이 값을 씀). 없으면 `text-embedding-3-small` · `1536`. 차원은 `species_vector_store`의 `vector(1536)` 칸과 같아야 하고, 다르면 앱 시작이 실패함 (#508) |
 
