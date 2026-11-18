@@ -1,0 +1,87 @@
+# ai-service: 평소 1개, CPU가 요청량의 70%를 넘으면 2개까지 (docs/infra/deploy.md)
+# 바깥 포트(NodePort) 없음 — market만 K3s 안에서 Service 이름 ai:8080으로 부른다 (docs/reference/ports.md)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai
+  namespace: replant
+  labels:
+    app: ai
+spec:
+  # 개수는 아래 HPA가 정한다 (replicas를 적으면 apply 때마다 1로 되돌아감)
+  selector:
+    matchLabels:
+      app: ai
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: ai
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: ai
+          image: ghcr.io/prgrms-be-adv-devcourse/replant-ai:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: ai-env
+          resources:
+            # HPA의 70%는 이 requests.cpu 기준
+            requests:
+              cpu: 200m
+              memory: 640Mi
+            limits:
+              memory: 640Mi
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai
+  namespace: replant
+spec:
+  type: ClusterIP
+  selector:
+    app: ai
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ai
+  namespace: replant
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

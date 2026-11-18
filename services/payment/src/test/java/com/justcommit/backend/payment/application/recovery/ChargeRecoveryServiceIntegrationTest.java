@@ -213,7 +213,7 @@ class ChargeRecoveryServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("토스 DONE이고 정보가 맞으면 APPROVED로 바꾸고 한 번 적립한다")
+    @DisplayName("[S-P02] 토스 DONE이고 정보가 맞으면 APPROVED로 바꾸고 한 번 적립한다")
     void approvesDone() {
         Charge charge = pendingCharge(saveWallet());
         given(tossPaymentClient.getPaymentByOrderId(charge.getPgOrderNo()))
@@ -245,7 +245,7 @@ class ChargeRecoveryServiceIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"ABORTED", "EXPIRED"})
-    @DisplayName("토스 ABORTED, EXPIRED면 FAILED")
+    @DisplayName("[S-P02] 토스 ABORTED, EXPIRED면 FAILED")
     void failsAbortedOrExpired(String status) {
         Charge charge = pendingCharge(saveWallet());
         given(tossPaymentClient.getPaymentByOrderId(any())).willReturn(payment(charge, status, null));

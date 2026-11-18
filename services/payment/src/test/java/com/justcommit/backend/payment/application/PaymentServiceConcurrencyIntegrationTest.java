@@ -85,7 +85,7 @@ class PaymentServiceConcurrencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("같은 주문을 동시에 결제해도 한 번만 차감되고, 차감액만큼 HOLDING에 적립된다")
+    @DisplayName("[S-D06] 같은 주문을 동시에 결제해도 한 번만 차감되고, 차감액만큼 HOLDING에 적립된다")
     void debitsOnlyOnceForConcurrentRequestsOfSameOrder() throws Exception {
         Long buyerId = 1L;
         saveWallet(buyerId, "10000");

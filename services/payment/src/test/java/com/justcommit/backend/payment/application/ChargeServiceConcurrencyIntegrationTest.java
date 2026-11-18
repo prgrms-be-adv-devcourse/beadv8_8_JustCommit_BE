@@ -293,7 +293,7 @@ class ChargeServiceConcurrencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("토스 승인 결과를 모르면 PENDING으로 남고 잔액은 그대로다")
+    @DisplayName("[S-P02] 토스 승인 결과를 모르면 PENDING으로 남고 잔액은 그대로다")
     void keepsPendingWhenTossResultUnknown() {
         Wallet wallet = saveWallet(MEMBER_ID, "0");
         Charge charge = saveCharge(wallet);
@@ -315,7 +315,7 @@ class ChargeServiceConcurrencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("PENDING인 충전에 승인 요청이 다시 오면 처리 중 응답을 주고 토스를 호출하지 않는다")
+    @DisplayName("[S-P02] PENDING인 충전에 승인 요청이 다시 오면 처리 중 응답을 주고 토스를 호출하지 않는다")
     void rejectsConfirmWhilePending() {
         Wallet wallet = saveWallet(MEMBER_ID, "0");
         Charge charge = saveCharge(wallet);
