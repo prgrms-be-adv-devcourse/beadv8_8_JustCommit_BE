@@ -1,7 +1,7 @@
 # 컨테이너 · 포트
 
 > 언제 읽나: 포트 번호나 외부 접근 범위를 확인할 때
-> 상태: 🟨 제안 · 마지막 수정 2026-11-11 · 관련: Miro A2, 노션 「정책 정리」 10.4 · 10.10
+> 상태: 🟨 제안 · 마지막 수정 2026-11-18 · 관련: Miro A2, 노션 「정책 정리」 10.4 · 10.10
 
 ## 포트 표
 
@@ -16,9 +16,9 @@ Docker · K3s 안에서는 서비스가 모두 8080, 로컬 실행 때만 서비
 | ai-service (K3s) | 앱 | NodePort 없음 (market만 부르므로 K3s 안에서만) | 8087 | ❌ |
 | redis | 앱 | 6379 (서버 내부 주소) | 6379 | ❌ |
 | 404-express | 앱 | 기존 | – | ❌ (내부망) |
-| postgres (pgvector) | 데이터 (t3.medium) | 5432 | 5432 | 앱 서버 사설 IP만 |
-| kafka (KRaft) | 데이터 | 9092 | 9092 | 앱 서버 사설 IP만 |
-| opensearch | 데이터 | 9200 | 9200 | 앱 서버 사설 IP만 |
+| postgres (pgvector) | 데이터 (t3.medium) | 5432 | 5432 | 앱 서버 보안 그룹만 |
+| kafka (KRaft) | 데이터 | 9092 | 9092 | 앱 서버 보안 그룹만 |
+| opensearch | 데이터 | 9200 | 9200 | 앱 서버 보안 그룹만 |
 | loki · prometheus · grafana | 데이터 | 3100 · 9090 · 3000 | – | ❌ (Grafana는 SSH 터널로만) |
 | tempo | 데이터 | 3200 (조회) · 4317 (OTLP 받기) | – | ❌ (Alloy · Grafana만) |
 | node-exporter | 앱 · 데이터 | 9100 | – | ❌ (Prometheus만) |
@@ -27,6 +27,7 @@ Docker · K3s 안에서는 서비스가 모두 8080, 로컬 실행 때만 서비
 ## 보안 그룹
 
 - 외부 공개 포트는 80 · 443(Nginx)만. SSH 22는 팀원 IP만 엽니다.
-- 데이터 서버는 앱 서버 사설 IP에서만 받습니다.
+- 데이터 서버(`team06-replant-data-sg`)는 앱 서버 보안 그룹(`team06-replant-app-sg`)에서 오는 5432 · 9092 · 9200만 받습니다. IP 대신 보안 그룹을 참조해 앱 서버 IP가 바뀌어도 규칙은 그대로입니다. 외부 공개 포트는 없습니다.
+- 서버 안에서도 컨테이너 포트는 그 서버의 사설 IP에만 엽니다 (`docker-compose.app.yml` · `docker-compose.data.yml`).
 - `/internal/**`은 Nginx · Gateway 라우팅에서 제외합니다.
 - Nginx는 `X-Forwarded-For` · `X-Real-IP`를 `$remote_addr`로 덮어써 전달합니다 (IP 기준 요청 수 제한 우회 방지).

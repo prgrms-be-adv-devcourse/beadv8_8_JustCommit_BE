@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-18 · reference/ports.md · infra/database.md · infra/aws.md · infra/deploy.md · 데이터 서버 구성 반영: 보안 그룹은 앱 서버 보안 그룹 참조로 5432 · 9092 · 9200, 운영 DB 생성은 `deploy/data/init-db.sh`(비밀번호 `~/secrets/db-accounts.env`), 운영도 `pgvector/pgvector:pg17`, DB 백업 매일 17:30 `pg_dump` → S3 `backups/postgres/`(7일) · IAM `backups/*` PutObject (#295)
 - 2026-11-18 · infra/observability.md · reference/ports.md · glossary.md · 지표 수집 대상 표(actuator · node-exporter · postgres-exporter, Kafka · Redis ⬜), CPU steal로 크레딧 소진 측정 무효 판단, exporter 포트 9100 · 9187, 용어 「exporter」 · 「CPU steal」 (#301)
 - 2026-11-18 · decisions/0027 · decisions/0008 · infra/observability.md · infra/deploy.md · reference/ports.md · conventions/common-modules.md · overview.md · glossary.md · 분산 추적 Tempo 추가: 서비스 → OTLP → Alloy → Tempo(샘플링 100% · 보관 3일), Loki ↔ Tempo traceId 연결, `common-logging`에 OTLP exporter, 데이터 서버 · 포트 3200 · 4317, 용어 「분산 추적」 (#301)
 - 2026-11-18 · reference/internal-apis.md · reference/env-vars.md · 장바구니 추천 연동 반영: ai 추천 요청 · 응답 형식(`cartProductIds` · `purchasedProductIds` · `size`, 응답 `items[{productId, reason}]`, market은 화면 size의 2배 · 최대 20 요청), market 내부 API 그룹 주소 환경변수(`AI_SERVICE_URL` 추가, 기존 product · payment · settlement 주소도 표에 적음) (#296) (#504)

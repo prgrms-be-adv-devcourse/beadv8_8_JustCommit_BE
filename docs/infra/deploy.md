@@ -54,5 +54,6 @@ Flyway는 앱이 뜰 때 실행됩니다 → [DB · Flyway](database.md)
 
 - 서버 2대는 역할 분리일 뿐 이중화가 아닙니다. 파드를 여러 개 띄워도 같은 EC2 위라 **EC2가 꺼지면 함께 멈춥니다.** 파드 이중화는 프로세스 장애와 배포 공백만 막습니다.
 - 대책: 자동 재시작, EBS 보존, 하루 1회 `pg_dump` → S3, 생존 알림
+- DB 백업: 데이터 서버 cron이 매일 17:30(서버가 꺼지기 전)에 `deploy/data/backup-postgres.sh` 실행 → 서비스 DB마다 `pg_dump -Fc` → S3 `backups/postgres/{날짜}/` (7일 보관, [AWS](aws.md)). 복원 방법은 스크립트 머리말
 - EC2는 09:00~18:00 자동 실행이라 매일 꺼졌다 켜집니다 (Redis AOF 필수)
 - 다음 단계(포트폴리오): DB 복제 · Kafka 클러스터
