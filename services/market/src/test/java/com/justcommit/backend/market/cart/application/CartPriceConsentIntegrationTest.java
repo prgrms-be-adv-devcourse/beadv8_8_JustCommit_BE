@@ -31,6 +31,7 @@ import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -99,6 +100,27 @@ class CartPriceConsentIntegrationTest {
     @Autowired CartService cartService;
     @Autowired CartRepository cartRepository;
     @Autowired CartItemRepository cartItemRepository;
+
+    private static boolean warmedUp;
+
+    // 클래스의 첫 호출은 HTTP 클라이언트 · JSON 변환 준비로 느려서 read-timeout 500ms를 넘을 수 있다.
+    // 실제 테스트 전에 한 번 불러 데우고, 그 호출 · 데이터는 지운다 (데우기 실패는 무시)
+    @BeforeEach
+    void warmUpOnce() {
+        if (warmedUp) {
+            return;
+        }
+        warmedUp = true;
+        List<Long> ids = saveCart("12000", "22000");
+        stubProducts();
+        try {
+            cartService.updatePrices(MEMBER_ID, List.of(consent(ids.get(0), "12000"), consent(ids.get(1), "22000")));
+        } catch (RuntimeException ignored) {
+            // 데우기만 하면 되므로 결과는 보지 않는다
+        }
+        cleanUp();
+        product.resetAll();
+    }
 
     @AfterEach
     void cleanUp() {

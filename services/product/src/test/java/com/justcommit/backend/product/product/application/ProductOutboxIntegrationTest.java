@@ -47,10 +47,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedKafka;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.kafka.KafkaContainer;
 import tools.jackson.databind.JsonNode;
 
 import java.math.BigDecimal;
@@ -83,18 +82,10 @@ class ProductOutboxIntegrationTest {
     private static final BigDecimal PRICE = new BigDecimal("10000");
     private static final Long SELLER_ID = 1L;
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
-    @Container
-    static final KafkaContainer KAFKA = new KafkaContainer("apache/kafka:4.2.1");
-
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
-        registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
+        SharedPostgres.register(registry);
+        SharedKafka.register(registry);
     }
 
     @Autowired ProductUseCase productUseCase;
@@ -276,7 +267,7 @@ class ProductOutboxIntegrationTest {
     // 같은 Key로 여러 이벤트가 오므로 이벤트 이름까지 골라 기다림
     private EventEnvelope pollEvent(String topic, String key, String eventType) {
         Map<String, Object> props = Map.of(
-                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, SharedKafka.container().getBootstrapServers(),
                 ConsumerConfig.GROUP_ID_CONFIG, "test-" + UUID.randomUUID(),
                 ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
                 ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
@@ -317,7 +308,7 @@ class ProductOutboxIntegrationTest {
     // 다른 테스트의 메시지와 섞이지 않게 Key(상품 ID)로 골라 하나를 기다림 (최대 30초)
     private ConsumerRecord<String, String> pollOne(String topic, String key) {
         Map<String, Object> props = Map.of(
-                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, SharedKafka.container().getBootstrapServers(),
                 ConsumerConfig.GROUP_ID_CONFIG, "test-" + UUID.randomUUID(),
                 ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
                 ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
