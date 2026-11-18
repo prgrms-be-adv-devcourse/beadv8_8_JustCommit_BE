@@ -1,5 +1,6 @@
 package com.justcommit.backend.member.infrastructure.lock;
 
+import com.justcommit.backend.member.seller.domain.SellerReviewConsentPolicy;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -69,6 +70,9 @@ class MemberLockerIntegrationTest {
   private static final Pattern ACCESS_TOKEN = Pattern.compile("\"accessToken\":\"([^\"]+)\"");
   private static final String ADDRESSES = "/api/v1/users/me/addresses";
   private static final String SELLERS = "/api/v1/sellers";
+  // 판매자 등록 요청 본문: 필수 동의 + 현재 동의 버전 (#418)
+  private static final String SELLER_REGISTER_BODY = """
+      {"reviewConsentAgreed":true,"reviewConsentVersion":"%s"}""".formatted(SellerReviewConsentPolicy.VERSION);
 
   @DynamicPropertySource
   static void properties(DynamicPropertyRegistry registry) {
@@ -157,7 +161,7 @@ class MemberLockerIntegrationTest {
     String token = accessToken(member.getEmail());
     // 판매자여야 성공 시 MemberAddressChanged가 발행됨 → 실패 시 이벤트까지 남지 않는지 확인할 의미가 있음
     assertCreated(send("POST", ADDRESSES, token, addressBody(true)));
-    assertCreated(send("POST", SELLERS, token, "{}"));
+    assertCreated(send("POST", SELLERS, token, SELLER_REGISTER_BODY));
     long addressBefore = addressCount(member.getId());
     long outboxBefore = outboxCount(member.getId());
 
@@ -178,7 +182,7 @@ class MemberLockerIntegrationTest {
     assertCreated(send("POST", ADDRESSES, token, addressBody(true)));
     long outboxBefore = outboxCount(member.getId());
 
-    HttpResponse<String> response = whileMemberLocked(member.getId(), () -> send("POST", SELLERS, token, "{}"));
+    HttpResponse<String> response = whileMemberLocked(member.getId(), () -> send("POST", SELLERS, token, SELLER_REGISTER_BODY));
 
     assertBusy(response);
     assertThat(count("select count(*) from seller where member_id = ?", member.getId())).isZero();

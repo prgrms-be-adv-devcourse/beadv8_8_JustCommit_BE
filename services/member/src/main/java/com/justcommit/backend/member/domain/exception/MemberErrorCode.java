@@ -74,6 +74,8 @@ public enum MemberErrorCode implements ErrorCode {
   ALREADY_SELLER(HttpStatus.CONFLICT, "이미 판매자로 등록된 회원입니다."),
   SELLER_NOT_FOUND(HttpStatus.NOT_FOUND, "판매자를 찾을 수 없습니다."),
   NOT_SELLER(HttpStatus.FORBIDDEN, "판매자로 등록한 회원만 이용할 수 있습니다."),
+  // 판매자 등록 요청의 동의 버전이 현재 버전과 다름 (#418). 프론트는 최신 문구를 다시 조회해 재동의
+  REVIEW_CONSENT_VERSION_MISMATCH(HttpStatus.CONFLICT, "동의 내용이 변경되었습니다. 최신 내용을 확인하고 다시 동의해 주세요."),
 
   // 소셜 로그인
   SOCIAL_LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "소셜 로그인에 실패했습니다. 다시 시도해주세요."),
