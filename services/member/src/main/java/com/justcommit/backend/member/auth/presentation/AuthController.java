@@ -36,7 +36,7 @@ public class AuthController {
     // 재설정은 실제 발송 여부와 관계없이 같은 안내 (가입 여부 · 로그인 방식이 드러나지 않게)
     String message = purpose == EmailPurpose.PASSWORD_RESET
         ? "재설정 가능한 계정이면 인증번호를 보내드립니다."
-        : "인증번호를 발송했습니다.";
+        : "인증번호 발송을 요청했습니다.";
     return ApiResponse.ok(message, EmailSendResponse.from(result));
   }
 

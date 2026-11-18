@@ -26,7 +26,7 @@ public class AccountController {
   // 계좌 변경 인증번호 발송 (본문 없음)
   @PostMapping("/verifications")
   public ApiResponse<EmailSendResponse> sendVerificationCode(@AuthenticationPrincipal AuthMember authMember) {
-    return ApiResponse.ok("인증번호를 발송했습니다.",
+    return ApiResponse.ok("인증번호 발송을 요청했습니다.",
         EmailSendResponse.from(accountChangeService.sendVerificationCode(authMember.memberId())));
   }
 

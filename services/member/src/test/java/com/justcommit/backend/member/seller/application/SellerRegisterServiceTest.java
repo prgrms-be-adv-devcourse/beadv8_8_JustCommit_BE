@@ -8,6 +8,7 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Role;
 import com.justcommit.backend.member.seller.domain.Seller;
+import com.justcommit.backend.member.seller.domain.SellerReviewConsentPolicy;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
@@ -53,6 +54,8 @@ class SellerRegisterServiceTest {
   private static final String NICKNAME = "떡볶이";
   private static final String INTRO = "다육이 전문 판매자입니다.";
   private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 10, 7, 18, 30);
+  // 판매자가 화면에서 동의한 버전 (현재 정책 버전, #418)
+  private static final String CONSENT_VERSION = SellerReviewConsentPolicy.VERSION;
   // 팩토리가 만든 주소 이벤트 (암호문 내용은 팩토리 테스트에서 확인)
   private static final MemberAddressChanged ADDRESS_EVENT = new MemberAddressChanged(MEMBER_ID, "v1.k1:test");
 
@@ -75,7 +78,7 @@ class SellerRegisterServiceTest {
   }
 
   @Test
-  @DisplayName("일반 회원이 판매자로 등록하면 SELLER 권한으로 바뀌고 판매자 정보를 저장")
+  @DisplayName("일반 회원이 판매자로 등록하면 SELLER 권한으로 바뀌고 판매자 정보와 동의 버전 · 시각을 저장")
   void register_success() {
     // given
     Member member = member(Role.MEMBER);
@@ -84,8 +87,10 @@ class SellerRegisterServiceTest {
     given(sellerAddressEventFactory.create(MEMBER_ID)).willReturn(ADDRESS_EVENT);
     givenSellerSaved();
 
-    // when
-    SellerResult result = sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO));
+    // when (동의 시각이 요청 처리 중의 서버 시각인지 보려고 전후 시각을 기록)
+    LocalDateTime before = LocalDateTime.now();
+    SellerResult result = sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO, CONSENT_VERSION));
+    LocalDateTime after = LocalDateTime.now();
 
     // then: 응답 (sellerId = memberId)
     assertThat(result.sellerId()).isEqualTo(MEMBER_ID);
@@ -96,12 +101,14 @@ class SellerRegisterServiceTest {
     // then: 회원 권한 변경
     assertThat(member.getRole()).isEqualTo(Role.SELLER);
 
-    // then: 같은 회원으로 판매자 저장
+    // then: 같은 회원으로 판매자 저장 + 동의 버전 · 시각 (#418)
     ArgumentCaptor<Seller> sellerCaptor = ArgumentCaptor.forClass(Seller.class);
     then(sellerRepository).should().saveAndFlush(sellerCaptor.capture());
     Seller savedSeller = sellerCaptor.getValue();
     assertThat(savedSeller.getMember()).isSameAs(member);
     assertThat(savedSeller.getIntro()).isEqualTo(INTRO);
+    assertThat(savedSeller.getReviewConsentVersion()).isEqualTo(CONSENT_VERSION);
+    assertThat(savedSeller.getReviewConsentedAt()).isBetween(before, after);
 
     // then: 다른 서비스에 판매자 등록을 알림
     then(outboxPublisher).should().publish(new MemberUpdated(MEMBER_ID, NICKNAME, "SELLER", true));
@@ -117,7 +124,7 @@ class SellerRegisterServiceTest {
     given(sellerAddressEventFactory.create(MEMBER_ID)).willReturn(ADDRESS_EVENT);
     givenSellerSaved();
 
-    sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, null));
+    sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, null, CONSENT_VERSION));
 
     assertThat(admin.getRole()).isEqualTo(Role.ADMIN);
     // ADMIN은 role이 그대로라 seller로 판매자임을 알림
@@ -127,12 +134,27 @@ class SellerRegisterServiceTest {
   }
 
   @Test
+  @DisplayName("동의 버전이 현재 버전과 다르면 REVIEW_CONSENT_VERSION_MISMATCH, 회원 잠금 · 저장 · 발행 안 함")
+  void register_consentVersionMismatch() {
+    assertThatThrownBy(() -> sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO, "v0")))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MemberErrorCode.REVIEW_CONSENT_VERSION_MISMATCH);
+
+    // 잠금 전에 거절하므로 등록의 후속 작업은 하나도 실행되지 않음
+    then(memberLocker).shouldHaveNoInteractions();
+    then(sellerRepository).shouldHaveNoInteractions();
+    then(sellerAddressEventFactory).shouldHaveNoInteractions();
+    then(outboxPublisher).shouldHaveNoInteractions();
+  }
+
+  @Test
   @DisplayName("이미 판매자면 ALREADY_SELLER, 저장·발행 안 함 (회원 잠금 뒤에 확인)")
   void register_alreadySeller() {
     given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.of(member(Role.SELLER)));
     given(sellerRepository.existsById(MEMBER_ID)).willReturn(true);
 
-    assertThatThrownBy(() -> sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO)))
+    assertThatThrownBy(() -> sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO, CONSENT_VERSION)))
             .isInstanceOf(BusinessException.class)
             .extracting("errorCode")
             .isEqualTo(MemberErrorCode.ALREADY_SELLER);
@@ -146,7 +168,7 @@ class SellerRegisterServiceTest {
   void register_memberNotFound() {
     given(memberLocker.lockById(MEMBER_ID)).willReturn(Optional.empty());
 
-    assertThatThrownBy(() -> sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO)))
+    assertThatThrownBy(() -> sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO, CONSENT_VERSION)))
             .isInstanceOf(BusinessException.class)
             .extracting("errorCode")
             .isEqualTo(MemberErrorCode.MEMBER_NOT_FOUND);
@@ -164,7 +186,7 @@ class SellerRegisterServiceTest {
             new RuntimeException("duplicate key value violates unique constraint \"seller_pkey\"")))
             .given(sellerRepository).saveAndFlush(any(Seller.class));
 
-    assertThatThrownBy(() -> sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO)))
+    assertThatThrownBy(() -> sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO, CONSENT_VERSION)))
             .isInstanceOf(BusinessException.class)
             .extracting("errorCode")
             .isEqualTo(MemberErrorCode.ALREADY_SELLER);
@@ -182,7 +204,7 @@ class SellerRegisterServiceTest {
     given(sellerAddressEventFactory.create(MEMBER_ID))
             .willThrow(new BusinessException(MemberErrorCode.INVALID_SELLER_ADDRESS_STATE));
 
-    assertThatThrownBy(() -> sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO)))
+    assertThatThrownBy(() -> sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO, CONSENT_VERSION)))
             .isInstanceOf(BusinessException.class)
             .extracting("errorCode")
             .isEqualTo(MemberErrorCode.INVALID_SELLER_ADDRESS_STATE);
@@ -201,7 +223,7 @@ class SellerRegisterServiceTest {
     given(sellerAddressEventFactory.create(MEMBER_ID)).willReturn(ADDRESS_EVENT);
     givenSellerSaved();
 
-    sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO));
+    sellerRegisterService.register(new SellerRegisterCommand(MEMBER_ID, INTRO, CONSENT_VERSION));
 
     InOrder inOrder = inOrder(outboxPublisher);
     inOrder.verify(outboxPublisher).publish(new MemberUpdated(MEMBER_ID, NICKNAME, "SELLER", true));

@@ -11,7 +11,7 @@ public enum MemberErrorCode implements ErrorCode {
 
   // 이메일 인증
   EMAIL_SEND_COOLDOWN(HttpStatus.TOO_MANY_REQUESTS, "인증번호는 잠시 후에 다시 요청할 수 있습니다."),
-  EMAIL_SEND_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "인증 메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요."),
+  EMAIL_SEND_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "인증번호 발송 요청에 실패했습니다. 잠시 후 다시 시도해주세요."),
   EMAIL_CODE_EXPIRED(HttpStatus.BAD_REQUEST, "인증번호가 만료되었거나 요청되지 않았습니다. 인증번호를 다시 요청해주세요."),
   EMAIL_CODE_MISMATCH(HttpStatus.BAD_REQUEST, "인증번호가 일치하지 않습니다."),
   // 이메일 인증 제한 · 목적 (#412)
@@ -74,6 +74,8 @@ public enum MemberErrorCode implements ErrorCode {
   ALREADY_SELLER(HttpStatus.CONFLICT, "이미 판매자로 등록된 회원입니다."),
   SELLER_NOT_FOUND(HttpStatus.NOT_FOUND, "판매자를 찾을 수 없습니다."),
   NOT_SELLER(HttpStatus.FORBIDDEN, "판매자로 등록한 회원만 이용할 수 있습니다."),
+  // 판매자 등록 요청의 동의 버전이 현재 버전과 다름 (#418). 프론트는 최신 문구를 다시 조회해 재동의
+  REVIEW_CONSENT_VERSION_MISMATCH(HttpStatus.CONFLICT, "동의 내용이 변경되었습니다. 최신 내용을 확인하고 다시 동의해 주세요."),
 
   // 소셜 로그인
   SOCIAL_LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "소셜 로그인에 실패했습니다. 다시 시도해주세요."),

@@ -8,6 +8,7 @@ import com.justcommit.backend.member.seller.application.SellerResult;
 import com.justcommit.backend.member.seller.presentation.dto.SellerIntroChangeRequest;
 import com.justcommit.backend.member.seller.presentation.dto.SellerRegisterRequest;
 import com.justcommit.backend.member.seller.presentation.dto.SellerResponse;
+import com.justcommit.backend.member.seller.presentation.dto.SellerReviewConsentPolicyResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -21,6 +22,12 @@ public class SellerController {
 
   private final SellerRegisterService sellerRegisterService;
   private final SellerProfileService sellerProfileService;
+
+  // 판매자 등록 화면에 보여 줄 현재 동의 문구 (#418). 아직 판매자가 아닌 회원이 조회하므로 로그인만 필요
+  @GetMapping("/consent-policy")
+  public ApiResponse<SellerReviewConsentPolicyResponse> getConsentPolicy() {
+    return ApiResponse.ok("판매자 등록 동의 내용을 조회했습니다.", SellerReviewConsentPolicyResponse.current());
+  }
 
   @PostMapping
   @ResponseStatus(HttpStatus.CREATED)
