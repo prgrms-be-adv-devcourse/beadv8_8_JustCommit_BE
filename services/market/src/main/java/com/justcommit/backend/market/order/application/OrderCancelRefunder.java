@@ -18,6 +18,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class OrderCancelRefunder {
 
+    static final String SHIPPING_FEE_PREFIX = "SHIPPING_FEE_";
+
     private final PaymentUseCase paymentUseCase;
     private final OrderCancelTransactions orderCancelTransactions;
 
@@ -33,8 +35,8 @@ public class OrderCancelRefunder {
         RefundOutcome shippingOutcome = claims.stream()
                 .filter(claim -> claim.shippingFee() != null)
                 .findFirst()
-                .map(claim -> paymentUseCase.refundShippingFee(
-                        claim.sellerOrderId(), claim.orderId(), claim.buyerId(), claim.shippingFee()))
+                .map(claim -> markShippingFee(paymentUseCase.refundShippingFee(
+                        claim.sellerOrderId(), claim.orderId(), claim.buyerId(), claim.shippingFee())))
                 .orElse(null);
 
         for (RefundClaim claim : claims) {
@@ -49,5 +51,14 @@ public class OrderCancelRefunder {
                         claim.orderItemId(), outcome.type(), e);
             }
         }
+    }
+
+    // 배송비 환불의 실패 원인은 last_error에서 상품 금액 환불과 구분되게 앞에 SHIPPING_FEE_를 붙인다
+    // (예: SHIPPING_FEE_HTTP_400_INVALID_AMOUNT, SHIPPING_FEE_TIMEOUT)
+    private static RefundOutcome markShippingFee(RefundOutcome outcome) {
+        if (outcome.reason() == null) {
+            return outcome;
+        }
+        return new RefundOutcome(outcome.type(), SHIPPING_FEE_PREFIX + outcome.reason());
     }
 }

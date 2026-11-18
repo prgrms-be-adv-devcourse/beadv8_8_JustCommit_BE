@@ -75,7 +75,7 @@ sequenceDiagram
 | 실패 | 처리 |
 |---|---|
 | 환불 응답 타임아웃, 5xx, 연결 실패 | 결과 불명 → 주문상품을 「취소 중」으로 두고 `last_error` 기록. Saga 복구가 마지막 시도에서 10초 지나면 같은 키(orderItemId, sellerOrderId)로 다시 요청 (판매자 주문 전부 취소면 배송비도). payment는 같은 키면 `ALREADY_REFUNDED`로 처음 결과. 상품 금액과 배송비 환불이 모두 확정된 뒤 취소 완료와 판매 재개 이벤트. 복구 5번 안 되면 주문상품 `REVIEW_REQUIRED` |
-| 환불 확정 실패 (4xx) | 다시 요청하지 않고 주문상품 `REVIEW_REQUIRED`, `last_error`, ERROR 로그 |
+| 환불 확정 실패 (4xx) | 다시 요청하지 않고 주문상품 `REVIEW_REQUIRED`, `last_error`, ERROR 로그. 배송비 환불이 실패하면 배송비를 함께 요청한 주문상품 모두가 `REVIEW_REQUIRED`가 되고 `last_error`는 `SHIPPING_FEE_`로 시작 (예: `SHIPPING_FEE_HTTP_400_INVALID_AMOUNT`) |
 | 택배 취소 응답 없음 | `CANCEL_PENDING` → 택배 취소 큐가 포기 없이 다시 보냄 (주기 → [스케줄러 표](../reference/schedulers.md)) |
 | 판매 재개 이벤트 | Outbox 재전송 · 소비 재시도 · DLT. 취소 · 환불은 그대로 완료 |
 | 같은 취소 두 번, 복구가 겹침 | 환불 반영 1번, 택배 취소 1번, 판매 재개 이벤트 1번 (결과 반영은 「취소 중」일 때만) |

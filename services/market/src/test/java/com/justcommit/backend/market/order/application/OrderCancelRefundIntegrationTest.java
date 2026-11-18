@@ -229,7 +229,8 @@ class OrderCancelRefundIntegrationTest {
         courierResult(fixture, "CANCELLED");
 
         recoveryService.recoverCancelResults();
-        assertThat(item(itemId)).containsEntry("status", "CANCEL_PROCESSING").containsEntry("last_error", "TIMEOUT");
+        assertThat(item(itemId)).containsEntry("status", "CANCEL_PROCESSING")
+                .containsEntry("last_error", "SHIPPING_FEE_TIMEOUT");
         verify(outboxPublisher, never()).publish(any());
 
         mockRefunds(RefundOutcome.refunded(), RefundOutcome.refunded());
@@ -274,6 +275,43 @@ class OrderCancelRefundIntegrationTest {
         verify(outboxPublisher, times(2)).publish(any(OrderItemCancelled.class));
     }
 
+    @Test
+    @DisplayName("배송비 0원인 판매자 주문 전부 취소: 배송 취소는 요청하고, 배송비 환불은 부르지 않고 상품 환불만으로 취소 완료")
+    void freeShippingCancelsShipmentWithoutShippingFeeRefund() {
+        Fixture fixture = paidOrder(1, BigDecimal.ZERO);
+        Long itemId = fixture.itemIds().getFirst();
+        mockRefunds(RefundOutcome.refunded(), RefundOutcome.rejected("HTTP_400_INVALID_AMOUNT"));
+
+        cancelTransactions.requestCancel(BUYER_ID, fixture.orderId());
+        courierResult(fixture, "CANCELLED");
+        recoveryService.recoverCancelResults();
+
+        verify(shipmentService).cancelShipment(fixture.sellerOrderId());
+        verify(paymentUseCase, never()).refundShippingFee(any(), any(), any(), any());
+        assertThat(item(itemId)).containsEntry("status", "CANCELLED");
+        assertThat(orderStatus(fixture.orderId())).isEqualTo("CANCELLED");
+    }
+
+    @Test
+    @DisplayName("배송비 환불 확정 실패(4xx): 상품 금액 환불이 성공했어도 배송비를 실은 주문상품 모두 REVIEW_REQUIRED, last_error는 SHIPPING_FEE_로 시작")
+    void shippingFeeRejectionRequiresReviewWithShippingFeeReason() {
+        Fixture fixture = paidOrder(2);
+        mockRefunds(RefundOutcome.refunded(), RefundOutcome.rejected("HTTP_400_INVALID_AMOUNT"));
+        cancelTransactions.requestCancel(BUYER_ID, fixture.orderId());
+        courierResult(fixture, "CANCELLED");
+
+        recoveryService.recoverCancelResults();
+        fixture.itemIds().forEach(this::passGrace);
+        recoveryService.recoverProcessingRefunds();
+
+        fixture.itemIds().forEach(itemId -> assertThat(item(itemId)).containsEntry("status", "REVIEW_REQUIRED")
+                .containsEntry("last_error", "SHIPPING_FEE_HTTP_400_INVALID_AMOUNT"));
+        assertThat(orderStatus(fixture.orderId())).isEqualTo("PAID");
+        // 배송비 환불은 한 번만 부르고 재시도하지 않는다
+        verify(paymentUseCase, times(1)).refundShippingFee(anyLong(), anyLong(), anyLong(), any());
+        verify(outboxPublisher, never()).publish(any());
+    }
+
     // OrderService.itemCancel과 같은 순서: 취소 중 커밋 → (트랜잭션 밖) 바로 환불
     private void itemCancel(Long itemId) {
         cancelTransactions.requestItemCancel(BUYER_ID, itemId).ifPresent(claim -> refunder.refund(List.of(claim)));
@@ -290,12 +328,16 @@ class OrderCancelRefundIntegrationTest {
 
     // 결제된 주문 1건, 판매자 주문 1건, 주문상품 n건(상품 101, 102 …, 각 10,000원), 배송비 3,000원, 배송 READY
     private Fixture paidOrder(int itemCount) {
+        return paidOrder(itemCount, SHIPPING_FEE);
+    }
+
+    private Fixture paidOrder(int itemCount, BigDecimal shippingFee) {
         Orders order = new Orders("ORD-cc-" + System.nanoTime(), BUYER_ID, "구매자", "01012345678", "12345", "서울시",
                 null, itemCount);
         SellerOrder sellerOrder = new SellerOrder(order, SELLER_ID);
         sellerOrder.addItems(IntStream.range(0, itemCount)
                 .mapToObj(i -> new OrdersItem(sellerOrder, 101L + i, "식물" + i, PRICE)).toList());
-        sellerOrder.setShippingFee(SHIPPING_FEE);
+        sellerOrder.setShippingFee(shippingFee);
         order.addSellerOrders(List.of(sellerOrder));
         Long orderId = paymentTransactions.saveNewOrder(order).getId();
         jdbcTemplate.update("update orders set status = 'PAID' where id = ?", orderId);

@@ -61,6 +61,28 @@ class OrderConfirmationPolicyTest {
         verify(eventPublisher, never()).publishAfterCommit(any());
     }
 
+    @ParameterizedTest
+    @EnumSource(value = OrderItemStatus.class, names = {"CANCEL_PROCESSING", "REVIEW_REQUIRED"})
+    @DisplayName("다른 판매자 주문에 취소 중, 확인 필요 주문상품이 남으면 이 판매자 주문은 정산하되 주문은 완료하지 않는다 (탈퇴 확인에 남도록)")
+    void cancellationInAnotherSellerOrderKeepsOrderPaid(OrderItemStatus pending) {
+        Fixture fixture = fixture();
+        ReflectionTestUtils.setField(fixture.second(), "status", OrderItemStatus.CONFIRMED);
+        Orders order = fixture.sellerOrder().getOrder();
+        SellerOrder other = new SellerOrder(order, 30L);
+        OrdersItem otherItem = new OrdersItem(other, 201L, "다른 판매자", new BigDecimal("5000"));
+        other.addItems(List.of(otherItem));
+        ReflectionTestUtils.setField(otherItem, "status", pending);
+        other.calculateSettlementBaseAmount(); // 취소 흐름 주문상품은 정산 기준액에서 빠져 0원
+        order.addSellerOrders(List.of(other));
+        stubDelivered(fixture, fixture.first());
+
+        confirmationService.confirm(10L, 11L);
+
+        assertThat(fixture.sellerOrder().getConfirmedAt()).isNotNull();
+        verify(eventPublisher, times(1)).publishAfterCommit(any());
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+    }
+
     @Test
     void refundRequestedItemBlocksSettlementAfterAnotherItemIsConfirmed() {
         Fixture fixture = fixture();
