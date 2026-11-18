@@ -1,7 +1,7 @@
 # 용어집 (유비쿼터스 언어)
 
 > 언제 읽나: 같은 대상을 부르는 표준 이름을 찾을 때, 별칭(다른 이름 · 일상어 · 영문)으로 검색할 때, 코드 이름과 문서 이름을 맞출 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: 노션 「유비쿼터스 언어 정리」, 전체
+> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: 노션 「유비쿼터스 언어 정리」, 전체
 
 문서 · 코드 · PR · 회의에서는 「표준 용어」만 씁니다. 「별칭」은 검색용이며 본문에 쓰지 않습니다. 시간 · 금액 · 횟수 같은 값은 여기 적지 않고 「원본」 문서를 봅니다.
 
@@ -87,9 +87,13 @@
 | 판매자 | `SELLER` | 셀러 | 판매자로 등록한 회원 | [member](services/member.md) |
 | 회원 복제본 | `MEMBER_REPLICA` | 레플리카, 회원 사본 | 다른 서비스가 회원 이벤트로 채우는 회원 정보 사본 (계좌는 없음) | [가입과 회원 복제본](flows/signup-and-replica.md) |
 | 블랙리스트 | `auth:blacklist` | 로그아웃 토큰, 토큰 차단 | 로그아웃한 Access 토큰을 거절하는 목록 | [인증 규칙](conventions/auth.md#토큰-폐기) |
-| 회원 단위 폐기 | `auth:revoked-member` | 전체 로그아웃, 모든 기기 로그아웃 | 탈퇴 · 비밀번호 변경 이전에 발급된 토큰을 모두 거절하는 것 | [인증 규칙](conventions/auth.md#토큰-폐기) |
+| 회원 단위 폐기 | `auth:revoked-member` | 전체 로그아웃, 모든 기기 로그아웃 | 탈퇴 · 비밀번호 변경 · 재설정 · 소셜 연결 해제로 그 전의 인증을 무효화하는 것. 인증 버전으로 이전 Refresh 재발급을 막고, Redis에 폐기 시각이 기록된 뒤부터 이전 Access도 거절 | [인증 규칙](conventions/auth.md#토큰-폐기) |
 | 이중 검증 | – | – | Gateway와 각 서비스가 모두 토큰을 검증하는 것 | [인증 규칙](conventions/auth.md) |
 | 탈퇴 | `MemberWithdrawn` | 회원 삭제, 계정 삭제 | 소프트 삭제 · 익명화. 다른 서비스에는 「탈퇴한 회원」으로 표시 | [가입과 회원 복제본](flows/signup-and-replica.md#탈퇴) |
+| 탈퇴 기록 | `MemberWithdrawalRecord` (`member_withdrawal_record`) | 재가입 제한 기록 | 탈퇴한 회원의 이메일 · 휴대폰 HMAC과 탈퇴 시각을 재가입 제한 판정용으로 보관하는 기록. 기간이 지나면 삭제 | [가입과 회원 복제본](flows/signup-and-replica.md#재가입-제한) |
+| 소셜 연결 해제 | `INACTIVE` (회원 상태) · `SOCIAL_UNLINKED` (폐기 사유) | 카카오 연결 끊김, 연결 해제됨 | 카카오 연결이 끊겼지만 아직 탈퇴하지 않은 회원의 상태. 기존 로그인을 폐기하고 일반 회원 기능을 막음. 재연결 시 복구는 흐름 문서의 정책을 따름 | [가입과 회원 복제본](flows/signup-and-replica.md#카카오-연결-해제-웹훅) |
+| 카카오 연결 해제 웹훅 | `/api/v1/webhooks/kakao/unlink` (수신 기록 테이블 이름 ⬜ 미정) | 연결 해제 알림, unlink callback | 카카오계정 탈퇴 · 강제 탈퇴 · 카카오 관리자 처리 · 사용자 직접 연결 해제로 앱 연결이 끊겼을 때 카카오가 보내는 HTTP 요청. 택배사 「웹훅」과 다름 | [가입과 회원 복제본](flows/signup-and-replica.md#카카오-연결-해제-웹훅) |
+| 탈퇴 토큰 | `auth:withdrawal` | – | 카카오 회원이 이메일 재인증 후 받아 최종 탈퇴 요청에 쓰는 일회용 토큰 | [Redis 키](reference/redis-keys.md) |
 | Fail-closed | – | 막힘 처리 | 확인 조회가 실패하면 허용하지 않고 막는 정책 (탈퇴) | [가입과 회원 복제본](flows/signup-and-replica.md#탈퇴) |
 
 ## MSA
