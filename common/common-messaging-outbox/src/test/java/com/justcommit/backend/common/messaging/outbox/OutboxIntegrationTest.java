@@ -76,7 +76,7 @@ class OutboxIntegrationTest extends OutboxIntegrationTestSupport {
   }
 
   @Test
-  @DisplayName("재전송: 5초 지난 PENDING을 보내고 PUBLISHED로 바꾼다")
+  @DisplayName("[S-H01] 재전송: 5초 지난 PENDING을 보내고 PUBLISHED로 바꾼다")
   void retrySendsPending() {
     String topic = newTopic();
     UUID id = insertPending(topic, "7", "1 minute");
@@ -126,7 +126,7 @@ class OutboxIntegrationTest extends OutboxIntegrationTestSupport {
   }
 
   @Test
-  @DisplayName("실패가 5번째가 되면 FAILED, 그 전까지는 PENDING으로 남아 재전송된다")
+  @DisplayName("[S-H01] 실패가 5번째가 되면 FAILED, 그 전까지는 PENDING으로 남아 재전송된다")
   void failsAfterMaxAttempts() {
     UUID id = insertPending(newTopic(), "7", "1 minute");
     TransactionTemplate transaction = new TransactionTemplate(transactionManager);
