@@ -7,6 +7,7 @@ import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
+import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.infrastructure.crypto.MemberHmac;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
@@ -27,6 +28,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.support.TransactionTemplate;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import com.justcommit.backend.common.testcontainers.SharedRedis;
@@ -46,6 +48,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 
 /**
  * 재가입 제한 (#407)을 실제 PostgreSQL로 확인한다.
@@ -79,6 +83,8 @@ class RejoinRestrictionIntegrationTest {
   @Autowired private MemberHmac memberHmac;
   @Autowired private DatabaseClock databaseClock;
   @Autowired private JdbcTemplate jdbcTemplate;
+  // 사전 중복 검사를 마친 가입을 INSERT 직전(계좌 암호화)에서 멈추는 데만 쓴다. 평소에는 실제 동작
+  @MockitoSpyBean private AccountCipher accountCipher;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private StringRedisTemplate redisTemplate;
 
@@ -139,7 +145,7 @@ class RejoinRestrictionIntegrationTest {
   }
 
   @Test
-  @DisplayName("[S-B08] 탈퇴 커밋 전에는 중복 검사, 커밋 후에는 재가입 제한에 걸려 가입이 우회되지 않음")
+  @DisplayName("[S-B08] 커밋 전후: 탈퇴 커밋 전에 시작한 가입은 중복 검사(409 DUPLICATE_EMAIL), 커밋 후에 시작한 가입은 재가입 제한(409 REJOIN_RESTRICTED)")
   void concurrentWithdrawalAndSignup() throws Exception {
     String email = "race@test.com";
     String phone = phone();
@@ -174,6 +180,67 @@ class RejoinRestrictionIntegrationTest {
       release.countDown();
       executor.shutdownNow();
     }
+  }
+
+  @Test
+  @DisplayName("[S-B08] 사전 검사 통과 후 가입 · 탈퇴가 끼어드는 경합: 검사를 통과한 가입 A 사이에 같은 이메일 · 휴대폰의 가입 B와 탈퇴가 커밋되면, A는 INSERT 뒤 재가입 제한으로 409 REJOIN_RESTRICTED · 회원 · 배송지 · 가입 이벤트 모두 롤백")
+  void signupRaceWithJoinAndWithdrawal() throws Exception {
+    String email = "race-insert@test.com";
+    String phone = phone();
+    String accountA = "300000000001"; // 가입 A만 멈추게 하려고 계좌번호로 구분 (B는 다른 계좌번호)
+    CountDownLatch checked = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    doAnswer(invocation -> {
+      if (accountA.equals(invocation.getArgument(0))) {
+        checked.countDown();
+        awaitQuietly(release);
+      }
+      return invocation.callRealMethod();
+    }).when(accountCipher).encrypt(anyString());
+
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    try {
+      // 가입 A(다른 스레드): 같은 이메일 · 휴대폰 회원이 아직 없어 사전 중복 검사를 통과하고, INSERT 직전(계좌 암호화)에서 멈춘다
+      verificationStore.saveVerified(EmailPurpose.SIGNUP, email, Duration.ofMinutes(30));
+      Future<Throwable> signupA = executor.submit(() -> {
+        try {
+          signupService.signup(command(email, phone, "가입A" + SEQ.incrementAndGet(), accountA));
+          return null;
+        } catch (Throwable t) {
+          return t;
+        }
+      });
+      assertThat(checked.await(10, TimeUnit.SECONDS)).isTrue();
+
+      // 그 사이 같은 이메일 · 휴대폰으로 가입 B가 커밋되고, 이어서 B의 탈퇴(이메일 · 휴대폰 NULL + 탈퇴 기록)가 커밋된다
+      signup(email, phone);
+      Long memberB = jdbcTemplate.queryForObject("select id from member where email = ?", Long.class, email);
+      transactionTemplate.executeWithoutResult(status -> {
+        jdbcTemplate.update("update member set status = 'DELETED', email = null, phone = null where id = ?", memberB);
+        recordRepository.save(MemberWithdrawalRecord.create(
+            memberHmac.emailHash(email), memberHmac.phoneHash(phone), databaseClock.now()));
+      });
+      long members = memberRepository.count();
+      long addresses = addressRepository.count();
+      long outbox = outboxCount();
+
+      // A 재개: B의 이메일 · 휴대폰이 NULL이라 UNIQUE 충돌 없이 INSERT되지만, 바로 뒤 탈퇴 기록 조회가 막아 전부 롤백
+      release.countDown();
+      assertThat(signupA.get(10, TimeUnit.SECONDS)).isInstanceOfSatisfying(BusinessException.class,
+          e -> assertThat(e.getErrorCode()).isEqualTo(MemberErrorCode.REJOIN_RESTRICTED));
+      assertThat(memberRepository.count()).isEqualTo(members);
+      assertThat(addressRepository.count()).isEqualTo(addresses);
+      assertThat(outboxCount()).isEqualTo(outbox);
+      assertThat(memberRepository.existsByEmail(email)).isFalse();
+    } finally {
+      release.countDown();
+      executor.shutdownNow();
+    }
+  }
+
+  private static SignupCommand command(String email, String phone, String nickname, String accountNo) {
+    return new SignupCommand(email, "plant1234", nickname, phone, "004", accountNo, "홍길동",
+        "홍길동", "01099998888", "12345", "서울시 어딘가 1", null, null);
   }
 
   private void signup(String email, String phone) {
