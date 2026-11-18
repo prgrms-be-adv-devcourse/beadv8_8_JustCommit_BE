@@ -149,13 +149,16 @@ public class OrderService {
             return toResponse(orderPaymentTransactions.getOrder(orderId));
         }
 
-        PaymentOutcome outcome = payInAttempt(orderId, saved.getBuyerId(), saved.getTotalAmount(), false);
+        payInAttempt(orderId, saved.getBuyerId(), saved.getTotalAmount(), false);
 
         // 예약 실패 · 결제 확정 실패가 아니면 선택 항목을 비운다 (잔액 부족 · 결과 불명 포함, ADR 0023 장바구니)
-        if (OrderPaymentTransactions.targetStatus(outcome, AttemptSource.FIRST_CALL) != OrderStatus.PAYMENT_FAILED) {
+        // 결제 결과가 아니라 DB에 반영된 상태로 판단한다. TX3가 실패해 결제 처리 중으로 남으면 복구가 결제할 수 있으므로 비우고,
+        // 복구가 확정 실패로 끝나면 그때 장바구니를 되돌린다
+        Orders current = orderPaymentTransactions.getOrder(orderId);
+        if (current.getStatus() != OrderStatus.PAYMENT_FAILED) {
             removeCartItems(memberId, request.cartItemIds(), orderId);
         }
-        return toResponse(orderPaymentTransactions.getOrder(orderId));
+        return toResponse(current);
     }
 
     public OrderCreateResponse repayment(Long memberId, Long orderId) {

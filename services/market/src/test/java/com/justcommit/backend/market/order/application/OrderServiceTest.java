@@ -597,6 +597,23 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("첫 결제 요청이 안 닿았는데 결과 반영(TX3)도 실패하면, 결제 처리 중으로 남아 복구가 결제할 수 있으므로 장바구니를 비운다")
+    void removesCartWhenNotDeliveredButApplyingOutcomeFails() {
+        stubLookup(List.of(selected(1L, 101L, "10000")),
+                List.of(product(101L, 20L, "몬스테라", "10000", true)));
+        stubSavedOrder();
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentOutcome.notDelivered());
+        when(ordersRepository.applyPaymentAttempt(eq(99L), anyInt(), any(), any(), any(), any()))
+                .thenThrow(new IllegalStateException("DB 오류"));
+
+        OrderCreateResponse response = orderService.create(10L, request(1L));
+
+        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PROCESSING);
+        verify(outboxPublisher, never()).publish(any());
+        verify(cartService).removeSelectedItems(10L, List.of(1L));
+    }
+
+    @Test
     @DisplayName("장바구니 비우기가 실패해도 주문 응답은 그대로 나간다")
     void cartRemovalFailureDoesNotAffectOrder() {
         stubLookup(List.of(selected(1L, 101L, "10000")),
