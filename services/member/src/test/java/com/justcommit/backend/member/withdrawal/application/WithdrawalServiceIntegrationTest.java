@@ -16,6 +16,7 @@ import com.justcommit.backend.member.domain.exception.PasswordChangeLockedExcept
 import com.justcommit.backend.member.infrastructure.crypto.MemberHmac;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
+import com.justcommit.backend.member.member.application.PasswordChangeService;
 import com.justcommit.backend.member.seller.domain.Seller;
 import com.justcommit.backend.member.seller.domain.SellerReviewConsentPolicy;
 import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
@@ -118,6 +119,7 @@ class WithdrawalServiceIntegrationTest {
   @Autowired JdbcTemplate jdbcTemplate;
   @Autowired StringRedisTemplate redisTemplate;
   @Autowired TransactionTemplate transactionTemplate;
+  @Autowired PasswordChangeService passwordChangeService;
 
   // 경합 · 롤백을 만들 때만 동작을 바꾸고, 평소에는 실제 빈 그대로 (테스트마다 원래대로 돌아감)
   @MockitoSpyBean WithdrawalCheckService withdrawalCheckService;
@@ -417,6 +419,55 @@ class WithdrawalServiceIntegrationTest {
     EXTERNAL.resetAll();
     stubChecks(BLOCK, null, PASS);
     assertRejected(() -> withdrawalService.check(memberId), MemberErrorCode.WITHDRAWAL_CHECK_UNAVAILABLE);
+  }
+
+  // ===== 실패 횟수 공유 (S-A10) · 최종 탈퇴의 재확인 (S-B06) =====
+
+  @Test
+  @DisplayName("[S-A10] 비밀번호 변경 오답 2회 + 탈퇴 오답 3회가 합산돼, 다음 탈퇴는 맞는 비밀번호여도 429 PASSWORD_CHANGE_LOCKED")
+  void failuresSharedWithPasswordChange() {
+    Long memberId = givenSeller(Provider.LOCAL);
+    for (int i = 0; i < 2; i++) {
+      assertRejected(() -> passwordChangeService.changePassword(memberId, "wrong-password", "newPlant1234"),
+          MemberErrorCode.INVALID_CURRENT_PASSWORD);
+    }
+    for (int i = 0; i < 3; i++) {
+      assertRejected(() -> withdrawalService.withdraw(memberId, "wrong-password", null), MemberErrorCode.INVALID_CURRENT_PASSWORD);
+    }
+
+    assertThatThrownBy(() -> withdrawalService.withdraw(memberId, PASSWORD, null))
+        .isInstanceOf(PasswordChangeLockedException.class);
+    EXTERNAL.verify(0, anyRequestedFor(anyUrl()));
+  }
+
+  @Test
+  @DisplayName("[S-A10] 비밀번호는 맞았지만 탈퇴가 막히면(409) 그 전의 실패 횟수는 지워지지 않는다: 오답 4 → 막힘 → 오답 1이면 잠김")
+  void correctPasswordButBlockedKeepsFailures() {
+    Long memberId = givenSeller(Provider.LOCAL);
+    for (int i = 0; i < 4; i++) {
+      assertRejected(() -> withdrawalService.withdraw(memberId, "wrong-password", null), MemberErrorCode.INVALID_CURRENT_PASSWORD);
+    }
+    stubChecks(PASS, BLOCK, PASS);
+    assertRejected(() -> withdrawalService.withdraw(memberId, PASSWORD, null), MemberErrorCode.WITHDRAWAL_BLOCKED);
+
+    // 409에서 횟수를 지웠다면 아래 오답은 첫 번째가 되어 잠기지 않는다
+    assertRejected(() -> withdrawalService.withdraw(memberId, "wrong-password", null), MemberErrorCode.INVALID_CURRENT_PASSWORD);
+    assertThatThrownBy(() -> withdrawalService.withdraw(memberId, PASSWORD, null))
+        .isInstanceOf(PasswordChangeLockedException.class);
+  }
+
+  @Test
+  @DisplayName("[S-B06] 사전 확인(GET)이 ALLOWED여도 최종 탈퇴는 다시 확인해, 그 사이 생긴 차단으로 409 WITHDRAWAL_BLOCKED · 회원 그대로")
+  void withdrawRechecksAfterAllowedPreview() {
+    Long memberId = givenSeller(Provider.LOCAL);
+    Member before = memberRepository.findById(memberId).orElseThrow();
+    allowAll();
+    assertThat(withdrawalService.check(memberId).status()).isEqualTo(WithdrawalCheckStatus.ALLOWED);
+
+    stubChecks(PASS, BLOCK, PASS);
+
+    assertRejected(() -> withdrawalService.withdraw(memberId, PASSWORD, null), MemberErrorCode.WITHDRAWAL_BLOCKED);
+    assertUnchanged(memberId, before);
   }
 
   // ===== 도우미 =====
