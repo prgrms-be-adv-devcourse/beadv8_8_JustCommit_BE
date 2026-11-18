@@ -1,12 +1,13 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-17 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-18 · flows/order-payment.md · conventions/resilience.md · reference/schedulers.md · services/market.md · reference/internal-apis.md · infra/observability.md · open-questions.md · decisions/0023-order-payment-transaction-saga.md · infra/payment-review-runbook.md · Saga 결제 복구 반영: 결제 결과 불명은 `PAYMENT_PROCESSING` 유지, 첫 호출 연결 실패는 확정 실패이고 복구 중 연결 실패는 결과 불명, 복구는 10초 유예 후 `SKIP LOCKED` 선점과 `attempt_no` 확인, 5회 뒤 `REVIEW_REQUIRED`와 `market_orders_review_required` 지표, 탈퇴 확인의 진행 중 주문에 `PAYMENT_PROCESSING`과 `REVIEW_REQUIRED` 추가, ADR 0023 장바구니 칸을 고쳐 재결제 확정 실패도 장바구니 복원, Q41 삭제, 결제 확인 필요 주문 처리 런북 추가 (#281)
 - 2026-11-17 · decisions/0023-order-payment-transaction-saga.md · ADR 0023 추가: 결제 시도를 먼저 커밋(TX2 조건부 UPDATE로 `PAYMENT_PROCESSING`, `attempt_no` +1, `attempted_at` 기록)하고 Payment REST는 트랜잭션과 행 잠금 밖에서 호출(`Idempotency-Key: orderId`), 결과는 TX3에서 자기 `attempt_no`일 때만 반영, `OrderStatus`에 `PAYMENT_PROCESSING`와 `PAYMENT_REVIEW_REQUIRED` 추가, Saga 복구 1분 주기로 10초 지난 `PAYMENT_PROCESSING` 재호출하고 5회 안 되면 `REVIEW_REQUIRED`, 만료 스케줄러는 기존 잠금 방식 유지하고 `PAYMENT_PROCESSING`은 만료하지 않음, 이전 제안안 파일 `0023-payment-lock-with-attempt-state.md` 삭제 (#280) (#479)
 - 2026-11-17 · reference/external-apis.md · services/member.md · reference/redis-keys.md · reference/env-vars.md · 계좌 변경 반영: 로그인 필수 전용 경로 3개(인증번호 발송 · 변경 토큰 10분 · `PATCH users/me/account`), 계좌 HMAC(`MEMBER_HMAC_KEY`, Flyway V6 `account_hash` UNIQUE)으로 가입 · 소셜 가입 · 변경 중복 409 `DUPLICATE_ACCOUNT`, 토큰은 확인 후 중복 사전 조회 뒤 GETDEL(형식 오류 · 잠금 대기 초과 · 중복 사전 조회 실패는 토큰 유지), 오류 코드 `ACCOUNT_VERIFICATION_INVALID` · `INVALID_ACCOUNT_CHANGE_TOKEN`, 이메일 발송 하루 한도에 계좌 변경 추가, 외부 계좌 인증 없음 · 중복 차단 한계 명시, 「추가 예정」에서 계좌 변경 제거 (#489)
 - 2026-11-17 · reference/schedulers.md · infra/observability.md · 정산 지급 스케줄러 반영: 기본 10초 간격, 실행마다 최대 50건을 한 건씩 확보(SKIP LOCKED, 30초 임대), payment 호출은 트랜잭션 밖, 성공하면 `COMPLETED` + `completed_at`, 실패(연결 실패, 응답 타임아웃, 4xx, 5xx 모두)하면 `FAILED` + `attempt_count` 증가 + 다음 시도 10초 → 30초 → 1분 고정(포기 없음), 늦게 온 실패는 임대가 그대로일 때만 반영. 알림 규칙에 「정산 지급 지연」(10분 넘게 미지급 정산 1건 이상, 상태 기준 1번, 반복 1시간, 지표 대신 ERROR 로그) 추가 (#429) (#488)
