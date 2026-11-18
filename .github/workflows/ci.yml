@@ -18,6 +18,7 @@ concurrency:
 permissions:
   contents: read
   checks: write # 테스트 결과를 PR Checks에 표시
+  pull-requests: write # 테스트 결과 요약 댓글 (포크 PR은 읽기 전용 토큰이라 댓글 단계를 건너뜀)
 
 jobs:
   build:
@@ -77,6 +78,26 @@ jobs:
         with:
           report_paths: '**/build/test-results/test/*.xml'
           detailed_summary: true
+
+      # 모듈별 표 + 실패 목록을 PR 댓글 1개로 남기고, 새 커밋마다 같은 댓글을 고친다 (#534)
+      # 빌드할 모듈이 없는 PR(docs만)은 댓글 없음. 표시 문자열 <!-- ci-test-summary -->로 이전 댓글을 찾는다
+      - name: 테스트 결과 댓글
+        if: >-
+          !cancelled() && steps.pick.outputs.tasks != '' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 .github/scripts/test_summary.py "$SHA" > "$RUNNER_TEMP/test-summary.md"
+          cat "$RUNNER_TEMP/test-summary.md"
+          id="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate             --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- ci-test-summary -->"))) | .id' | head -n 1)"
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F "body=@$RUNNER_TEMP/test-summary.md" > /dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F "body=@$RUNNER_TEMP/test-summary.md" > /dev/null
+          fi
 
       - name: Upload test report
         if: failure()
