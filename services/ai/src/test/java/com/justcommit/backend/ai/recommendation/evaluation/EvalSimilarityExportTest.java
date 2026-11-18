@@ -55,7 +55,9 @@ class EvalSimilarityExportTest {
     @Test
     @DisplayName("실제 임베딩으로 평가 세트 기준 품종의 유사도를 내보낸다")
     void export() throws IOException {
-        assertThat(reindexService.reindex().embedded()).isEqualTo(215);
+        // 품종 수를 고정하지 않고 시드의 프로필 수와 비교 (시드가 바뀌어도 그대로 동작)
+        long profileCount = jdbcClient.sql("SELECT count(*) FROM species_profile").query(Long.class).single();
+        assertThat(reindexService.reindex().embedded()).isEqualTo((int) profileCount);
 
         TreeSet<Integer> baseIds = new TreeSet<>();
         EvalPair.load().forEach(pair -> baseIds.add(pair.baseId()));
