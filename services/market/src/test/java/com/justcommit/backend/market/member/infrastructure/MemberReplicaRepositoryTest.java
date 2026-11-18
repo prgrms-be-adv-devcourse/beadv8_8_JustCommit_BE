@@ -7,10 +7,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.testcontainers.junit.jupiter.Container;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -28,9 +28,10 @@ class MemberReplicaRepositoryTest {
   private static final OffsetDateTime T2 = OffsetDateTime.parse("2026-11-12T10:05:00+09:00");
   private static final OffsetDateTime T3 = OffsetDateTime.parse("2026-11-12T10:10:00+09:00");
 
-  @Container
-  @ServiceConnection
-  static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
+  @DynamicPropertySource
+  static void postgresProperties(DynamicPropertyRegistry registry) {
+    SharedPostgres.register(registry);
+  }
 
   @Autowired
   private MemberReplicaRepository repository;

@@ -16,7 +16,17 @@ Gateway는 K3s Service 이름으로 market에 보내고 K3s가 살아 있는 파
 
 - 컨테이너마다 `mem_limit` + JVM `MaxRAMPercentage=70`, 두 서버 모두 스왑 2GB
 - Gateway · market을 2개씩 띄우면 앱 서버 예상 메모리는 **약 7GB / 8GB**입니다. 넘치면 모니터링을 **데이터 서버로** 옮기는 쪽을 봅니다 (앱 서버가 더 빠듯함)
-- Sprint 1에 실측합니다 (⬜)
+- 실측 (2026-11-18, 부하 없이 모두 띄운 상태): 앱 서버 **4.4GB / 7.6GB**, 스왑 사용 없음. 부하를 줄 때의 값은 성능 측정 때 다시 잽니다 (⬜)
+
+| 무엇 | 메모리 (상한) |
+|---|---|
+| Gateway 파드 2개 | 163 · 186MiB (512Mi) |
+| market 파드 2개 | 356 · 368MiB (768Mi) |
+| ai 파드 1개 | 261MiB (640Mi) |
+| member · product | 360 · 407MiB (768m) |
+| payment · settlement · notification | 298 · 309 · 277MiB (512m) |
+| Redis | 5MiB (320m) |
+| K3s · Nginx · CD 러너 3개 등 나머지 | 약 1.4GB (서비스 띄우기 전 기준) |
 
 ## CI/CD
 

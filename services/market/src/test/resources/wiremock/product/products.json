@@ -10,7 +10,8 @@
       "status": "ACTIVE",
       "hidden": false,
       "thumbnailUrl": "https://img/101.jpg",
-      "speciesName": "몬스테라 델리시오사"
+      "speciesName": "몬스테라 델리시오사",
+      "createdAt": "2026-11-15T10:30:00"
     },
     {
       "productId": 102,

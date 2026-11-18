@@ -21,6 +21,7 @@ import org.springframework.security.web.method.annotation.AuthenticationPrincipa
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -84,14 +85,16 @@ class CartControllerTest {
     @DisplayName("추천은 인증 회원 기준, size를 안 주면 4")
     void recommendsWithDefaultSize() throws Exception {
         when(cartRecommendationService.recommend(10L, 4)).thenReturn(List.of(new CartRecommendationResponse(
-                201L, "몬스테라", new BigDecimal("15000"), "https://img/201", "몬스테라", "반그늘에서 잘 자라요")));
+                201L, "몬스테라", new BigDecimal("15000"), "https://img/201", "몬스테라", "반그늘에서 잘 자라요",
+                LocalDateTime.of(2026, 11, 15, 10, 30))));
 
         mockMvc.perform(get("/api/v1/cart/recommendations"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("장바구니 추천 상품을 조회했습니다."))
                 .andExpect(jsonPath("$.data[0].productId").value(201))
                 .andExpect(jsonPath("$.data[0].price").value(15000))
-                .andExpect(jsonPath("$.data[0].reason").value("반그늘에서 잘 자라요"));
+                .andExpect(jsonPath("$.data[0].reason").value("반그늘에서 잘 자라요"))
+                .andExpect(jsonPath("$.data[0].createdAt").value("2026-11-15T10:30:00"));
     }
 
     @Test

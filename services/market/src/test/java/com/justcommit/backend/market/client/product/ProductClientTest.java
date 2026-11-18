@@ -21,6 +21,7 @@ import com.justcommit.backend.common.client.exception.InternalApiResultUnknownEx
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.market.client.InternalApiClientTestSupport;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
+import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -54,6 +55,7 @@ class ProductClientTest {
             assertThat(products).extracting(ProductResult::productId).containsExactly(101L, 102L);
             assertThat(products.get(0).price()).isEqualByComparingTo("10000");
             assertThat(products.get(0).isPurchasable()).isTrue();
+            assertThat(products.get(0).createdAt()).isEqualTo(LocalDateTime.of(2026, 11, 15, 10, 30));
             assertThat(products.get(1).status()).isEqualTo(ProductStatus.REVIEW_PENDING);
             assertThat(products.get(1).isPurchasable()).isFalse();
         });

@@ -1,5 +1,6 @@
 plugins {
     id 'java-library'
+    id 'java-test-fixtures'
     id 'io.spring.dependency-management'
 }
 
@@ -22,4 +23,10 @@ dependencyManagement {
 dependencies {
     api 'org.springframework:spring-web'
     api 'com.fasterxml.jackson.core:jackson-annotations'
+
+    // 테스트 공유 컨테이너 (testFixtures). Kafka는 쓰는 서비스만 testcontainers-kafka를 가져온다
+    testFixturesApi 'org.springframework:spring-test'
+    testFixturesApi 'org.testcontainers:testcontainers'
+    testFixturesApi 'org.testcontainers:testcontainers-postgresql'
+    testFixturesCompileOnly 'org.testcontainers:testcontainers-kafka'
 }

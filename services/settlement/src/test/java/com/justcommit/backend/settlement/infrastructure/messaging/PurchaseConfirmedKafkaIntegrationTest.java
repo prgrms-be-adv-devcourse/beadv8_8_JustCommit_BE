@@ -45,6 +45,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -97,7 +98,7 @@ class PurchaseConfirmedKafkaIntegrationTest {
     }
 
     @Test
-    @DisplayName("같은 sellerOrderId가 옛 토픽과 새 토픽으로 한 번씩 와도 정산은 1건이고, 비어 있던 배송비는 새 토픽 값으로 채워진다")
+    @DisplayName("[S-H02] 같은 sellerOrderId가 옛 토픽과 새 토픽으로 한 번씩 와도 정산은 1건이고, 비어 있던 배송비는 새 토픽 값으로 채워진다")
     void sameSellerOrderFromBothTopicsSettlesOnce() {
         kafkaTemplate.send(LEGACY_TOPIC, "2001", legacyJson(2001L));
         Settlement first = awaitSettlement(2001L);
@@ -117,6 +118,22 @@ class PurchaseConfirmedKafkaIntegrationTest {
     }
 
     @Test
+    @DisplayName("[S-H02] 같은 구매 확정 이벤트를 같은 토픽에서 두 번 받아도 정산은 1건, 지급 요청도 1번")
+    void sameEventTwiceSettlesOnce() {
+        String event = purchaseConfirmedEnvelope(4001L, "3000");
+        kafkaTemplate.send(KafkaTopics.MARKET_EVENTS, "4001", event);
+        kafkaTemplate.send(KafkaTopics.MARKET_EVENTS, "4001", event);
+
+        Settlement settlement = awaitSettlement(4001L);
+        // 두 번째 메시지까지 소비된 뒤 건수를 봄 (같은 Key라 같은 파티션에서 차례로 처리)
+        verify(settlementService, timeout(20_000).times(2)).settle(eq(4001L), anyLong(), any(), any(), any());
+        assertThat(settlementRepository.findAll())
+                .filteredOn(s -> s.getSellerOrderId().equals(4001L))
+                .hasSize(1);
+        verify(settlementPayoutClient, times(1)).distributeSettlement(eq(settlement.getId()), anyLong(), any(), any());
+    }
+
+    @Test
     @DisplayName("PurchaseConfirmed가 아닌 eventType은 정산을 만들지 않고 예외나 DLT 없이 넘어간다")
     void ignoresOtherEventTypesWithoutDlt() {
         // 같은 Key라 같은 파티션: 앞 메시지가 막히면(재시도 · DLT) 뒤 구매 확정도 늦게 처리됨
@@ -130,7 +147,7 @@ class PurchaseConfirmedKafkaIntegrationTest {
     }
 
     @Test
-    @DisplayName("형식이 깨진 메시지는 재시도 없이 market.events.v1.DLT로 간다")
+    @DisplayName("[S-H04] 형식이 깨진 메시지는 재시도 없이 market.events.v1.DLT로 간다")
     void malformedMessageGoesToDltWithoutRetry() {
         kafkaTemplate.send(KafkaTopics.MARKET_EVENTS, "4001", "not-json");
 
@@ -139,7 +156,7 @@ class PurchaseConfirmedKafkaIntegrationTest {
     }
 
     @Test
-    @DisplayName("sellerOrderId가 없는 PurchaseConfirmed는 정산을 부르지 않고 바로 DLT로 간다")
+    @DisplayName("[S-H04] sellerOrderId가 없는 PurchaseConfirmed는 정산을 부르지 않고 바로 DLT로 간다")
     void payloadWithoutSellerOrderIdGoesToDltWithoutRetry() {
         kafkaTemplate.send(KafkaTopics.MARKET_EVENTS, "5001", envelope("PurchaseConfirmed", 5001L,
                 Map.of("sellerId", 7L, "saleAmount", 30000)));
