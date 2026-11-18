@@ -99,7 +99,7 @@ class NotificationEventListenerTest {
     }
 
     @Test
-    @DisplayName("구매자 취소는 판매자에게만 알린다")
+    @DisplayName("[S-I01] 구매자 취소는 판매자에게만 알린다")
     void notifiesOnlySellerOnCancellationByBuyer() {
         listener.onSellerOrderCancelled(new SellerOrderCancelledEvent(
                 ORDER_ID, SELLER_ORDER_ID, SELLER, BUYER, LocalDateTime.now()));
@@ -112,7 +112,7 @@ class NotificationEventListenerTest {
     @ParameterizedTest(name = "reason={0}")
     @NullSource
     @EnumSource(value = SellerOrderRejectReason.class, names = "SELLER")
-    @DisplayName("판매자 직접 거절(reason 없음 포함)은 구매자에게만 판매자 거절 알림을 보낸다")
+    @DisplayName("[S-I01] 판매자 직접 거절(reason 없음 포함)은 구매자에게만 판매자 거절 알림을 보낸다")
     void notifiesOnlyBuyerOnRejectionBySeller(SellerOrderRejectReason reason) {
         listener.onSellerOrderRejected(rejectedEvent(reason));
 

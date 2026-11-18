@@ -1,0 +1,72 @@
+# Gateway 파드 2개 (ADR 0014). Nginx → 서버 포트 30080 → 살아 있는 Gateway 파드
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: replant
+  labels:
+    app: gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gateway
+  # 새 파드 1개가 준비된 뒤 옛 파드 1개를 내린다 → 배포 중에도 항상 2개가 응답
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: gateway
+          # CD가 kubectl set image로 커밋 태그(7자리)로 바꾼다 (docs/infra/deploy.md)
+          image: ghcr.io/prgrms-be-adv-devcourse/replant-gateway:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: replant-endpoints
+            - secretRef:
+                name: gateway-env
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 512Mi
+          # 8080이 열렸는지만 본다. actuator가 생기면 HTTP 확인으로 바꾼다
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          # 내려가기 전에 5초 기다려 새 요청이 이 파드로 오지 않게 한다
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: replant
+spec:
+  type: NodePort
+  selector:
+    app: gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: 30080
