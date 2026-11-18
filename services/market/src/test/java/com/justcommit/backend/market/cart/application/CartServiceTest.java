@@ -137,7 +137,7 @@ class CartServiceTest {
         when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
         when(productQuery.getProducts(List.of(101L))).thenReturn(List.of(
                 new ProductResult(101L, 10L, "내 상품", new BigDecimal("10000"),
-                        ProductStatus.ACTIVE, false, "thumbnail", null)));
+                        ProductStatus.ACTIVE, false, "thumbnail", null, null)));
         when(memberQuery.getNicknames(List.of(10L))).thenReturn(Map.of());
 
         CartResponse response = cartService.find(10L);
@@ -155,7 +155,7 @@ class CartServiceTest {
         Cart cart = new Cart(10L);
         when(cartRepository.findByMemberId(10L)).thenReturn(Optional.of(cart));
         when(productQuery.getProduct(101L)).thenReturn(new ProductResult(101L, 10L, "내 상품",
-                new BigDecimal("10000"), ProductStatus.ACTIVE, false, null, null));
+                new BigDecimal("10000"), ProductStatus.ACTIVE, false, null, null, null));
 
         assertThatThrownBy(() -> cartService.addItemToCart(10L, 101L))
                 .isInstanceOfSatisfying(BusinessException.class,
@@ -437,9 +437,9 @@ class CartServiceTest {
                 Arguments.of("결제 대기", List.of(product(102L, "예약됨", "22000", ProductStatus.PAYMENT_PENDING))),
                 Arguments.of("삭제", List.of(product(102L, "삭제", "22000", ProductStatus.DELETED))),
                 Arguments.of("숨김", List.of(new ProductResult(102L, 20L, "숨김", new BigDecimal("22000"),
-                        ProductStatus.ACTIVE, true, null, null))),
+                        ProductStatus.ACTIVE, true, null, null, null))),
                 Arguments.of("내 상품", List.of(new ProductResult(102L, 10L, "내 상품", new BigDecimal("22000"),
-                        ProductStatus.ACTIVE, false, null, null))),
+                        ProductStatus.ACTIVE, false, null, null, null))),
                 Arguments.of("product 결과에 없음", List.of()));
     }
 
@@ -496,6 +496,6 @@ class CartServiceTest {
     }
 
     private static ProductResult product(long id, String title, String price, ProductStatus status, String speciesName) {
-        return new ProductResult(id, 20L, title, new BigDecimal(price), status, false, null, speciesName);
+        return new ProductResult(id, 20L, title, new BigDecimal(price), status, false, null, speciesName, null);
     }
 }

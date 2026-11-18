@@ -31,6 +31,7 @@ import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -52,8 +53,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 // 가격 동의가 실제 DB 트랜잭션에서 전부 커밋되거나 전부 남지 않는지, product 조회는 실제 클라이언트로 WireMock을 불러 확인한다
@@ -76,9 +76,6 @@ class CartPriceConsentIntegrationTest {
     private static final String PRODUCTS = "/internal/v1/products";
     private static final String INTERNAL_KEY = "test-key";
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
     @RegisterExtension
     static WireMockExtension product = WireMockExtension.newInstance()
             .options(wireMockConfig().dynamicPort())
@@ -86,9 +83,7 @@ class CartPriceConsentIntegrationTest {
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        SharedPostgres.register(registry);
         registry.add("internal-api.key", () -> INTERNAL_KEY);
         registry.add("spring.http.serviceclient.product.base-url", product::baseUrl);
         registry.add("spring.http.serviceclient.product.read-timeout", () -> "500ms");
@@ -105,6 +100,27 @@ class CartPriceConsentIntegrationTest {
     @Autowired CartService cartService;
     @Autowired CartRepository cartRepository;
     @Autowired CartItemRepository cartItemRepository;
+
+    private static boolean warmedUp;
+
+    // 클래스의 첫 호출은 HTTP 클라이언트 · JSON 변환 준비로 느려서 read-timeout 500ms를 넘을 수 있다.
+    // 실제 테스트 전에 한 번 불러 데우고, 그 호출 · 데이터는 지운다 (데우기 실패는 무시)
+    @BeforeEach
+    void warmUpOnce() {
+        if (warmedUp) {
+            return;
+        }
+        warmedUp = true;
+        List<Long> ids = saveCart("12000", "22000");
+        stubProducts();
+        try {
+            cartService.updatePrices(MEMBER_ID, List.of(consent(ids.get(0), "12000"), consent(ids.get(1), "22000")));
+        } catch (RuntimeException ignored) {
+            // 데우기만 하면 되므로 결과는 보지 않는다
+        }
+        cleanUp();
+        product.resetAll();
+    }
 
     @AfterEach
     void cleanUp() {

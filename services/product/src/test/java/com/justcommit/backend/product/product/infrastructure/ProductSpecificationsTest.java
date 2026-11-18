@@ -24,11 +24,11 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
@@ -44,19 +44,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers(disabledWithoutDocker = true) //테스트할 때 Docker로 진짜 DB 컨테이너를 띄워 주는 라이브러리
 class ProductSpecificationsTest {
 
-    @Container //테스트 전용 Postgres 컨테이너
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        SharedPostgres.register(registry);
     }
 
     private static final Long SELLER_ID = 1L;
     private static final Long OTHER_SELLER_ID = 2L;
     private static final PageRequest LATEST = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "createdAt"));
+
+    // 서비스와 같은 한국 시간 Clock으로 시각을 만든다 (JVM · DB 시간대가 UTC인 CI에서도 같은 기준)
+    @Autowired
+    private Clock clock;
 
     @Autowired
     private EntityManager entityManager;
@@ -125,7 +124,7 @@ class ProductSpecificationsTest {
     // SQL 통해 생성 시각 바꿈 - createdAt 은 Auditing 이 관리하는 필드라 엔티티로 바꾸기 어려워 직접 DB 수정
     private void setCreatedAt(Product product, int minutesAgo) {
         entityManager.createNativeQuery("UPDATE product SET created_at = :createdAt WHERE id = :id")
-                .setParameter("createdAt", LocalDateTime.now().minusMinutes(minutesAgo))
+                .setParameter("createdAt", LocalDateTime.now(clock).minusMinutes(minutesAgo))
                 .setParameter("id", product.getId())
                 .executeUpdate();
     }
@@ -202,6 +201,17 @@ class ProductSpecificationsTest {
     }
 
     @Test
+    @DisplayName("[S-C02] 숨긴 상품은 공개 목록 · 검색에서 빠지고(키워드 · 판매 중 필터 모두), 판매자 본인 목록에는 남음")
+    void hiddenProductExcludedFromPublicSearch() {
+        assertThat(search(null, null, null, null, null)).doesNotContain(hidden.getId());
+        assertThat(search(null, null, null, null, true)).doesNotContain(hidden.getId());
+        assertThat(search("숨김", null, null, null, null)).isEmpty();
+        assertThat(idsOf(productRepository.findAll(
+                ProductSpecifications.sellerCondition(SELLER_ID, null, null), LATEST)))
+                .contains(hidden.getId());
+    }
+
+    @Test
     @DisplayName("onSale=true면 판매 중 상품만, false·미전달이면 결제 대기·판매완료도 함께 조회")
     void searchConditionWithOnSale() {
         Product pending = save(species("필레아", null, null, null), SELLER_ID, "결제 대기");
@@ -260,7 +270,7 @@ class ProductSpecificationsTest {
     }
 
     @Test
-    @DisplayName("결제 대기 중 숨긴 상품은 결제 완료 시 판매완료가 되고 숨김이 유지됨")
+    @DisplayName("[S-C02] 결제 대기 중 숨긴 상품은 결제 완료 시 판매완료가 되고 숨김이 유지됨")
     void markSoldOutKeepsHidden() {
         Long orderId = 100L;
         assertThat(productRepository.reserve(orderId, List.of(active.getId()))).isEqualTo(1);
@@ -275,7 +285,7 @@ class ProductSpecificationsTest {
     }
 
     @Test
-    @DisplayName("결제 대기 중 숨긴 상품은 결제 실패·만료 시 판매중으로 돌아오지만 숨김이 유지돼 다시 예약할 수 없음")
+    @DisplayName("[S-C02] 결제 대기 중 숨긴 상품은 결제 실패·만료 시 판매중으로 돌아오지만 숨김이 유지돼 다시 예약할 수 없음")
     void releaseKeepsHiddenAndBlocksReserve() {
         Long orderId = 100L;
         assertThat(productRepository.reserve(orderId, List.of(active.getId()))).isEqualTo(1);
@@ -324,7 +334,7 @@ class ProductSpecificationsTest {
 
         assertThat(productRepository.countBySellerIdAndStatus(SELLER_ID, ProductStatus.REVIEW_PENDING)).isEqualTo(2);
         // setUp의 판매 중 · 숨김 · 판매 완료 · 삭제(1~4분 전) 4건 + 방금 등록한 검수 중 1건. 두 시간 전 상품 · 남의 상품은 제외
-        assertThat(productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(SELLER_ID, LocalDateTime.now().minusHours(1)))
+        assertThat(productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(SELLER_ID, LocalDateTime.now(clock).minusHours(1)))
                 .isEqualTo(5);
     }
 }

@@ -47,6 +47,7 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     // 임베딩 API 스텁 (OpenAI 대신 로컬 HTTP 응답)
     testImplementation 'org.wiremock:wiremock-standalone:3.13.1'
+    testImplementation testFixtures(project(':common:common-core'))
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.testcontainers:testcontainers-postgresql'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
@@ -54,4 +55,6 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // 공유 테스트 컨테이너(SharedPostgres)를 pgvector 이미지로 띄운다
+    systemProperty 'shared.postgres.image', 'pgvector/pgvector:pg17'
 }

@@ -4,9 +4,9 @@ import java.math.BigDecimal;
 
 public interface PaymentUseCase {
 
-    // 잔액 부족 · 지갑 없음 · 중복 결제는 예외가 아니라 결과 상태로 돌려준다.
-    // 응답 타임아웃은 InternalApiResultUnknownException (같은 orderId로 다시 부르면 결과를 알 수 있다)
-    PaymentResult pay(Long orderId, Long buyerId, BigDecimal amount);
+    // 결제 결과를 PaymentOutcome으로 분류해 돌려주고 예외를 던지지 않는다 (ADR 0023).
+    // 같은 orderId(Idempotency-Key)로 다시 부르면 payment는 처음 결과를 돌려준다 (ALREADY_PAID)
+    PaymentOutcome pay(Long orderId, Long buyerId, BigDecimal amount);
 
     // 확정 실패(4xx) · 응답 타임아웃은 예외로 알리고, 호출한 쪽은 잡지 않고 전파해 취소까지 롤백한다
     PaymentResult refundCancelledItem(Long orderItemId, Long orderId, Long buyerId, BigDecimal amount);

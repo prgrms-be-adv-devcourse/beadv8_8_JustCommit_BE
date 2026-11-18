@@ -46,7 +46,7 @@ class InternalKeyFilterTest {
   }
 
   @Test
-  @DisplayName("요청에 X-Internal-Key가 없으면 401 INVALID_INTERNAL_KEY")
+  @DisplayName("[S-A06] 요청에 X-Internal-Key가 없으면 401 INVALID_INTERNAL_KEY")
   void noKeyHeader() throws Exception {
     Result result = runWithJwtFilter(KEY, internalRequest(null, null));
 
@@ -54,7 +54,7 @@ class InternalKeyFilterTest {
   }
 
   @Test
-  @DisplayName("키가 틀리면 유효한 회원 토큰이 있어도 401 INVALID_INTERNAL_KEY (키가 먼저)")
+  @DisplayName("[S-A06] 키가 틀리면 유효한 회원 토큰이 있어도 401 INVALID_INTERNAL_KEY (키가 먼저)")
   void wrongKeyEvenWithValidToken() throws Exception {
     given(jwtVerifier.parseAccessToken("good")).willReturn(new AuthMember(4L, "SELLER"));
 

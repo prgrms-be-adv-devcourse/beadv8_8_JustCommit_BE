@@ -31,8 +31,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 // 내부 API는 같은 Idempotency-Key(업무 ID)로 다시 · 동시에 올 수 있다 (응답 타임아웃 뒤 재호출)
@@ -50,14 +49,9 @@ class PaymentIdempotencyIntegrationTest {
 
     private static final int THREADS = 8;
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        SharedPostgres.register(registry);
     }
 
     @Autowired PaymentService paymentService;
@@ -79,7 +73,7 @@ class PaymentIdempotencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("같은 settlementId로 동시에 지급해도 정산금과 수수료는 한 번만 적립된다")
+    @DisplayName("[S-G04] 같은 settlementId로 동시에 지급해도 정산금과 수수료는 한 번만 적립된다")
     void paysOutOnlyOnceForConcurrentRequestsOfSameSettlement() throws Exception {
         Long sellerId = 40L;
         walletRepository.save(Wallet.forMember(sellerId));
@@ -97,7 +91,7 @@ class PaymentIdempotencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("같은 settlementId로 다시 지급하면 아무것도 하지 않는다 (판매자 지갑이 없던 첫 지급 포함)")
+    @DisplayName("[S-G04] 같은 settlementId로 다시 지급하면 아무것도 하지 않는다 (판매자 지갑이 없던 첫 지급 포함)")
     void doesNothingWhenSameSettlementIsPaidAgain() {
         Long sellerId = 41L;
 
@@ -111,7 +105,7 @@ class PaymentIdempotencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("같은 orderItemId로 동시에 환불해도 한 번만 환불되고 나머지는 ALREADY_REFUNDED")
+    @DisplayName("[S-E04] 같은 orderItemId로 동시에 환불해도 한 번만 환불되고 나머지는 ALREADY_REFUNDED")
     void refundsOnlyOnceForConcurrentRequestsOfSameOrderItem() throws Exception {
         Long buyerId = 50L;
         Long orderItemId = 300L;

@@ -22,15 +22,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.messaging.converter.MessageConversionException;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -42,13 +39,9 @@ class ProductSnapshotIntegrationTest {
     private static final long SPECIES_ID = 14L;
     private static final long SELLER_ID = 7L;
 
-    @Container
-    @ServiceConnection
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer(
-            DockerImageName.parse("pgvector/pgvector:pg17").asCompatibleSubstituteFor("postgres"));
-
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
+        SharedPostgres.register(registry);
         registry.add("jwt.public-key", ProductSnapshotIntegrationTest::newPublicKey);
         registry.add("spring.ai.openai.api-key", () -> "test-key");
         // Kafka 브로커 없이 리스너 메서드만 직접 부른다

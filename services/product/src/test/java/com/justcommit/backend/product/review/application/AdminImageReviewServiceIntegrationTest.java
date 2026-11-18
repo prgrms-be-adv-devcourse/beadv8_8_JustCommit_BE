@@ -46,12 +46,12 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -83,14 +83,9 @@ class AdminImageReviewServiceIntegrationTest {
     private static final Long ADMIN_ID = 1L;
     private static final Long OTHER_ADMIN_ID = 2L;
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        SharedPostgres.register(registry);
     }
 
     @TestConfiguration
@@ -105,6 +100,9 @@ class AdminImageReviewServiceIntegrationTest {
             return JsonMapper.builder().build();
         }
     }
+
+    // 서비스와 같은 한국 시간 Clock으로 시각을 만든다 (JVM · DB 시간대가 UTC인 CI에서도 같은 기준)
+    @Autowired Clock clock;
 
     @Autowired AdminImageReviewService adminService;
     @Autowired ImageReviewRepository imageReviewRepository;
@@ -141,7 +139,7 @@ class AdminImageReviewServiceIntegrationTest {
             ImageReview review = ImageReview.requested(product.getId(), product.getReviewVersion(), SELLER_ID, ReviewScope.FULL);
             review.complete(ReviewVerdict.manual(ManualReason.SPECIES_MISMATCH, "Epipremnum aureum"),
                     "{\"moderation\":{\"imageFlagged\":false},\"plant\":{\"plant\":true}}", null,
-                    LocalDateTime.now().minusHours(hoursAgo));
+                    LocalDateTime.now(clock).minusHours(hoursAgo));
             imageReviewRepository.save(review);
             return product;
         });
@@ -174,7 +172,7 @@ class AdminImageReviewServiceIntegrationTest {
     // ── 목록 ───────────────────────────────
 
     @Test
-    @DisplayName("목록: 관리자 확인 대기만 오래된 순, 12시간 지나면 지연 표시, 기한은 24시간 뒤")
+    @DisplayName("[S-C07] 목록: 관리자 확인 대기만 오래된 순, 12시간 지나면 지연 표시, 기한은 24시간 뒤")
     void listOldestFirst() {
         Product fresh = awaitingAdmin("새 건", 1);
         Product old = awaitingAdmin("오래된 건", 13);
@@ -357,7 +355,7 @@ class AdminImageReviewServiceIntegrationTest {
             Product saved = productRepository.save(Product.create(species, SELLER_ID, "몬스테라 팝니다", "자생지에서 캤어요",
                     new BigDecimal("10000"), null, null, null, List.of("http://localhost:9000/bucket/products/7/a.jpg")));
             ImageReview review = ImageReview.requested(saved.getId(), 0, SELLER_ID, ReviewScope.TEXT_ONLY);
-            review.complete(ReviewVerdict.manual(ManualReason.REVIEW_KEYWORD, "자생지"), null, null, LocalDateTime.now());
+            review.complete(ReviewVerdict.manual(ManualReason.REVIEW_KEYWORD, "자생지"), null, null, LocalDateTime.now(clock));
             imageReviewRepository.save(review);
             return saved;
         });
@@ -370,7 +368,7 @@ class AdminImageReviewServiceIntegrationTest {
     // ── 24시간 기한 ───────────────────────────────
 
     @Test
-    @DisplayName("S-C07 24시간이 지난 관리자 확인은 REVIEW_EXPIRED 자동 반려 · 반려 알림 이벤트, 24시간 전은 그대로")
+    @DisplayName("[S-C07] 24시간이 지난 관리자 확인은 REVIEW_EXPIRED 자동 반려 · 반려 알림 이벤트, 24시간 전은 그대로")
     void expireOverdue() {
         Product overdue = awaitingAdmin("기한 지남", 25);
         Product notYet = awaitingAdmin("아직", 23);
@@ -393,13 +391,13 @@ class AdminImageReviewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("S-C07 REVIEW_EXPIRED는 최근 7일 반려 수에 세지 않음")
+    @DisplayName("[S-C07] REVIEW_EXPIRED는 최근 7일 반려 수에 세지 않음")
     void expiredNotCountedAsRejection() {
         awaitingAdmin("기한 지남", 25);
         adminService.expireOverdue();
 
         assertThat(imageReviewRepository.countBySellerIdAndDecisionAndRejectReasonNotAndReviewedAtGreaterThanEqual(
-                SELLER_ID, ReviewDecision.REJECTED, RejectReason.REVIEW_EXPIRED, LocalDateTime.now().minusDays(7))).isZero();
+                SELLER_ID, ReviewDecision.REJECTED, RejectReason.REVIEW_EXPIRED, LocalDateTime.now(clock).minusDays(7))).isZero();
     }
 
     @Test

@@ -14,7 +14,8 @@
 | 주문 | `Orders` | 구매, 주문서 | 구매자가 한 번에 결제한 묶음. 여러 판매자의 상품이 섞일 수 있음 | [market](services/market.md) |
 | 판매자 주문 | `SellerOrder` | 판매 주문, 셀러 주문 | 주문을 판매자별로 나눈 단위. 배송 · 배송비 · 정산 · 리뷰 · Kafka Key의 기준 | [market](services/market.md) |
 | 주문상품 | `OrdersItem` | 주문 상품, 주문 아이템 | 주문 안의 상품 하나. 취소 · 반품 · 구매 확정의 단위 | [market](services/market.md) |
-| 결제 대기 | `PAYMENT_PENDING` (주문) | 결제중, 미결제 | 잔액이 부족해 결제를 기다리는 주문 | [market 정책](services/market.md#정책) |
+| 결제 대기 | `PAYMENT_PENDING` (주문) | 미결제 | 잔액이 부족해 결제를 기다리는 주문 | [market 정책](services/market.md#정책) |
+| 결제 처리 중 | `PAYMENT_PROCESSING` (주문) | 결제중, 결제 시도 중 | payment에 결제를 요청했고 아직 결과를 반영하지 못한 주문. 결과를 모르면 이 상태로 남고 Saga 복구가 같은 orderId로 다시 요청. 만료하지 않음 | [주문 · 결제](flows/order-payment.md#멈춘-주문-복구) |
 | 결제 기한 만료 | `PAYMENT_WINDOW_EXPIRED` | 결제 시간 초과 | 결제 대기 기한이 지나 결제를 거절하는 것. 결제할 때 market이 직접 확인 | [market 정책](services/market.md#정책) |
 | 수락 · 거절 | `ACCEPT_PENDING` · `SellerOrderAccepted` · `SellerOrderRejected` | 주문 확인, 주문 승인 | 결제 후 판매자가 주문을 받을지 정하는 단계. 수락해야 배송이 생김 | [market 정책](services/market.md#정책) |
 | 자동 거절 | – | 자동 취소 (구매자 알림 문구) | 판매자가 기한 안에 응답하지 않아 거절된 주문 | [market 정책](services/market.md#정책) |
@@ -23,6 +24,8 @@
 | 수거 | `PICKED_UP` | 픽업, 가져감, 집하 | 택배사가 상품을 가져간 상태. 이후에는 취소 대신 반품 | [market 정책](services/market.md#정책) |
 | 배송 완료 | `DELIVERED` | 도착 | 구매자에게 도착한 상태. 자동 구매 확정 · 반품 기간의 기준 시점 | [market 정책](services/market.md#정책) |
 | 취소 대기 | `CANCEL_PENDING` (배송) | – | 택배사 취소 결과를 기다리는 배송 상태 | [취소 · 환불](flows/cancel-refund.md) |
+| 취소 불가 | `CANCEL_LOCKED` (배송) | 수거 임박, 기사 근접 | 기사가 수거지 2km 안에 들어와 구매자가 취소할 수 없는 배송 상태 | [취소 · 환불](flows/cancel-refund.md) |
+| 반송 | `RETURNING` · `RETURNED` (택배사) | 취소 반송 | 취소가 인정됐지만 택배사 장애로 이미 수거된 상품을 택배사가 판매자에게 돌려보내는 것 (택배사 비용). 구매자가 신청하는 반품과 다름 | [취소 · 환불](flows/cancel-refund.md) |
 | 택배사 | – | 404-express, 모의 택배사, courier | 배송을 맡는 외부 서비스 (지금은 모의 택배사 404-express) | [market](services/market.md) |
 | 웹훅 | – | webhook, 콜백 | 택배사가 배송 상태 · 취소 · 요금표 변경을 알려 주는 HTTP 요청 | [market 정책](services/market.md#정책) |
 | 배송비 요금표 | ⬜ 테이블 이름 미정 | 운임표 | 지역 구분(기본 + 제주 · 도서산간) 배송비 표. market이 버전과 함께 보관 | [market 정책](services/market.md#정책) |

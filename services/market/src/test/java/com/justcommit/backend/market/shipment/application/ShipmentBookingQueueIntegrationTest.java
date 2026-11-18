@@ -26,10 +26,11 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import org.springframework.transaction.support.TransactionTemplate;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
@@ -64,14 +65,9 @@ import static org.mockito.Mockito.when;
 @Transactional(propagation = Propagation.NOT_SUPPORTED) // 큐가 직접 트랜잭션을 열고 닫는다
 class ShipmentBookingQueueIntegrationTest {
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        SharedPostgres.register(registry);
     }
 
     @MockitoBean CourierClient courierClient;
@@ -82,6 +78,7 @@ class ShipmentBookingQueueIntegrationTest {
     @Autowired ShipmentService shipmentService;
     @Autowired ShipmentRepository shipmentRepository;
     @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired PlatformTransactionManager transactionManager;
 
     @BeforeEach
     void stubOrderAndSeller() {
@@ -159,6 +156,30 @@ class ShipmentBookingQueueIntegrationTest {
         Shipment shipment = shipmentRepository.findById(saved.getId()).orElseThrow();
         assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.READY);
         assertThat(shipment.getAttemptCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("판매자가 집하점 2km 안이라 CANCEL_LOCKED 웹훅이 예약 저장보다 먼저 와도 송장번호 · 예약 시각을 채우고 판매자 알림(BOOKED)을 보낸다")
+    void lockedWebhookBeforeBookingSave() {
+        Shipment saved = readyShipment(7L);
+        when(courierClient.book(anyString(), any(CourierBookingRequest.class))).thenAnswer(inv -> {
+            // 택배사가 예약하면서 바로 보낸 CANCEL_LOCKED 웹훅이 market 예약 저장보다 먼저 반영됨
+            new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                Shipment s = shipmentRepository.findById(saved.getId()).orElseThrow();
+                s.applyCourierStatus(ShipmentStatus.CANCEL_LOCKED, "404000000007", LocalDateTime.now());
+                shipmentRepository.save(s);
+            });
+            return booked(inv.getArgument(0));
+        });
+
+        shipmentService.bookReadyShipments();
+
+        Shipment shipment = shipmentRepository.findById(saved.getId()).orElseThrow();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCEL_LOCKED); // 웹훅 상태 유지
+        assertThat(shipment.getBookedAt()).isEqualTo(LocalDateTime.of(2026, 11, 16, 10, 0));
+        assertThat(shipment.getTrackingNo()).isEqualTo("404000000007");
+        assertThat(shipment.getAttemptCount()).isZero(); // 예약 실패로 기록하지 않음
+        verify(statusChangedEventPublisher).publishAfterCommit(any(), eq(ShipmentStatus.BOOKED), any(), any());
     }
 
     @Test

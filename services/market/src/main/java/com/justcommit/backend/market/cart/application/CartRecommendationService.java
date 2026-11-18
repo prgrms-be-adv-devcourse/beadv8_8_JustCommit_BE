@@ -99,6 +99,6 @@ public class CartRecommendationService {
 
     private static CartRecommendationResponse toResponse(ProductResult product, String reason) {
         return new CartRecommendationResponse(product.productId(), product.title(), product.price(),
-                product.thumbnailUrl(), product.speciesName(), reason);
+                product.thumbnailUrl(), product.speciesName(), reason, product.createdAt());
     }
 }

@@ -26,7 +26,7 @@ class InternalApiRetryInterceptorTest {
       Retry.of("payment", InternalApiClientAutoConfiguration.INTERNAL_RETRY));
 
   @Test
-  @DisplayName("연결 실패는 한 번 더 시도한다")
+  @DisplayName("[S-D07] 연결 실패는 한 번 더 시도한다")
   void retriesOnceOnConnectionFailure() {
     assertThatThrownBy(() -> interceptor.intercept(request, new byte[0], (req, body) -> {
       attempts.incrementAndGet();
@@ -53,7 +53,7 @@ class InternalApiRetryInterceptorTest {
   }
 
   @Test
-  @DisplayName("결과 불명은 재시도하지 않는다")
+  @DisplayName("[S-D07] 결과 불명은 재시도하지 않는다")
   void doesNotRetryResultUnknown() {
     assertThatThrownBy(() -> interceptor.intercept(request, new byte[0], (req, body) -> {
       attempts.incrementAndGet();

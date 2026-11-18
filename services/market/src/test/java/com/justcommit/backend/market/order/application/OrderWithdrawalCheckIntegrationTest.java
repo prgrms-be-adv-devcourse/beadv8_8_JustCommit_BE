@@ -18,8 +18,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
@@ -36,9 +35,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers(disabledWithoutDocker = true)
 class OrderWithdrawalCheckIntegrationTest {
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
     private static final long MEMBER = 500L;
     private static final long OTHER = 900L;
 
@@ -50,9 +46,7 @@ class OrderWithdrawalCheckIntegrationTest {
 
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        SharedPostgres.register(registry);
     }
 
     @Test
@@ -108,6 +102,21 @@ class OrderWithdrawalCheckIntegrationTest {
         assertThat(result.blockingReasons()).containsExactly(
                 WithdrawalBlockingReason.ACTIVE_BUYER_ORDER, WithdrawalBlockingReason.ACTIVE_SELLER_ORDER);
         assertThat(result.details()).isEqualTo(new WithdrawalCheckResponse.Details(1, 1));
+    }
+
+    @Test
+    @DisplayName("결제 처리 중 · 확인 필요 주문은 결제 결과를 모르므로 진행 중으로 센다")
+    void paymentProcessingAndReviewRequiredBlock() {
+        save(MEMBER, OrderStatus.PAYMENT_PROCESSING, seller(OTHER, OrderItemStatus.NORMAL));
+        save(MEMBER, OrderStatus.REVIEW_REQUIRED, seller(OTHER, OrderItemStatus.NORMAL));
+        save(OTHER, OrderStatus.REVIEW_REQUIRED, seller(MEMBER, OrderItemStatus.NORMAL));
+
+        WithdrawalCheckResponse result = service.check(MEMBER);
+
+        assertThat(result.hasWithdrawalBlocker()).isTrue();
+        assertThat(result.blockingReasons()).containsExactly(
+                WithdrawalBlockingReason.ACTIVE_BUYER_ORDER, WithdrawalBlockingReason.ACTIVE_SELLER_ORDER);
+        assertThat(result.details()).isEqualTo(new WithdrawalCheckResponse.Details(2, 1));
     }
 
     @Test

@@ -51,10 +51,9 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedKafka;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.kafka.KafkaContainer;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
@@ -86,18 +85,10 @@ class ProductReviewKafkaIntegrationTest {
     private static final Long SELLER_ID = 7L;
     private static final String MONSTERA = "Monstera deliciosa";
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
-    @Container
-    static final KafkaContainer KAFKA = new KafkaContainer("apache/kafka:4.2.1");
-
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
-        registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
+        SharedPostgres.register(registry);
+        SharedKafka.register(registry);
     }
 
     @TestConfiguration
@@ -151,7 +142,7 @@ class ProductReviewKafkaIntegrationTest {
     }
 
     @Test
-    @DisplayName("등록이 커밋되면 검수 요청이 Kafka를 거쳐 리스너로 가고, 검수 통과가 상품에 반영된다")
+    @DisplayName("[S-C01] 등록이 커밋되면 검수 요청이 Kafka를 거쳐 리스너로 가고, 검수 통과가 상품에 반영된다")
     void registerToReviewThroughKafka() throws InterruptedException {
         // 등록처럼: 상품 저장 + 검수 요청(검수 기록 · Outbox)을 한 트랜잭션에서
         Product product = tx.execute(status -> {

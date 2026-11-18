@@ -21,10 +21,11 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import org.springframework.transaction.support.TransactionTemplate;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,14 +48,9 @@ class NotificationServiceIntegrationTest {
     private static final Long OTHER = 99L;
     private static final Long SELLER = 20L;
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        SharedPostgres.register(registry);
     }
 
     @MockitoBean NotificationSseRegistry sseRegistry;
@@ -62,6 +58,7 @@ class NotificationServiceIntegrationTest {
 
     @Autowired NotificationService notificationService;
     @Autowired NotificationRepository notificationRepository;
+    @Autowired PlatformTransactionManager transactionManager;
 
     @AfterEach
     void cleanUp() {
@@ -69,7 +66,7 @@ class NotificationServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("같은 이벤트가 두 번 와도 알림은 한 건만 만든다")
+    @DisplayName("[S-H02] 같은 이벤트가 두 번 와도 알림은 한 건만 만든다")
     void createIsIdempotent() {
         notificationService.create(BUYER, NotificationType.SHIPMENT_PICKED_UP, 7L, "SHIPMENT:1:PICKED_UP");
         notificationService.create(BUYER, NotificationType.SHIPMENT_PICKED_UP, 7L, "SHIPMENT:1:PICKED_UP");
@@ -86,7 +83,7 @@ class NotificationServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("목록은 본인 알림만 최신순으로, isRead로 거를 수 있다")
+    @DisplayName("[S-I04] 목록은 본인 알림만 최신순으로, isRead로 거를 수 있다")
     void listsOwnNotifications() {
         notificationService.create(BUYER, NotificationType.SHIPMENT_PICKED_UP, 7L, "SHIPMENT:1:PICKED_UP");
         notificationService.create(BUYER, NotificationType.SHIPMENT_DELIVERED, 7L, "SHIPMENT:1:DELIVERED");
@@ -101,6 +98,8 @@ class NotificationServiceIntegrationTest {
         assertThat(all.content()).extracting(NotificationResponse::type)
                 .containsExactly("SHIPMENT_DELIVERED", "SHIPMENT_PICKED_UP");
         assertThat(unread.content()).extracting(NotificationResponse::type).containsExactly("SHIPMENT_DELIVERED");
+        var read = notificationService.list(BUYER, true, latestFirst());
+        assertThat(read.content()).extracting(NotificationResponse::type).containsExactly("SHIPMENT_PICKED_UP");
     }
 
     @Test
@@ -114,7 +113,7 @@ class NotificationServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("본인 알림을 읽음 처리하면 읽은 시각이 저장되고, 남의 알림은 찾을 수 없다")
+    @DisplayName("[S-A07] 본인 알림을 읽음 처리하면 읽은 시각이 저장되고, 남의 알림은 찾을 수 없다")
     void readsOnlyOwnNotification() {
         notificationService.create(OTHER, NotificationType.SHIPMENT_BOOKED, 8L, "SHIPMENT:2:BOOKED");
         notificationService.create(BUYER, NotificationType.SHIPMENT_PICKED_UP, 7L, "SHIPMENT:1:PICKED_UP");
@@ -145,7 +144,7 @@ class NotificationServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("구독 중인 회원에게 알림이 저장되면 커밋 후 안 읽은 수를 보낸다")
+    @DisplayName("[S-I02] 구독 중인 회원에게 알림이 저장되면 커밋 후 안 읽은 수를 보낸다")
     void pushesUnreadCountToSubscriber() {
         when(sseRegistry.hasConnection(BUYER)).thenReturn(true);
 
@@ -157,7 +156,21 @@ class NotificationServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("모두 읽음 처리하면 구독 중인 다른 탭에도 0을 보낸다")
+    @DisplayName("[S-I02] 알림을 저장한 트랜잭션이 롤백되면 안 읽은 수를 보내지 않고 알림도 남지 않는다")
+    void doesNotPushWhenRolledBack() {
+        when(sseRegistry.hasConnection(BUYER)).thenReturn(true);
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            notificationService.create(BUYER, NotificationType.SHIPMENT_PICKED_UP, 7L, "SHIPMENT:1:PICKED_UP");
+            status.setRollbackOnly();
+        });
+
+        verify(sseRegistry, never()).sendUnreadCount(anyLong(), anyLong());
+        assertThat(notificationRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("[S-I02] 모두 읽음 처리하면 구독 중인 다른 탭에도 0을 보낸다")
     void pushesZeroAfterReadAll() {
         notificationService.create(BUYER, NotificationType.SHIPMENT_PICKED_UP, 7L, "SHIPMENT:1:PICKED_UP");
         when(sseRegistry.hasConnection(BUYER)).thenReturn(true);
@@ -221,7 +234,7 @@ class NotificationServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("중복 이벤트면 상품 요약도 조회하지 않는다")
+    @DisplayName("[S-H02] 중복 이벤트면 상품 요약도 조회하지 않는다")
     void skipsLookupForDuplicate() {
         notificationService.create(SELLER, NotificationType.SELLER_ORDER_PAID, 7L, "SELLER_ORDER_PAID:7");
         notificationService.create(SELLER, NotificationType.SELLER_ORDER_PAID, 7L, "SELLER_ORDER_PAID:7");

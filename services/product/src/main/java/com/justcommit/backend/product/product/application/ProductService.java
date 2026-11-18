@@ -170,7 +170,8 @@ public class ProductService implements ProductQuery, ProductUseCase {
                 product.getStatus(),
                 product.isHidden(),
                 inReview ? null : product.getThumbnailUrl(),
-                product.getSpecies().getName());
+                product.getSpecies().getName(),
+                product.getCreatedAt());
     }
 
     // ── 상품 API ───────────────────────────────
