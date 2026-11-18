@@ -1,7 +1,7 @@
 # 스케줄러
 
 > 언제 읽나: 스케줄러(`@Scheduled`) 작업의 주기 · 역할, 재시도 간격, 중복 실행 방지(SKIP LOCKED · ShedLock)를 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-17 · 관련: Miro F-7, 노션 「정책 정리」 1.4 · 11.5
+> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: Miro F-7, 노션 「정책 정리」 1.4 · 11.5
 
 ## 작업 표
 
@@ -15,7 +15,7 @@
 | 자동 구매 확정 | market | 1시간 | – | SKIP LOCKED | 기한 지난 `NORMAL` 주문상품 구매 확정, 반품 신청한 주문상품 제외 (기한 → [market 정책](../services/market.md#정책)) |
 | 택배 예약 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `READY` 배송(반품 포함) 택배 예약. 한 번 실행할 때 최대 20건을 한 건씩 확보(다음 시도 시각을 30초 뒤로 미루는 임대)하고, 택배사 호출은 임대 후 트랜잭션 밖에서 함. 실패하면 다음 시도까지 10초 → 30초 → 1분 고정 (건별 `next_attempt_at` · `attempt_count`, 마지막 실패 원인 `last_error`). 결제 · 수락 흐름은 `READY` 행만 만들고 택배사를 부르지 않음 |
 | 택배 취소 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `CANCEL_PENDING` 배송을 택배 예약 큐와 같은 방식(최대 20건을 한 건씩 확보 · 30초 임대 · 트랜잭션 밖 호출)으로 택배사에 주문번호 + 누른 시각으로 취소 요청. 결과는 배송 상태(`CANCELLED` · `CANCEL_LOCKED`) + `SHIPMENT_CANCEL_RESULT` 행 한 트랜잭션. 실패하면 10초 → 30초 → 1분 고정 (`next_attempt_at` · `attempt_count` · `last_error`) → [ADR 0026](../decisions/0026-courier-cancel-queue-and-distance-judgment.md) |
-| Saga 복구 | market | 1분 | 확인 후 포기 | SKIP LOCKED | 결과 불명 결제(orderId) · 취소 · 환불(orderItemId · sellerOrderId)을 같은 멱등 키로 다시 요청, 5회 안 되면 `REVIEW_REQUIRED` → [주문 · 결제](../flows/order-payment.md#멈춘-주문-복구) |
+| Saga 복구 | market | 1분 | 확인 후 포기 | SKIP LOCKED | 결과 불명 결제(orderId) · 취소 · 환불(orderItemId · sellerOrderId)을 같은 멱등 키로 다시 요청, 5회 안 되면 `REVIEW_REQUIRED`. 결제는 `attempted_at`에서 10초 지난 `PAYMENT_PROCESSING` 주문을 한 번에 최대 50건, 주문마다 선점(`attempt_no`, `attempt_count` +1 커밋) 후 트랜잭션 밖에서 재호출하고, 자기 `attempt_no`일 때만 결과 반영. 실행이 끝나면 `REVIEW_REQUIRED` 주문 수 지표를 갱신 → [주문 · 결제](../flows/order-payment.md#멈춘-주문-복구) |
 | 요금표 버전 대사 | market | 매일 09:30 (EC2가 켜진 시간) | – | ShedLock | 택배사(404-express) 요금표 버전과 비교, 다르면 새로 받음 |
 | 토스 결과 불명 조회 | payment | 5분 | 확인 후 포기 (조회 실패 3회 또는 충전 생성 60분 뒤 미확정 → `REVIEW_REQUIRED`) | SKIP LOCKED | PENDING 충전을 토스 orderId로 조회해 결과 확정. 실행당 최대 100건 처리, 결과에 따라 적립·실패·재조회·관리자 확인으로 분기. 승인 재호출 없음 → 충전 복구 상세 |
 | 검수 엔진 오류 재처리 | product | 5분 | 확인 후 포기 (3회 → 관리자 확인) | SKIP LOCKED | `IMAGE_REVIEW`가 `ENGINE_ERROR`인 건과 30분이 지나도 `REQUESTED`인 건(멈춘 검수 요청)을 같은 검수 버전으로 다시 검수, 3회 모두 실패하면 관리자 확인(`ENGINE_ERROR`) → [사진 검수](../flows/image-review.md#엔진-오류-재처리) |
@@ -23,6 +23,8 @@
 | 토스 대사 | payment | 하루 1번 (⬜ 실행 시각) | – | ShedLock | 토스 거래와 내부 충전 기록 대조, 잔액을 늘리는 보정(토스 승인 · 내부 미승인)은 자동. ⬜ 잔액을 줄여야 하는 불일치 처리 |
 | 정산 지급 큐 | settlement | 10초 | 끝까지 | SKIP LOCKED | 지급 대상(`PENDING`, `FAILED`이면서 `next_attempt_at`이 지난) 정산을 건별로 payment에 지급 (`settlementId` 멱등). 기본 10초 간격으로 실행하며, 한 번 실행할 때 최대 50건을 한 건씩 확보(다음 시도 시각을 30초 뒤로 미루는 임대)해 처리. payment 호출은 임대 후 트랜잭션 밖에서 실행. 성공하면 `COMPLETED` + `completed_at`, 실패(연결 실패, 응답 타임아웃, 4xx, 5xx 모두)하면 `FAILED` + `attempt_count` 증가, 다음 시도까지 10초 → 30초 → 1분 고정. 늦게 온 실패는 임대가 그대로일 때만 반영. 10분 넘게 미지급인 정산이 있으면 ERROR 로그(→ [관측](../infra/observability.md#알림-규칙) 「정산 지급 지연」) |
 | 토큰 폐기 재처리 | member | 10초 | 보관 기한까지 재시도 | SKIP LOCKED | Redis 기록을 확인하지 못한 폐기 작업(`PENDING`)을 다시 기록. 기본 10초 간격으로 실행하며, 한 번 실행할 때 최대 50건을 한 건씩 확보(다음 시도 시각을 30초 뒤로 미루는 임대)해 처리. Redis 호출은 임대 후 트랜잭션 밖에서 실행. 실패하면 다음 시도까지 10초 → 30초 → 1분, 보관 기한이 지나면 `EXPIRED` → [ADR 0022](../decisions/0022-token-revocation-and-retry.md) |
+| 탈퇴 기록 정리 | member | ⬜ 미정 | – | – | 탈퇴 시각이 30일 지난 탈퇴 기록 삭제. 재가입 제한 판정은 이 작업과 무관(가입할 때 탈퇴 시각으로 직접 판정) → [탈퇴 흐름](../flows/signup-and-replica.md#재가입-제한). ⬜ 미구현(#407) |
+| 카카오 연결 해제 웹훅 처리 | member | ⬜ 미정 | 🟨 확인 후 포기 (횟수 · 간격 ⬜, 끝내 확인 못 하면 운영자 확인) | SKIP LOCKED | 미처리 수신 기록을 짧은 트랜잭션에서 확보한 뒤 잠금을 풀고 처리: 카카오 연결 상태 조회 → `referrer_type`별 처리 대상 판정 → 대상 회원만 회원 상태 · 수신 기록을 다시 확인한 뒤 `INACTIVE` + 토큰 폐기 → 자동 탈퇴 대상만 3곳 확인 후 탈퇴. 카카오 · 내부 서비스 호출 중에는 수신 기록 행 잠금을 유지하지 않음. 확보 뒤 다른 실행이 같은 기록을 가져가지 않게 하는 처리 중 표시 · 임대는 수신 기록 구조와 함께 정함(⬜). 카카오 연결 상태 조회 실패와 탈퇴 확인 `UNAVAILABLE`은 재시도 → [탈퇴 흐름](../flows/signup-and-replica.md#카카오-연결-해제-웹훅). ⬜ 미구현(#422) |
 | Outbox 재전송 | member · product · market · settlement (payment는 ⬜ 발행 이벤트 없음) | 10초 | 확인 후 포기 (5회 → `FAILED`) | SKIP LOCKED | 미발행 이벤트 다시 보내기, 발행 완료 행 7일 뒤 삭제 |
 | SSE 하트비트 | notification | 30초 | – | – | 연결 유지 ping |
 

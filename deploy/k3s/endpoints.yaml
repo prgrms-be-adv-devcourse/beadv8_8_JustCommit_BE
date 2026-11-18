@@ -1,0 +1,20 @@
+# 서비스 주소 (비밀값 아님). Gateway · market이 같이 읽는다.
+# 포트 원본: docs/reference/ports.md
+#   - compose 서비스: 앱 서버 사설 IP의 호스트 포트 (10.0.7.76:8081 ~ 8086)
+#   - market: 같은 K3s 안이라 Service 이름으로 부른다
+# 데이터 서버 주소(DB · Kafka)와 비밀값은 서버 ~/secrets/{서비스}.env → Secret으로 넣는다 (README.md)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: replant-endpoints
+  namespace: replant
+data:
+  MEMBER_SERVICE_URL: "http://10.0.7.76:8081"
+  PRODUCT_SERVICE_URL: "http://10.0.7.76:8082"
+  MARKET_SERVICE_URL: "http://market:8080"
+  PAYMENT_SERVICE_URL: "http://10.0.7.76:8084"
+  SETTLEMENT_SERVICE_URL: "http://10.0.7.76:8085"
+  NOTIFICATION_SERVICE_URL: "http://10.0.7.76:8086"
+  AI_SERVICE_URL: "http://ai:8080"
+  REDIS_HOST: "10.0.7.76"
+  REDIS_PORT: "6379"

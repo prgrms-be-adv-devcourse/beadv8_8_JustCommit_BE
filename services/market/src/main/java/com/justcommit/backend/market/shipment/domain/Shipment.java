@@ -21,7 +21,7 @@ public class Shipment extends BaseTimeEntity {
     // 택배사 호출 실패 후 다음 시도까지 기다릴 시간 (docs/reference/schedulers.md 「택배 예약 큐」 · 「택배 취소 큐」). 마지막 값으로 계속 고정
     static final List<Duration> QUEUE_RETRY_DELAYS =
             List.of(Duration.ofSeconds(10), Duration.ofSeconds(30), Duration.ofMinutes(1));
-    // last_error 칸 길이 (V6)
+    // last_error 칸 길이 (V7)
     static final int LAST_ERROR_MAX_LENGTH = 500;
 
     @Column(unique = true, nullable = false)

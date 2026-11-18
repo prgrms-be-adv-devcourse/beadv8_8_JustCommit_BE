@@ -46,7 +46,7 @@ class PaymentServiceShippingFeeTest {
     @InjectMocks PaymentService paymentService;
 
     @Test
-    @DisplayName("수거된 판매자 주문의 배송비를 HOLDING에서 REVENUE로 옮긴다")
+    @DisplayName("[S-G03] 수거된 판매자 주문의 배송비를 HOLDING에서 REVENUE로 옮긴다")
     void movesShippingFeeFromHoldingToRevenue() {
         Wallet holding = wallet(Wallet.system(WalletType.HOLDING), HOLDING_WALLET_ID, "10000");
         Wallet revenue = wallet(Wallet.system(WalletType.REVENUE), REVENUE_WALLET_ID, "0");
@@ -98,7 +98,7 @@ class PaymentServiceShippingFeeTest {
     }
 
     @Test
-    @DisplayName("수거 전 취소로 이미 환불된 배송비면 옮기지 않는다")
+    @DisplayName("[S-G03] 수거 전 취소로 이미 환불된 배송비면 옮기지 않는다")
     void skipsWhenAlreadyRefunded() {
         Wallet holding = wallet(Wallet.system(WalletType.HOLDING), HOLDING_WALLET_ID, "10000");
         stubHolding(holding);

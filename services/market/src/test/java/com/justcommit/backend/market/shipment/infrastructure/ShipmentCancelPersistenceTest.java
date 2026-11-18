@@ -29,7 +29,7 @@ import java.time.LocalDateTime;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-// V6(취소 누른 시각 · 실패 원인 · 택배 취소 결과 테이블)가 실제 DB에 적용되고 엔티티와 맞는지 확인한다 (#490).
+// V7(취소 누른 시각 · 실패 원인 · 택배 취소 결과 테이블)가 실제 DB에 적용되고 엔티티와 맞는지 확인한다 (#490).
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)

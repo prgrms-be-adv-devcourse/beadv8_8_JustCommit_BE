@@ -51,7 +51,7 @@ Alloy가 컨테이너 로그를 모아 Loki로, 서비스가 OTLP로 보낸 추�
 | 메모리 | 컨테이너 한도의 90% 이상 | 5분 |
 | 배송 예약 · 취소 지연 | `replant_shipment_stuck{status="READY"}`(만든 지 10분 넘게 택배 예약 안 됨) 또는 `{status="CANCEL_PENDING"}`(취소를 누른 지 10분 넘게 택배사 결과 없음) 1 이상. market이 수집 때마다 DB에서 셈, 원인은 배송 `last_error` | 상태 기준 1번, 반복 1시간 |
 | 정산 지급 지연 | 10분 넘게 미지급(`PENDING`, `FAILED`)인 정산 1건 이상 | 상태 기준 1번, 반복 1시간 |
-| `REVIEW_REQUIRED` | 발생 | 상태 기준 1번, 반복 1시간 |
+| `REVIEW_REQUIRED` | 결제 확인 필요 주문 1건 이상 (`max(market_orders_review_required) > 0`) → [처리 순서](payment-review-runbook.md) | 상태 기준 1번, 반복 1시간 |
 
 ## 부하 테스트
 

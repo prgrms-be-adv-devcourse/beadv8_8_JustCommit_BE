@@ -41,6 +41,6 @@
 ## 영향
 
 - 문서: [취소 · 환불](../flows/cancel-refund.md), [market](../services/market.md), [스케줄러](../reference/schedulers.md), [용어집](../glossary.md) 「취소 불가」 · 「반송」
-- 코드: market 배송(`ShipmentService.cancelShipment`, 택배 취소 큐, Flyway V6) — #490. 404-express 주문번호 취소 · 거리 판정 · 반송 · `CANCELLED` 웹훅 — #476 Task C
+- 코드: market 배송(`ShipmentService.cancelShipment`, 택배 취소 큐, Flyway V7) — #490. 404-express 주문번호 취소 · 거리 판정 · 반송 · `CANCELLED` 웹훅 — #476 Task C
 - 주문 쪽: 결과 행을 읽어 환불하는 부분은 「취소 중」 · Saga 복구(#282 · #281). 그 전까지 주문 취소는 지금처럼 환불을 먼저 하고, 바뀌는 것은 택배사 호출이 큐로 빠지는 것뿐
 - 노션 「정책 정리」 8.4 (배송 취소) 반영 필요

@@ -14,7 +14,8 @@
 | 주문 | `Orders` | 구매, 주문서 | 구매자가 한 번에 결제한 묶음. 여러 판매자의 상품이 섞일 수 있음 | [market](services/market.md) |
 | 판매자 주문 | `SellerOrder` | 판매 주문, 셀러 주문 | 주문을 판매자별로 나눈 단위. 배송 · 배송비 · 정산 · 리뷰 · Kafka Key의 기준 | [market](services/market.md) |
 | 주문상품 | `OrdersItem` | 주문 상품, 주문 아이템 | 주문 안의 상품 하나. 취소 · 반품 · 구매 확정의 단위 | [market](services/market.md) |
-| 결제 대기 | `PAYMENT_PENDING` (주문) | 결제중, 미결제 | 잔액이 부족해 결제를 기다리는 주문 | [market 정책](services/market.md#정책) |
+| 결제 대기 | `PAYMENT_PENDING` (주문) | 미결제 | 잔액이 부족해 결제를 기다리는 주문 | [market 정책](services/market.md#정책) |
+| 결제 처리 중 | `PAYMENT_PROCESSING` (주문) | 결제중, 결제 시도 중 | payment에 결제를 요청했고 아직 결과를 반영하지 못한 주문. 결과를 모르면 이 상태로 남고 Saga 복구가 같은 orderId로 다시 요청. 만료하지 않음 | [주문 · 결제](flows/order-payment.md#멈춘-주문-복구) |
 | 결제 기한 만료 | `PAYMENT_WINDOW_EXPIRED` | 결제 시간 초과 | 결제 대기 기한이 지나 결제를 거절하는 것. 결제할 때 market이 직접 확인 | [market 정책](services/market.md#정책) |
 | 수락 · 거절 | `ACCEPT_PENDING` · `SellerOrderAccepted` · `SellerOrderRejected` | 주문 확인, 주문 승인 | 결제 후 판매자가 주문을 받을지 정하는 단계. 수락해야 배송이 생김 | [market 정책](services/market.md#정책) |
 | 자동 거절 | – | 자동 취소 (구매자 알림 문구) | 판매자가 기한 안에 응답하지 않아 거절된 주문 | [market 정책](services/market.md#정책) |
@@ -89,9 +90,13 @@
 | 판매자 | `SELLER` | 셀러 | 판매자로 등록한 회원 | [member](services/member.md) |
 | 회원 복제본 | `MEMBER_REPLICA` | 레플리카, 회원 사본 | 다른 서비스가 회원 이벤트로 채우는 회원 정보 사본 (계좌는 없음) | [가입과 회원 복제본](flows/signup-and-replica.md) |
 | 블랙리스트 | `auth:blacklist` | 로그아웃 토큰, 토큰 차단 | 로그아웃한 Access 토큰을 거절하는 목록 | [인증 규칙](conventions/auth.md#토큰-폐기) |
-| 회원 단위 폐기 | `auth:revoked-member` | 전체 로그아웃, 모든 기기 로그아웃 | 탈퇴 · 비밀번호 변경 이전에 발급된 토큰을 모두 거절하는 것 | [인증 규칙](conventions/auth.md#토큰-폐기) |
+| 회원 단위 폐기 | `auth:revoked-member` | 전체 로그아웃, 모든 기기 로그아웃 | 탈퇴 · 비밀번호 변경 · 재설정 · 소셜 연결 해제로 그 전의 인증을 무효화하는 것. 인증 버전으로 이전 Refresh 재발급을 막고, Redis에 폐기 시각이 기록된 뒤부터 이전 Access도 거절 | [인증 규칙](conventions/auth.md#토큰-폐기) |
 | 이중 검증 | – | – | Gateway와 각 서비스가 모두 토큰을 검증하는 것 | [인증 규칙](conventions/auth.md) |
 | 탈퇴 | `MemberWithdrawn` | 회원 삭제, 계정 삭제 | 소프트 삭제 · 익명화. 다른 서비스에는 「탈퇴한 회원」으로 표시 | [가입과 회원 복제본](flows/signup-and-replica.md#탈퇴) |
+| 탈퇴 기록 | `MemberWithdrawalRecord` (`member_withdrawal_record`) | 재가입 제한 기록 | 탈퇴한 회원의 이메일 · 휴대폰 HMAC과 탈퇴 시각을 재가입 제한 판정용으로 보관하는 기록. 기간이 지나면 삭제 | [가입과 회원 복제본](flows/signup-and-replica.md#재가입-제한) |
+| 소셜 연결 해제 | `INACTIVE` (회원 상태) · `SOCIAL_UNLINKED` (폐기 사유) | 카카오 연결 끊김, 연결 해제됨 | 카카오 연결이 끊겼지만 아직 탈퇴하지 않은 회원의 상태. 기존 로그인을 폐기하고 일반 회원 기능을 막음. 재연결 시 복구는 흐름 문서의 정책을 따름 | [가입과 회원 복제본](flows/signup-and-replica.md#카카오-연결-해제-웹훅) |
+| 카카오 연결 해제 웹훅 | `/api/v1/webhooks/kakao/unlink` (수신 기록 테이블 이름 ⬜ 미정) | 연결 해제 알림, unlink callback | 카카오계정 탈퇴 · 강제 탈퇴 · 카카오 관리자 처리 · 사용자 직접 연결 해제로 앱 연결이 끊겼을 때 카카오가 보내는 HTTP 요청. 택배사 「웹훅」과 다름 | [가입과 회원 복제본](flows/signup-and-replica.md#카카오-연결-해제-웹훅) |
+| 탈퇴 토큰 | `auth:withdrawal` | – | 카카오 회원이 이메일 재인증 후 받아 최종 탈퇴 요청에 쓰는 일회용 토큰 | [Redis 키](reference/redis-keys.md) |
 | Fail-closed | – | 막힘 처리 | 확인 조회가 실패하면 허용하지 않고 막는 정책 (탈퇴) | [가입과 회원 복제본](flows/signup-and-replica.md#탈퇴) |
 
 ## MSA
