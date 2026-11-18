@@ -63,6 +63,15 @@ class KakaoAdminClientTest {
   }
 
   @Test
+  @DisplayName("400이 아닌 상태의 -101(예: 403 + code -101)은 이미 해제로 보지 않고 503 SOCIAL_UNLINK_FAILED")
+  void unlink_minus101WithOtherStatus() {
+    KAKAO.stubFor(post(urlPathEqualTo(UNLINK))
+        .willReturn(errorJson(403, "{\"msg\":\"NotRegisteredUserException\",\"code\":-101}")));
+
+    assertUnlinkFailed();
+  }
+
+  @Test
   @DisplayName("-101이 아닌 카카오 오류(예: -2)는 503 SOCIAL_UNLINK_FAILED")
   void unlink_otherKakaoError() {
     KAKAO.stubFor(post(urlPathEqualTo(UNLINK))

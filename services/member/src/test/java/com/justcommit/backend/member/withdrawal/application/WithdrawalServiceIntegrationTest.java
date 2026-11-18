@@ -257,6 +257,35 @@ class WithdrawalServiceIntegrationTest {
     EXTERNAL.verify(1, postRequestedFor(urlPathEqualTo(UNLINK)));
   }
 
+  @Test
+  @DisplayName("[S-B09] 연결 해제 뒤 DB가 롤백되면 재인증(새 탈퇴 토큰) 후 다시 탈퇴할 수 있고, 이미 끊긴 연결(400 + -101)은 성공으로 처리")
+  void retryAfterRollback() {
+    Long memberId = givenSeller(Provider.KAKAO);
+    Member before = memberRepository.findById(memberId).orElseThrow();
+    String firstToken = givenWithdrawalToken(before);
+    allowAll();
+    stubUnlink(aResponse().withStatus(200).withHeader("Content-Type", "application/json").withBody("{\"id\":1}"));
+    // 첫 시도: rollbackAfterUnlink와 같은 지점(폐기 작업 저장 직전)에서 실패. 그 뒤 호출은 다시 실제 DB 시각
+    doCallRealMethod()
+        .doThrow(new DataAccessResourceFailureException("폐기 작업 저장 실패 (테스트)"))
+        .doCallRealMethod()
+        .when(databaseClock).now();
+
+    assertThatThrownBy(() -> withdrawalService.withdraw(memberId, null, firstToken))
+        .isInstanceOf(DataAccessResourceFailureException.class);
+    assertUnchanged(memberId, before);
+
+    // 카카오에서는 이미 끊겼으므로 다시 부르면 400 + -101. 인증 버전은 롤백돼 그대로라 재인증으로 새 토큰을 받는 것과 같다
+    stubUnlink(aResponse().withStatus(400).withHeader("Content-Type", "application/json")
+        .withBody("{\"msg\":\"NotRegisteredUserException\",\"code\":-101}"));
+    String secondToken = givenWithdrawalToken(before);
+
+    withdrawalService.withdraw(memberId, null, secondToken);
+
+    assertWithdrawn(memberId, before);
+    EXTERNAL.verify(2, postRequestedFor(urlPathEqualTo(UNLINK)));
+  }
+
   // ===== 재확인 (S-A10) =====
 
   @Test

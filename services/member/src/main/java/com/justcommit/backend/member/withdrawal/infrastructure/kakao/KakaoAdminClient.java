@@ -64,7 +64,8 @@ public class KakaoAdminClient {
           .toBodilessEntity();
     } catch (RestClientResponseException e) {
       Integer kakaoCode = kakaoErrorCode(e);
-      if (e.getStatusCode().is4xxClientError() && kakaoCode != null && kakaoCode == NOT_REGISTERED_USER) {
+      // 카카오 오류 계약은 "HTTP 400 + code -101". 다른 상태의 -101은 이미 해제됐다고 볼 근거가 없어 실패로 둔다
+      if (e.getStatusCode().value() == 400 && kakaoCode != null && kakaoCode == NOT_REGISTERED_USER) {
         return;
       }
       log.warn("카카오 연결 해제 실패: status={}, kakaoCode={}", e.getStatusCode().value(), kakaoCode);
