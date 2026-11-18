@@ -7,7 +7,7 @@
 
 ## 기록
 
-- 2026-11-18 · infra/observability.md · reference/ports.md · 앱 서버 지표는 Alloy가 긁어 Prometheus로 remote_write(Prometheus가 앱 서버를 직접 긁지 않음), 데이터 서버 보안 그룹이 앱 서버 보안 그룹에서 오는 3100 · 9090 · 4317 추가 허용, Grafana는 `127.0.0.1:3000`에만 열고 SSH 터널로 접속 (#301)
+- 2026-11-18 · infra/observability.md · reference/ports.md · 앱 서버 지표는 Alloy가 긁어 Prometheus로 remote_write(Prometheus가 앱 서버를 직접 긁지 않음), 데이터 서버 보안 그룹이 앱 서버 보안 그룹에서 오는 3100 · 9090 · 4317 추가 허용, Grafana는 `127.0.0.1:3000`에만 열고 SSH 터널로 접속, 앱 서버 node-exporter는 Alloy 내장 기능으로 대신 (#301)
 - 2026-11-18 · testing/scenarios.md · S-C10 재검수 「1회」 → 「2회」(flows/image-review.md · services/product.md 기준으로 문구 맞춤) (#497)
 - 2026-11-18 · reference/ports.md · infra/database.md · infra/aws.md · infra/deploy.md · 데이터 서버 구성 반영: 보안 그룹은 앱 서버 보안 그룹 참조로 5432 · 9092 · 9200, 운영 DB 생성은 `deploy/data/init-db.sh`(비밀번호 `~/secrets/db-accounts.env`), 운영도 `pgvector/pgvector:pg17`, DB 백업 매일 17:30 `pg_dump` → S3 `backups/postgres/`(7일) · IAM `backups/*` PutObject (#295)
 - 2026-11-18 · flows/order-payment.md · conventions/resilience.md · reference/schedulers.md · services/market.md · reference/internal-apis.md · infra/observability.md · open-questions.md · decisions/0023-order-payment-transaction-saga.md · infra/payment-review-runbook.md · Saga 결제 복구 반영: 결제 결과 불명은 `PAYMENT_PROCESSING` 유지, 첫 호출 연결 실패는 확정 실패이고 복구 중 연결 실패는 결과 불명, 복구는 10초 유예 후 `SKIP LOCKED` 선점과 `attempt_no` 확인, 5회 뒤 `REVIEW_REQUIRED`와 `market_orders_review_required` 지표, 탈퇴 확인의 진행 중 주문에 `PAYMENT_PROCESSING`과 `REVIEW_REQUIRED` 추가, ADR 0023 장바구니 칸을 고쳐 재결제 확정 실패도 장바구니 복원, Q41 삭제, 결제 확인 필요 주문 처리 런북 추가 (#281)

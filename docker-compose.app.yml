@@ -110,5 +110,32 @@ services:
       - "10.0.7.76:8086:8080"
     mem_limit: 512m
 
+  # 로그 · 지표 수집기 (#301, deploy/observability/alloy/config.alloy) → 데이터 서버 Loki · Prometheus
+  # 서버 네트워크를 그대로 써서(host) K3s 파드 IP · 사설 IP 포트에 닿고, 들어오는 포트는 열지 않는다
+  alloy:
+    image: grafana/alloy:v1.9.1
+    container_name: replant-alloy
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=127.0.0.1:12345 # Alloy 자체 화면 · 상태. 서버 안에서만
+    network_mode: host
+    volumes:
+      - ./deploy/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro # compose 컨테이너 로그
+      - /var/log/pods:/var/log/pods:ro # K3s 파드 로그
+      - /etc/rancher/k3s/k3s.yaml:/etc/rancher/k3s/k3s.yaml:ro # K3s 파드 찾기
+      - /proc:/host/proc:ro # 앱 서버 CPU · 메모리 · steal
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
+    mem_limit: 256m
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
 volumes:
   redis-data:
+  alloy-data:

@@ -20,7 +20,7 @@
 | 수집 대상 | 방법 |
 |---|---|
 | 서비스 | `/actuator/prometheus` (HTTP · Hikari · Tomcat · JVM) |
-| 서버 (앱 · 데이터) | node-exporter (CPU · 메모리 · 디스크 · CPU steal) |
+| 서버 (앱 · 데이터) | node-exporter (CPU · 메모리 · 디스크 · CPU steal). 앱 서버는 Alloy 내장 `prometheus.exporter.unix`로 같은 지표 |
 | PostgreSQL | postgres-exporter |
 | Kafka · Redis | ⬜ 미정 |
 

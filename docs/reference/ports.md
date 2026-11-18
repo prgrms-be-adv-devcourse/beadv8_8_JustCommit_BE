@@ -22,7 +22,8 @@ Docker · K3s 안에서는 서비스가 모두 8080, 로컬 실행 때만 서비
 | loki · prometheus | 데이터 | 3100 · 9090 | – | 앱 서버 보안 그룹만 (Alloy가 로그 · 지표를 밀어 넣음) |
 | grafana | 데이터 | 3000 (`127.0.0.1`에만) | – | ❌ (SSH 터널로만) |
 | tempo | 데이터 | 3200 (조회) · 4317 (OTLP 받기) | – | ❌ (Alloy · Grafana만) |
-| node-exporter | 앱 · 데이터 | 9100 | – | ❌ (앱 서버는 Alloy, 데이터 서버는 Prometheus가 읽음) |
+| node-exporter | 데이터 (앱 서버는 Alloy 내장 기능으로 대신) | 9100 | – | ❌ (Prometheus만) |
+| alloy | 앱 | 12345 (`127.0.0.1`에만, 상태 화면) | – | ❌ |
 | postgres-exporter | 데이터 | 9187 | – | ❌ (Prometheus만) |
 
 ## 보안 그룹
