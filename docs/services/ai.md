@@ -58,7 +58,7 @@ DB `ai_db` · 계정 `ai_app` (pgvector 확장 `vector`, Flyway V1) → [DB · F
 
 | 정책 | 내용 |
 |---|---|
-| 임베딩 모델 | OpenAI `text-embedding-3-small`, 1536차원. product 검수와 같은 OpenAI 키 · Anthropic은 임베딩 없음 · Spring AI 기본 지원 · OpenAI 임베딩 중 가장 쌈 → [ADR 0024](../decisions/0024-embedding-openai-text-embedding-3-small.md) (#290, PR #450). 차원을 바꾸면 벡터 칸과 저장된 벡터를 모두 다시 만듦 |
+| 임베딩 모델 | OpenAI `text-embedding-3-small`, 1536차원. product 검수와 같은 OpenAI 키 · Anthropic은 임베딩 없음 · Spring AI 기본 지원 · OpenAI 임베딩 중 가장 쌈 → [ADR 0024](../decisions/0024-embedding-openai-text-embedding-3-small.md) (#290, PR #450). 모델 · 차원은 `custom.embedding.model` · `custom.embedding.dimensions` 한 곳에서 정하고 Spring AI 설정도 이 값을 읽음 → [환경변수](../reference/env-vars.md) (#508). 차원을 바꾸면 벡터 칸과 저장된 벡터를 모두 다시 만듦. 설정 차원이 `vector(1536)` 칸과 다르면 앱 시작이 실패함 |
 | 이미지 기반 추천 | 하지 않음 |
 | 장애 시 | 추천은 빈 목록(화면은 최신 상품으로 대신), 장바구니 · 주문은 영향 없음 → [장애 대응](../conventions/resilience.md) |
 
