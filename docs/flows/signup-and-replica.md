@@ -33,6 +33,8 @@ sequenceDiagram
 
 ## 탈퇴
 
+결정 배경 → [ADR 0028](../decisions/0028-member-withdrawal-kakao-unlink-policy.md)
+
 | 단계 | 내용 |
 |---|---|
 | 막는 조건 | 구매 확정 전 주문(구매 · 판매, 결제 대기 · 판매자 수락 대기 포함), 예치금 잔액, 진행 중 충전 · 충전 취소 · 인출, 미지급 정산, 미수금 |
