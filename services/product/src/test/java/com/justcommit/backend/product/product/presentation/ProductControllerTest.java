@@ -116,7 +116,7 @@ class ProductControllerTest {
     // ── 등록 ───────────────────────────────────────
 
     @Test
-    @DisplayName("상품을 등록하면 201과 등록된 상품 상세를 반환")
+    @DisplayName("[S-C01] 상품을 등록하면 201과 등록된 상품 상세를 반환")
     void createProduct() throws Exception {
         loginAs(SELLER_ID, SELLER);
         given(productService.createProduct(eq(SELLER_ID), any())).willReturn(detailResponse());

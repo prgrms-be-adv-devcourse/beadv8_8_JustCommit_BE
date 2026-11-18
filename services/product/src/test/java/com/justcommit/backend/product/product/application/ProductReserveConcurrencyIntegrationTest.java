@@ -13,6 +13,7 @@ import com.justcommit.backend.product.image.application.ProductImageUrlValidator
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import com.justcommit.backend.product.product.presentation.dto.ProductRequest;
+import com.justcommit.backend.product.reservation.domain.ReservationStatus;
 import com.justcommit.backend.product.reservation.infrastructure.ProductReservationRepository;
 import com.justcommit.backend.product.species.domain.Species;
 import com.justcommit.backend.product.species.infrastructure.SpeciesRepository;
@@ -113,7 +114,7 @@ class ProductReserveConcurrencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("여러 주문이 같은 상품을 동시에 예약하면 한 주문만 성공하고, 상품은 그 주문으로 예약된다")
+    @DisplayName("[S-C04] 여러 주문이 같은 상품을 동시에 예약하면 한 주문만 성공하고, 상품은 그 주문으로 예약된다")
     void onlyOneOrderReservesSameProductConcurrently() throws Exception {
         Long productId = saveActiveProduct();
 
@@ -153,7 +154,7 @@ class ProductReserveConcurrencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("상품이 겹치는 주문들이 동시에 예약해도, 진 주문이 잡았던 상품은 모두 해제된다")
+    @DisplayName("[S-C04] 상품이 겹치는 주문들이 동시에 예약해도, 진 주문이 잡았던 상품은 모두 해제된다")
     void releasesPartiallyReservedProductsOfLosingOrdersConcurrently() throws Exception {
         // 모든 주문이 같은 인기 상품 1개 + 각자 다른 상품 1개를 함께 예약
         Long shared = saveActiveProduct();
@@ -277,7 +278,7 @@ class ProductReserveConcurrencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("주문서 가격이 하나라도 다르면 PRICE_CHANGED로 아무것도 예약하지 않는다")
+    @DisplayName("[S-C08] 주문서 가격이 하나라도 다르면 PRICE_CHANGED로 아무것도 예약하지 않는다")
     void reservesNothingWhenAnyPriceChanged() {
         Long same = saveActiveProduct();
         Long changed = saveActiveProduct();
@@ -307,7 +308,7 @@ class ProductReserveConcurrencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("해제된 orderId로 늦게 온 예약은 RESERVATION_RELEASED로 거절한다")
+    @DisplayName("[S-C09] 해제된 orderId로 늦게 온 예약은 RESERVATION_RELEASED로 거절한다")
     void rejectsLateReservationOfReleasedOrder() {
         Long productId = saveActiveProduct();
         assertThat(reserves(1L, productId)).isTrue();
@@ -320,13 +321,47 @@ class ProductReserveConcurrencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("예약 응답 타임아웃으로 해제가 먼저 오면, 그 뒤에 도착한 예약은 거절한다")
+    @DisplayName("[S-C09] 해제가 예약보다 먼저 오면 RELEASED 기록이 남고, 늦게 온 예약은 RESERVATION_RELEASED(409)로 거절한다")
     void rejectsReservationArrivingAfterRelease() {
         Long productId = saveActiveProduct();
         // market이 예약 응답을 못 받아 주문을 실패로 끝냄 → 해제가 예약보다 먼저 도착
         assertThat(productUseCase.release(1L)).isFalse();
+        // 바뀐 상품은 없어도 product_reservation에 RELEASED 행이 남아야 늦은 예약을 막을 수 있음
+        assertThat(reservationRepository.findById(1L).orElseThrow().getStatus())
+                .isEqualTo(ReservationStatus.RELEASED);
 
-        assertThat(reserves(1L, productId)).isFalse();
+        assertThatThrownBy(() -> productUseCase.reserve(1L, Map.of(productId, PRICE)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.RESERVATION_RELEASED);
+        assertActive(productId);
+        assertThat(reservationRepository.findById(1L).orElseThrow().getStatus())
+                .isEqualTo(ReservationStatus.RELEASED);
+    }
+
+    @Test
+    @DisplayName("[S-C03] 같은 주문의 판매 완료가 두 번 오면 처음만 반영되고, 두 번째는 바뀐 상품 0건으로 정상 처리한다")
+    void duplicateSoldOutAppliesOnce() {
+        Long productId = saveActiveProduct();
+        assertThat(reserves(1L, productId)).isTrue();
+
+        assertThat(productUseCase.markSoldOut(1L)).isTrue();
+        // 같은 이벤트를 다시 받아도 예외 없이 0건(false)
+        assertThat(productUseCase.markSoldOut(1L)).isFalse();
+
+        Product product = productRepository.findById(productId).orElseThrow();
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+        assertThat(product.getReservedOrderId()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("[S-C03] 이미 해제돼 판매 중으로 돌아간 주문의 판매 완료가 늦게 와도 0건으로 정상 처리하고 상품은 그대로")
+    void lateSoldOutAfterReleaseIsNoop() {
+        Long productId = saveActiveProduct();
+        assertThat(reserves(1L, productId)).isTrue();
+        assertThat(productUseCase.release(1L)).isTrue();
+
+        assertThat(productUseCase.markSoldOut(1L)).isFalse();
+
         assertActive(productId);
     }
 
@@ -344,7 +379,7 @@ class ProductReserveConcurrencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("판매 재개: 판매자 거절 · 반품이면 판매 중으로 되돌리고 숨긴다")
+    @DisplayName("[S-C02] 판매 재개: 판매자 거절 · 반품이면 판매 중으로 되돌리고 숨긴다")
     void releaseItemWithHideHidesProduct() {
         Long productId = saveActiveProduct();
         assertThat(reserves(1L, productId)).isTrue();
@@ -357,7 +392,7 @@ class ProductReserveConcurrencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("판매 재개: 취소가 판매 완료보다 먼저 와도 결제 대기 상품을 되돌리고, 늦은 판매 완료는 0건이다")
+    @DisplayName("[S-C03] 판매 재개: 취소가 판매 완료보다 먼저 와도 결제 대기 상품을 되돌리고, 늦은 판매 완료는 0건이다")
     void releaseItemBeforeSoldOutThenLateSoldOutIsNoop() {
         Long productId = saveActiveProduct();
         assertThat(reserves(1L, productId)).isTrue();

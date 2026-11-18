@@ -151,7 +151,7 @@ class ProductReviewKafkaIntegrationTest {
     }
 
     @Test
-    @DisplayName("등록이 커밋되면 검수 요청이 Kafka를 거쳐 리스너로 가고, 검수 통과가 상품에 반영된다")
+    @DisplayName("[S-C01] 등록이 커밋되면 검수 요청이 Kafka를 거쳐 리스너로 가고, 검수 통과가 상품에 반영된다")
     void registerToReviewThroughKafka() throws InterruptedException {
         // 등록처럼: 상품 저장 + 검수 요청(검수 기록 · Outbox)을 한 트랜잭션에서
         Product product = tx.execute(status -> {
