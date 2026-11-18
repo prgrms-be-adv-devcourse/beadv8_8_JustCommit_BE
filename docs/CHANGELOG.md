@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-18 · testing/strategy.md · 도구 표에 「공유 컨테이너」 줄 추가: `common-core` testFixtures의 `SharedPostgres` · `SharedRedis` · `SharedKafka`를 모듈마다 한 번 띄워 공유, 커밋 테스트 `@AfterEach` 정리 · Kafka 그룹 · key 분리 · `@SpringBootTest`는 `@DirtiesContext` (#511)
 - 2026-11-18 · decisions/0029 · flows/search-recommend.md · conventions/resilience.md · overview.md · services/ai.md · 장바구니 추천이 비면(실패 · 타임아웃 · 결과 없음) 화면이 `GET products?onSale=true`(최신순)로 「새로 올라온 식물」을 대신 보여 줌(AI 추천 표시 · 이유 없음, 판매 중 상품도 없으면 영역 숨김). 추천 API는 계속 빈 목록, 11/16에 지운 「최신 상품」 대체를 화면 쪽으로 되살림 (ADR 0029) (#289) (#518)
 - 2026-11-18 · reference/internal-apis.md · 상품 일괄 조회 `GET /internal/v1/products?ids=` 응답에 상품 등록 시각 `createdAt` 추가, market 장바구니 추천 카드 응답에도 `createdAt`(상품 등록 시각, 장바구니 목록의 `createdAt`은 담은 시각이라 다름) (#518)
 - 2026-11-18 · flows/search-recommend.md · 장바구니 추천 계산 규칙 추가: 기준 품종(장바구니 · 최근 구매, 「기타」 제외) 벡터 평균으로 판매 중 상품이 있는 품종 중 후보 30개, 벡터 0.6 + 환경 0.4(생육 온도 간격 · 광도 단계, 겨울 최저 온도는 쓰지 않음) · 쉬움 기준이면 어려움 -0.1(🟨 출발값), 같은 속은 빼지 않고 뒤로, 품종을 돌아가며 `product_id` 내림차순, 겹치는 조건만 말하는 이유 문장, 요청 검증(`size` 1~20 · 목록 100개 · 받은 `size`만큼) (#518)
