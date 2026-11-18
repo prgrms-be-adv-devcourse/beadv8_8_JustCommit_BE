@@ -180,16 +180,18 @@ prometheus.scrape "node" {
 }
 
 // ===================== 지표: 컨테이너 · 파드 메모리 =====================
-// 메모리 알림(컨테이너 한도의 90%)용. compose 컨테이너는 Docker, K3s 파드는 K3s 내장 containerd에서 이름을 알아낸다.
-// 수집 양을 줄이려고 메모리만 켜고, 알림 · 대시보드에 쓰는 두 지표만 남긴다
+// 메모리 알림(컨테이너 한도의 90%)용. 사용량 · 한도 두 지표만 남긴다.
+//  - K3s 파드: K3s 내장 containerd에서 파드 · 컨테이너 이름을 알아낸다
+//  - compose 컨테이너: 이 서버 Docker는 이미지를 containerd 방식(overlayfs)으로 저장해 cAdvisor의 Docker 연동이
+//    컨테이너를 못 알아본다(「failed to identify the read-write layer ID」). 그래서 Docker 연동은 끄고(없는 소켓 지정)
+//    cgroup을 직접 읽어 컨테이너 ID로 받은 뒤, 아래 「compose 이름표」로 서비스 이름을 붙인다
 
 prometheus.exporter.cadvisor "containers" {
-  docker_host            = "unix:///var/run/docker.sock"
+  docker_host            = "unix:///var/run/docker-disabled-for-cadvisor.sock"
   containerd_host        = "/run/k3s/containerd/containerd.sock"
   docker_only            = false
   store_container_labels = false
   allowlisted_container_labels = [
-    "com.docker.compose.service",
     "io.kubernetes.pod.name",
     "io.kubernetes.container.name",
   ]
@@ -213,27 +215,80 @@ prometheus.scrape "cadvisor" {
 }
 
 prometheus.relabel "cadvisor" {
-  // 사용량 · 한도 두 지표만, 이름이 있는 컨테이너(compose · 파드)만 남긴다 (cgroup 묶음 단위 줄은 버림)
   rule {
     source_labels = ["__name__"]
     regex         = "container_memory_working_set_bytes|container_spec_memory_limit_bytes"
     action        = "keep"
   }
+  // compose 컨테이너: cgroup 경로(/system.slice/docker-<ID>.scope 또는 /docker/<ID>)에서 ID를 꺼낸다
   rule {
-    source_labels = ["container_label_com_docker_compose_service", "container_label_io_kubernetes_container_name"]
-    separator     = ""
-    regex         = ".+"
-    action        = "keep"
+    source_labels = ["id"]
+    regex         = ".*docker[-/]([0-9a-f]{64})(\\.scope)?"
+    target_label  = "container_id"
   }
-  // 대시보드 · 알림에서 쓰는 라벨 이름으로 맞춘다: service(compose 서비스 · K3s 컨테이너 이름) · pod
+  // K3s 파드: 컨테이너 이름을 service로 (gateway · market · ai)
   rule {
-    source_labels = ["container_label_com_docker_compose_service", "container_label_io_kubernetes_container_name"]
-    separator     = ""
+    source_labels = ["container_label_io_kubernetes_container_name"]
     target_label  = "service"
   }
   rule {
     source_labels = ["container_label_io_kubernetes_pod_name"]
     target_label  = "pod"
+  }
+  // compose 컨테이너 · K3s 컨테이너만 남기고 나머지 cgroup(시스템 서비스 등)은 버린다
+  rule {
+    source_labels = ["container_id", "service"]
+    separator     = ""
+    regex         = ".+"
+    action        = "keep"
+  }
+  rule {
+    regex  = "id|container_label_.*"
+    action = "labeldrop"
+  }
+  forward_to = [prometheus.remote_write.data_server.receiver]
+}
+
+// compose 이름표: 컨테이너마다 「container_id ↔ service」 한 줄(up{job="docker_names"} = 1)을 만든다.
+// Alloy 자기 상태 주소를 한 번씩 읽어 up 줄만 남기는 방식. 쿼리에서 이렇게 붙인다:
+//   container_memory_working_set_bytes * on (container_id) group_left (service) up{job="docker_names"}
+discovery.relabel "docker_names" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex         = ".+"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_id"]
+    target_label  = "container_id"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+  rule {
+    target_label = "__address__"
+    replacement  = "127.0.0.1:12345"
+  }
+  rule {
+    target_label = "job"
+    replacement  = "docker_names"
+  }
+}
+
+prometheus.scrape "docker_names" {
+  targets         = discovery.relabel.docker_names.output
+  scrape_interval = "60s"
+  forward_to      = [prometheus.relabel.docker_names.receiver]
+}
+
+prometheus.relabel "docker_names" {
+  rule {
+    source_labels = ["__name__"]
+    regex         = "up"
+    action        = "keep"
   }
   forward_to = [prometheus.remote_write.data_server.receiver]
 }
