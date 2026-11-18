@@ -112,7 +112,7 @@ class ShipmentBookingQueueIntegrationTest {
     }
 
     @Test
-    @DisplayName("택배사가 실패하면 READY로 남고 10초 뒤까지는 다시 부르지 않는다")
+    @DisplayName("[S-F02] 택배사가 실패하면 READY로 남고 10초 뒤까지는 다시 부르지 않는다")
     void failureWaitsBeforeRetry() {
         Shipment saved = readyShipment(7L);
         when(courierClient.book(anyString(), any(CourierBookingRequest.class)))
@@ -130,7 +130,7 @@ class ShipmentBookingQueueIntegrationTest {
     }
 
     @Test
-    @DisplayName("다음 시도 시각이 지나면 같은 멱등키로 다시 예약하고, 실패가 이어지면 간격이 30초로 늘어난다")
+    @DisplayName("[S-F02] 다음 시도 시각이 지나면 같은 멱등키로 다시 예약하고, 실패가 이어지면 간격이 30초로 늘어난다")
     void retriesWhenDueAndBacksOff() {
         Shipment saved = readyShipment(7L);
         when(courierClient.book(anyString(), any(CourierBookingRequest.class)))
@@ -177,7 +177,7 @@ class ShipmentBookingQueueIntegrationTest {
     }
 
     @Test
-    @DisplayName("한 인스턴스가 택배사를 기다리는 동안 다른 인스턴스가 큐를 돌아도 같은 배송을 다시 집지 않는다")
+    @DisplayName("[S-F07] 한 인스턴스가 택배사를 기다리는 동안 다른 인스턴스가 큐를 돌아도 같은 배송을 다시 집지 않는다")
     void otherInstanceSkipsShipmentBeingBooked() throws Exception {
         List<Shipment> shipments = List.of(readyShipment(100L), readyShipment(101L), readyShipment(102L));
         CountDownLatch podAInCourier = new CountDownLatch(1);

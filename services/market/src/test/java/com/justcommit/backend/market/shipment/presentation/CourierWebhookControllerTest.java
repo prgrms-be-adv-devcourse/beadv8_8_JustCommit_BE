@@ -47,7 +47,7 @@ class CourierWebhookControllerTest {
     }
 
     @Test
-    @DisplayName("키가 틀리면 401을 돌려주고 서비스를 부르지 않는다")
+    @DisplayName("[S-F04] 키가 틀리면 401을 돌려주고 서비스를 부르지 않는다")
     void wrongKey() throws Exception {
         mockMvc("webhook-key").perform(post(WEBHOOK_PATH)
                         .header("X-Api-Key", "wrong-key")
@@ -59,7 +59,7 @@ class CourierWebhookControllerTest {
     }
 
     @Test
-    @DisplayName("키 헤더가 없으면 401을 돌려준다")
+    @DisplayName("[S-F04] 키 헤더가 없으면 401을 돌려준다")
     void missingKey() throws Exception {
         mockMvc("webhook-key").perform(post(WEBHOOK_PATH)
                         .contentType(MediaType.APPLICATION_JSON)

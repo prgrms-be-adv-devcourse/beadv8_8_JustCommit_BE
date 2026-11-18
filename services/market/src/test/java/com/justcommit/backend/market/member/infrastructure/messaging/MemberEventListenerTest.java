@@ -32,7 +32,7 @@ class MemberEventListenerTest {
   }
 
   @Test
-  @DisplayName("MemberUpdated도 같은 칸으로 반영한다 (ADMIN 판매자는 role ADMIN · seller true)")
+  @DisplayName("[S-B02] MemberUpdated도 같은 칸으로 반영한다 (ADMIN 판매자는 role ADMIN · seller true)")
   void memberUpdated() {
     listener.on(envelope("MemberUpdated", memberPayload("ADMIN", true)));
 
