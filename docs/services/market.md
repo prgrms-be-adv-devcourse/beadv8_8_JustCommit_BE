@@ -28,7 +28,8 @@ market 서비스가 소유하는 테이블입니다 (market DB).
 | `ORDERS` | 구매자 주문 |
 | `SELLER_ORDER` | 판매자별 주문 (배송비 · 배송 단위 · `confirmedAt`) |
 | `ORDERS_ITEM` | 주문상품 (`ACCEPT_PENDING` · `NORMAL` · `CANCELLED` 등) |
-| `SHIPMENT` | 배송 (방향: 가는 길 / 반품, 택배 예약 큐용 `next_attempt_at` · `attempt_count`) |
+| `SHIPMENT` | 배송 (방향: 가는 길 / 반품, 택배 예약 · 취소 큐용 `next_attempt_at` · `attempt_count` · `last_error`, 취소 누른 시각 `cancel_requested_at`) |
+| `SHIPMENT_CANCEL_RESULT` | 택배 취소 결과 (배송 · 판매자 주문 · 취소됨 / 취소 불가 · 시각). 택배 취소 큐가 쓰고 주문 Saga 복구가 읽어 환불 · 되돌림 → [ADR 0026](../decisions/0026-courier-cancel-queue-and-distance-judgment.md) |
 | ⬜ 반품 신청 (이름 미정) | 주문상품별 반품 사유 · 상태 |
 | ⬜ 배송비 요금표 (이름 미정) | 기본 + 제주 · 도서산간 요금, 도서산간 우편번호, 버전 |
 | `REVIEW` | 리뷰 (`seller_order_id` UK, 소프트 삭제) |
@@ -103,9 +104,9 @@ market 서비스의 업무 규칙입니다. 노션 「정책 정리」 6 · 7 ·
 | 결제 대기 (`PAYMENT_PENDING`) | 주문 생성 시각부터 10분. 예치금이 충분하면 바로 결제, 부족하면 결제 대기. 결제할 때 market이 만료 시각을 직접 확인해 지났으면 거절(`PAYMENT_WINDOW_EXPIRED`), 만료 스케줄러는 지난 주문 만료 · 예약 해제 뒷정리만. 결제를 부른 뒤 결과를 반영하기 전까지는 결제 처리 중(`PAYMENT_PROCESSING`)이라 만료하지 않음 |
 | 결과 불명 복구 | 결제 · 취소 · 환불 결과를 모르면 Saga 복구가 같은 멱등 키로 다시 요청 (결제 orderId · 주문상품 환불 orderItemId · 배송비 환불 sellerOrderId). 취소 · 환불은 주문상품을 「취소 중」으로 두고 환불이 확정된 뒤 취소 완료 · 판매 재개 이벤트. 5번 안 되면 `REVIEW_REQUIRED` → [주문 · 결제](../flows/order-payment.md#멈춘-주문-복구), [결제 확인 필요 주문 처리](../infra/payment-review-runbook.md) |
 | 판매자 수락 | 결제 후 `ACCEPT_PENDING`. 수락 = 남은 주문상품 `NORMAL` + 배송 `READY`. 거절 = 판매자 주문 › 상품 트리에서 체크한 주문상품만 `CANCELLED` · 환불(사유 없음), 나머지는 수락. 전부 거절이면 배송 없음 + 배송비 환불. 결제 완료 시각(재결제면 재결제 완료 시각)부터 24시간 무응답이면 남은 주문상품 모두 자동 거절. 마감 전 재알림 없음. ⬜ 수락과 자동 거절이 겹칠 때 처리 → [미정](../open-questions.md) |
-| 배송 상태 | `READY` → `BOOKED`(화면 "픽업 대기") → `PICKED_UP` → `IN_TRANSIT` → `DELIVERED`, 취소 `CANCELLED` · `CANCEL_PENDING`. 앞으로만 감 (이전 · 같은 상태 웹훅 무시), 단계별 시각 저장 |
+| 배송 상태 | `READY` → `BOOKED`(화면 "픽업 대기") → `CANCEL_LOCKED`(기사 수거지 2km 안, 화면 "취소 불가") → `PICKED_UP` → `IN_TRANSIT` → `DELIVERED`, 취소 `CANCEL_PENDING` → `CANCELLED`. 앞으로만 감 (이전 · 같은 상태 웹훅 무시), 단계별 시각 저장 |
 | 택배 예약 | 수락 후 택배 예약 큐가 포기 없이 재시도 (주기 → [스케줄러 표](../reference/schedulers.md)). 멱등 키 `courierOrderNo = shipment-{배송 생성일 yyyyMMdd}-{배송ID 6자리}`, 반품도 새 배송 행이라 겹치지 않음. 예: `shipment-20261112-000123`. 송장번호는 택배사가 발급(404 + 9자리), 예약 응답을 놓치면 웹훅 값으로 채움. 상품 요약은 첫 상품명 또는 「첫 상품명 외 N건」(알림 · 운송장). 10분 넘게 `READY`면 팀 메신저로 한 번 (판매자 지연 알림 없음). 보내는 사람은 판매자 기본 배송지 — 재예약 때마다 최신 기본 주소를 읽는 임시 연결이며, 수락 당시 고른 주소 고정은 #283 · 배송 담당과 협의. 판매자 배송지를 쓸 수 없으면(복제본 · 암호문 · 기본 주소 없음) 예약을 보류하고 `READY`로 둠 |
-| 취소 | 구매자는 판매자 수락 전에는 언제든 즉시 취소. 수락 뒤 `READY`는 바로, `BOOKED`는 택배사 취소 먼저 → [취소 · 환불](../flows/cancel-refund.md) |
+| 취소 | 구매자는 판매자 수락 전에는 언제든 즉시 취소. 수락 뒤 `READY` · `BOOKED`는 `CANCEL_PENDING` 기록 → 택배 취소 큐가 택배사에 보내고 택배사가 누른 시각의 기사 거리로 판정 (2km 안이면 취소 불가, 잠금 직후 30초 유예), `CANCEL_LOCKED` 이후는 취소 불가 → [취소 · 환불](../flows/cancel-refund.md) |
 | 구매 확정 | 배송 완료 후 주문상품별 확정, 배송 완료(`DELIVERED`) 시각부터 72시간 뒤 자동 구매 확정. 판매자 주문이 끝나면 정산 이벤트 |
 | 반품 | 배송 완료(`DELIVERED`) 시각부터 72시간 안에 반품 신청, 판매자 귀책만. 반품 신청 시각부터 48시간 무응답이면 자동 승인, 거절이면 그 주문상품을 바로 구매 확정 → [취소 · 환불](../flows/cancel-refund.md#반품-환불) |
 | 리뷰 | 판매자 평가, 판매자 주문 1건당 1번, 구매 확정(`SellerOrder.confirmedAt`) 시각부터 3일 안. 별점 0.5~5.0 · 글 10~300자 필수 · 태그 5종 · 사진 없음. 수정 불가, 리뷰 작성 시각부터 3일 안 삭제 가능(소프트 삭제, 다시 쓰기 불가). 판매자 상점에 평균 별점 · 수 · 태그 집계 |

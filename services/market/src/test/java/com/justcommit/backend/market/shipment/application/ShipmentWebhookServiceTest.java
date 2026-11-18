@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -46,6 +47,29 @@ class ShipmentWebhookServiceTest {
         shipmentWebhookService.receive(webhook("PICKED_UP", "2026-10-15T10:03:00+09:00")); // 중복
 
         verify(statusChangedEventPublisher).publishAfterCommit(shipment, ORDER_INFO, LocalDateTime.of(2026, 10, 15, 10, 3));
+    }
+
+    @Test
+    @DisplayName("기사가 2km 안에 들어오면(CANCEL_LOCKED 웹훅) 배송을 취소 불가로 바꾸고 상태 이벤트를 보낸다")
+    void cancelLockedWebhookLocksShipment() {
+        Shipment shipment = bookedShipment();
+
+        shipmentWebhookService.receive(webhook("CANCEL_LOCKED", "2026-10-15T10:02:00+09:00"));
+
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCEL_LOCKED);
+        verify(statusChangedEventPublisher).publishAfterCommit(shipment, ORDER_INFO, LocalDateTime.of(2026, 10, 15, 10, 2));
+    }
+
+    @Test
+    @DisplayName("취소 대기 중에 온 CANCEL_LOCKED 웹훅은 무시한다 — 취소 결과는 택배 취소 큐가 정한다")
+    void cancelLockedIgnoredWhileCancelPending() {
+        Shipment shipment = bookedShipment();
+        shipment.requestCancel(LocalDateTime.of(2026, 10, 15, 10, 1));
+
+        shipmentWebhookService.receive(webhook("CANCEL_LOCKED", "2026-10-15T10:02:00+09:00"));
+
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCEL_PENDING);
+        verify(statusChangedEventPublisher, never()).publishAfterCommit(any(), any(), any());
     }
 
     private Shipment bookedShipment() {
