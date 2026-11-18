@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-18 · infra/observability.md · reference/schedulers.md · conventions/common-modules.md · 알림용 지표 추가: `market_shipments_booking_delayed`(10분 넘은 READY 배송, 택배 예약 큐가 갱신) · `settlement_payouts_delayed`(10분 넘은 미지급 정산) · `outbox_pending_oldest_age_seconds` · `outbox_failed`(Outbox 재전송이 갱신), 알림 규칙 표에 조건식 표기 (#301)
 - 2026-11-18 · infra/observability.md · reference/ports.md · 앱 서버 지표는 Alloy가 긁어 Prometheus로 remote_write(Prometheus가 앱 서버를 직접 긁지 않음), 데이터 서버 보안 그룹이 앱 서버 보안 그룹에서 오는 3100 · 9090 · 4317 추가 허용, Grafana는 `127.0.0.1:3000`에만 열고 SSH 터널로 접속, 앱 서버 node-exporter는 Alloy 내장 기능으로 대신 (#301)
 - 2026-11-18 · testing/scenarios.md · S-C10 재검수 「1회」 → 「2회」(flows/image-review.md · services/product.md 기준으로 문구 맞춤) (#497)
 - 2026-11-18 · reference/ports.md · infra/database.md · infra/aws.md · infra/deploy.md · 데이터 서버 구성 반영: 보안 그룹은 앱 서버 보안 그룹 참조로 5432 · 9092 · 9200, 운영 DB 생성은 `deploy/data/init-db.sh`(비밀번호 `~/secrets/db-accounts.env`), 운영도 `pgvector/pgvector:pg17`, DB 백업 매일 17:30 `pg_dump` → S3 `backups/postgres/`(7일) · IAM `backups/*` PutObject (#295)

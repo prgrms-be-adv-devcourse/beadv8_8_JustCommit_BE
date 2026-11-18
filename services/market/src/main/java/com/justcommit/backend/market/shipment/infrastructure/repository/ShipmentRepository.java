@@ -29,6 +29,9 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
             """, nativeQuery = true)
     Optional<Shipment> findNextBookable(@Param("now") LocalDateTime now);
 
+    // 배송 예약 지연 지표 (ShipmentBookingDelayMetrics): 기준 시각보다 먼저 만들어진 READY 배송 수
+    long countByStatusAndCreatedAtBefore(ShipmentStatus status, LocalDateTime createdAt);
+
     List<Shipment> findTop100ByStatusAndCourierCancelledAtIsNullAndCancelledAtBeforeOrderByIdAsc(
             ShipmentStatus status, LocalDateTime cancelledAt);
 }

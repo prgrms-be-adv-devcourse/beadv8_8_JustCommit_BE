@@ -60,7 +60,7 @@ class MarketApplicationTests {
     }
 
     @Test
-    @DisplayName("토큰 없이 /actuator/prometheus가 열리고 서비스 이름 태그 · 응답 시간 히스토그램이 나온다 (common-logging, #301)")
+    @DisplayName("토큰 없이 /actuator/prometheus가 열리고 서비스 이름 태그 · 응답 시간 히스토그램 · 알림 지표가 나온다 (common-logging, #301)")
     void exposesPrometheusMetricsWithoutToken(@Value("${local.server.port}") int port) throws Exception {
         HttpClient http = HttpClient.newHttpClient();
         // 요청을 한 번 보내야 http_server_requests 지표가 생긴다
@@ -76,7 +76,11 @@ class MarketApplicationTests {
                 .contains("application=\"market-service\"")
                 .contains("http_server_requests_seconds_bucket")
                 .contains("market_orders_review_required")
-                .contains("hikaricp_connections_active");
+                .contains("hikaricp_connections_active")
+                // 알림용 지표 (docs/infra/observability.md 「알림 규칙」)
+                .contains("market_shipments_booking_delayed")
+                .contains("outbox_pending_oldest_age_seconds")
+                .contains("outbox_failed");
     }
 
     private static String newAddressEventKey() {

@@ -1,6 +1,7 @@
 package com.justcommit.backend.market.shipment.infrastructure.scheduler;
 
 import com.justcommit.backend.market.shipment.application.ShipmentService;
+import com.justcommit.backend.market.shipment.infrastructure.metrics.ShipmentBookingDelayMetrics;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -17,12 +18,15 @@ public class ShipmentScheduler {
     private static final long RETRY_AFTER_MINUTES = 1;
 
     private final ShipmentService shipmentService;
+    private final ShipmentBookingDelayMetrics bookingDelayMetrics;
 
     // 택배 예약 큐: 10초마다 시도할 때가 된 READY 배송을 예약한다 (docs/reference/schedulers.md 「택배 예약 큐」).
     // 파드 2개가 같이 돌아도 SKIP LOCKED + 임대로 같은 배송을 두 번 예약하지 않는다.
     @Scheduled(fixedDelay = 10_000, initialDelay = 10_000)
     public void bookReadyShipments() {
         shipmentService.bookReadyShipments();
+        // 이번 실행 결과까지 반영해 「10분 넘게 READY」 수 지표 갱신 (#301)
+        bookingDelayMetrics.refresh(LocalDateTime.now());
     }
 
     @Scheduled(fixedDelay = 300_000, initialDelay = 90_000)

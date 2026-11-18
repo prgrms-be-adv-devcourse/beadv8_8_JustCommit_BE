@@ -45,12 +45,12 @@
 |---|---|---|
 | 서비스 다운 | health 응답 없음 | 1분 |
 | 5xx 급증 | 5xx 비율 5% 이상 | 5분 |
-| Outbox 대기 | 가장 오래된 PENDING이 1분 초과 · `FAILED` 발생 | 즉시 |
+| Outbox 대기 | 가장 오래된 PENDING이 1분 초과 · `FAILED` 발생 (`max by (service) (outbox_pending_oldest_age_seconds) > 60`, `max by (service) (outbox_failed) > 0`) | 즉시 |
 | DLT 유입 | 1건이라도 | 즉시 |
 | 디스크 | 80% 이상 | 5분 |
 | 메모리 | 컨테이너 한도의 90% 이상 | 5분 |
-| 배송 예약 지연 | 10분 넘게 `READY`인 배송 1건 이상 | 상태 기준 1번, 반복 1시간 |
-| 정산 지급 지연 | 10분 넘게 미지급(`PENDING`, `FAILED`)인 정산 1건 이상 | 상태 기준 1번, 반복 1시간 |
+| 배송 예약 지연 | 10분 넘게 `READY`인 배송 1건 이상 (`max(market_shipments_booking_delayed) > 0`) | 상태 기준 1번, 반복 1시간 |
+| 정산 지급 지연 | 10분 넘게 미지급(`PENDING`, `FAILED`)인 정산 1건 이상 (`max(settlement_payouts_delayed) > 0`) | 상태 기준 1번, 반복 1시간 |
 | `REVIEW_REQUIRED` | 결제 확인 필요 주문 1건 이상 (`max(market_orders_review_required) > 0`) → [처리 순서](payment-review-runbook.md) | 상태 기준 1번, 반복 1시간 |
 
 ## 부하 테스트
