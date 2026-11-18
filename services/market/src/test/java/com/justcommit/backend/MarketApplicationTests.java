@@ -7,6 +7,7 @@ import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Base64;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationInfo;
 import org.flywaydb.core.api.MigrationState;
@@ -47,6 +48,12 @@ class MarketApplicationTests {
                 .extracting(info -> info.getVersion().getVersion(), MigrationInfo::getState)
                 .contains(tuple("1", MigrationState.SUCCESS), tuple("2", MigrationState.SUCCESS), tuple("3", MigrationState.SUCCESS),
                         tuple("4", MigrationState.SUCCESS));
+    }
+
+    @Test
+    @DisplayName("확인 필요 주문 수 게이지(market_orders_review_required)가 지표 레지스트리에 등록된다")
+    void registersReviewRequiredOrderGauge(@Autowired MeterRegistry meterRegistry) {
+        assertThat(meterRegistry.find("market.orders.review.required").gauge()).isNotNull();
     }
 
     private static String newAddressEventKey() {

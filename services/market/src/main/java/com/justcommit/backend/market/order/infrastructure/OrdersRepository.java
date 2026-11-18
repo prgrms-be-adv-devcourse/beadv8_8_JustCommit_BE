@@ -25,6 +25,9 @@ public interface OrdersRepository extends JpaRepository<Orders, Long> {
     // 스케줄러 후보 조회라 잠그지 않는다. 잠금은 주문마다 findByIdForUpdateSkipLocked로 한다.
     List<Orders> findTop100ByStatusAndCreatedAtBeforeOrderByIdAsc(OrderStatus status, LocalDateTime cutoff);
 
+    // 확인 필요 주문 수 지표 (ReviewRequiredOrderMetrics)
+    long countByStatus(OrderStatus status);
+
     // Saga 복구 후보: 결제 처리 중이고 마지막 시도에서 유예가 지난 주문 id, 오래된 시도부터 (부분 인덱스 사용)
     // 잠그지 않는다. 선점은 주문마다 findByIdForUpdateSkipLocked로 한다.
     @Query("""
