@@ -4,6 +4,7 @@ import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.OrderShippingInfo;
 import com.justcommit.backend.market.ShipmentStatusChangedEvent;
 import com.justcommit.backend.market.shipment.domain.Shipment;
+import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -28,14 +29,19 @@ public class ShipmentStatusChangedEventPublisher {
     // 웹훅은 트랜잭션 안이라 그 트랜잭션에 함께 기록한다.
     // 택배 예약은 저장이 이미 끝난 뒤라(트랜잭션 밖) Outbox 기록만 짧은 트랜잭션으로 감싼다.
     public void publishAfterCommit(Shipment shipment, OrderShippingInfo orderInfo, LocalDateTime occurredAt) {
+        publishAfterCommit(shipment, shipment.getStatus(), orderInfo, occurredAt);
+    }
+
+    // 현재 상태가 아니라 지나간 단계를 알릴 때 (예: 웹훅이 먼저 와 CANCEL_LOCKED가 됐지만 판매자에게는 「택배 예약됨」을 알려야 할 때)
+    public void publishAfterCommit(Shipment shipment, ShipmentStatus status, OrderShippingInfo orderInfo, LocalDateTime occurredAt) {
         ShipmentStatusChangedEvent event = new ShipmentStatusChangedEvent(shipment.getId(), orderInfo.orderId(),
-                shipment.getSellerOrderId(), orderInfo.buyerId(), orderInfo.sellerId(), shipment.getStatus().name(),
+                shipment.getSellerOrderId(), orderInfo.buyerId(), orderInfo.sellerId(), status.name(),
                 occurredAt, shipment.getItemSummary());
 
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             outboxPublisher.publish(event);
             return;
         }
-        transactionTemplate.executeWithoutResult(status -> outboxPublisher.publish(event));
+        transactionTemplate.executeWithoutResult(tx -> outboxPublisher.publish(event));
     }
 }

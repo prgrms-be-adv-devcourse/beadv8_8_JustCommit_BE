@@ -76,21 +76,45 @@ public class ShipmentService {
 
     // 큐가 집은 배송을 택배사에 예약한다. 실패하면 READY로 두고 다음 시도 시각을 미룬다 (포기하지 않음).
     private void bookClaimed(Shipment shipment) {
+        OrderShippingInfo orderInfo = null;
+        CourierBookingResponse response = null;
         try {
-            OrderShippingInfo orderInfo = orderQuery.getShippingInfo(shipment.getSellerOrderId());
-            CourierBookingResponse response = courierClient.book(shipment.getCourierOrderNo(),
-                    bookingRequest(shipment, orderInfo));
+            orderInfo = orderQuery.getShippingInfo(shipment.getSellerOrderId());
+            response = courierClient.book(shipment.getCourierOrderNo(), bookingRequest(shipment, orderInfo));
             shipment.book(response.trackingNo(), response.bookedAt().atZoneSameInstant(SEOUL).toLocalDateTime());
+            OrderShippingInfo info = orderInfo;
             new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
                 shipmentRepository.save(shipment);
-                statusChangedEventPublisher.publishAfterCommit(shipment, orderInfo, shipment.getBookedAt());
+                statusChangedEventPublisher.publishAfterCommit(shipment, info, shipment.getBookedAt());
             });
         } catch (ObjectOptimisticLockingFailureException e) {
-            // 예약하는 사이 주문 취소가 먼저 저장됨. 택배사에 남은 예약은 취소 쪽이 같은 멱등키로 찾아 취소한다.
-            log.info("예약 중 배송이 취소됨: shipmentId={}", shipment.getId());
+            // 택배사 예약은 됐는데, 그사이 다른 쪽이 배송을 먼저 바꿨다
+            recoverBookingConflict(shipment.getId(), response, orderInfo);
         } catch (RuntimeException e) {
             logBookingFailure(shipment, e);
             recordAttemptFailure(shipment.getId(), ShipmentStatus.READY, describe(e));
+        }
+    }
+
+    // 예약 결과 저장이 다른 저장에 밀린 경우를 처리한다.
+    // - 판매자가 집하점 2km 안이면 택배사가 예약 직후 CANCEL_LOCKED 웹훅을 보내 예약 저장보다 먼저 반영될 수 있다
+    //   → 최신 행에 송장번호 · 예약 시각을 채우고, 판매자 알림용 BOOKED 이벤트를 보낸다
+    // - 그사이 주문 취소가 먼저 저장됐다면(CANCEL_PENDING) 택배사 예약은 택배 취소 큐가 주문번호로 취소한다
+    private void recoverBookingConflict(Long shipmentId, CourierBookingResponse response, OrderShippingInfo orderInfo) {
+        LocalDateTime bookedAt = response.bookedAt().atZoneSameInstant(SEOUL).toLocalDateTime();
+        try {
+            new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                    shipmentRepository.findById(shipmentId).ifPresent(latest -> {
+                        if (latest.fillMissedBooking(response.trackingNo(), bookedAt)) {
+                            statusChangedEventPublisher.publishAfterCommit(latest, ShipmentStatus.BOOKED, orderInfo, bookedAt);
+                            log.info("예약 저장보다 웹훅이 먼저 와 예약 정보만 채움: shipmentId={}, status={}", shipmentId, latest.getStatus());
+                        } else {
+                            log.info("예약 중 배송이 바뀜(취소 등): shipmentId={}, status={}", shipmentId, latest.getStatus());
+                        }
+                    }));
+        } catch (ObjectOptimisticLockingFailureException again) {
+            // 또 밀리면 이번 예약 알림은 포기한다 (배송 상태는 웹훅이 맞게 반영하고 있음)
+            log.warn("예약 정보 채우기도 다른 저장에 밀림: shipmentId={}", shipmentId);
         }
     }
 

@@ -151,6 +151,23 @@ public class Shipment extends BaseTimeEntity {
         return reason.substring(0, LAST_ERROR_MAX_LENGTH);
     }
 
+    // 예약 결과를 저장하기 전에 택배사 웹훅(예: CANCEL_LOCKED)이 먼저 반영된 배송에 예약 정보만 채운다.
+    // 이미 채워졌거나, 취소가 시작됐거나, 아직 READY면 false (상태는 바꾸지 않음)
+    public boolean fillMissedBooking(String trackingNo, LocalDateTime bookedAt) {
+        if (this.bookedAt != null
+                || this.status == ShipmentStatus.READY
+                || this.status == ShipmentStatus.CANCEL_PENDING
+                || this.status == ShipmentStatus.CANCELLED) {
+            return false;
+        }
+        if (this.trackingNo == null) {
+            this.trackingNo = trackingNo;
+        }
+        this.bookedAt = bookedAt;
+        resetQueue();
+        return true;
+    }
+
     public void book(String trackingNo, LocalDateTime bookedAt) {
         if (this.status != ShipmentStatus.READY) {
             throw new IllegalStateException("READY 상태의 배송만 예약할 수 있습니다. 현재 상태: " + this.status);
