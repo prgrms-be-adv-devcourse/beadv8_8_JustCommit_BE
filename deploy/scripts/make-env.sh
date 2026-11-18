@@ -21,7 +21,9 @@ DATA_IP=10.0.7.79   # 데이터 서버 사설 IP (#295)
 APP_IP=10.0.7.76    # 앱 서버 사설 IP
 DOMAIN=replant.kro.kr
 
-EXTERNAL_KEYS="KAKAO_CLIENT_ID KAKAO_CLIENT_SECRET MAIL_USERNAME MAIL_PASSWORD TOSS_SECRET_KEY OPENAI_API_KEY ANTHROPIC_API_KEY S3_BUCKET_NAME S3_PUBLIC_BASE_URL"
+EXTERNAL_KEYS="KAKAO_CLIENT_ID KAKAO_CLIENT_SECRET MAIL_USERNAME MAIL_PASSWORD TOSS_SECRET_KEY S3_BUCKET_NAME S3_PUBLIC_BASE_URL"
+# 없어도 앱은 뜬다 (product 검수는 관리자 확인으로, ai 임베딩 호출만 실패). 없으면 줄 자체를 쓰지 않는다
+OPTIONAL_KEYS="OPENAI_API_KEY ANTHROPIC_API_KEY"
 
 die() { echo "❌ $*" >&2; exit 1; }
 need_file() { [ -f "$S/$1" ] || die "$S/$1 이 없어요"; }
@@ -33,6 +35,7 @@ need_file redis.env
 need_file db-accounts.env
 need_file external.env
 for k in $EXTERNAL_KEYS; do need external.env "$k" >/dev/null; done
+for k in $OPTIONAL_KEYS; do [ -n "$(get external.env "$k")" ] || echo "  ⚠️ $k 없음 (선택 값이라 빼고 진행)"; done
 
 # 1) 공유 키: 없는 것만 새로 만든다
 touch "$S/shared.env"
@@ -61,6 +64,7 @@ JWT_PUBLIC_KEY="$(oneline "$S/jwt/public.pem")"
 
 sh_() { need shared.env "$1"; }
 ext() { need external.env "$1"; }
+opt() { local v; v="$(get external.env "$1")"; [ -z "$v" ] || echo "$1=$v"; }  # 선택 값: 있을 때만 한 줄
 
 # 3) 서비스별 env 파일
 common_db() {  # 서비스 이름
@@ -103,8 +107,8 @@ write() { cat > "$S/$1.env"; chmod 600 "$S/$1.env"; echo "  작성: $1.env"; }
   echo "AWS_REGION=ap-northeast-2"
   echo "S3_BUCKET_NAME=$(ext S3_BUCKET_NAME)"
   echo "S3_PUBLIC_BASE_URL=$(ext S3_PUBLIC_BASE_URL)"
-  echo "OPENAI_API_KEY=$(ext OPENAI_API_KEY)"
-  echo "ANTHROPIC_API_KEY=$(ext ANTHROPIC_API_KEY)"
+  opt OPENAI_API_KEY
+  opt ANTHROPIC_API_KEY
 } | write product
 
 {
@@ -135,7 +139,7 @@ write() { cat > "$S/$1.env"; chmod 600 "$S/$1.env"; echo "  작성: $1.env"; }
 {
   common_db ai
   echo "INTERNAL_API_KEY=$(sh_ INTERNAL_API_KEY)"
-  echo "OPENAI_API_KEY=$(ext OPENAI_API_KEY)"
+  opt OPENAI_API_KEY
 } | write ai
 
 # 4) K3s Secret 갱신 (있으면 덮어씀). 값이 바뀌었으면 rollout restart가 필요하다
