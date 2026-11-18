@@ -72,6 +72,7 @@ services:
       - "127.0.0.1:3000:3000"
     volumes:
       - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/observability/grafana/dashboards:/etc/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     mem_limit: 192m
     depends_on: [loki, prometheus]
