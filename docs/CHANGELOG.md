@@ -8,6 +8,8 @@
 ## 기록
 
 - 2026-11-17 · testing/scenarios.md · S-C10 재검수 「1회」 → 「2회」(flows/image-review.md · services/product.md 기준으로 문구 맞춤) (#497)
+- 2026-11-18 · infra/observability.md · reference/ports.md · glossary.md · 지표 수집 대상 표(actuator · node-exporter · postgres-exporter, Kafka · Redis ⬜), CPU steal로 크레딧 소진 측정 무효 판단, exporter 포트 9100 · 9187, 용어 「exporter」 · 「CPU steal」 (#301)
+- 2026-11-18 · decisions/0027 · decisions/0008 · infra/observability.md · infra/deploy.md · reference/ports.md · conventions/common-modules.md · overview.md · glossary.md · 분산 추적 Tempo 추가: 서비스 → OTLP → Alloy → Tempo(샘플링 100% · 보관 3일), Loki ↔ Tempo traceId 연결, `common-logging`에 OTLP exporter, 데이터 서버 · 포트 3200 · 4317, 용어 「분산 추적」 (#301)
 - 2026-11-18 · reference/internal-apis.md · reference/env-vars.md · 장바구니 추천 연동 반영: ai 추천 요청 · 응답 형식(`cartProductIds` · `purchasedProductIds` · `size`, 응답 `items[{productId, reason}]`, market은 화면 size의 2배 · 최대 20 요청), market 내부 API 그룹 주소 환경변수(`AI_SERVICE_URL` 추가, 기존 product · payment · settlement 주소도 표에 적음) (#296) (#504)
 - 2026-11-18 · decisions/0024 · services/ai.md · conventions/resilience.md · 임베딩 모델 OpenAI `text-embedding-3-small` 1536차원을 고른 이유 사후 기록(ADR 0024: product 검수와 같은 OpenAI 키, Anthropic은 임베딩 없음, Spring AI 기본 지원, OpenAI 임베딩 중 가장 쌈, pgvector HNSW 한도 2,000차원 안), 호출별 값에 ai → OpenAI 임베딩 ⬜ 줄, 로컬 임베딩 모델은 #294 평가 세트로 비교 예정 (#290)
 - 2026-11-18 · services/ai.md · reference/kafka-topics.md · ai 상품 스냅샷 구현 반영: `product_snapshot` Flyway V4 · `(species_id, status)` 인덱스, `product.events.v1` 구독자에 ai 구현 표시(`productVersion`이 클 때만 덮어쓰는 upsert 한 문장, payload 필수 칸이 비면 바로 DLT) (#503)
