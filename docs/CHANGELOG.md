@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-18 · services/member.md · flows/signup-and-replica.md · reference/external-apis.md · reference/redis-keys.md · reference/env-vars.md · reference/schedulers.md · conventions/resilience.md · open-questions.md · testing/scenarios.md · 회원 직접 탈퇴 구현 반영: 탈퇴 API(사전 확인 · 인증번호 · 탈퇴 토큰 · 최종 탈퇴) 구현 표시, 가입 재가입 제한 409 `REJOIN_RESTRICTED`, 탈퇴 기록 정리 1시간, 카카오 연결 해제 1초/3초 · HTTP 400 + `-101`만 이미 해제로 처리 · `KAKAO_ADMIN_KEY` 필수, 소개글 수정도 회원 행 잠금, 탈퇴 확인 연결 실패 · 재시도 시간 계산 약 5.2초로 정정, Gateway 탈퇴 POST 전용 20초, 확인 뒤 제3자 주문 유입 한계와 처리 책임 미정 등록, 시나리오 결과 기록 (#407) (#530)
 - 2026-11-18 · reference/env-vars.md · services/ai.md · ai 임베딩 설정 키를 모델 이름 없는 `custom.embedding.model` · `custom.embedding.dimensions`로(환경변수 `EMBEDDING_MODEL` · `EMBEDDING_DIMENSIONS`, 기본값 `text-embedding-3-small` · `1536`), Spring AI `spring.ai.openai.embedding.*`도 이 값을 참조, 설정 차원이 `vector(1536)` 칸과 다르면 앱 시작 실패 (#508)
 - 2026-11-18 · testing/strategy.md · 「통합 테스트 컨테이너 규칙」 표 추가: `common-core` testFixtures의 `SharedPostgres` · `SharedRedis` · `SharedKafka`를 모듈마다 한 번 띄워 공유, PostgreSQL은 컨텍스트마다 새 DB, Kafka는 컨텍스트마다 새 그룹 id + 리스너 클래스 `@DirtiesContext`, Redis `flushAll`, `withReuse` 안 씀 (#524)
 - 2026-11-18 · infra/observability.md · 배송 예약 · 취소 지연 알림을 지표 `replant_shipment_stuck{status="READY"|"CANCEL_PENDING"}`(10분 넘게 남은 배송 수)로, market에 actuator · Prometheus(`/actuator/prometheus`, 내부망 전용) 추가. testing/scenarios.md S-F09 ~ F12 추가 (#490)
