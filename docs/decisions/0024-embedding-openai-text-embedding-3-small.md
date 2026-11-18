@@ -31,6 +31,6 @@ ai의 품종 임베딩은 OpenAI `text-embedding-3-small`, 1536차원(이 모델
 
 ## 영향
 
-[ai](../services/ai.md) 「정책」 임베딩 모델, [장애 대응](../conventions/resilience.md) 호출별 값, [미정 항목](../open-questions.md) 「외부 AI 약관」. 모델 · 차원을 바꾸면 `species_vector_store`의 `vector(1536)` 칸과 저장된 벡터를 모두 다시 만들어야 합니다.
+[ai](../services/ai.md) 「정책」 임베딩 모델, [장애 대응](../conventions/resilience.md) 호출별 값. 모델 · 차원을 바꾸면 `species_vector_store`의 `vector(1536)` 칸과 저장된 벡터를 모두 다시 만들어야 합니다.
 
 로컬 임베딩 모델 비교 예정: 추천 기능(#293 → #294 → #296)을 먼저 완성하고, #294에서 만드는 평가 세트(같이 키우기 좋은 조합 30~50쌍, Top-5 적중률)로 OpenAI와 로컬 모델을 오프라인에서 비교합니다(운영 코드는 건드리지 않음, 근거: 핀 문서 「상품 정책·플로우 정리」 추천 절). 이 결정은 확정이지만, 비교에서 로컬 모델이 더 좋으면 교체하고 이 ADR을 새 ADR로 대체합니다.
