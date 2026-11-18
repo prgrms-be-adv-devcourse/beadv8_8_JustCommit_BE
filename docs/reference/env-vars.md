@@ -18,6 +18,7 @@
 | `INTERNAL_API_KEY` | 모든 서비스 (같은 값) | `/internal/**` 확인. 내부 호출 그룹(`internal-api.groups`)이 있는 서비스는 키가 없으면 시작하지 않음 |
 | `MEMBER_ADDRESS_EVENT_KEY` | member · market (같은 값) | 주소 이벤트 전송 키 (판매자 배송지 목록 암호화, `EventFieldCipher` 키 버전 `k1`). `openssl rand -base64 32`로 생성, 서버 설정은 인프라 담당. member · market 적용 완료(#233 · #275), `.env.example` 추가 완료(#233) |
 | `REDIS_HOST` · `REDIS_PORT` · `REDIS_PASSWORD` | member · Gateway | – |
+| `OPENSEARCH_URL` | product | 상품 검색 OpenSearch 주소 (예: `http://{호스트}:9200`). 없으면 로컬 `http://localhost:9200`. 운영은 `deploy/scripts/make-env.sh`가 데이터 서버 사설 IP의 9200으로 넣음 |
 | `MEMBER_SERVICE_URL` · `PRODUCT_SERVICE_URL` · `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` · `NOTIFICATION_SERVICE_URL` | Gateway | 라우팅할 서비스 주소. 없으면 로컬 포트(8081 ~ 8086) |
 | `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` | member | 탈퇴 확인 내부 API 그룹 주소. 없으면 로컬 포트(8083 · 8084 · 8085) |
 | `PRODUCT_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` · `AI_SERVICE_URL` | market | 내부 API 그룹 주소. 없으면 로컬 포트(8082 · 8084 · 8085 · 8087) |
