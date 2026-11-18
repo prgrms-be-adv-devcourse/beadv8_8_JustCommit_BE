@@ -58,7 +58,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-// 택배 취소 큐가 실제 DB(SKIP LOCKED · 임대)로 CANCEL_PENDING 배송을 택배사에 취소하고 결과를 남기는지 확인한다 (#490, ADR 0025).
+// 택배 취소 큐가 실제 DB(SKIP LOCKED · 임대)로 CANCEL_PENDING 배송을 택배사에 취소하고 결과를 남기는지 확인한다 (#490, ADR 0026).
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)

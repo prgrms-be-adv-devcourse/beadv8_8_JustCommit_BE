@@ -59,7 +59,7 @@ public class Shipment extends BaseTimeEntity {
     @Column(length = LAST_ERROR_MAX_LENGTH)
     private String lastError;
 
-    // 구매자가 취소를 누른 시각. 택배사는 이 시각의 기사 거리로 판정한다 (ADR 0025).
+    // 구매자가 취소를 누른 시각. 택배사는 이 시각의 기사 거리로 판정한다 (ADR 0026).
     private LocalDateTime cancelRequestedAt;
 
     // 재예약 스케줄러와 주문 취소가 같은 배송을 동시에 저장할 때 늦게 저장하는 쪽을 실패시킨다.

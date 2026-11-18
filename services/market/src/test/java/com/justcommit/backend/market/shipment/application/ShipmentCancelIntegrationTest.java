@@ -59,7 +59,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-// 주문이 배송 취소를 요청하면 CANCEL_PENDING + 누른 시각만 기록하고 택배사는 부르지 않는지 실제 DB로 확인한다 (#490, ADR 0025).
+// 주문이 배송 취소를 요청하면 CANCEL_PENDING + 누른 시각만 기록하고 택배사는 부르지 않는지 실제 DB로 확인한다 (#490, ADR 0026).
 // 택배사 취소는 택배 취소 큐가 보낸다.
 @DataJpaTest
 @ActiveProfiles("test")

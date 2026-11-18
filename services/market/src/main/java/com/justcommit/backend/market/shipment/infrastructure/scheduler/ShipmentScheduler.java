@@ -22,7 +22,7 @@ public class ShipmentScheduler {
         shipmentService.bookReadyShipments();
     }
 
-    // 택배 취소 큐: 10초마다 CANCEL_PENDING 배송을 택배사에 취소한다 (docs/reference/schedulers.md 「택배 취소 큐」, ADR 0025)
+    // 택배 취소 큐: 10초마다 CANCEL_PENDING 배송을 택배사에 취소한다 (docs/reference/schedulers.md 「택배 취소 큐」, ADR 0026)
     @Scheduled(fixedDelay = 10_000, initialDelay = 15_000)
     public void cancelPendingShipments() {
         shipmentCancelQueueService.cancelPendingShipments();

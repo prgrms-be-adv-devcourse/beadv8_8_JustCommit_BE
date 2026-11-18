@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
-// 택배 취소 결과 (ADR 0025). 택배 취소 큐가 배송 상태와 같은 트랜잭션에 한 건 남기고,
+// 택배 취소 결과 (ADR 0026). 택배 취소 큐가 배송 상태와 같은 트랜잭션에 한 건 남기고,
 // 주문 Saga 복구가 읽어 취소됨이면 환불 · 취소 완료, 취소 불가면 주문상품을 되돌린다.
 @Entity
 @Table(name = "shipment_cancel_result")

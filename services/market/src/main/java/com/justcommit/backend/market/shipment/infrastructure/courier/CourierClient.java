@@ -84,7 +84,7 @@ public class CourierClient {
         }
     }
 
-    // 주문번호로 택배사 예약을 취소한다 (ADR 0025). 택배사는 구매자가 누른 시각의 기사 거리로 판정한다.
+    // 주문번호로 택배사 예약을 취소한다 (ADR 0026). 택배사는 구매자가 누른 시각의 기사 거리로 판정한다.
     // 200이면 취소됨(반송 포함), 409면 취소 불가(누른 시각에 기사 2km 안). 같은 주문번호는 첫 판정을 그대로 돌려준다.
     // 예약 전 취소도 택배사가 기록해 두고, 늦게 도착한 같은 주문번호 예약은 받지 않는다.
     public Optional<CourierOrderCancelResponse> cancelByCourierOrderNo(String courierOrderNo, OffsetDateTime cancelRequestedAt) {

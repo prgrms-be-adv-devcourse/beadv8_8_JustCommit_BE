@@ -125,7 +125,7 @@ public class ShipmentService {
 
     // 주문 모듈이 판매자 주문의 모든 상품이 취소됐을 때 주문 트랜잭션 안에서 호출한다.
     // 배송을 CANCEL_PENDING + 누른 시각으로 기록만 하고 주문과 함께 커밋한다. 택배사는 부르지 않는다 —
-    // 택배 취소 큐가 보내고, 택배사가 누른 시각의 기사 거리로 판정한다 (ADR 0025).
+    // 택배 취소 큐가 보내고, 택배사가 누른 시각의 기사 거리로 판정한다 (ADR 0026).
     // 행을 잠그고 바꿔서 같은 취소가 동시에 와도(따닥 · 택배사 웹훅과 겹침) 한 번만 기록된다.
     @Transactional
     public void cancelShipment(Long sellerOrderId) {

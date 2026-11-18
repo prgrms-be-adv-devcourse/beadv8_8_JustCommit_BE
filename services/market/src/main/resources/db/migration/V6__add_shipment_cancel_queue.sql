@@ -1,4 +1,4 @@
--- market V6: 택배 취소 큐 (#490, ADR 0025)
+-- market V6: 택배 취소 큐 (#490, ADR 0026)
 -- 취소 API는 배송을 CANCEL_PENDING + 누른 시각으로 기록만 하고, 택배 취소 큐가 택배사에 보낸다.
 -- 배송 상태는 문자열 칸이라 새 상태(CANCEL_PENDING · CANCEL_LOCKED)에 스키마 변경은 필요 없다.
 alter table shipment

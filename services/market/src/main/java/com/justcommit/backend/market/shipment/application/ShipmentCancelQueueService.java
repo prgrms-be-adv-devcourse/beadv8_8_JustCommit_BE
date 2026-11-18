@@ -20,7 +20,7 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 
-// 택배 취소 큐 (ADR 0025): 취소 대기(CANCEL_PENDING) 배송을 택배사에 취소하고 결과를 남긴다.
+// 택배 취소 큐 (ADR 0026): 취소 대기(CANCEL_PENDING) 배송을 택배사에 취소하고 결과를 남긴다.
 // 택배 예약 큐와 같은 방식: 한 건씩 짧은 트랜잭션으로 집고(잠금 + 30초 임대) 바로 커밋 → 트랜잭션 밖에서 택배사 호출 →
 // 짧은 트랜잭션으로 배송 상태 + 결과 행(SHIPMENT_CANCEL_RESULT)을 함께 저장. 실패하면 10초 → 30초 → 1분 뒤 다시 (끝까지).
 //

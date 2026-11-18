@@ -5,7 +5,7 @@
 
 ## 수거 전 취소
 
-취소 API는 배송에 「취소 대기」만 기록하고 끝납니다. 택배사 취소는 택배 취소 큐가 보내고, 택배사가 구매자가 누른 시각의 기사 거리로 판정합니다 → [ADR 0025](../decisions/0025-courier-cancel-queue-and-distance-judgment.md)
+취소 API는 배송에 「취소 대기」만 기록하고 끝납니다. 택배사 취소는 택배 취소 큐가 보내고, 택배사가 구매자가 누른 시각의 기사 거리로 판정합니다 → [ADR 0026](../decisions/0026-courier-cancel-queue-and-distance-judgment.md)
 
 | 배송 상태 | 처리 |
 |---|---|
