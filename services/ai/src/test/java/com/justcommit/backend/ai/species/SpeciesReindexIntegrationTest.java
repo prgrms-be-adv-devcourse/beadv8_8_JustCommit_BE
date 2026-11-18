@@ -52,6 +52,7 @@ class SpeciesReindexIntegrationTest {
         registry.add("jwt.public-key", SpeciesReindexIntegrationTest::newPublicKey);
         registry.add("internal-api.key", () -> INTERNAL_KEY);
         registry.add("spring.ai.openai.api-key", () -> "test-key");
+        registry.add("spring.kafka.listener.auto-startup", () -> "false");
     }
 
     // OpenAI 대신 받은 문장 수만 세고 고정 벡터를 돌려주는 임베딩 모델

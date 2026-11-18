@@ -1,5 +1,6 @@
 package com.justcommit.backend.market.client;
 
+import com.justcommit.backend.market.client.ai.AiApi;
 import com.justcommit.backend.market.client.payment.PaymentApi;
 import com.justcommit.backend.market.client.product.ProductApi;
 import com.justcommit.backend.market.client.settlement.SettlementApi;
@@ -11,5 +12,6 @@ import org.springframework.web.service.registry.ImportHttpServices;
 @ImportHttpServices(group = "product", types = ProductApi.class)
 @ImportHttpServices(group = "payment", types = PaymentApi.class)
 @ImportHttpServices(group = "settlement", types = SettlementApi.class)
+@ImportHttpServices(group = "ai", types = AiApi.class)
 public class InternalApiClientConfig {
 }

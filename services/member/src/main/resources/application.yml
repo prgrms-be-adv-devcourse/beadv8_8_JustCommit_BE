@@ -117,3 +117,10 @@ member:
     retry:
       enabled: true
       interval: PT10S
+  # 메일 발송 전용 실행기 (#421). 인증 메일 · 가입 계정 안내 메일을 요청 밖에서 보낸다
+  mail:
+    executor:
+      # 스레드 수 (core = max). 측정 전 초기값
+      threads: 2
+      # 대기열 크기. 넘치면 제출 거절. 기다리는 동안에도 인증번호 TTL(5분)이 줄어드므로 대기 시간과 함께 조정. 측정 전 초기값
+      queue-capacity: 20

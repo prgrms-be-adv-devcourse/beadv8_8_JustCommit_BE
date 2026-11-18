@@ -32,6 +32,10 @@ spring:
         base-url: ${PAYMENT_SERVICE_URL:http://localhost:8084}
       settlement:
         base-url: ${SETTLEMENT_SERVICE_URL:http://localhost:8085}
+      # 장바구니 추천. 응답 2초를 넘기면 기다리지 않고 빈 목록 (resilience.md market → ai)
+      ai:
+        base-url: ${AI_SERVICE_URL:http://localhost:8087}
+        read-timeout: 2s
 
 server:
   port: 8083
@@ -40,7 +44,7 @@ jwt:
 internal-api:
   # 빈 기본값: 환경변수가 없으면 common-web이 기동을 막는다 (기본값이 없으면 "${...}" 문자열이 키로 들어감)
   key: ${INTERNAL_API_KEY:}
-  groups: [product, payment, settlement]
+  groups: [product, payment, settlement, ai]
 
 messaging:
   # 판매자 배송지 이벤트(member.address.events.v1) 복호화 키. member와 같은 값 (env-vars.md)

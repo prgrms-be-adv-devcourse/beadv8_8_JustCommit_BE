@@ -111,5 +111,5 @@ sequenceDiagram
 |---|---|---|
 | OpenAI Moderation | 사진 · 글 유해 검사 (API 키) | ✅ |
 | Claude Haiku | 식물 식별 (API 키) | ✅ |
-| 약관 | 사진 · 글이 Anthropic · OpenAI로 전송됨을 판매자 등록 때 개인정보처리방침에서 안내. 각 사 학습 사용 여부 확인 | ⬜ 담당 확인 |
+| 외부 AI 검수 · 데이터 사용 설정 | 판매자 등록 때 필수 동의로 안내(#418). OpenAI에는 상품 사진 · 제목 · 설명을, Anthropic에는 상품 사진을 전송하고 회원 식별 정보는 별도 필드로 전달하지 않음. 운영 계정의 API 데이터 학습 공유 설정은 꺼져 있음(2026-11-17 확인) → [member](../services/member.md) · [ADR 0025](../decisions/0025-seller-review-consent-versioning.md). 국외 이전 법적 고지 요건은 [미정 항목](../open-questions.md) | ✅ |
 | 비용 보호 | 판매자당 검수 중 5개 · 하루 등록 20건 · 하루 사진 검수 30회, 최근 7일 반려 5건 이상이면 자동 검수 없이 관리자 확인 → [product 정책](../services/product.md#정책) | ✅ |

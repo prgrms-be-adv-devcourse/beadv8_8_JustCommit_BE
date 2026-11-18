@@ -1,0 +1,198 @@
+# develop에 머지되면 바뀐 서비스만 이미지를 만들어 GHCR에 올리고 앱 서버에 배포한다.
+# 규칙 원본: docs/infra/deploy.md 「CI/CD」
+#
+# 1. changes: 바뀐 파일로 서비스 목록을 고른다 (common/ · Dockerfile · Gradle 설정이 바뀌면 전체)
+# 2. build:   서비스마다 루트 Dockerfile(MODULE)로 이미지 → ghcr.io/.../replant-{서비스}:{커밋7자리} + latest
+# 3. deploy:  앱 서버의 self-hosted 러너가 compose 서비스는 pull · up, K3s 서비스는 set image · rollout
+#             레포 변수 CD_DEPLOY가 'true'일 때만 실행 (러너 설치 전에는 이미지만 만든다)
+name: CD
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+    inputs:
+      services:
+        description: "빌드 · 배포할 서비스 (쉼표로 구분, 예: member,market) 또는 all"
+        required: true
+        default: all
+
+# 배포는 한 번에 하나씩, 앞의 실행을 취소하지 않고 줄을 세운다
+concurrency:
+  group: cd-develop
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_PREFIX: ghcr.io/prgrms-be-adv-devcourse/replant
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      services: ${{ steps.pick.outputs.services }} # JSON 배열 (build matrix용)
+      list: ${{ steps.pick.outputs.list }} # 공백 구분 (deploy 스크립트용)
+      tag: ${{ steps.pick.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 바뀐 서비스 고르기
+        id: pick
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT: ${{ github.event.inputs.services }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          ALL="gateway member product market payment settlement notification ai"
+          tag="${GITHUB_SHA::7}"
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ "$INPUT" = "all" ]; then picked="$ALL"; else picked="$(echo "$INPUT" | tr ',' ' ')"; fi
+            for s in $picked; do
+              case " $ALL " in *" $s "*) ;; *) echo "::error::모르는 서비스: $s"; exit 1 ;; esac
+            done
+          elif ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            # 첫 push · 강제 push로 이전 커밋을 못 찾으면 전체
+            picked="$ALL"
+          else
+            files="$(git diff --name-only "$BEFORE" "$GITHUB_SHA")"
+            echo "바뀐 파일:"; echo "$files"
+            if echo "$files" | grep -qE '^(common/|gradle/|Dockerfile$|build\.gradle$|settings\.gradle$|gradlew$|\.github/workflows/cd\.yml$)'; then
+              picked="$ALL"
+            else
+              picked=""
+              if echo "$files" | grep -q '^gateway/'; then picked="gateway"; fi
+              for s in member product market payment settlement notification ai; do
+                if echo "$files" | grep -q "^services/$s/"; then picked="$picked $s"; fi
+              done
+            fi
+          fi
+
+          list="$(echo $picked | xargs -n1 | awk '!seen[$0]++' | xargs)"
+          json="$(printf '%s\n' $list | jq -R . | jq -cs 'map(select(length > 0))')"
+          echo "서비스: ${list:-(없음)} · 태그: $tag"
+          {
+            echo "services=$json"
+            echo "list=$list"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: changes
+    if: needs.changes.outputs.list != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false # 한 서비스가 실패해도 나머지는 올린다
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 이미지 빌드 · push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          provenance: false
+          build-args: MODULE=${{ matrix.service == 'gateway' && 'gateway' || format('services/{0}', matrix.service) }}
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ needs.changes.outputs.tag }}
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:latest
+          # 패키지를 이 레포에 연결한다 (레포 권한으로 push · pull)
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+
+  deploy:
+    needs: [changes, build]
+    # 빌드가 하나라도 실패하면 배포하지 않는다. 다시 돌리려면 Actions에서 Re-run
+    if: needs.changes.outputs.list != '' && vars.CD_DEPLOY == 'true'
+    runs-on: [self-hosted, replant-app]
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    env:
+      SERVICES: ${{ needs.changes.outputs.list }}
+      TAG: ${{ needs.changes.outputs.tag }}
+    steps:
+      - name: GHCR 로그인 (이 실행 동안만)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 서버의 ~/.docker 설정을 건드리지 않게 실행 전용 폴더에 로그인한다
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/docker" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/docker"
+          echo "$TOKEN" | DOCKER_CONFIG="$RUNNER_TEMP/docker" docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: 배포
+        run: |
+          set -u
+          COMPOSE="docker compose -f $HOME/replant/docker-compose.app.yml"
+          failed=""
+
+          for s in $SERVICES; do
+            image="$IMAGE_PREFIX-$s:$TAG"
+            echo "::group::$s → $image"
+            case "$s" in
+              gateway|market|ai)
+                # K3s: 파드를 하나씩 새 이미지로 바꾼다 (롤링). 처음 올리기는 deploy/k3s/README.md대로 수동
+                if ! kubectl -n replant get deploy "$s" >/dev/null 2>&1; then
+                  echo "::warning::K3s에 deploy/$s가 아직 없어 건너뜀 (처음 올리기는 수동)"
+                elif kubectl -n replant set image "deploy/$s" "$s=$image" \
+                  && kubectl -n replant rollout status "deploy/$s" --timeout=5m; then
+                  echo "$s 배포 완료"
+                else
+                  echo "::error::$s 롤아웃 실패 — 옛 파드가 계속 응답 중. kubectl -n replant rollout undo deploy/$s 로 되돌릴 수 있음"
+                  failed="$failed $s"
+                fi
+                ;;
+              *)
+                # compose: {SERVICE}_TAG로 이 서비스만 새 이미지로 바꾼다 (Redis 등 다른 컨테이너는 그대로)
+                var="$(echo "$s" | tr '[:lower:]' '[:upper:]')_TAG"
+                if [ -z "$(cd "$HOME/replant" && $COMPOSE ps -a -q "$s")" ]; then
+                  echo "::warning::compose $s 컨테이너가 아직 없어 이미지만 받아 둠 (처음 올리기는 수동)"
+                  (cd "$HOME/replant" && env "$var=$TAG" $COMPOSE pull "$s") || failed="$failed $s"
+                elif (cd "$HOME/replant" \
+                  && env "$var=$TAG" $COMPOSE pull "$s" \
+                  && env "$var=$TAG" $COMPOSE up -d --no-deps --wait --wait-timeout 180 "$s"); then
+                  echo "$s 배포 완료"
+                else
+                  echo "::error::$s 기동 실패 — docker logs replant-$s 확인"
+                  failed="$failed $s"
+                fi
+                ;;
+            esac
+            echo "::endgroup::"
+          done
+
+          if [ -n "$failed" ]; then
+            echo "::error::배포 실패:$failed"
+            exit 1
+          fi
+
+      - name: GHCR 로그아웃
+        if: always()
+        run: |
+          docker logout ghcr.io || true
+          rm -rf "$RUNNER_TEMP/docker"
