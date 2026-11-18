@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-18 · flows/cancel-refund.md · services/market.md · glossary.md · reference/schedulers.md · testing/scenarios.md · 구매자 취소를 「취소 중」(`CANCEL_PROCESSING`) 커밋으로 바꾸고 환불은 택배 취소 결과 뒤(전부 취소) 또는 커밋 뒤 트랜잭션 밖(일부 취소)으로, 환불 결과 불명은 Saga 복구가 같은 키로 재요청(5번 안 되면 주문상품 `REVIEW_REQUIRED`), 환불 4xx는 바로 `REVIEW_REQUIRED`, 택배 취소 불가면 `NORMAL` 복귀. `ORDERS_ITEM`에 `attempt_count`, `attempted_at`, `last_error`(V8), 「확인 필요」를 주문상품에도, 시나리오 S-E11 ~ S-E13 추가, S-E01, 02, 04, 07 결과 기록 (#282)
 - 2026-11-18 · glossary.md · open-questions.md · 「취소 중」 주문상품 상태 코드 이름 `CANCEL_PROCESSING`으로 확정, 미정 목록에서 삭제 (#282)
 - 2026-11-18 · services/member.md · flows/signup-and-replica.md · reference/external-apis.md · reference/redis-keys.md · reference/env-vars.md · reference/schedulers.md · conventions/resilience.md · open-questions.md · testing/scenarios.md · 회원 직접 탈퇴 구현 반영: 탈퇴 API(사전 확인 · 인증번호 · 탈퇴 토큰 · 최종 탈퇴) 구현 표시, 가입 재가입 제한 409 `REJOIN_RESTRICTED`, 탈퇴 기록 정리 1시간, 카카오 연결 해제 1초/3초 · HTTP 400 + `-101`만 이미 해제로 처리 · `KAKAO_ADMIN_KEY` 필수, 소개글 수정도 회원 행 잠금, 탈퇴 확인 연결 실패 · 재시도 시간 계산 약 5.2초로 정정, Gateway 탈퇴 POST 전용 20초, 확인 뒤 제3자 주문 유입 한계와 처리 책임 미정 등록, 시나리오 결과 기록 (#407) (#530)
 - 2026-11-18 · flows/search-recommend.md · glossary.md · 장바구니 추천 환경 점수에 봄 물주기 단계(0.2) · 분류(잎보기 · 꽃보기, 0.15) 일치 추가, 생육 온도 0.6 → 0.4 · 광도 0.4 → 0.25. 추천 평가 세트(정답 20쌍) Top-10 적중 2 → 5, 결과 표 · 후보 30개 밖 정답 13쌍 · 품종 문서에서 생육 조건 문구를 뺀 실험(3 / 20, 반영 안 함) 기록, 용어 「추천 평가 세트」 (#507) (#529)
