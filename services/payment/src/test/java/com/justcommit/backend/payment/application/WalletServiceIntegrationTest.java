@@ -81,7 +81,7 @@ class WalletServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("같은 회원으로 두 번 호출해도 지갑은 하나만 생긴다")
+    @DisplayName("[S-B03] 같은 회원으로 두 번 호출해도 지갑은 하나만 생긴다")
     void createsOnlyOneWalletWhenCalledTwice() {
         Long memberId = 3L;
 
