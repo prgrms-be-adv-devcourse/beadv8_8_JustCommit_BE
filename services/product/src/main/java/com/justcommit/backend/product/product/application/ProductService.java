@@ -53,6 +53,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
     private final Clock clock;
     private final ProductEventPublisher productEventPublisher;
     private final ReviewRequester reviewRequester;
+    private final ReviewStatusReader reviewStatusReader;
 
     // ── ProductQuery ───────────────────────────────
 
@@ -213,10 +214,15 @@ public class ProductService implements ProductQuery, ProductUseCase {
         if (productRepository.countBySellerIdAndStatus(sellerId, ProductStatus.REVIEW_PENDING) >= REVIEW_PENDING_LIMIT) {
             throw new BusinessException(ProductErrorCode.REVIEW_PENDING_LIMIT_EXCEEDED);
         }
-        LocalDateTime startOfToday = LocalDate.now(clock).atStartOfDay();
-        if (productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(sellerId, startOfToday) >= DAILY_REGISTER_LIMIT) {
+        if (countTodayRegistered(sellerId) >= DAILY_REGISTER_LIMIT) {
             throw new BusinessException(ProductErrorCode.DAILY_REGISTER_LIMIT_EXCEEDED);
         }
+    }
+
+    // 오늘(한국 시간 자정부터) 등록한 상품 수, 삭제한 상품 포함. 등록 제한과 GET products/me/counts가 같은 기준을 씀
+    private long countTodayRegistered(Long sellerId) {
+        LocalDateTime startOfToday = LocalDate.now(clock).atStartOfDay();
+        return productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(sellerId, startOfToday);
     }
 
     // memberId: 로그인하지 않았으면 null
@@ -302,18 +308,22 @@ public class ProductService implements ProductQuery, ProductUseCase {
         productEventPublisher.statusChanged(productId);
     }
 
+    // 검수 결과는 페이지의 상품을 모아 한 번에 조회 (상품마다 조회하면 N+1)
     public Page<MyProductResponse> getMyProducts(Long sellerId, MyProductSearchRequest request) {
-        return productRepository.findAll(
-                        ProductSpecifications.sellerCondition(sellerId, request.status(), request.hidden()),
-                        request.toPageable())
-                .map(MyProductResponse::from);
+        Page<Product> page = productRepository.findAll(
+                ProductSpecifications.sellerCondition(sellerId, request.status(), request.hidden()),
+                request.toPageable());
+        Map<Long, ReviewStatusReader.LatestReview> reviews = reviewStatusReader.latestReviews(page.getContent());
+        return page.map(product -> MyProductResponse.of(product, reviews.get(product.getId())));
     }
 
-    // 마이페이지 - Status 별 상품 개수 조회
+    // 마이페이지 - Status 별 상품 개수 + 오늘 등록 · 사진 검수 횟수와 한도
     public MyProductCountResponse getMyProductCounts(Long sellerId, Boolean hidden) {
         Map<ProductStatus, Long> counts = productRepository.countByStatus(sellerId, hidden).stream()
                 .collect(Collectors.toMap(ProductRepository.StatusCount::getStatus, ProductRepository.StatusCount::getCount));
-        return MyProductCountResponse.from(counts);
+        ReviewStatusReader.DailyUsage photoReviews = reviewStatusReader.todayPhotoReviews(sellerId);
+        return MyProductCountResponse.of(counts, countTodayRegistered(sellerId), DAILY_REGISTER_LIMIT,
+                photoReviews.used(), photoReviews.limit());
     }
 
 }

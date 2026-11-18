@@ -32,6 +32,7 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -122,6 +123,18 @@ class MemberReplicaIntegrationTest {
 
         assertThat(memberQuery.isSeller(SELLER_ID)).isFalse();
         assertThat(memberQuery.getNickname(SELLER_ID)).isEqualTo(MemberReplica.WITHDRAWN_NICKNAME);
+    }
+
+    @Test
+    @DisplayName("닉네임 여러 명을 한 번에: 탈퇴한 회원은 \"탈퇴한 회원\", 복제본이 없는 회원은 빠진다")
+    void getNicknames() {
+        memberReplicaService.applyProfile(SELLER_ID, "식물집사", MemberRole.SELLER, true, T1);
+        memberReplicaService.applyProfile(1L, "구매자", MemberRole.MEMBER, false, T1);
+        memberReplicaService.applyWithdrawn(1L, T2);
+
+        assertThat(memberQuery.getNicknames(List.of(SELLER_ID, 1L, 999L)))
+                .containsExactlyInAnyOrderEntriesOf(Map.of(SELLER_ID, "식물집사", 1L, MemberReplica.WITHDRAWN_NICKNAME));
+        assertThat(memberQuery.getNicknames(List.of())).isEmpty();
     }
 
     @Test

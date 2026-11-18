@@ -37,6 +37,13 @@ public interface ImageReviewRepository extends JpaRepository<ImageReview, Long> 
     // 판매자 검수 기록 (최신 검수 버전부터)
     List<ImageReview> findByProductIdOrderByReviewVersionDesc(Long productId);
 
+    // 상품마다 지금 검수 버전의 검수 기록 (내 상품 목록 한 페이지를 한 번에, N+1 방지)
+    @Query("""
+            SELECT r FROM ImageReview r JOIN Product p ON p.id = r.productId AND p.reviewVersion = r.reviewVersion
+            WHERE p.id IN :productIds
+            """)
+    List<ImageReview> findCurrentByProductIdIn(@Param("productIds") List<Long> productIds);
+
     // 최근 반려 수 (REVIEW_EXPIRED는 판매자 잘못이 아니라 제외)
     long countBySellerIdAndDecisionAndRejectReasonNotAndReviewedAtGreaterThanEqual(
             Long sellerId, ReviewDecision decision, RejectReason excluded, LocalDateTime from);

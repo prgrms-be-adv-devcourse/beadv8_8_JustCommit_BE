@@ -90,14 +90,18 @@ public class ImageReviewService implements ReviewRequester {
         // 사진 검수만 셈. 동시에 요청하면 확인과 저장 사이에 끼어 1~2회 넘을 수 있다 (비용 보호용이라 허용, 등록 제한과 같음)
         // 기한 초과(REVIEW_EXPIRED) 바로 다음 검수는 판매자 잘못이 아니라 확인도 하지 않고 세지도 않음
         if (scope == ReviewScope.FULL && !isAfterExpiry(product)) {
-            LocalDateTime startOfToday = LocalDate.now(clock).atStartOfDay();
-            long today = imageReviewRepository.countDailyPhotoReviews(product.getSellerId(), startOfToday);
-            if (today >= DAILY_REVIEW_LIMIT) {
+            if (countTodayPhotoReviews(product.getSellerId()) >= DAILY_REVIEW_LIMIT) {
                 throw new BusinessException(ProductErrorCode.DAILY_REVIEW_LIMIT_EXCEEDED);
             }
         }
         imageReviewRepository.save(ImageReview.requested(product.getId(), product.getReviewVersion(), product.getSellerId(), scope));
         outboxPublisher.publish(new ProductReviewRequested(product.getId(), product.getReviewVersion()));
+    }
+
+    // 오늘(한국 시간 자정부터) 사진 검수 횟수. 한도 확인과 판매자 화면(GET products/me/counts)이 같은 기준을 쓴다
+    public long countTodayPhotoReviews(Long sellerId) {
+        LocalDateTime startOfToday = LocalDate.now(clock).atStartOfDay();
+        return imageReviewRepository.countDailyPhotoReviews(sellerId, startOfToday);
     }
 
     // 수정 전(검수 버전이 바뀌기 전) 지금 검수가 반려(기한 초과 제외)거나 이의 신청 중이면 재검수
