@@ -17,6 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -65,7 +66,7 @@ class ProductInternalControllerTest {
     void getProducts() throws Exception {
         given(productQuery.getProducts(List.of(1L, 2L))).willReturn(List.of(
                 new ProductResult(1L, 9L, "몬스테라", new BigDecimal("10000"), ProductStatus.ACTIVE, false,
-                        "https://example.com/a.jpg", "몬스테라")));
+                        "https://example.com/a.jpg", "몬스테라", LocalDateTime.of(2026, 11, 15, 10, 30))));
 
         mockMvc.perform(get("/internal/v1/products").param("ids", "1,2,1"))
                 .andExpect(status().isOk())
@@ -74,7 +75,8 @@ class ProductInternalControllerTest {
                 .andExpect(jsonPath("$.data[0].price").value(10000))
                 .andExpect(jsonPath("$.data[0].status").value("ACTIVE"))
                 .andExpect(jsonPath("$.data[0].hidden").value(false))
-                .andExpect(jsonPath("$.data[0].speciesName").value("몬스테라"));
+                .andExpect(jsonPath("$.data[0].speciesName").value("몬스테라"))
+                .andExpect(jsonPath("$.data[0].createdAt").value("2026-11-15T10:30:00"));
     }
 
     @Test

@@ -1,7 +1,7 @@
 # 테스트 전략
 
 > 언제 읽나: 테스트를 어디에 어떻게 넣을지 정할 때
-> 상태: 🟨 제안 · 마지막 수정 2026-11-08 · 관련: 노션 기획안 「7. 테스트 시나리오」, [노션 「테스트 시나리오」 3절 WireMock 사용법](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
+> 상태: 🟨 제안 · 마지막 수정 2026-11-18 · 관련: 노션 기획안 「7. 테스트 시나리오」, [노션 「테스트 시나리오」 3절 WireMock 사용법](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
 
 ## 단계
 
@@ -31,6 +31,7 @@
 | 도구 | 쓰는 곳 |
 |---|---|
 | Testcontainers | 통합 테스트의 PostgreSQL · Kafka · Redis |
+| 공유 컨테이너 | `common-core` testFixtures의 `SharedPostgres` · `SharedRedis` · `SharedKafka`. 모듈(테스트 JVM)마다 한 번만 띄우고 `@DynamicPropertySource`에서 `register(registry)`를 부름. 커밋하는 테스트는 `@AfterEach`로 자기 데이터를 지우고, Kafka는 클래스마다 컨슈머 그룹 · key를 다르게. 앱 전체를 띄우는 테스트(`@SpringBootTest`)는 스케줄러가 공유 DB를 건드리지 않게 `@DirtiesContext` |
 | WireMock | 다른 서비스 · 토스 · 택배사 응답 흉내 |
 | Toxiproxy | E2E에서 지연 · 끊김 주입 |
 | JUnit `@Tag("e2e")` · `@Tag("chaos")` | 골라 실행 (`./gradlew :e2e:test`) |

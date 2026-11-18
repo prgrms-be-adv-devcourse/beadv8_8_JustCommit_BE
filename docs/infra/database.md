@@ -1,7 +1,7 @@
 # DB · Flyway
 
 > 언제 읽나: 테이블을 추가 · 변경하거나 Flyway 마이그레이션을 작성할 때, 서비스별 DB 구성을 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-13 · 관련: Miro 5, 노션 기획안 「DB 분리」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: Miro 5, 노션 기획안 「DB 분리」
 
 ## 서비스별 DB
 
@@ -22,8 +22,8 @@ PostgreSQL **인스턴스 1개** 안에서 서비스마다 Database와 계정을
 | 접속 | DB마다 PUBLIC의 `CONNECT` · `TEMPORARY`를 회수하고 자기 계정에만 `CONNECT`를 줌 → 다른 서비스 DB 접속 거부 |
 | DDL | 처음에는 앱 계정이 마이그레이션 DDL 권한도 가짐. Flyway 전용 계정 분리는 이후 개선 |
 | 로컬 생성 | `docker/postgres/01-service-databases.sql` (빈 볼륨 첫 시작 때 자동, 여러 번 실행해도 안전) |
-| 운영 생성 | 같은 SQL을 인프라 담당이 운영 DB에 적용, 비밀번호는 환경변수 |
-| 확장 (`vector`) | superuser만 만들 수 있어 앱 계정이 아니라 위 SQL이 `ai_db`에 만듦. ai Flyway V1은 같은 문장(`IF NOT EXISTS`)이라 이미 있으면 지나감. 이미지는 `pgvector/pgvector:pg17` (로컬 compose · Testcontainers). 운영 DB도 `vector` 확장이 들어 있는 이미지여야 함 (⬜ 인프라 요청, `docker-compose.prod.yml`은 아직 `postgres:17-alpine`) |
+| 운영 생성 | 데이터 서버에서 `deploy/data/init-db.sh`: 같은 SQL을 실행한 뒤 곧바로 계정 비밀번호를 서버 `~/secrets/db-accounts.env` 값으로 바꿈. 값은 앱 서버 `~/secrets/{서비스}.env`의 `DB_PASSWORD`와 같아야 함 |
+| 확장 (`vector`) | superuser만 만들 수 있어 앱 계정이 아니라 위 SQL이 `ai_db`에 만듦. ai Flyway V1은 같은 문장(`IF NOT EXISTS`)이라 이미 있으면 지나감. 이미지는 `pgvector/pgvector:pg17` (로컬 compose · Testcontainers). 운영 데이터 서버도 같은 이미지 (`docker-compose.data.yml`) |
 
 ## 분리 순서
 
