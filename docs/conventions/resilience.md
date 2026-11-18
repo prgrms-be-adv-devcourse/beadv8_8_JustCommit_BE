@@ -2,7 +2,7 @@
 
 > 언제 읽나: 외부 호출이나 서비스 간 호출의 실패 처리를 정할 때
 
-> 상태: ✅ 확정 · 마지막 수정 2026-11-17 · 관련: Miro 14, 노션 기획안 「장애 처리」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: Miro 14, 노션 기획안 「장애 처리」
 
 
 ## 공통값
@@ -32,7 +32,7 @@
 | market → payment 결제 | 1초 / 3초 | 연결 실패만 1회 | 안 간 게 확실하면 해제 후 실패, 타임아웃이면 결과 불명 → Saga 복구가 같은 orderId로 다시 호출 (⬜ 잠금 방식 → [미정](../open-questions.md)) |
 | market → payment 환불 | 1초 / 3초 | 연결 실패만 1회 | 타임아웃이면 결과 불명 → 주문상품 「취소 중」, Saga 복구가 같은 키로 다시 요청, 5번 안 되면 `REVIEW_REQUIRED` |
 | member → market · payment · settlement (탈퇴 확인) | 1초 / 3초, **병렬** | 연결 실패만 1회 | Fail-closed: 탈퇴 막음. 최악 약 4초라 Gateway 10초 안 |
-| market → ai 추천 | 1초 / 2초 | 없음 | 빈 목록 (장바구니 조회는 영향 없음) |
+| market → ai 추천 | 1초 / 2초 | 없음 | 빈 목록 (장바구니 조회는 영향 없음, 화면은 최신 상품으로 대신 → [ADR 0028](../decisions/0028-cart-recommendation-latest-fallback-on-screen.md)) |
 | product → OpenSearch | 1초 / 2초 | 1회 | DB LIKE 검색으로 대신 (관련도 · 오타 허용 · 한국어 분석 없음) |
 | product → OpenAI Moderation · Claude Haiku (사진 검수) | 🟨 3초 / 20초 | 비동기 최대 3회 | 자동 통과 · 자동 반려 없이 관리자 확인 |
 | ai → OpenAI 임베딩 (재임베딩 운영 API) | ⬜ 미정 (따로 설정 안 함) | ⬜ 미정 | ⬜ 미정 |
