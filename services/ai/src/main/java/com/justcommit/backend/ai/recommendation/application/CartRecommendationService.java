@@ -30,7 +30,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class CartRecommendationService {
 
-    static final int CANDIDATE_LIMIT = 30;
+    public static final int CANDIDATE_LIMIT = 30;
     // 「기타」 품종: 어떤 식물인지 몰라 기준으로 쓰지 않는다 (벡터도 없음)
     static final int OTHER_SPECIES_ID = 218;
 

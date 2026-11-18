@@ -79,6 +79,7 @@
 | 품종 · 별칭 | `SPECIES` · `SPECIES_ALIAS` | 식물 종류, 유통명 | 상품이 속한 식물 종류와 그 다른 이름 | [product](services/product.md) |
 | 판매 금지 품종 | `BANNED_SPECIES` | 금지 식물 | 법으로 사고팔 수 없는 품종. 품종 목록과 따로 관리 | [product 정책](services/product.md#정책) |
 | 상품 스냅샷 | `product_snapshot` | 상품 사본 (ai) | ai가 상품 이벤트로 채우는 상품 정보 사본 (상품 ID · 품종 ID · 판매자 ID · 상태 · 숨김 · 상품 버전, 모든 상태). 추천할 때 판매 중만 고름 | [ADR 0021](decisions/0021-product-event-payload-ai-snapshot.md) |
+| 추천 평가 세트 | `eval-pairs.csv` | 정답 쌍, 정답 조합 | 누가 봐도 같이 키우기 좋은 품종 짝과 근거. 장바구니 추천 Top-10에 정답 품종이 들어오는 수(적중 수)로 점수 규칙을 비교 | [검색 · 추천](flows/search-recommend.md) |
 
 ## 회원 · 인증
 
