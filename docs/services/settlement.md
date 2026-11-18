@@ -1,7 +1,7 @@
 # settlement 서비스
 
 > 언제 읽나: settlement 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-11 · 관련: Miro 5, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: Miro 5, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -36,7 +36,7 @@
 
 | 대상 | 용도 | 멱등 키 |
 |---|---|---|
-| payment | 정산금 지급 (`POST /internal/v1/settlement-payouts`) | settlementId |
+| payment | 정산금 지급 (`POST /internal/v1/settlementPayouts`) | settlementId |
 
 ## 발행 이벤트
 

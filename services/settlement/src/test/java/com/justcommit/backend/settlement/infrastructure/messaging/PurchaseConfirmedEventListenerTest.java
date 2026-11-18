@@ -9,11 +9,15 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
 
+import tools.jackson.databind.json.JsonMapper;
+
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -25,11 +29,22 @@ class PurchaseConfirmedEventListenerTest {
             new PurchaseConfirmedEventListener(new EventEnvelopeMapper(), settlementService);
 
     @Test
-    @DisplayName("PurchaseConfirmed 봉투를 받으면 배송비까지 넘겨 정산한다")
+    @DisplayName("PurchaseConfirmed 봉투를 받으면 배송비 · 판매자 부담금까지 넘겨 정산한다")
     void purchaseConfirmed() {
+        listener.on(envelope("PurchaseConfirmed", purchaseConfirmedPayload().put("sellerBurdenAmount",
+                new BigDecimal("6000"))));
+
+        verify(settlementService).settle(10L, 7L, new BigDecimal("30000"), new BigDecimal("3000"),
+                new BigDecimal("6000"), "몬스테라 외 1건");
+    }
+
+    @Test
+    @DisplayName("sellerBurdenAmount 칸이 없는 봉투는 부담금 0으로 정산한다")
+    void envelopeWithoutSellerBurdenSettlesWithZero() {
         listener.on(envelope("PurchaseConfirmed", purchaseConfirmedPayload()));
 
-        verify(settlementService).settle(10L, 7L, new BigDecimal("30000"), new BigDecimal("3000"), "몬스테라 외 1건");
+        verify(settlementService).settle(eq(10L), eq(7L), eq(new BigDecimal("30000")), eq(new BigDecimal("3000")),
+                argThat(burden -> burden.signum() == 0), eq("몬스테라 외 1건"));
     }
 
     @Test
@@ -56,12 +71,17 @@ class PurchaseConfirmedEventListenerTest {
     }
 
     @Test
-    @DisplayName("옛 토픽 이벤트는 배송비 없이(null) 정산한다")
+    @DisplayName("옛 토픽 JSON(shippingFee · sellerBurdenAmount 칸 없음)은 배송비 null, 부담금 0으로 정산한다")
     void legacyPurchaseConfirmed() {
-        listener.onLegacyPurchaseConfirmed(new PurchaseConfirmedEvent(
-                10L, 7L, new BigDecimal("30000"), null, LocalDateTime.of(2026, 11, 12, 10, 0), "몬스테라"));
+        // 옛 market이 market.purchase-confirmed.v1로 보내던 JSON을 옛 토픽 리스너 변환기처럼 Jackson으로 읽는다
+        PurchaseConfirmedEvent event = JsonMapper.builder().build().readValue("""
+                {"sellerOrderId":10,"sellerId":7,"saleAmount":30000,"confirmedAt":"2026-11-12T10:00:00","itemSummary":"몬스테라"}
+                """, PurchaseConfirmedEvent.class);
 
-        verify(settlementService).settle(10L, 7L, new BigDecimal("30000"), null, "몬스테라");
+        listener.onLegacyPurchaseConfirmed(event);
+
+        verify(settlementService).settle(eq(10L), eq(7L), argThat(sale -> sale.compareTo(new BigDecimal("30000")) == 0),
+                isNull(), argThat(burden -> burden.signum() == 0), eq("몬스테라"));
     }
 
     private static ObjectNode purchaseConfirmedPayload() {
