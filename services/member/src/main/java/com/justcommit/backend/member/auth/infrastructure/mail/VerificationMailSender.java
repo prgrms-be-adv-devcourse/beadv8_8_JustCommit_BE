@@ -47,6 +47,7 @@ public class VerificationMailSender {
       case SIGNUP -> "회원가입";
       case PASSWORD_RESET -> "비밀번호 재설정";
       case ACCOUNT_CHANGE -> "계좌 변경";
+      case WITHDRAWAL -> "회원 탈퇴";
     };
   }
 
@@ -57,6 +58,7 @@ public class VerificationMailSender {
       case PASSWORD_RESET -> "본인이 요청하지 않았다면 이 메일을 무시해주세요. 비밀번호는 바뀌지 않습니다.";
       case ACCOUNT_CHANGE -> "본인이 요청하지 않았다면 인증번호를 입력하지 마세요. "
           + "이메일·비밀번호 회원은 비밀번호를 변경하고, 소셜 로그인 회원은 소셜 계정의 보안 설정을 확인해 주세요.";
+      case WITHDRAWAL -> "본인이 요청하지 않았다면 인증번호를 입력하지 마세요. 카카오 계정의 보안 설정을 확인해 주세요.";
       default -> "본인이 요청하지 않았다면 이 메일을 무시해주세요.";
     };
   }

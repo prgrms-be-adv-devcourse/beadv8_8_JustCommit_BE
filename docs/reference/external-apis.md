@@ -29,8 +29,8 @@
 | POST | `users/me/account/changeTokens` | 인증번호 확인 → 계좌 변경 토큰 | 로그인 |
 | PATCH | `users/me/account` | 계좌 변경 | 로그인 |
 | GET | `users/me/withdrawal` | 탈퇴 가능 여부 · 차단 사유 (화면 안내용) → [회원 탈퇴](#회원-탈퇴). ⬜ 미구현(#407) | 로그인 |
-| POST | `users/me/withdrawal/verifications` | 탈퇴 인증번호 발송(회원 정보의 이메일로, 카카오 회원만) → [회원 탈퇴](#회원-탈퇴). ⬜ 미구현(#407) | 로그인 |
-| POST | `users/me/withdrawal/tokens` | 인증번호 확인 → 탈퇴 토큰. ⬜ 미구현(#407) | 로그인 |
+| POST | `users/me/withdrawal/verifications` | 탈퇴 인증번호 발송(회원 정보의 이메일로, 카카오 회원만) → [회원 탈퇴](#회원-탈퇴) | 로그인 |
+| POST | `users/me/withdrawal/tokens` | 인증번호 확인 → 탈퇴 토큰 | 로그인 |
 | POST | `users/me/withdrawal` | 탈퇴 → [회원 탈퇴](#회원-탈퇴). ⬜ 미구현(#407) | 로그인 |
 | GET · POST | `users/me/addresses` | 배송지 목록 · 추가 | 로그인 |
 | PATCH | `users/me/addresses/{id}/default` | 기본 배송지 변경 | 로그인 |
@@ -49,7 +49,7 @@
 | 생략 · `SIGNUP` | 가입 (생략하면 기존 요청과 같게 가입으로 처리). 가입된 이메일 409 `DUPLICATE_EMAIL`, 발송 제한 429 `EMAIL_SEND_COOLDOWN` · `EMAIL_SEND_DAILY_LIMIT`(+ `Retry-After`), 메일 작업 제출 거절 500 `EMAIL_SEND_FAILED`(→ [메일 발송](#메일-발송)), 확인 실패는 `EMAIL_CODE_MISMATCH` · `EMAIL_CODE_EXPIRED` · `EMAIL_CODE_ATTEMPTS_EXCEEDED` |
 | `PASSWORD_RESET` | 비밀번호 재설정 (아래 응답 규칙) |
 | `ACCOUNT_CHANGE` | 공개 경로에서는 받지 않음(400 `EMAIL_PURPOSE_NOT_SUPPORTED`). 계좌 변경 인증은 로그인 필수 전용 경로로 → [계좌 변경](#계좌-변경) |
-| `WITHDRAWAL` | 공개 경로에서는 받지 않음(400 `EMAIL_PURPOSE_NOT_SUPPORTED`). 탈퇴 인증은 로그인 필수 전용 경로로 → [회원 탈퇴](#회원-탈퇴). ⬜ 미구현(#407) |
+| `WITHDRAWAL` | 공개 경로에서는 받지 않음(400 `EMAIL_PURPOSE_NOT_SUPPORTED`). 탈퇴 인증은 로그인 필수 전용 경로로 → [회원 탈퇴](#회원-탈퇴) |
 
 Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` · `account-change` · `withdrawal`) → [Redis 키](redis-keys.md)
 

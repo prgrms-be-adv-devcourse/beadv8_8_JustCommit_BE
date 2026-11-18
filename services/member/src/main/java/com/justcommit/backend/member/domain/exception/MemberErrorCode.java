@@ -27,6 +27,7 @@ public enum MemberErrorCode implements ErrorCode {
 
   // 계좌 변경 (#413): 인증번호는 맞았지만 발송 뒤 회원 · 인증 버전 · 상태가 바뀌어 변경 토큰을 발급하지 않음
   ACCOUNT_VERIFICATION_INVALID(HttpStatus.BAD_REQUEST, "인증 정보가 더 이상 유효하지 않습니다. 이메일 인증을 다시 진행해 주세요."),
+  WITHDRAWAL_VERIFICATION_INVALID(HttpStatus.BAD_REQUEST, "인증 정보가 더 이상 유효하지 않습니다. 이메일 인증을 다시 진행해 주세요."), // 탈퇴 (#407)
   // 계좌 변경 토큰 오류: 없음 · 만료 · 이미 사용 · 다른 회원 · 발급 뒤 인증 버전 변경 모두 같은 응답
   INVALID_ACCOUNT_CHANGE_TOKEN(HttpStatus.BAD_REQUEST, "계좌 변경 요청이 만료되었거나 유효하지 않습니다. 이메일 인증을 다시 진행해 주세요."),
 
