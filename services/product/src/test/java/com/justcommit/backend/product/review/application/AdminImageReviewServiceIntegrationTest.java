@@ -52,6 +52,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -106,6 +107,9 @@ class AdminImageReviewServiceIntegrationTest {
         }
     }
 
+    // 서비스와 같은 한국 시간 Clock으로 시각을 만든다 (JVM · DB 시간대가 UTC인 CI에서도 같은 기준)
+    @Autowired Clock clock;
+
     @Autowired AdminImageReviewService adminService;
     @Autowired ImageReviewRepository imageReviewRepository;
     @Autowired ProductRepository productRepository;
@@ -141,7 +145,7 @@ class AdminImageReviewServiceIntegrationTest {
             ImageReview review = ImageReview.requested(product.getId(), product.getReviewVersion(), SELLER_ID, ReviewScope.FULL);
             review.complete(ReviewVerdict.manual(ManualReason.SPECIES_MISMATCH, "Epipremnum aureum"),
                     "{\"moderation\":{\"imageFlagged\":false},\"plant\":{\"plant\":true}}", null,
-                    LocalDateTime.now().minusHours(hoursAgo));
+                    LocalDateTime.now(clock).minusHours(hoursAgo));
             imageReviewRepository.save(review);
             return product;
         });
@@ -357,7 +361,7 @@ class AdminImageReviewServiceIntegrationTest {
             Product saved = productRepository.save(Product.create(species, SELLER_ID, "몬스테라 팝니다", "자생지에서 캤어요",
                     new BigDecimal("10000"), null, null, null, List.of("http://localhost:9000/bucket/products/7/a.jpg")));
             ImageReview review = ImageReview.requested(saved.getId(), 0, SELLER_ID, ReviewScope.TEXT_ONLY);
-            review.complete(ReviewVerdict.manual(ManualReason.REVIEW_KEYWORD, "자생지"), null, null, LocalDateTime.now());
+            review.complete(ReviewVerdict.manual(ManualReason.REVIEW_KEYWORD, "자생지"), null, null, LocalDateTime.now(clock));
             imageReviewRepository.save(review);
             return saved;
         });
@@ -399,7 +403,7 @@ class AdminImageReviewServiceIntegrationTest {
         adminService.expireOverdue();
 
         assertThat(imageReviewRepository.countBySellerIdAndDecisionAndRejectReasonNotAndReviewedAtGreaterThanEqual(
-                SELLER_ID, ReviewDecision.REJECTED, RejectReason.REVIEW_EXPIRED, LocalDateTime.now().minusDays(7))).isZero();
+                SELLER_ID, ReviewDecision.REJECTED, RejectReason.REVIEW_EXPIRED, LocalDateTime.now(clock).minusDays(7))).isZero();
     }
 
     @Test

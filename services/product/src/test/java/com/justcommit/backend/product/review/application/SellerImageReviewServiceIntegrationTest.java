@@ -54,6 +54,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -102,6 +103,9 @@ class SellerImageReviewServiceIntegrationTest {
         }
     }
 
+    // 서비스와 같은 한국 시간 Clock으로 시각을 만든다 (JVM · DB 시간대가 UTC인 CI에서도 같은 기준)
+    @Autowired Clock clock;
+
     @Autowired SellerImageReviewService sellerService;
     @Autowired ImageReviewService imageReviewService;
     @Autowired AdminImageReviewService adminService;
@@ -148,7 +152,7 @@ class SellerImageReviewServiceIntegrationTest {
 
     private void completeCurrent(Product product, ReviewVerdict verdict) {
         ImageReview review = ImageReview.requested(product.getId(), product.getReviewVersion(), SELLER_ID, ReviewScope.FULL);
-        review.complete(verdict, null, null, LocalDateTime.now());
+        review.complete(verdict, null, null, LocalDateTime.now(clock));
         imageReviewRepository.save(review);
         if (verdict.decision() == ReviewDecision.REJECTED) {
             productRepository.applyReviewResult(product.getId(), product.getReviewVersion(),
@@ -163,7 +167,7 @@ class SellerImageReviewServiceIntegrationTest {
     // 관리자 확인으로 갔다가 24시간이 지나 REVIEW_EXPIRED
     private Product expired() {
         Product product = judged(ReviewVerdict.manual(ManualReason.SPECIES_MISMATCH, "Epipremnum aureum"));
-        jdbc.update("update image_review set reviewed_at = now() - interval '25 hours' where product_id = ?", product.getId());
+        jdbc.update("update image_review set reviewed_at = ? where product_id = ?", LocalDateTime.now(clock).minusHours(25), product.getId());
         assertThat(adminService.expireOverdue()).isEqualTo(1);
         return product;
     }
@@ -186,7 +190,7 @@ class SellerImageReviewServiceIntegrationTest {
         tx.executeWithoutResult(status -> {
             Product current = productRepository.findById(product.getId()).orElseThrow();
             ImageReview review = imageReviewRepository.findByProductIdAndReviewVersion(current.getId(), current.getReviewVersion()).orElseThrow();
-            review.complete(ReviewVerdict.reject(RejectReason.NOT_PLANT, null), null, null, LocalDateTime.now());
+            review.complete(ReviewVerdict.reject(RejectReason.NOT_PLANT, null), null, null, LocalDateTime.now(clock));
             productRepository.applyReviewResult(current.getId(), current.getReviewVersion(),
                     ProductStatus.REVIEW_PENDING, ProductStatus.REJECTED);
         });
@@ -409,7 +413,7 @@ class SellerImageReviewServiceIntegrationTest {
     @DisplayName("검수 기록: 관리자 확인 12시간이 지나면 확인 지연, 기한 초과면 재요청 가능")
     void historyDelayedAndExpired() {
         Product waiting = judged(ReviewVerdict.manual(ManualReason.SPECIES_MISMATCH, null));
-        jdbc.update("update image_review set reviewed_at = now() - interval '13 hours' where product_id = ?", waiting.getId());
+        jdbc.update("update image_review set reviewed_at = ? where product_id = ?", LocalDateTime.now(clock).minusHours(13), waiting.getId());
         assertThat(sellerService.history(SELLER_ID, waiting.getId()).reviews().getFirst().status())
                 .isEqualTo(DisplayStatus.ADMIN_CHECK_DELAYED);
 

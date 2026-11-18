@@ -56,6 +56,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -108,6 +109,9 @@ class ImageReviewServiceIntegrationTest {
             return JsonMapper.builder().build();
         }
     }
+
+    // 서비스와 같은 한국 시간 Clock으로 시각을 만든다 (JVM · DB 시간대가 UTC인 CI에서도 같은 기준)
+    @Autowired Clock clock;
 
     @Autowired ImageReviewService imageReviewService;
     @Autowired ImageReviewRepository imageReviewRepository;
@@ -480,7 +484,7 @@ class ImageReviewServiceIntegrationTest {
     void repeatedRejections() {
         for (int i = 0; i < ImageReviewService.RECENT_REJECTION_LIMIT; i++) {
             ImageReview rejected = ImageReview.requested(1000L + i, 0, SELLER_ID, ReviewScope.FULL);
-            rejected.complete(ReviewVerdict.reject(RejectReason.NOT_PLANT, null), null, null, LocalDateTime.now().minusDays(1));
+            rejected.complete(ReviewVerdict.reject(RejectReason.NOT_PLANT, null), null, null, LocalDateTime.now(clock).minusDays(1));
             imageReviewRepository.save(rejected);
         }
         Product product = register("몬스테라 팝니다", null);
@@ -501,7 +505,7 @@ class ImageReviewServiceIntegrationTest {
 
     // 재처리 시각을 지난 것으로 (스케줄러 5분 간격을 기다리지 않게)
     private void makeRetryDue() {
-        jdbc.update("update image_review set next_retry_at = now() - interval '1 minute' where status = 'ENGINE_ERROR'");
+        jdbc.update("update image_review set next_retry_at = ? where status = 'ENGINE_ERROR'", LocalDateTime.now(clock).minusMinutes(1));
     }
 
     @Test
@@ -518,7 +522,7 @@ class ImageReviewServiceIntegrationTest {
         assertThat(review.getStatus()).isEqualTo(ReviewStatus.ENGINE_ERROR);
         assertThat(review.getDecision()).isNull();
         assertThat(review.getRetryCount()).isZero();
-        assertThat(review.getNextRetryAt()).isAfter(LocalDateTime.now().plusMinutes(4));
+        assertThat(review.getNextRetryAt()).isAfter(LocalDateTime.now(clock).plusMinutes(4));
         assertThat(review.getErrorMessage()).contains("timeout");
         verify(outboxPublisher, never()).publish(any(ProductStatusChanged.class));
 
@@ -549,7 +553,7 @@ class ImageReviewServiceIntegrationTest {
         verify(outboxPublisher).publish(statusChangedOf(product));
         // 검수 기록을 새로 만들지 않아 하루 사진 검수 횟수는 그대로 1
         assertThat(imageReviewRepository.countBySellerIdAndScopeAndCreatedAtGreaterThanEqual(
-                SELLER_ID, ReviewScope.FULL, LocalDateTime.now().minusDays(1))).isEqualTo(1);
+                SELLER_ID, ReviewScope.FULL, LocalDateTime.now(clock).minusDays(1))).isEqualTo(1);
     }
 
     @Test
@@ -665,7 +669,7 @@ class ImageReviewServiceIntegrationTest {
         identifyAs(MONSTERA, 0.95);
         Product product = register("몬스테라 팝니다", null);
         // 검수 요청 이벤트가 리스너에서 처리되지 못한 채 31분이 지남
-        jdbc.update("update image_review set created_at = now() - interval '31 minutes' where status = 'REQUESTED'");
+        jdbc.update("update image_review set created_at = ? where status = 'REQUESTED'", LocalDateTime.now(clock).minusMinutes(31));
 
         assertThat(imageReviewService.retryEngineErrors()).isEqualTo(1);
 
@@ -684,7 +688,7 @@ class ImageReviewServiceIntegrationTest {
     void freshRequestIsLeftToListener() {
         keysConfigured();
         Product product = register("몬스테라 팝니다", null);
-        jdbc.update("update image_review set created_at = now() - interval '29 minutes' where status = 'REQUESTED'");
+        jdbc.update("update image_review set created_at = ? where status = 'REQUESTED'", LocalDateTime.now(clock).minusMinutes(29));
 
         assertThat(imageReviewService.retryEngineErrors()).isZero();
         assertThat(reviewOf(product, 0).getStatus()).isEqualTo(ReviewStatus.REQUESTED);

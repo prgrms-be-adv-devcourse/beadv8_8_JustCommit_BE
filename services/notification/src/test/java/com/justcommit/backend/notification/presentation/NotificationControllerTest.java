@@ -9,6 +9,7 @@ import com.justcommit.backend.notification.domain.NotificationErrorCode;
 import com.justcommit.backend.notification.presentation.dto.NotificationResponse;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -106,6 +107,7 @@ class NotificationControllerTest {
     }
 
     @Test
+    @DisplayName("[S-A07] 남의 알림을 읽음 처리하면 404")
     void returnsNotFoundForOthersNotification() throws Exception {
         when(notificationService.read(MEMBER_ID, 2L))
                 .thenThrow(new BusinessException(NotificationErrorCode.NOTIFICATION_NOT_FOUND));

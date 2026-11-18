@@ -310,6 +310,7 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("[S-D04] 결제 응답 타임아웃이면 보상하지 않고 결제 대기(기한 10분)로 둔다")
     void keepsOrderPendingWhenPaymentTimesOut() {
         stubLookup(List.of(selected(1L, 101L, "10000")),
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
@@ -325,6 +326,7 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("[S-D02] 결제 대기 주문이 만료되면 EXPIRED · 예약 해제 이벤트(OrderExpired) · 장바구니 복원")
     void expiresPendingOrderAndReleasesItsProducts() {
         Orders order = new Orders("ORD-test", 10L, "구매자", "010", "12345", "서울시", null, 1);
         SellerOrder sellerOrder = new SellerOrder(order, 20L);
@@ -379,6 +381,7 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("[S-D03] 결제 성공이면 주문 PAID와 판매 완료 이벤트(OrderPaid)를 Outbox에 남기고, 배송 생성 시점엔 이미 PAID")
     void paysOrderAndMarksReservedProductsSoldOut() {
         stubLookup(List.of(selected(1L, 101L, "10000")),
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
@@ -415,6 +418,7 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("[S-A07] 남의 주문을 재결제하면 ORDER_NOT_FOUND(404), 결제를 부르지 않음")
     void rejectsRepaymentFromAnotherMember() {
         when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(pendingOrder(10L)));
 
@@ -425,6 +429,7 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("[S-D10] 결제 기한 10분이 지나면 아직 PAYMENT_PENDING이어도(만료 스케줄러 전) PAYMENT_WINDOW_EXPIRED, 결제를 부르지 않음")
     void rejectsRepaymentAfterPaymentWindow() {
         Orders order = pendingOrder(10L);
         ReflectionTestUtils.setField(order, "createdAt", LocalDateTime.now().minusMinutes(11));
@@ -437,6 +442,7 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("[S-D02] 재결제 때 예치금이 부족하면 결제 대기를 유지하고 기한은 주문 후 10분 그대로")
     void keepsPendingOrderWhenRepaymentBalanceIsInsufficient() {
         Orders order = pendingOrder(10L);
         when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
@@ -543,6 +549,36 @@ class OrderServiceTest {
         verify(outboxPublisher, never()).publish(any());
     }
 
+    @Test
+    @DisplayName("[S-E04] 같은 주문을 두 번 취소하면 두 번째는 아무것도 하지 않아 상품 · 배송비 환불은 1번씩만")
+    void cancelTwiceRefundsOnce() {
+        Orders order = cancellableOrder();
+        when(paymentUseCase.refundCancelledItem(any(), eq(99L), eq(10L), any()))
+                .thenReturn(new PaymentResult(PaymentStatus.REFUNDED, money("0")));
+        when(paymentUseCase.refundShippingFee(eq(7L), eq(99L), eq(10L), any()))
+                .thenReturn(new PaymentResult(PaymentStatus.REFUNDED, money("0")));
+
+        orderService.cancel(10L, 99L);
+        orderService.cancel(10L, 99L);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        verify(paymentUseCase).refundCancelledItem(11L, 99L, 10L, money("10000"));
+        verify(paymentUseCase).refundCancelledItem(12L, 99L, 10L, money("20000"));
+        verify(paymentUseCase).refundShippingFee(7L, 99L, 10L, money("3000"));
+    }
+
+    @Test
+    @DisplayName("[S-A07] 남의 주문을 취소하면 ORDER_NOT_FOUND(404), 환불하지 않음")
+    void rejectsCancelFromAnotherMember() {
+        when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(pendingOrder(10L)));
+
+        assertThatThrownBy(() -> orderService.cancel(20L, 99L))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_NOT_FOUND));
+        verify(paymentUseCase, never()).refundCancelledItem(any(), any(), any(), any());
+        verify(paymentUseCase, never()).refundShippingFee(any(), any(), any(), any());
+    }
+
     // 결제된 주문 1건 · 판매자 주문 1건 · 주문상품 2건 · 배송비 3,000원 · 배송 READY (취소 가능)
     private Orders cancellableOrder() {
         Orders order = pendingOrder(10L);
@@ -594,7 +630,7 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("판매자 주문에 상품이 남는 부분 취소는 판매자에게 일부 취소 알림(OrderItemCancelled)을 보낸다")
+    @DisplayName("[S-E02] 판매자 주문에 상품이 남는 부분 취소는 판매자에게 일부 취소 알림(OrderItemCancelled)을 보낸다")
     void itemCancelPublishesPartialCancelNoticeWhenOtherItemsRemain() {
         Orders order = pendingOrder(10L);
         order.paid();
@@ -627,6 +663,7 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("[S-D06] 이미 결제된 주문에 결제를 다시 요청하면 다시 차감하지 않고 PAID")
     void returnsPaidOrderWithoutChargingAgainOnRepeatedRequest() {
         Orders order = pendingOrder(10L);
         order.paid();
@@ -736,6 +773,7 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("[S-A07] 남의 주문상품을 구매 확정하면 404, 확정하지 않음")
     void rejectsConfirmationForAnotherBuyer() {
         OrdersItem item = stubConfirmableItem();
 

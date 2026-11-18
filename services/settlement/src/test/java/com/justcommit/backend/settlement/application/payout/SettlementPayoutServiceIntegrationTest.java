@@ -238,7 +238,7 @@ class SettlementPayoutServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("두 실행(파드 2개)이 동시에 돌아도 정산마다 지급 요청은 한 번이다")
+    @DisplayName("[S-G04] 두 실행(파드 2개)이 동시에 돌아도 정산마다 지급 요청은 한 번이다")
     void concurrentExecutionsRequestEachSettlementOnce() throws Exception {
         List<Long> ids = new ArrayList<>();
         for (long i = 1; i <= 20; i++) {
