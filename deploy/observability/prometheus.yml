@@ -1,0 +1,21 @@
+# 데이터 서버 Prometheus (#301). 보관 7일은 compose의 --storage.tsdb.retention.time
+# 앱 서버 지표(서비스 /actuator/prometheus · 앱 서버 node-exporter)는 여기서 긁지 않는다.
+# 앱 서버 Alloy가 긁어서 remote_write로 밀어 넣는다 (deploy/observability/alloy/)
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels: { server: data }
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+        labels: { server: data }

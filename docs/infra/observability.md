@@ -5,11 +5,11 @@
 
 ## 구성
 
-Alloy가 컨테이너 로그를 모아 Loki로, 서비스가 OTLP로 보낸 추적을 받아 Tempo로 넘깁니다. Prometheus가 `/actuator/prometheus`를 수집하고, Grafana가 대시보드와 알림을 맡아 Slack 웹훅으로 보냅니다. Grafana에서 Loki 로그와 Tempo 추적을 traceId로 서로 오갑니다. 로그용 OpenSearch · ELK는 쓰지 않습니다. Grafana는 포트를 외부에 열지 않고 SSH 터널로만 접속합니다.
+앱 서버의 Alloy가 컨테이너 · 파드 로그를 모아 Loki로, 서비스가 OTLP로 보낸 추적을 받아 Tempo로 넘깁니다. 앱 서버 지표(`/actuator/prometheus` · node-exporter)도 Alloy가 긁어 Prometheus로 밀어 넣고(remote_write), 데이터 서버의 exporter는 Prometheus가 직접 읽습니다. 앱 서버에는 들어오는 포트를 더 열지 않습니다. Grafana가 대시보드와 알림을 맡아 Slack 웹훅으로 보냅니다. Grafana에서 Loki 로그와 Tempo 추적을 traceId로 서로 오갑니다. 로그용 OpenSearch · ELK는 쓰지 않습니다. Grafana는 포트를 외부에 열지 않고 SSH 터널로만 접속합니다.
 
 | 도구 | 하는 일 | 보관 |
 |---|---|---|
-| Alloy | 로그 · 추적 수집 | – |
+| Alloy | 로그 · 지표 · 추적 수집 (앱 서버) | – |
 | Loki | 로그 | 14일 |
 | Tempo | 분산 추적 (샘플링 100%) | 3일 |
 | Prometheus | 지표 | 7일 |
