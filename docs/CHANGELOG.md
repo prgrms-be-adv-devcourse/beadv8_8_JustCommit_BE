@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-18 · flows/search-recommend.md · glossary.md · 장바구니 추천 환경 점수에 봄 물주기 단계(0.2) · 분류(잎보기 · 꽃보기, 0.15) 일치 추가, 생육 온도 0.6 → 0.4 · 광도 0.4 → 0.25. 추천 평가 세트(정답 20쌍) Top-10 적중 2 → 5, 결과 표 · 후보 30개 밖 정답 13쌍 · 품종 문서에서 생육 조건 문구를 뺀 실험(3 / 20, 반영 안 함) 기록, 용어 「추천 평가 세트」 (#507) (#529)
 - 2026-11-18 · reference/env-vars.md · services/ai.md · ai 임베딩 설정 키를 모델 이름 없는 `custom.embedding.model` · `custom.embedding.dimensions`로(환경변수 `EMBEDDING_MODEL` · `EMBEDDING_DIMENSIONS`, 기본값 `text-embedding-3-small` · `1536`), Spring AI `spring.ai.openai.embedding.*`도 이 값을 참조, 설정 차원이 `vector(1536)` 칸과 다르면 앱 시작 실패 (#508)
 - 2026-11-18 · testing/strategy.md · 「통합 테스트 컨테이너 규칙」 표 추가: `common-core` testFixtures의 `SharedPostgres` · `SharedRedis` · `SharedKafka`를 모듈마다 한 번 띄워 공유, PostgreSQL은 컨텍스트마다 새 DB, Kafka는 컨텍스트마다 새 그룹 id + 리스너 클래스 `@DirtiesContext`, Redis `flushAll`, `withReuse` 안 씀 (#524)
 - 2026-11-18 · infra/observability.md · 배송 예약 · 취소 지연 알림을 지표 `replant_shipment_stuck{status="READY"|"CANCEL_PENDING"}`(10분 넘게 남은 배송 수)로, market에 actuator · Prometheus(`/actuator/prometheus`, 내부망 전용) 추가. testing/scenarios.md S-F09 ~ F12 추가 (#490)
