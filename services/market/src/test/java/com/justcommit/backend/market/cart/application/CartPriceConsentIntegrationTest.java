@@ -52,8 +52,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 // 가격 동의가 실제 DB 트랜잭션에서 전부 커밋되거나 전부 남지 않는지, product 조회는 실제 클라이언트로 WireMock을 불러 확인한다
@@ -76,9 +75,6 @@ class CartPriceConsentIntegrationTest {
     private static final String PRODUCTS = "/internal/v1/products";
     private static final String INTERNAL_KEY = "test-key";
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
     @RegisterExtension
     static WireMockExtension product = WireMockExtension.newInstance()
             .options(wireMockConfig().dynamicPort())
@@ -86,9 +82,7 @@ class CartPriceConsentIntegrationTest {
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        SharedPostgres.register(registry);
         registry.add("internal-api.key", () -> INTERNAL_KEY);
         registry.add("spring.http.serviceclient.product.base-url", product::baseUrl);
         registry.add("spring.http.serviceclient.product.read-timeout", () -> "500ms");

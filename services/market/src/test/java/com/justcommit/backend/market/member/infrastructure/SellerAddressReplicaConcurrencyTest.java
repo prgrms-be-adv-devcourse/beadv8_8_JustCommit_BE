@@ -7,14 +7,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -46,9 +46,10 @@ class SellerAddressReplicaConcurrencyTest {
   private static final OffsetDateTime WITHDRAWN_AT = OffsetDateTime.parse("2026-11-12T10:05:00+09:00");
   private static final int MEMBERS = 20;
 
-  @Container
-  @ServiceConnection
-  static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
+  @DynamicPropertySource
+  static void postgresProperties(DynamicPropertyRegistry registry) {
+    SharedPostgres.register(registry);
+  }
 
   @Autowired
   private MemberReplicaRepository repository;
