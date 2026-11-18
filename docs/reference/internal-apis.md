@@ -22,7 +22,7 @@
 | settlement | `GET /internal/v1/settlements/seller-orders/{sellerOrderId}` | market | 정산 완료 시각 | – | 🟨 |
 | market | `GET /internal/v1/shipments?sellerOrderIds=` | notification | 알림 문구용 배송 정보 | – | 🟨 |
 | ai | `POST /internal/v1/ai/admin/reindex?target=SPECIES` | 운영자 | 품종 재임베딩: 문서 해시가 바뀐 품종만 임베딩해 `species_vector_store`에 upsert, 프로필에 없는 벡터는 삭제. 응답 `total` · `embedded` · `skipped` · `deleted`. 다시 불러도 결과가 같음 | – | ✅ |
-| ai | `POST /internal/v1/recommendations/cart` | market | 장바구니 추천. 요청: 장바구니 상품 ID, 최근 구매 확정 상품 ID(`orders_item.status = CONFIRMED`, 최근 90일, 최신순 최대 20개. 기준 시각은 `SellerOrder.confirmedAt`(최근 90일 · 최신순). 주문상품별 확정 시각이 없어, 판매자 주문의 상품이 모두 확정되기 전(배송 완료 후 최대 3일, 자동 확정 때까지)의 `CONFIRMED` 주문상품은 빠짐). 응답: 추천 상품 ID + 추천 이유(카드 정보 · 본인 상품 · 구매 불가 상품 제외는 market) → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md) | – | ✅ |
+| ai | `POST /internal/v1/recommendations/cart` | market | 장바구니 추천. 요청: 장바구니 상품 ID, 최근 구매 확정 상품 ID(`orders_item.status = CONFIRMED`, 최근 90일, 최신순 최대 20개. 기준 시각은 `SellerOrder.confirmedAt`(최근 90일 · 최신순). 주문상품별 확정 시각이 없어, 판매자 주문의 상품이 모두 확정되기 전(배송 완료 후 최대 3일, 자동 확정 때까지)의 `CONFIRMED` 주문상품은 빠짐). 응답: 추천 상품 ID + 추천 이유(카드 정보 · 본인 상품 · 구매 불가 상품 제외는 market). 형식: 요청 `{cartProductIds, purchasedProductIds, size}`(market은 화면 `size`의 2배, 최대 20을 보냄), 응답 `data.items[{productId, reason}]`(추천 순서대로) → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md) | – | ✅ |
 
 판매 완료 · 결제 전 예약 해제 · 판매 재개는 내부 API가 아니라 market 이벤트입니다 → [Kafka 토픽 표](kafka-topics.md), [ADR 0016](../decisions/0016-product-sale-events-from-market.md). 상품 의미 검색은 범위 밖이라 product → ai 호출이 없습니다 (의미 검색은 챗봇이 맡음). ai는 상품 정보를 이벤트로 받아 ai → product 호출도 없습니다 → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md). 계좌 변경 때 다른 서비스 확인 호출은 없습니다 (노션 2.3).
 

@@ -3,6 +3,7 @@ package com.justcommit.backend.member.member.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.messaging.outbox.OutboxRelay;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.seller.domain.SellerReviewConsentPolicy;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -107,8 +108,8 @@ class NicknameChangeServiceIntegrationTest {
   void changeNicknameOfSeller() {
     Member member = saveMember("seller" + SEQ.incrementAndGet());
     jdbcTemplate.update("update member set role = 'SELLER' where id = ?", member.getId());
-    jdbcTemplate.update("insert into seller (member_id, intro, created_at, updated_at) values (?, null, now(), now())",
-        member.getId());
+    jdbcTemplate.update("insert into seller (member_id, intro, review_consent_version, review_consented_at, created_at, updated_at) values (?, null, ?, now(), now(), now())",
+        member.getId(), SellerReviewConsentPolicy.VERSION);
 
     nicknameChangeService.changeNickname(member.getId(), "판매자닉");
 

@@ -2,6 +2,9 @@ package com.justcommit.backend.market.cart.presentation;
 
 import com.justcommit.backend.common.exception.GlobalExceptionHandler;
 import com.justcommit.backend.common.security.AuthMember;
+import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.common.exception.CommonErrorCode;
+import com.justcommit.backend.market.cart.application.CartRecommendationService;
 import com.justcommit.backend.market.cart.application.CartService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,11 +39,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class CartControllerTest {
 
     @Mock CartService cartService;
+    @Mock CartRecommendationService cartRecommendationService;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new CartController(cartService))
+        mockMvc = MockMvcBuilders.standaloneSetup(new CartController(cartService, cartRecommendationService))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -64,6 +68,50 @@ class CartControllerTest {
                 .andExpect(jsonPath("$.totalAmount").value(0));
 
         verify(cartService).find(10L);
+    }
+
+    @Test
+    @DisplayName("장바구니 조회는 추천(ai)을 부르지 않아 ai 상태와 상관없이 동작한다")
+    void cartDoesNotDependOnRecommendation() throws Exception {
+        when(cartService.find(10L)).thenReturn(new CartResponse(1L, List.of(), BigDecimal.ZERO, BigDecimal.ZERO));
+
+        mockMvc.perform(get("/api/v1/cart")).andExpect(status().isOk());
+
+        verifyNoInteractions(cartRecommendationService);
+    }
+
+    @Test
+    @DisplayName("추천은 인증 회원 기준, size를 안 주면 4")
+    void recommendsWithDefaultSize() throws Exception {
+        when(cartRecommendationService.recommend(10L, 4)).thenReturn(List.of(new CartRecommendationResponse(
+                201L, "몬스테라", new BigDecimal("15000"), "https://img/201", "몬스테라", "반그늘에서 잘 자라요")));
+
+        mockMvc.perform(get("/api/v1/cart/recommendations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("장바구니 추천 상품을 조회했습니다."))
+                .andExpect(jsonPath("$.data[0].productId").value(201))
+                .andExpect(jsonPath("$.data[0].price").value(15000))
+                .andExpect(jsonPath("$.data[0].reason").value("반그늘에서 잘 자라요"));
+    }
+
+    @Test
+    @DisplayName("ai가 실패해 추천이 비어도 200 + 빈 목록")
+    void emptyRecommendationsAreOk() throws Exception {
+        when(cartRecommendationService.recommend(10L, 6)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/cart/recommendations").param("size", "6"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
+    @DisplayName("size가 범위를 벗어나면 400")
+    void rejectsInvalidRecommendationSize() throws Exception {
+        when(cartRecommendationService.recommend(10L, 11))
+                .thenThrow(new BusinessException(CommonErrorCode.BAD_REQUEST_DATA, "size는 1 이상 10 이하로 입력해 주세요."));
+
+        mockMvc.perform(get("/api/v1/cart/recommendations").param("size", "11"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.justcommit.backend.member.auth.presentation;
 import com.justcommit.backend.member.auth.domain.EmailPurpose;
 import com.justcommit.backend.member.auth.infrastructure.mail.AccountReminderMailSender;
 import com.justcommit.backend.member.auth.infrastructure.mail.VerificationMailSender;
+import com.justcommit.backend.member.config.MailExecutorConfig;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
@@ -13,6 +14,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.core.task.SyncTaskExecutor;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mail.MailSendException;
@@ -20,6 +23,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -92,6 +96,15 @@ class AccountReminderIntegrationTest {
 
   @MockitoBean
   VerificationMailSender verificationMailSender;
+
+  // 업무 흐름 검증이 목적이라 메일 작업을 요청 스레드에서 바로 실행한다 (응답 직후 메일 발송자 호출을 바로 검증)
+  // 비동기 동작은 별도 통합 테스트에서 실제 실행기로 검증 (#421)
+  @TestBean(name = MailExecutorConfig.MAIL_TASK_EXECUTOR)
+  TaskExecutor mailTaskExecutor;
+
+  static TaskExecutor mailTaskExecutor() {
+    return new SyncTaskExecutor();
+  }
 
   private final HttpClient httpClient = HttpClient.newHttpClient();
 

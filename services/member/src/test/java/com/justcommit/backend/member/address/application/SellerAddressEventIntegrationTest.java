@@ -15,6 +15,7 @@ import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.seller.application.SellerRegisterCommand;
 import com.justcommit.backend.member.seller.application.SellerRegisterService;
 import com.justcommit.backend.member.seller.domain.Seller;
+import com.justcommit.backend.member.seller.domain.SellerReviewConsentPolicy;
 import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +40,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
@@ -126,7 +128,7 @@ class SellerAddressEventIntegrationTest {
             throw new IllegalStateException("주소 이벤트 발행 중 예외 (테스트)");
         }).when(outboxPublisher).publish(argThat((IntegrationEvent event) -> event instanceof MemberAddressChanged));
 
-        assertThatThrownBy(() -> sellerRegisterService.register(new SellerRegisterCommand(memberId, null)))
+        assertThatThrownBy(() -> sellerRegisterService.register(new SellerRegisterCommand(memberId, null, SellerReviewConsentPolicy.VERSION)))
                 .isInstanceOf(IllegalStateException.class);
 
         assertThat(savedBeforeFailure.get()).isEqualTo(1); // 실패 직전엔 MemberUpdated가 있었다
@@ -138,12 +140,18 @@ class SellerAddressEventIntegrationTest {
     }
 
     @Test
-    @DisplayName("판매자 등록이 커밋되면 MemberUpdated와 주소 이벤트가 저장되고, 주소 이벤트를 풀면 그 회원의 배송지 목록이다")
+    @DisplayName("판매자 등록이 커밋되면 동의 버전 · 시각과 MemberUpdated · 주소 이벤트가 저장되고, 주소 이벤트를 풀면 그 회원의 배송지 목록이다")
     void register_savesBothEvents() {
         Long memberId = givenMember(false, 1);
         Set<String> before = outboxIds();
 
-        sellerRegisterService.register(new SellerRegisterCommand(memberId, null));
+        sellerRegisterService.register(new SellerRegisterCommand(memberId, null, SellerReviewConsentPolicy.VERSION));
+
+        // 동의 버전 · 시각이 seller 컬럼에 저장됨 (#418). 값의 정확성은 SellerRegisterServiceTest에서 확인
+        Map<String, Object> consent = jdbcTemplate.queryForMap(
+                "select review_consent_version, review_consented_at from seller where member_id = ?", memberId);
+        assertThat(consent.get("review_consent_version")).isEqualTo(SellerReviewConsentPolicy.VERSION);
+        assertThat(consent.get("review_consented_at")).isNotNull();
 
         assertThat(jdbcTemplate.queryForList(
                 "select event_type from outbox_event where aggregate_id = ?", String.class, String.valueOf(memberId)))
@@ -225,7 +233,7 @@ class SellerAddressEventIntegrationTest {
     void register_waitsForMemberLock() throws Exception {
         Long memberId = givenMember(false, 1);
         assertWaitsForMemberLock(memberId,
-                () -> sellerRegisterService.register(new SellerRegisterCommand(memberId, null)));
+                () -> sellerRegisterService.register(new SellerRegisterCommand(memberId, null, SellerReviewConsentPolicy.VERSION)));
     }
 
     @Test
@@ -323,7 +331,7 @@ class SellerAddressEventIntegrationTest {
             }
             if (seller) {
                 member.promoteToSeller();
-                sellerRepository.save(Seller.register(member, null));
+                sellerRepository.save(Seller.register(member, null, SellerReviewConsentPolicy.VERSION, LocalDateTime.now()));
             }
             return member.getId();
         });
