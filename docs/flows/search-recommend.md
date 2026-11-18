@@ -75,7 +75,7 @@ sequenceDiagram
 | 빈 목록 (실패 · 타임아웃 · 결과 없음) | `GET /api/v1/products?onSale=true`(최신순)로 「새로 올라온 식물」. AI 추천 표시 · 이유 없음, 이미 담은 상품은 화면이 뺌 |
 | 판매 중 상품도 없음 | 영역 숨김 |
 
-추천 API는 계속 빈 목록을 돌려주고 최신 상품은 화면이 따로 부릅니다. 대체 상품을 추천과 구분해 추천 평가(#507)에 섞이지 않게 합니다 → [ADR 0028](../decisions/0028-cart-recommendation-latest-fallback-on-screen.md)
+추천 API는 계속 빈 목록을 돌려주고 최신 상품은 화면이 따로 부릅니다. 대체 상품을 추천과 구분해 추천 평가(#507)에 섞이지 않게 합니다 → [ADR 0029](../decisions/0029-cart-recommendation-latest-fallback-on-screen.md)
 
 상품 스냅샷은 상품 이벤트로만 채웁니다. 초기 적재는 하지 않습니다 (상품 데이터를 비우고 시작, 시연 상품도 SQL이 아니라 상품 등록 API로 넣어 이벤트가 나가게 함). Kafka 보관(7일)이 지난 뒤 ai DB를 잃으면 product의 「전체 상품 이벤트 재발행」 운영 API로 다시 채웁니다 → [product 카드](../services/product.md)
 
