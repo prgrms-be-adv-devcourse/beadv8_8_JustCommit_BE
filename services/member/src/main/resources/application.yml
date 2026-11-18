@@ -117,6 +117,11 @@ member:
     retry:
       enabled: true
       interval: PT10S
+  # 30일 지난 탈퇴 기록 정리 (#407). 끄려면 enabled: false
+  withdrawal-record:
+    cleanup:
+      enabled: true
+      interval: PT1H
   # 메일 발송 전용 실행기 (#421). 인증 메일 · 가입 계정 안내 메일을 요청 밖에서 보낸다
   mail:
     executor:

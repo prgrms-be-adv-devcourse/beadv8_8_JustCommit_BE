@@ -31,3 +31,7 @@ member:
   token-revocation:
     retry:
       enabled: false
+  # 탈퇴 기록 정리도 테스트에서 끈다. 정리는 테스트에서 스케줄러를 직접 만들어 확인
+  withdrawal-record:
+    cleanup:
+      enabled: false
