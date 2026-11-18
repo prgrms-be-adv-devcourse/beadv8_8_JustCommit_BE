@@ -1,6 +1,7 @@
 package com.justcommit.backend.product;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * 다른 모듈(market 등)에 공개하는 상품 조회 결과.
@@ -13,6 +14,7 @@ import java.math.BigDecimal;
  * @param hidden       판매자가 숨김 처리했는지 여부
  * @param thumbnailUrl 대표 사진 URL (없으면 null)
  * @param speciesName  품종 이름 (장바구니 등 화면 표시용)
+ * @param createdAt    상품 등록 시각 (장바구니 추천 카드의 「3일 전」 표시용)
  */
 public record ProductResult(
         Long productId,
@@ -22,7 +24,8 @@ public record ProductResult(
         ProductStatus status,
         boolean hidden,
         String thumbnailUrl,
-        String speciesName
+        String speciesName,
+        LocalDateTime createdAt
 ) {
 
     /**
