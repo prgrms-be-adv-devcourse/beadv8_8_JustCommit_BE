@@ -9,11 +9,14 @@ import com.justcommit.backend.member.event.MemberAddressChanged;
 import com.justcommit.backend.member.event.MemberUpdated;
 import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.seller.domain.Seller;
+import com.justcommit.backend.member.seller.domain.SellerReviewConsentPolicy;
 import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
 
 // 판매자 등록
 @Service
@@ -25,11 +28,16 @@ public class SellerRegisterService {
   private final OutboxPublisher outboxPublisher;
   private final SellerAddressEventFactory sellerAddressEventFactory;
 
-  // 판매자 등록: 회원 잠금 → 이미 판매자인지 확인 → 주소 이벤트 생성 → 권한 변경 → 판매자 저장 → 발행
+  // 판매자 등록: 동의 버전 확인 → 회원 잠금 → 이미 판매자인지 확인 → 주소 이벤트 생성 → 권한 변경 → 판매자 저장 → 발행
   // 회원 행을 먼저 잠가 같은 회원의 동시 등록은 두 번째 요청이 앞선 등록 결과를 보고 409가 됨
   @Transactional
   public SellerResult register(SellerRegisterCommand command) {
     Long memberId = command.memberId();
+
+    // 화면에서 동의한 문구가 현재 버전이 아니면 409 (#418). DB가 필요 없어 잠금 전에 확인
+    if (!SellerReviewConsentPolicy.isCurrent(command.reviewConsentVersion())) {
+      throw new BusinessException(MemberErrorCode.REVIEW_CONSENT_VERSION_MISMATCH);
+    }
 
     // 대기 제한을 넘으면 409 MEMBER_BUSY, 아무것도 저장되지 않음
     Member member = memberLocker.lockById(memberId)
@@ -47,9 +55,11 @@ public class SellerRegisterService {
     member.promoteToSeller(); // MEMBER → SELLER, ADMIN은 유지. 변경 감지로 커밋 시 UPDATE
 
     // 잠금으로 막히지만 혹시 남은 PK 중복은 DB가 막음 -> 409로 변환
+    // 동의 버전은 위에서 확인한 요청 값, 동의 시각은 서버 시각
     Seller seller;
     try {
-      seller = sellerRepository.saveAndFlush(Seller.register(member, command.intro()));
+      seller = sellerRepository.saveAndFlush(
+          Seller.register(member, command.intro(), command.reviewConsentVersion(), LocalDateTime.now()));
     } catch (DataIntegrityViolationException e) {
       throw new BusinessException(MemberErrorCode.ALREADY_SELLER);
     }

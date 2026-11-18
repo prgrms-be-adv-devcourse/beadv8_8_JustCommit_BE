@@ -20,14 +20,14 @@
 |---|---|
 | `MEMBER` | 회원 (계좌 암호문 · HMAC · 인증 버전 포함) |
 | `ADDRESS` | 배송지 (최대 4개, 기본 1개) |
-| `SELLER` | 판매자 등록 정보 · 소개글 · 사진 이용 동의 |
+| `SELLER` | 판매자 등록 정보 · 소개글 · 상품 검수 동의 버전 · 시각 |
 | ⬜ 탈퇴 기록 (이름 미정) | 이메일 · 휴대폰 HMAC + 탈퇴 시각 (30일 보관) |
 | `OUTBOX_EVENT` | 발행 대기 이벤트 (`common-messaging-outbox`, Flyway V2) |
 | `MEMBER_TOKEN_REVOCATION` | 탈퇴 · 비밀번호 변경 · 재설정 토큰 폐기 작업 (끊은 시각 · 보관 기한 · Redis 기록 상태, Flyway V4, 재설정 사유 V5) |
 
 ## 외부 API
 
-`auth/email/send` · `auth/email/verify` · `auth/login` · `auth/logout` · `auth/reissue` · `users` · `users/social` · `users/nicknameAvailability` · `users/phoneAvailability` · `users/me` · `users/me/nickname` · `users/me/password` · `users/me/account/verifications` · `users/me/account/changeTokens` · `users/me/account` · `users/me/addresses` · `users/me/addresses/{id}/default` · `sellers` · `sellers/{sellerId}` · `sellers/me/intro` + 카카오 로그인 2개 → [외부 API 목록](../reference/external-apis.md)
+`auth/email/send` · `auth/email/verify` · `auth/login` · `auth/logout` · `auth/reissue` · `users` · `users/social` · `users/nicknameAvailability` · `users/phoneAvailability` · `users/me` · `users/me/nickname` · `users/me/password` · `users/me/account/verifications` · `users/me/account/changeTokens` · `users/me/account` · `users/me/addresses` · `users/me/addresses/{id}/default` · `sellers/consent-policy` · `sellers` · `sellers/{sellerId}` · `sellers/me/intro` + 카카오 로그인 2개 → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 
@@ -91,7 +91,8 @@ payload (받는 쪽은 upsert, `occurredAt`이 저장된 값보다 오래되면 
 | 중복 | 이메일 · 닉네임 · 휴대폰 · 계좌(HMAC)는 회원마다 달라야 함. 계좌는 HMAC(`account:{은행}:{계좌번호}`, `MEMBER_HMAC_KEY`)으로 가입 · 소셜 가입 · 계좌 변경에서 사전 조회 + DB UNIQUE, 409 `DUPLICATE_ACCOUNT` |
 | 소셜 | 이메일 동의 필수, 같은 이메일의 로컬 회원이 있으면 가입 막음 |
 | 로그인 실패 | 무엇이 틀렸는지 구분하지 않고 `LOGIN_FAILED` |
-| 권한 | 가입하면 `MEMBER`, 판매자 등록하면 바로 `SELLER` (사진 외부 전송 · 학습 이용 동의 필수, 내용 · 버전 · 시각 기록) |
+| 권한 | 가입하면 `MEMBER`, 판매자 등록하면 바로 `SELLER` (상품 검수를 위한 외부 AI 이용 · 국외 이전 동의 필수, 버전 · 시각 기록) |
+| 판매자 등록 동의 | 상품 사진 · 글은 검수에만 쓰므로 학습 이용 동의는 받지 않음(자체 학습 없음, 외부 AI API의 학습 공유 설정 꺼짐). 등록 요청의 `reviewConsentAgreed`(true) · `reviewConsentVersion` 필수: 누락 · 미동의 400, 현재 버전과 다르면 409 `REVIEW_CONSENT_VERSION_MISMATCH`(회원 잠금 전에 확인). 현재 문구 · 버전은 `SellerReviewConsentPolicy` 상수를 `GET sellers/consent-policy`로 제공(로그인 필요, 프론트는 문구를 따로 쓰지 않음)하고, DB에는 버전과 서버 시각만 저장. 문구를 바꾸면 버전을 올리고 이전 문구 전문은 같은 PR에서 `docs/policies/seller-review-consent/{version}.md`로 보존. 그 버전으로 실제 동의를 받은 뒤에는 문구를 고치지 않고 새 버전 발행 → [ADR 0025](../decisions/0025-seller-review-consent-versioning.md) |
 | 여러 기기 | 동시 로그인 허용 |
 | 회원 행 잠금 | 로그인 · 소셜 로그인 · 재발급 · 토큰 폐기 · 비밀번호 변경 · 비밀번호 재설정(둘 다 토큰 폐기를 거침) · 배송지 추가 · 기본 변경 · 수정 · 삭제 · 판매자 등록 · 닉네임 변경 · 계좌 변경이 같은 회원 행 잠금(`MemberLocker`)을 씀 (잠금 조회에만 대기 3초, 넘으면 409 `MEMBER_BUSY`, 저장 · 이벤트 없이 롤백. 잠금을 잡은 뒤 저장 쿼리에는 기존 `lock_timeout`이 적용됨) → [인증 규칙](../conventions/auth.md#토큰-폐기) |
 | 비밀번호 변경 | 현재 비밀번호 확인 후 변경하고 모든 기기 로그아웃(토큰 폐기 → [인증 규칙](../conventions/auth.md#토큰-폐기)). 현재 비밀번호가 틀리면 400 `INVALID_CURRENT_PASSWORD`, 새 비밀번호가 같으면 400 `SAME_AS_CURRENT_PASSWORD`, 소셜 회원은 400 `PASSWORD_NOT_SET`. 변경이 커밋되면 200(이 기기 Refresh 쿠키 만료, `revocationCompleted`로 폐기 기록 완료 여부를 따로 전달, `false`면 다른 기기 로그아웃이 늦어질 수 있음), 커밋 결과 불명은 503 `RESULT_UNKNOWN`(자동 재시도 금지, 새 비밀번호로 로그인해 확인). 같은 인증 버전에서 현재 비밀번호를 5회 틀리면 이후 변경 요청을 막음(5번째 오답도 400, 이후는 첫 오답부터 24시간이 되는 시점까지 429 `PASSWORD_CHANGE_LOCKED` + `Retry-After`, 재설정으로 안내). 변경 · 재설정이 커밋되면 실패 횟수 초기화 |
