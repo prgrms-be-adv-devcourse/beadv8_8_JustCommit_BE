@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-18 · reference/internal-apis.md · reference/env-vars.md · 장바구니 추천 연동 반영: ai 추천 요청 · 응답 형식(`cartProductIds` · `purchasedProductIds` · `size`, 응답 `items[{productId, reason}]`, market은 화면 size의 2배 · 최대 20 요청), market 내부 API 그룹 주소 환경변수(`AI_SERVICE_URL` 추가, 기존 product · payment · settlement 주소도 표에 적음) (#296) (#504)
 - 2026-11-18 · decisions/0024 · services/ai.md · conventions/resilience.md · 임베딩 모델 OpenAI `text-embedding-3-small` 1536차원을 고른 이유 사후 기록(ADR 0024: product 검수와 같은 OpenAI 키, Anthropic은 임베딩 없음, Spring AI 기본 지원, OpenAI 임베딩 중 가장 쌈, pgvector HNSW 한도 2,000차원 안), 호출별 값에 ai → OpenAI 임베딩 ⬜ 줄, 로컬 임베딩 모델은 #294 평가 세트로 비교 예정 (#290)
 - 2026-11-18 · services/ai.md · reference/kafka-topics.md · ai 상품 스냅샷 구현 반영: `product_snapshot` Flyway V4 · `(species_id, status)` 인덱스, `product.events.v1` 구독자에 ai 구현 표시(`productVersion`이 클 때만 덮어쓰는 upsert 한 문장, payload 필수 칸이 비면 바로 DLT) (#503)
 - 2026-11-18 · decisions/0025-seller-review-consent-versioning.md · services/member.md · reference/external-apis.md · flows/image-review.md · open-questions.md · 판매자 등록 동의 반영: ADR 0025 추가, 판매자 등록 때 상품 검수(외부 AI 이용 · 국외 이전) 동의 1개 필수(학습 이용 동의는 받지 않고 문구에서 안내), `POST sellers`에 `reviewConsentAgreed` · `reviewConsentVersion`(누락 · 미동의 400, 현재 버전과 다르면 409 `REVIEW_CONSENT_VERSION_MISMATCH`), 정책 조회 `GET sellers/consent-policy`(로그인, `content`는 줄바꿈 일반 텍스트), `SELLER`에 동의 버전 · 시각만 저장(Flyway V7), 문구를 바꾸면 버전을 올리고 이전 문구는 `docs/policies/seller-review-consent/{version}.md`로 보존, 이미지 검수 「약관」 행을 「외부 AI 검수 · 데이터 사용 설정」으로 바꾸고 확인 완료, 미정 항목에서 학습 사용 여부 삭제 · 국외 이전 법적 고지 추가 (#418) (#502)

@@ -33,13 +33,15 @@ public final class InternalApiClientTestSupport {
                 .withUserConfiguration(InternalApiClientConfig.class, client)
                 .withPropertyValues(
                         "internal-api.key=" + INTERNAL_KEY,
-                        "internal-api.groups=product,payment,settlement",
+                        "internal-api.groups=product,payment,settlement,ai",
                         "spring.http.serviceclient.product.base-url=" + baseUrl,
                         "spring.http.serviceclient.payment.base-url=" + baseUrl,
                         "spring.http.serviceclient.settlement.base-url=" + baseUrl,
+                        "spring.http.serviceclient.ai.base-url=" + baseUrl,
                         "spring.http.serviceclient.product.read-timeout=500ms",
                         "spring.http.serviceclient.payment.read-timeout=500ms",
-                        "spring.http.serviceclient.settlement.read-timeout=500ms");
+                        "spring.http.serviceclient.settlement.read-timeout=500ms",
+                        "spring.http.serviceclient.ai.read-timeout=500ms");
     }
 
     // src/test/resources/wiremock/{상대}/ 아래 응답 JSON
