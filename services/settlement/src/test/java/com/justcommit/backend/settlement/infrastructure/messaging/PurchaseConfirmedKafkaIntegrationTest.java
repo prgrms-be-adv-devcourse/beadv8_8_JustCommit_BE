@@ -1,5 +1,6 @@
 package com.justcommit.backend.settlement.infrastructure.messaging;
 
+import com.justcommit.backend.common.client.exception.InternalApiUnavailableException;
 import com.justcommit.backend.common.messaging.EventEnvelope;
 import com.justcommit.backend.common.messaging.EventEnvelopeMapper;
 import com.justcommit.backend.common.messaging.KafkaTopics;
@@ -44,11 +45,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 // 실제 Kafka · PostgreSQL로 구매 확정 수신 → 정산 생성을 확인 (payment 호출만 목)
+// 정산 지급 스케줄러는 끄고 수신만 본다. 수신은 PENDING 저장까지만 하고 payment를 부르지 않는다 (#428)
 @SpringBootTest
 @Testcontainers(disabledWithoutDocker = true)
 class PurchaseConfirmedKafkaIntegrationTest {
@@ -69,6 +72,7 @@ class PurchaseConfirmedKafkaIntegrationTest {
         registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
         registry.add("jwt.public-key", PurchaseConfirmedKafkaIntegrationTest::newPublicKey);
         registry.add("internal-api.key", () -> "test-internal-key");
+        registry.add("custom.settlement.payout.enabled", () -> "false");
     }
 
     private static final EventEnvelopeMapper ENVELOPE_MAPPER = new EventEnvelopeMapper();
@@ -90,10 +94,12 @@ class PurchaseConfirmedKafkaIntegrationTest {
         // 수수료 5%는 판매액에만, 배송비는 정산금에 넣지 않음
         assertThat(settlement.getFee()).isEqualByComparingTo("1500");
         assertThat(settlement.getPayoutAmount()).isEqualByComparingTo("28500");
-        // 아직 같은 트랜잭션에서 지급하므로(#428 전) 지급이 끝난 정산으로 저장됨 (V3 체크 제약도 통과)
-        assertThat(settlement.getStatus()).isEqualTo(SettlementStatus.COMPLETED);
-        assertThat(settlement.getCompletedAt()).isNotNull();
-        assertThat(settlement.getNextAttemptAt()).isNull();
+        // 수신은 저장만: PENDING, 바로 지급 대상(next_attempt_at), 지급 전이라 완료 시각 없음 (V3 체크 제약도 통과)
+        assertThat(settlement.getStatus()).isEqualTo(SettlementStatus.PENDING);
+        assertThat(settlement.getAttemptCount()).isZero();
+        assertThat(settlement.getNextAttemptAt()).isNotNull();
+        assertThat(settlement.getCompletedAt()).isNull();
+        verify(settlementPayoutClient, never()).distributeSettlement(any(), any(), any(), any());
     }
 
     @Test
@@ -113,7 +119,25 @@ class PurchaseConfirmedKafkaIntegrationTest {
         assertThat(settlementRepository.findAll())
                 .filteredOn(s -> s.getSellerOrderId().equals(2001L))
                 .hasSize(1);
-        verify(settlementPayoutClient, times(1)).distributeSettlement(eq(first.getId()), anyLong(), any(), any());
+        // 두 번째 수신은 배송비만 채우고 상태 · 다음 시도 시각은 그대로
+        assertThat(filled.getStatus()).isEqualTo(SettlementStatus.PENDING);
+        assertThat(filled.getNextAttemptAt()).isEqualTo(first.getNextAttemptAt());
+        verify(settlementPayoutClient, never()).distributeSettlement(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("payment가 내려가 있어도(지급 호출이 예외) 구매 확정 수신은 성공하고 DLT로 가지 않는다")
+    void receivesEvenWhenPaymentIsDown() {
+        doThrow(new InternalApiUnavailableException("internal-payment", new RuntimeException("connection refused")))
+                .when(settlementPayoutClient).distributeSettlement(any(), any(), any(), any());
+
+        kafkaTemplate.send(KafkaTopics.MARKET_EVENTS, "6001", purchaseConfirmedEnvelope(6001L, "3000"));
+
+        Settlement settlement = awaitSettlement(6001L);
+        assertThat(settlement.getStatus()).isEqualTo(SettlementStatus.PENDING);
+        assertThat(settlement.getCompletedAt()).isNull();
+        verify(settlementPayoutClient, never()).distributeSettlement(any(), any(), any(), any());
+        assertThat(pollDlt("6001", Duration.ofSeconds(3))).isEmpty();
     }
 
     @Test
