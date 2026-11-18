@@ -207,7 +207,7 @@ class ImageReviewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("통과: 품종이 맞으면 ACTIVE, 검수 기록 DONE, 상태 변경 이벤트")
+    @DisplayName("[S-C05] 통과: 품종이 맞으면 ACTIVE, 검수 기록 DONE, 상태 변경 이벤트")
     void approve() {
         identifyAs(MONSTERA, 0.95);
         Product product = register("몬스테라 팝니다", "잘 키웠어요");
@@ -226,7 +226,7 @@ class ImageReviewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("반려: 1순위가 금지 품종(V8, 옛 학명)이고 0.7 이상이면 REJECTED · BANNED_SPECIES")
+    @DisplayName("[S-C05] 반려: 1순위가 금지 품종(V8, 옛 학명)이고 0.7 이상이면 REJECTED · BANNED_SPECIES")
     void rejectBanned() {
         identifyAs("Phalaenopsis japonica", 0.9);
         Product product = register("난초 팝니다", null);
@@ -260,7 +260,7 @@ class ImageReviewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("반려: 삽수 · 씨앗 · 구근이면 REJECTED · PROHIBITED_FORM, 품종이 맞아도")
+    @DisplayName("[S-C05] 반려: 삽수 · 씨앗 · 구근이면 REJECTED · PROHIBITED_FORM, 품종이 맞아도")
     void rejectProhibitedForm() {
         willReturn(new PlantIdentification(true, SaleForm.CUTTING, List.of(new Candidate(MONSTERA, null, 0.95))))
                 .given(plantIdentifier).identify(anyList(), anyList());
@@ -303,7 +303,7 @@ class ImageReviewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("관리자 확인: 1순위 확신도가 0.3 미만이면 LOW_CONFIDENCE")
+    @DisplayName("[S-C05] 관리자 확인: 1순위 확신도가 0.3 미만이면 LOW_CONFIDENCE")
     void manualLowConfidence() {
         identifyAs(MONSTERA, 0.2);
         Product product = register("몬스테라 팝니다", null);
@@ -361,7 +361,7 @@ class ImageReviewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("관리자 확인: 「기타」 품종(V11)이면 사진 속 식물이 무엇이든 OTHER_SPECIES, 상품은 검수 중 그대로")
+    @DisplayName("[S-C05] 관리자 확인: 「기타」 품종(V11)이면 사진 속 식물이 무엇이든 OTHER_SPECIES, 상품은 검수 중 그대로")
     void manualOtherSpecies() {
         identifyAs(MONSTERA, 0.95);
         Species other = speciesRepository.findById(Species.OTHER_ID).orElseThrow();
@@ -391,7 +391,7 @@ class ImageReviewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("사진이 유해하면 식물 식별을 부르지 않고 반려")
+    @DisplayName("[S-C05] 사진이 유해하면 HARMFUL_IMAGE로 식물 식별을 부르지 않고 반려")
     void harmfulSkipsHaiku() {
         given(moderationClient.isImageFlagged(any())).willReturn(true);
         Product product = register("몬스테라 팝니다", null);
@@ -441,7 +441,7 @@ class ImageReviewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("같은 검수 요청이 두 번 와도 한 번만 검수")
+    @DisplayName("[S-H02] 같은 검수 요청이 두 번 와도 한 번만 검수")
     void duplicate() {
         identifyAs(MONSTERA, 0.95);
         Product product = register("몬스테라 팝니다", null);
@@ -509,7 +509,7 @@ class ImageReviewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("S-C10 엔진 오류: 상품은 검수 중 그대로, 검수 기록은 ENGINE_ERROR로 5분 뒤 재처리 대기")
+    @DisplayName("[S-C10] 엔진 오류: 상품은 검수 중 그대로, 검수 기록은 ENGINE_ERROR로 5분 뒤 재처리 대기")
     void engineErrorWaitsForRetry() {
         keysConfigured();
         willThrow(new ReviewEngineException("timeout")).given(plantIdentifier).identify(anyList(), anyList());
@@ -533,7 +533,7 @@ class ImageReviewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("S-C10 재처리가 성공하면 정상 판정 (통과 → ACTIVE), 하루 사진 검수 30회에 세지 않음")
+    @DisplayName("[S-C10] 재처리가 성공하면 정상 판정 (통과 → ACTIVE), 하루 사진 검수 30회에 세지 않음")
     void retrySucceeds() {
         keysConfigured();
         willThrow(new ReviewEngineException("timeout")).given(plantIdentifier).identify(anyList(), anyList());
@@ -557,7 +557,7 @@ class ImageReviewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("S-C10 재처리 3회 모두 실패하면 관리자 확인(ENGINE_ERROR), 자동 통과 · 반려 없음")
+    @DisplayName("[S-C10] 재처리 3회 모두 실패하면 관리자 확인(ENGINE_ERROR), 자동 통과 · 반려 없음")
     void retryExhaustedGoesManual() {
         keysConfigured();
         willThrow(new ReviewEngineException("timeout")).given(plantIdentifier).identify(anyList(), anyList());
@@ -583,7 +583,7 @@ class ImageReviewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("S-C10 그사이 상품이 수정돼 검수 버전이 다르면 재처리하지 않음 (STALE)")
+    @DisplayName("[S-C10] 그사이 상품이 수정돼 검수 버전이 다르면 재처리하지 않음 (STALE)")
     void retrySkipsChangedVersion() {
         keysConfigured();
         willThrow(new ReviewEngineException("timeout")).given(plantIdentifier).identify(anyList(), anyList());
@@ -605,7 +605,7 @@ class ImageReviewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("S-C10 글 검사 엔진 오류도 재처리: 판매 중 상품은 판매 중 그대로 기다림")
+    @DisplayName("[S-C10] 글 검사 엔진 오류도 재처리: 판매 중 상품은 판매 중 그대로 기다림")
     void textOnlyEngineErrorKeepsActive() {
         keysConfigured();
         Product product = register("몬스테라 팝니다", null);
@@ -663,7 +663,7 @@ class ImageReviewServiceIntegrationTest {
     // ── 멈춘 검수 요청 (DB 오류로 DLT · 이벤트 유실) ───────────────────────
 
     @Test
-    @DisplayName("30분이 지나도 REQUESTED인 검수는 재처리 스케줄러가 맡아 검수하고, 늦게 온 검수 요청은 건너뜀")
+    @DisplayName("[S-C10] 30분이 지나도 REQUESTED인 검수는 재처리 스케줄러가 맡아 검수하고, 늦게 온 검수 요청은 건너뜀")
     void staleRequestIsRetried() {
         keysConfigured();
         identifyAs(MONSTERA, 0.95);
@@ -684,7 +684,7 @@ class ImageReviewServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("만든 지 30분이 안 된 REQUESTED는 리스너 몫이라 재처리 스케줄러가 집지 않음")
+    @DisplayName("[S-C10] 만든 지 30분이 안 된 REQUESTED는 리스너 몫이라 재처리 스케줄러가 집지 않음")
     void freshRequestIsLeftToListener() {
         keysConfigured();
         Product product = register("몬스테라 팝니다", null);
