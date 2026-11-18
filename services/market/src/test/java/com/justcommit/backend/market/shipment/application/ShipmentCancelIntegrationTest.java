@@ -130,7 +130,7 @@ class ShipmentCancelIntegrationTest {
     }
 
     @Test
-    @DisplayName("이미 취소된 배송을 다시 취소하면 택배사를 다시 부르지 않는다")
+    @DisplayName("[S-E04] 이미 취소된 배송을 다시 취소하면 택배사를 다시 부르지 않는다")
     void cancelTwiceCallsCourierOnce() {
         createBookedShipment();
 
@@ -141,7 +141,7 @@ class ShipmentCancelIntegrationTest {
     }
 
     @Test
-    @DisplayName("수거된 배송은 취소를 거부한다")
+    @DisplayName("[S-E03] 수거된 배송은 취소를 거부한다")
     void pickedUpCannotBeCancelled() {
         createBookedShipment();
         inTransaction(() -> {
@@ -189,7 +189,7 @@ class ShipmentCancelIntegrationTest {
     }
 
     @Test
-    @DisplayName("택배사 취소가 실패하면 기록하지 않고, 대사 작업이 다시 취소한다")
+    @DisplayName("[S-E05] 택배사 취소가 실패하면 기록하지 않고, 대사 작업이 다시 취소한다")
     void retriesFailedCourierCancel() {
         createBookedShipment();
         when(courierClient.cancel(TRACKING_NO))
@@ -218,7 +218,7 @@ class ShipmentCancelIntegrationTest {
     }
 
     @Test
-    @DisplayName("예약 큐가 예약하는 사이 주문 취소가 먼저 저장되면 예약이 취소를 덮어쓰지 않고, 택배사 예약도 취소된다")
+    @DisplayName("[S-F06] 예약 큐가 예약하는 사이 주문 취소가 먼저 저장되면 예약이 취소를 덮어쓰지 않고, 택배사 예약도 취소된다")
     void cancelWinsOverConcurrentBooking() {
         when(memberQuery.getDefaultAddress(20L)).thenReturn(seller());
         when(courierClient.cancel(TRACKING_NO)).thenReturn(CourierCancelResult.CANCELLED);

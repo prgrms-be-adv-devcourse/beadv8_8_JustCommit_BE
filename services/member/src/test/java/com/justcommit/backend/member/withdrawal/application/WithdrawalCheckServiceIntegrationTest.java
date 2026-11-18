@@ -129,7 +129,7 @@ class WithdrawalCheckServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("한 곳이 500이면 UNAVAILABLE")
+  @DisplayName("[S-B04] 한 곳이 500이면 UNAVAILABLE")
   void serverError() {
     stubAll(ok(PASS_DATA));
     stub(PAYMENT, aResponse().withStatus(500));
@@ -153,7 +153,7 @@ class WithdrawalCheckServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("한 곳의 응답이 응답 타임아웃(3초)보다 늦으면 UNAVAILABLE")
+  @DisplayName("[S-B04] 한 곳의 응답이 응답 타임아웃(3초)보다 늦으면 UNAVAILABLE")
   void responseTimeout() {
     stubAll(ok(PASS_DATA));
     stub(SETTLEMENT, ok(PASS_DATA).withFixedDelay(3_500));
@@ -235,7 +235,7 @@ class WithdrawalCheckServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("세 호출이 병렬로 나간다: 세 요청 모두 보류 중에 나머지 요청이 도착함")
+  @DisplayName("[S-B04] 세 호출이 병렬로 나간다: 세 요청 모두 보류 중에 나머지 요청이 도착함")
   void callsInParallel() {
     stubAll(ok(PASS_DATA).withTransformers(ParallelGate.NAME));
 
