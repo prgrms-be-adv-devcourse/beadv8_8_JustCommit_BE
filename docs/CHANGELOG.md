@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-18 · testing/strategy.md · 도구 표에 「공유 컨테이너」 줄 추가: `common-core` testFixtures의 `SharedPostgres` · `SharedRedis` · `SharedKafka`를 모듈마다 한 번 띄워 공유, 커밋 테스트 `@AfterEach` 정리 · Kafka 그룹 · key 분리 · `@SpringBootTest`는 `@DirtiesContext` (#511)
 - 2026-11-18 · reference/internal-apis.md · reference/env-vars.md · 장바구니 추천 연동 반영: ai 추천 요청 · 응답 형식(`cartProductIds` · `purchasedProductIds` · `size`, 응답 `items[{productId, reason}]`, market은 화면 size의 2배 · 최대 20 요청), market 내부 API 그룹 주소 환경변수(`AI_SERVICE_URL` 추가, 기존 product · payment · settlement 주소도 표에 적음) (#296) (#504)
 - 2026-11-18 · decisions/0024 · services/ai.md · conventions/resilience.md · 임베딩 모델 OpenAI `text-embedding-3-small` 1536차원을 고른 이유 사후 기록(ADR 0024: product 검수와 같은 OpenAI 키, Anthropic은 임베딩 없음, Spring AI 기본 지원, OpenAI 임베딩 중 가장 쌈, pgvector HNSW 한도 2,000차원 안), 호출별 값에 ai → OpenAI 임베딩 ⬜ 줄, 로컬 임베딩 모델은 #294 평가 세트로 비교 예정 (#290)
 - 2026-11-18 · services/ai.md · reference/kafka-topics.md · ai 상품 스냅샷 구현 반영: `product_snapshot` Flyway V4 · `(species_id, status)` 인덱스, `product.events.v1` 구독자에 ai 구현 표시(`productVersion`이 클 때만 덮어쓰는 upsert 한 문장, payload 필수 칸이 비면 바로 DLT) (#503)
