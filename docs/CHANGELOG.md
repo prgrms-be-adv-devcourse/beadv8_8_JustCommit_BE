@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-18 · infra/deploy.md · 앱 서버 메모리 실측 반영: MSA 전체(K3s 파드 5개 · compose 6개)를 부하 없이 띄운 상태에서 4.4GB / 7.6GB, 서비스별 사용량 표, 부하 시 값은 성능 측정 때 (#299)
 - 2026-11-17 · reference/ports.md · compose 서비스 5개의 서버 포트 명시: 컨테이너 8080 → 앱 서버 사설 IP `10.0.7.76`의 8081 · 8082 · 8084 ~ 8086 (K3s 파드가 이 주소로 부름), K3s 매니페스트는 `deploy/k3s/` (#299)
 - 2026-11-18 · infra/observability.md · reference/ports.md · glossary.md · 지표 수집 대상 표(actuator · node-exporter · postgres-exporter, Kafka · Redis ⬜), CPU steal로 크레딧 소진 측정 무효 판단, exporter 포트 9100 · 9187, 용어 「exporter」 · 「CPU steal」 (#301)
 - 2026-11-18 · decisions/0027 · decisions/0008 · infra/observability.md · infra/deploy.md · reference/ports.md · conventions/common-modules.md · overview.md · glossary.md · 분산 추적 Tempo 추가: 서비스 → OTLP → Alloy → Tempo(샘플링 100% · 보관 3일), Loki ↔ Tempo traceId 연결, `common-logging`에 OTLP exporter, 데이터 서버 · 포트 3200 · 4317, 용어 「분산 추적」 (#301)

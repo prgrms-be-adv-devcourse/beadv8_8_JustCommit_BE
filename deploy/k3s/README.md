@@ -26,9 +26,7 @@
 
 ```bash
 kubectl apply -f namespace.yaml
-kubectl -n replant create secret generic gateway-env --from-env-file=$HOME/secrets/gateway.env
-kubectl -n replant create secret generic market-env --from-env-file=$HOME/secrets/market.env
-kubectl -n replant create secret generic ai-env --from-env-file=$HOME/secrets/ai.env
+bash ~/make-env.sh   # deploy/scripts/make-env.sh — ~/secrets/*.env 작성 + gateway · market · ai Secret 갱신
 kubectl -n replant create secret docker-registry ghcr-pull --docker-server=ghcr.io --docker-username=<GitHub ID> --docker-password=<토큰>
 kubectl apply -f endpoints.yaml -f gateway.yaml -f market.yaml -f ai.yaml
 kubectl -n replant get pods
@@ -46,4 +44,4 @@ kubectl -n replant get pods
 | 배포 진행 보기 | `kubectl -n replant rollout status deploy/market` |
 | ai 개수 · CPU 보기 | `kubectl -n replant get hpa ai` |
 | 되돌리기 | `kubectl -n replant rollout undo deploy/market` |
-| Secret 값 바꾼 뒤 반영 | Secret을 지우고 다시 만든 뒤 `kubectl -n replant rollout restart deploy/market` |
+| Secret 값 바꾼 뒤 반영 | `bash ~/make-env.sh` 뒤 `kubectl -n replant rollout restart deploy/market` |
