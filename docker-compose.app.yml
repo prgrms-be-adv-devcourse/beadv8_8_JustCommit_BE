@@ -1,0 +1,114 @@
+# 최종 MSA 앱 서버(t3.large)용. compose로 띄우는 서비스 5개 + Redis.
+# Gateway · market · ai는 K3s(deploy/k3s/), Nginx는 서버에 직접 설치, 404-express는 자기 레포의 compose.
+# 세미 운영(docker-compose.prod.yml)과는 다른 서버 · 다른 파일이다.
+#
+# 실행 (서버 ~/replant 에서):
+#   docker compose -f docker-compose.app.yml pull
+#   docker compose -f docker-compose.app.yml up -d
+# 한 서비스만 새 이미지로 (CD): MEMBER_TAG=a1b2c3d docker compose -f docker-compose.app.yml up -d member
+#
+# 비밀값은 서버 ~/secrets/{이름}.env 에만 둔다 (레포 · 채팅에 올리지 않음). 변수 설명: docs/reference/env-vars.md
+#   redis.env · member.env · product.env · payment.env · settlement.env · notification.env
+#
+# 포트는 모두 앱 서버 사설 IP(10.0.7.76)에만 연다. 인터넷에서는 Nginx 80/443만 보인다 (docs/reference/ports.md)
+#   K3s 파드(Gateway · market)가 이 주소로 compose 서비스 · Redis를 부른다.
+name: replant
+
+x-service: &service
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+  healthcheck:
+    # 8080이 열렸는지만 본다 (actuator가 생기면 HTTP 확인으로 바꾼다)
+    test: ["CMD", "bash", "-c", "</dev/tcp/localhost/8080"]
+    interval: 10s
+    timeout: 3s
+    retries: 3
+    start_period: 60s
+
+services:
+  redis:
+    image: redis:8-alpine
+    container_name: replant-redis
+    env_file: ${HOME}/secrets/redis.env # REDIS_PASSWORD
+    # 비밀번호는 compose 파일에 펼치지 않고 컨테이너 안 환경변수에서 읽는다
+    # 256MB가 차면 쓰기 실패(noeviction), AOF로 매일 꺼졌다 켜져도 토큰 유지 (docs/reference/redis-keys.md)
+    command:
+      - sh
+      - -c
+      - exec redis-server --requirepass "$$REDIS_PASSWORD" --maxmemory 256mb --maxmemory-policy noeviction --appendonly yes
+    ports:
+      - "10.0.7.76:6379:6379"
+    volumes:
+      - redis-data:/data
+    mem_limit: 320m
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  member:
+    <<: *service
+    image: ghcr.io/prgrms-be-adv-devcourse/replant-member:${MEMBER_TAG:-latest}
+    container_name: replant-member
+    env_file: ${HOME}/secrets/member.env
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      MARKET_SERVICE_URL: http://10.0.7.76:30083 # K3s market (NodePort)
+      PAYMENT_SERVICE_URL: http://payment:8080
+      SETTLEMENT_SERVICE_URL: http://settlement:8080
+    ports:
+      - "10.0.7.76:8081:8080"
+    mem_limit: 768m
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  product:
+    <<: *service
+    image: ghcr.io/prgrms-be-adv-devcourse/replant-product:${PRODUCT_TAG:-latest}
+    container_name: replant-product
+    # S3는 EC2 IAM 역할로 접속한다. S3_ENDPOINT · S3_ACCESS_KEY · S3_SECRET_KEY(로컬 RustFS용)는 넣지 않는다
+    env_file: ${HOME}/secrets/product.env
+    ports:
+      - "10.0.7.76:8082:8080"
+    mem_limit: 768m
+
+  payment:
+    <<: *service
+    image: ghcr.io/prgrms-be-adv-devcourse/replant-payment:${PAYMENT_TAG:-latest}
+    container_name: replant-payment
+    env_file: ${HOME}/secrets/payment.env
+    ports:
+      - "10.0.7.76:8084:8080"
+    mem_limit: 512m
+
+  settlement:
+    <<: *service
+    image: ghcr.io/prgrms-be-adv-devcourse/replant-settlement:${SETTLEMENT_TAG:-latest}
+    container_name: replant-settlement
+    env_file: ${HOME}/secrets/settlement.env
+    environment:
+      PAYMENT_SERVICE_URL: http://payment:8080
+    ports:
+      - "10.0.7.76:8085:8080"
+    mem_limit: 512m
+
+  notification:
+    <<: *service
+    image: ghcr.io/prgrms-be-adv-devcourse/replant-notification:${NOTIFICATION_TAG:-latest}
+    container_name: replant-notification
+    env_file: ${HOME}/secrets/notification.env
+    ports:
+      - "10.0.7.76:8086:8080"
+    mem_limit: 512m
+
+volumes:
+  redis-data:

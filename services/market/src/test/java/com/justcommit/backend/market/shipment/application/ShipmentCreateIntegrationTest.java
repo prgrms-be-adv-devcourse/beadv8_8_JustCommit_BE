@@ -78,7 +78,7 @@ class ShipmentCreateIntegrationTest {
     }
 
     @Test
-    @DisplayName("결제 트랜잭션이 커밋돼도 택배사를 부르지 않고 READY 배송(택배 주문번호 · 상품 요약)만 남긴다")
+    @DisplayName("[S-F01] 결제 트랜잭션이 커밋돼도 택배사를 부르지 않고 READY 배송(택배 주문번호 · 상품 요약)만 남긴다")
     void createsReadyWithoutCallingCourier() {
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> shipmentService.createShipments(order()));
 
@@ -92,7 +92,7 @@ class ShipmentCreateIntegrationTest {
     }
 
     @Test
-    @DisplayName("결제 트랜잭션이 롤백되면 배송 행도 남지 않는다")
+    @DisplayName("[S-F01] 결제 트랜잭션이 롤백되면 배송 행도 남지 않는다")
     void rollbackLeavesNothing() {
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             shipmentService.createShipments(order());
@@ -104,7 +104,7 @@ class ShipmentCreateIntegrationTest {
     }
 
     @Test
-    @DisplayName("택배사가 3초씩 늦어도 결제 쪽 배송 생성은 기다리지 않고, 예약은 큐가 나중에 끝낸다")
+    @DisplayName("[S-F08] 택배사가 3초씩 늦어도 결제 쪽 배송 생성은 기다리지 않고, 예약은 큐가 나중에 끝낸다")
     void paymentDoesNotWaitForSlowCourier() {
         when(orderQuery.getShippingInfo(anyLong())).thenReturn(
                 new OrderShippingInfo(9L, 10L, 20L, new BigDecimal("3000"), "구매자", "01000000000", "부산", null));

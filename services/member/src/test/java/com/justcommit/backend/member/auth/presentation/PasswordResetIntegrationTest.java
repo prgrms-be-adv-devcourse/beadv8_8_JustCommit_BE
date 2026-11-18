@@ -52,6 +52,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 /**
  * 비밀번호 재설정 (#412)을 실제 PostgreSQL · Redis · HTTP로 처음부터 끝까지 확인한다.
@@ -228,6 +229,39 @@ class PasswordResetIntegrationTest {
     then(mailSender).should().send(eq(local.getEmail()), anyString(), any(), eq(EmailPurpose.PASSWORD_RESET));
     then(mailSender).should(never()).send(eq(social.getEmail()), anyString(), any(), any());
     then(mailSender).should(never()).send(eq(unknownEmail), anyString(), any(), any());
+  }
+
+  @Test
+  @DisplayName("[S-A09] HTTP: 같은 이메일 가입 인증은 첫 예약부터 하루 5번까지, 6번째는 429 EMAIL_SEND_DAILY_LIMIT이고 메일 없음")
+  void signupDailyLimitOverHttp() throws Exception {
+    String email = "daily" + SEQ.incrementAndGet() + "@test.com";
+    for (int i = 0; i < 5; i++) {
+      assertThat(post("/api/v1/auth/email/send", "{\"email\":\"" + email + "\"}").statusCode()).isEqualTo(200);
+      redisTemplate.delete("auth:email:cooldown:" + email);   // 60초 재발송 제한만 풀고 하루 횟수는 그대로
+    }
+
+    HttpResponse<String> sixth = post("/api/v1/auth/email/send", "{\"email\":\"" + email + "\"}");
+
+    assertError(sixth, 429, MemberErrorCode.EMAIL_SEND_DAILY_LIMIT);
+    then(mailSender).should(times(5)).send(eq(email), anyString(), any(), eq(EmailPurpose.SIGNUP));
+  }
+
+  @Test
+  @DisplayName("[S-A09] HTTP: 재설정 발송은 하루 5번을 넘어도 같은 200 · 본문을 주고, 6번째는 메일을 보내지 않음")
+  void resetDailyLimitKeepsSameResponse() throws Exception {
+    Member member = saveMember();
+    HttpResponse<String> first = sendReset(member.getEmail());
+    for (int i = 1; i < 5; i++) {
+      redisTemplate.delete("auth:email:cooldown:" + member.getEmail());
+      assertThat(sendReset(member.getEmail()).statusCode()).isEqualTo(200);
+    }
+    redisTemplate.delete("auth:email:cooldown:" + member.getEmail());
+
+    HttpResponse<String> sixth = sendReset(member.getEmail());
+
+    assertThat(sixth.statusCode()).isEqualTo(200);
+    assertThat(sixth.body()).isEqualTo(first.body());
+    then(mailSender).should(times(5)).send(eq(member.getEmail()), anyString(), any(), eq(EmailPurpose.PASSWORD_RESET));
   }
 
   // ===== 도우미 =====

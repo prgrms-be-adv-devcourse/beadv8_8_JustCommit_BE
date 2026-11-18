@@ -165,7 +165,7 @@ class EmailVerificationServiceTest {
   }
 
   @Test
-  @DisplayName("하루 한도를 넘으면 429 EMAIL_SEND_DAILY_LIMIT과 하루 기간 남은 시간, 저장 · 메일 없음")
+  @DisplayName("[S-A09] 하루 한도를 넘으면 429 EMAIL_SEND_DAILY_LIMIT과 하루 기간 남은 시간, 저장 · 메일 없음")
   void sendCode_dailyLimit() {
     givenSendSlot(SIGNUP_QUOTA, SendStatus.DAILY_LIMIT, 3600);
 
@@ -374,7 +374,7 @@ class EmailVerificationServiceTest {
   }
 
   @Test
-  @DisplayName("5번째로 틀리면 EMAIL_CODE_ATTEMPTS_EXCEEDED (인증번호는 저장소에서 폐기됨)")
+  @DisplayName("[S-A09] 5번째로 틀리면 EMAIL_CODE_ATTEMPTS_EXCEEDED (인증번호는 저장소에서 폐기됨)")
   void verifyCode_exhausted() {
     givenVerify("000000", VerifyResult.EXHAUSTED);
 
@@ -432,7 +432,7 @@ class EmailVerificationServiceTest {
   }
 
   @Test
-  @DisplayName("재설정 발송: 재발송 제한 · 하루 한도에 걸려도 예외 없이 같은 결과, 대상 조회 · 메일 없음")
+  @DisplayName("[S-A09] 재설정 발송: 재발송 제한 · 하루 한도에 걸려도 예외 없이 같은 결과, 대상 조회 · 메일 없음")
   void sendResetCode_limited() {
     given(store.tryAcquireSend(RESET_QUOTA, EMAIL, EmailSendPolicy.COOLDOWN,
         EmailSendPolicy.DAILY_LIMIT, EmailSendPolicy.DAILY_WINDOW))

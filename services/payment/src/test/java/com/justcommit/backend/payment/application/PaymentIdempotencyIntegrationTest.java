@@ -79,7 +79,7 @@ class PaymentIdempotencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("같은 settlementId로 동시에 지급해도 정산금과 수수료는 한 번만 적립된다")
+    @DisplayName("[S-G04] 같은 settlementId로 동시에 지급해도 정산금과 수수료는 한 번만 적립된다")
     void paysOutOnlyOnceForConcurrentRequestsOfSameSettlement() throws Exception {
         Long sellerId = 40L;
         walletRepository.save(Wallet.forMember(sellerId));
@@ -97,7 +97,7 @@ class PaymentIdempotencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("같은 settlementId로 다시 지급하면 아무것도 하지 않는다 (판매자 지갑이 없던 첫 지급 포함)")
+    @DisplayName("[S-G04] 같은 settlementId로 다시 지급하면 아무것도 하지 않는다 (판매자 지갑이 없던 첫 지급 포함)")
     void doesNothingWhenSameSettlementIsPaidAgain() {
         Long sellerId = 41L;
 
@@ -111,7 +111,7 @@ class PaymentIdempotencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("같은 orderItemId로 동시에 환불해도 한 번만 환불되고 나머지는 ALREADY_REFUNDED")
+    @DisplayName("[S-E04] 같은 orderItemId로 동시에 환불해도 한 번만 환불되고 나머지는 ALREADY_REFUNDED")
     void refundsOnlyOnceForConcurrentRequestsOfSameOrderItem() throws Exception {
         Long buyerId = 50L;
         Long orderItemId = 300L;

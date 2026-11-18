@@ -63,6 +63,7 @@ class CartServiceTest {
     }
 
     @Test
+    @DisplayName("[S-B03] 같은 회원으로 장바구니 생성을 다시 불러도 기존 장바구니를 유지(1개)")
     void keepsExistingCartWhenRegistrationEventIsRepeated() {
         when(cartRepository.countByMemberId(10L)).thenReturn(0, 1);
 

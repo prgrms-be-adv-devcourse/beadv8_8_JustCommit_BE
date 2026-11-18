@@ -29,6 +29,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
@@ -57,6 +58,10 @@ class ProductSpecificationsTest {
     private static final Long SELLER_ID = 1L;
     private static final Long OTHER_SELLER_ID = 2L;
     private static final PageRequest LATEST = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "createdAt"));
+
+    // 서비스와 같은 한국 시간 Clock으로 시각을 만든다 (JVM · DB 시간대가 UTC인 CI에서도 같은 기준)
+    @Autowired
+    private Clock clock;
 
     @Autowired
     private EntityManager entityManager;
@@ -125,7 +130,7 @@ class ProductSpecificationsTest {
     // SQL 통해 생성 시각 바꿈 - createdAt 은 Auditing 이 관리하는 필드라 엔티티로 바꾸기 어려워 직접 DB 수정
     private void setCreatedAt(Product product, int minutesAgo) {
         entityManager.createNativeQuery("UPDATE product SET created_at = :createdAt WHERE id = :id")
-                .setParameter("createdAt", LocalDateTime.now().minusMinutes(minutesAgo))
+                .setParameter("createdAt", LocalDateTime.now(clock).minusMinutes(minutesAgo))
                 .setParameter("id", product.getId())
                 .executeUpdate();
     }
@@ -324,7 +329,7 @@ class ProductSpecificationsTest {
 
         assertThat(productRepository.countBySellerIdAndStatus(SELLER_ID, ProductStatus.REVIEW_PENDING)).isEqualTo(2);
         // setUp의 판매 중 · 숨김 · 판매 완료 · 삭제(1~4분 전) 4건 + 방금 등록한 검수 중 1건. 두 시간 전 상품 · 남의 상품은 제외
-        assertThat(productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(SELLER_ID, LocalDateTime.now().minusHours(1)))
+        assertThat(productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(SELLER_ID, LocalDateTime.now(clock).minusHours(1)))
                 .isEqualTo(5);
     }
 }
