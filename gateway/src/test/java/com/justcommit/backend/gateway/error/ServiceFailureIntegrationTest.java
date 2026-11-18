@@ -2,6 +2,7 @@ package com.justcommit.backend.gateway.error;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 
 import com.github.tomakehurst.wiremock.http.Fault;
@@ -55,6 +56,20 @@ class ServiceFailureIntegrationTest extends GatewayIntegrationTest {
         .willReturn(aResponse().withFault(Fault.EMPTY_RESPONSE)));
 
     expectError(client.post().uri("/api/v1/auth/login").exchange(), 502, "BAD_GATEWAY");
+  }
+
+  @Test
+  @DisplayName("탈퇴 POST는 전용 라우트(20초): 서비스가 11초 걸려도 504가 아니라 200, member까지 전달됨")
+  void withdrawalRouteWaitsLonger() {
+    SERVICES.stubFor(post(urlEqualTo("/api/v1/users/me/withdrawal"))
+        .willReturn(aResponse().withStatus(200).withBody("service-ok").withFixedDelay(11_000)));
+
+    client.post().uri("/api/v1/users/me/withdrawal")
+        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken(1, "MEMBER"))
+        .exchange()
+        .expectStatus().isOk();
+
+    SERVICES.verify(postRequestedFor(urlEqualTo("/api/v1/users/me/withdrawal")));
   }
 
   private ResponseSpec authorizedGet(String path) {

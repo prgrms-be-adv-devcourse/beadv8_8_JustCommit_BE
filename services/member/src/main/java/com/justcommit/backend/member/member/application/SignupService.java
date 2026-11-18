@@ -12,6 +12,7 @@ import com.justcommit.backend.member.event.MemberCreated;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.infrastructure.crypto.MemberHmac;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.withdrawal.application.RejoinRestriction;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -30,6 +31,7 @@ public class SignupService {
   private final PasswordEncoder passwordEncoder;
   private final AccountCipher accountCipher;
   private final MemberHmac memberHmac;
+  private final RejoinRestriction rejoinRestriction;
   private final OutboxPublisher outboxPublisher;
 
   // 회원가입: 이메일 인증 확인 → 중복 검사 → 회원 저장 → 기본 배송지 저장 → 인증 완료 상태 삭제
@@ -74,6 +76,9 @@ public class SignupService {
     } catch (DataIntegrityViolationException e) {
       throw new BusinessException(toDuplicateErrorCode(e));
     }
+
+    // 30일 안에 탈퇴한 이메일 · 휴대폰이면 가입 전체를 롤백 (#407). 회원을 INSERT한 뒤, 커밋 전에 확인
+    rejoinRestriction.check(email, command.phone());
 
     // 3. 가입 시 입력한 배송지를 기본 배송지로 저장(기본 배송지 1개)
     addressRepository.save(Address.createDefault(

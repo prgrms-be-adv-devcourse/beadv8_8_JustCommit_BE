@@ -31,3 +31,10 @@ member:
   token-revocation:
     retry:
       enabled: false
+  # 탈퇴 기록 정리도 테스트에서 끈다. 정리는 테스트에서 스케줄러를 직접 만들어 확인
+  withdrawal-record:
+    cleanup:
+      enabled: false
+  # 카카오 어드민 키는 기본값이 없어 테스트용 가짜 값을 둔다 (실제 호출은 WireMock 테스트에서만)
+  kakao:
+    admin-key: test-kakao-admin-key
