@@ -18,8 +18,8 @@
 | POST | `auth/login` | 로그인 | 공개 |
 | POST | `auth/logout` | 로그아웃 | 공개(Refresh 쿠키 · 선택 `Authorization`) |
 | POST | `auth/reissue` | 토큰 재발급 | 공개(Refresh 쿠키) |
-| POST | `users` | 회원가입 | 공개 |
-| POST | `users/social` | 소셜 가입 완료 | 공개 |
+| POST | `users` | 회원가입 (30일 안에 탈퇴한 이메일 · 휴대폰이면 409 `REJOIN_RESTRICTED`) | 공개 |
+| POST | `users/social` | 소셜 가입 완료 (30일 안에 탈퇴한 이메일 · 휴대폰이면 409 `REJOIN_RESTRICTED`) | 공개 |
 | GET | `users/nicknameAvailability?nickname=` | 닉네임 중복 확인 | 공개 |
 | GET | `users/phoneAvailability?phone=` | 휴대폰 중복 확인 | 공개 |
 | GET | `users/me` | 내 정보 | 로그인 |
