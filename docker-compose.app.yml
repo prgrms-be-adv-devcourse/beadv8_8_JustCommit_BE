@@ -121,12 +121,15 @@ services:
       - --storage.path=/var/lib/alloy/data
       - --server.http.listen-addr=127.0.0.1:12345 # Alloy 자체 화면 · 상태. 서버 안에서만
     network_mode: host
+    cgroup: host # 컨테이너 · 파드 메모리(cAdvisor): 서버 전체 cgroup을 본다
     volumes:
       - ./deploy/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - alloy-data:/var/lib/alloy/data
       - /var/run/docker.sock:/var/run/docker.sock:ro # compose 컨테이너 로그
       - /var/log/pods:/var/log/pods:ro # K3s 파드 로그
       - /etc/rancher/k3s/k3s.yaml:/etc/rancher/k3s/k3s.yaml:ro # K3s 파드 찾기
+      - /run/k3s/containerd/containerd.sock:/run/k3s/containerd/containerd.sock:ro # K3s 파드 이름 (cAdvisor)
+      - /var/lib/docker:/var/lib/docker:ro # compose 컨테이너 이름 (cAdvisor)
       - /proc:/host/proc:ro # 앱 서버 CPU · 메모리 · steal
       - /sys:/host/sys:ro
       - /:/host/root:ro

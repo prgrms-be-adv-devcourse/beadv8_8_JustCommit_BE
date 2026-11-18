@@ -19,3 +19,9 @@ scrape_configs:
     static_configs:
       - targets: ["postgres-exporter:9187"]
         labels: { server: data }
+
+  # DLT 유입 알림 (kafka_topic_partition_current_offset{topic=~".+\.DLT"})
+  - job_name: kafka
+    static_configs:
+      - targets: ["kafka-exporter:9308"]
+        labels: { server: data }

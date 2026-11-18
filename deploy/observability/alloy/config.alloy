@@ -178,3 +178,62 @@ prometheus.scrape "node" {
   targets    = discovery.relabel.node.output
   forward_to = [prometheus.remote_write.data_server.receiver]
 }
+
+// ===================== 지표: 컨테이너 · 파드 메모리 =====================
+// 메모리 알림(컨테이너 한도의 90%)용. compose 컨테이너는 Docker, K3s 파드는 K3s 내장 containerd에서 이름을 알아낸다.
+// 수집 양을 줄이려고 메모리만 켜고, 알림 · 대시보드에 쓰는 두 지표만 남긴다
+
+prometheus.exporter.cadvisor "containers" {
+  docker_host            = "unix:///var/run/docker.sock"
+  containerd_host        = "/run/k3s/containerd/containerd.sock"
+  docker_only            = false
+  store_container_labels = false
+  allowlisted_container_labels = [
+    "com.docker.compose.service",
+    "io.kubernetes.pod.name",
+    "io.kubernetes.container.name",
+  ]
+  enabled_metrics  = ["memory"]
+  storage_duration = "2m"
+}
+
+discovery.relabel "cadvisor" {
+  targets = prometheus.exporter.cadvisor.containers.targets
+
+  rule {
+    target_label = "job"
+    replacement  = "cadvisor"
+  }
+}
+
+prometheus.scrape "cadvisor" {
+  targets         = discovery.relabel.cadvisor.output
+  scrape_interval = "30s"
+  forward_to      = [prometheus.relabel.cadvisor.receiver]
+}
+
+prometheus.relabel "cadvisor" {
+  // 사용량 · 한도 두 지표만, 이름이 있는 컨테이너(compose · 파드)만 남긴다 (cgroup 묶음 단위 줄은 버림)
+  rule {
+    source_labels = ["__name__"]
+    regex         = "container_memory_working_set_bytes|container_spec_memory_limit_bytes"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["container_label_com_docker_compose_service", "container_label_io_kubernetes_container_name"]
+    separator     = ""
+    regex         = ".+"
+    action        = "keep"
+  }
+  // 대시보드 · 알림에서 쓰는 라벨 이름으로 맞춘다: service(compose 서비스 · K3s 컨테이너 이름) · pod
+  rule {
+    source_labels = ["container_label_com_docker_compose_service", "container_label_io_kubernetes_container_name"]
+    separator     = ""
+    target_label  = "service"
+  }
+  rule {
+    source_labels = ["container_label_io_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+  forward_to = [prometheus.remote_write.data_server.receiver]
+}

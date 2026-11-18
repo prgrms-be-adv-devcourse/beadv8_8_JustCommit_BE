@@ -25,6 +25,7 @@ Docker · K3s 안에서는 서비스가 모두 8080, 로컬 실행 때만 서비
 | node-exporter | 데이터 (앱 서버는 Alloy 내장 기능으로 대신) | 9100 | – | ❌ (Prometheus만) |
 | alloy | 앱 | 12345 (`127.0.0.1`에만, 상태 화면) | – | ❌ |
 | postgres-exporter | 데이터 | 9187 | – | ❌ (Prometheus만) |
+| kafka-exporter | 데이터 | 9308 | – | ❌ (Prometheus만) |
 
 ## 보안 그룹
 

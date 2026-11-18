@@ -22,7 +22,9 @@
 | 서비스 | `/actuator/prometheus` (HTTP · Hikari · Tomcat · JVM) |
 | 서버 (앱 · 데이터) | node-exporter (CPU · 메모리 · 디스크 · CPU steal). 앱 서버는 Alloy 내장 `prometheus.exporter.unix`로 같은 지표 |
 | PostgreSQL | postgres-exporter |
-| Kafka · Redis | ⬜ 미정 |
+| Kafka | kafka-exporter (토픽별 offset → DLT 유입 알림) |
+| 컨테이너 · 파드 메모리 (앱 서버) | Alloy 내장 cAdvisor (사용량 · 한도) |
+| Redis | ⬜ 미정 |
 
 대시보드 「서버 CPU」 패널에 CPU steal을 같이 표시합니다. 측정 중 steal이 오르면 t3 크레딧이 바닥나 AWS가 CPU를 묶은 것이므로 그 측정은 무효로 봅니다.
 
@@ -46,9 +48,9 @@
 | 서비스 다운 | health 응답 없음 | 1분 |
 | 5xx 급증 | 5xx 비율 5% 이상 | 5분 |
 | Outbox 대기 | 가장 오래된 PENDING이 1분 초과 · `FAILED` 발생 (`max by (service) (outbox_pending_oldest_age_seconds) > 60`, `max by (service) (outbox_failed) > 0`) | 즉시 |
-| DLT 유입 | 1건이라도 | 즉시 |
+| DLT 유입 | `*.DLT` 토픽에 1건이라도 (kafka-exporter offset 증가) | 즉시 |
 | 디스크 | 80% 이상 | 5분 |
-| 메모리 | 컨테이너 한도의 90% 이상 | 5분 |
+| 메모리 | 앱 서버: 컨테이너 · 파드 한도의 90% 이상, 데이터 서버: 서버 메모리 90% 이상 | 5분 |
 | 배송 예약 지연 | 10분 넘게 `READY`인 배송 1건 이상 (`max(market_shipments_booking_delayed) > 0`) | 상태 기준 1번, 반복 1시간 |
 | 정산 지급 지연 | 10분 넘게 미지급(`PENDING`, `FAILED`)인 정산 1건 이상 (`max(settlement_payouts_delayed) > 0`) | 상태 기준 1번, 반복 1시간 |
 | `REVIEW_REQUIRED` | 결제 확인 필요 주문 1건 이상 (`max(market_orders_review_required) > 0`) → [처리 순서](payment-review-runbook.md) | 상태 기준 1번, 반복 1시간 |

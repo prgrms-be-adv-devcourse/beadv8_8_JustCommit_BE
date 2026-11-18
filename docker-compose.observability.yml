@@ -7,7 +7,7 @@
 # 흐름
 #   앱 서버 Alloy ──로그──▶ Loki(3100)
 #   앱 서버 Alloy ──지표(remote_write)──▶ Prometheus(9090)   ← 앱 서버 서비스 · node-exporter는 Alloy가 긁어서 밀어 넣는다
-#   Prometheus ──직접 수집──▶ 이 서버의 node-exporter · postgres-exporter
+#   Prometheus ──직접 수집──▶ 이 서버의 node-exporter · postgres-exporter · kafka-exporter
 #   Grafana(127.0.0.1:3000) ◀── SSH 터널로만 접속
 #
 # 비밀값은 서버 ~/secrets/ 에만 둔다 (레포 · 채팅에 올리지 않음)
@@ -19,7 +19,7 @@
 # 포트: Loki · Prometheus는 이 서버 사설 IP에만 열고, 보안 그룹이 앱 서버 보안 그룹에서 오는 3100 · 9090만 허용한다.
 #   Grafana는 127.0.0.1에만 연다 → 인터넷 · 앱 서버 어디서도 안 보이고 SSH 터널로만 들어간다 (docs/reference/ports.md)
 #
-# 메모리 한도 합 약 0.9GB (Tempo 256m는 ⑤ 단계에서 추가). 보관: Loki 14일 · Prometheus 7일
+# 메모리 한도 합 약 0.95GB (Tempo 256m는 ⑤ 단계에서 추가). 보관: Loki 14일 · Prometheus 7일
 name: replant-obs
 
 x-common: &common
@@ -97,6 +97,14 @@ services:
     environment:
       DATA_SOURCE_URI: "${DATA_IP}:5432/postgres?sslmode=disable"
       DATA_SOURCE_USER: monitoring
+    mem_limit: 48m
+
+  # Kafka 토픽별 메시지 위치(offset). DLT 유입 알림용 (*.DLT 토픽에 메시지가 늘면). Kafka 4.2.1과 연결 확인함
+  kafka-exporter:
+    <<: *common
+    image: danielqsj/kafka-exporter:v1.9.0
+    container_name: replant-kafka-exporter
+    command: ["--kafka.server=${DATA_IP}:9092"]
     mem_limit: 48m
 
 volumes:
