@@ -8,6 +8,7 @@ import com.justcommit.backend.common.messaging.KafkaTopics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.messaging.converter.MessageConversionException;
 import org.springframework.stereotype.Component;
 
 // product.events.v1 → 상품 스냅샷 (#293, ADR 0021).
@@ -25,6 +26,7 @@ public class ProductEventListener {
     public void on(EventEnvelope envelope) {
         switch (envelope.eventType()) {
             case "ProductRegistered", "ProductUpdated", "ProductStatusChanged" -> {
+                requirePayloadVersion2(envelope);
                 ProductChanged event = envelopeMapper.readPayload(envelope, ProductChanged.class);
                 boolean applied = snapshotRepository.upsertIfNewer(event.toSnapshot());
                 if (applied) {
@@ -44,14 +46,22 @@ public class ProductEventListener {
         }
     }
 
+    // 봉투 version 1(productId만 있던 형식)은 칸이 모두 있어도 받지 않는다.
+    // 다시 해도 같은 형식 오류라 Spring Kafka 기본 비재시도 예외(MessageConversionException)로 던져 바로 DLT
+    private static void requirePayloadVersion2(EventEnvelope envelope) {
+        if (envelope.version() < 2) {
+            throw new MessageConversionException("상품 이벤트 payload version 2 미만: version=" + envelope.version());
+        }
+    }
+
     // product가 보내는 payload v2 (docs/reference/kafka-topics.md 「product 상품 이벤트」).
-    // 칸이 비면(productId만 있던 봉투 version 1 포함) 생성자 예외 → Jackson 예외로 감싸져 재시도 없이 바로 DLT
+    // 칸이 비면 생성자 예외 → Jackson 예외로 감싸져 재시도 없이 바로 DLT
     record ProductChanged(Long productId, Long speciesId, Long sellerId, String status, Boolean hidden,
             Long productVersion) {
         ProductChanged {
             if (productId == null || speciesId == null || sellerId == null || status == null || status.isBlank()
                     || hidden == null || productVersion == null) {
-                throw new IllegalArgumentException("필수 칸이 없는 상품 이벤트 (payload version 2 아님?)");
+                throw new IllegalArgumentException("필수 칸이 없는 상품 이벤트");
             }
         }
 

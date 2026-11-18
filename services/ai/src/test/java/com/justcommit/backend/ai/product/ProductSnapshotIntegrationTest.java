@@ -24,6 +24,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.messaging.converter.MessageConversionException;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.junit.jupiter.Container;
@@ -150,13 +151,25 @@ class ProductSnapshotIntegrationTest {
     }
 
     @Test
-    @DisplayName("productId만 있는 payload(봉투 version 1)는 Jackson 예외라 재시도 없이 DLT로 가고 저장하지 않는다")
-    void rejectsPayloadWithoutRequiredFields() {
+    @DisplayName("봉투 version 1이면 칸이 모두 있어도 MessageConversionException(재시도 없이 DLT)이고 저장하지 않는다")
+    void rejectsEnvelopeVersion1() {
         EventEnvelope v1 = new EventEnvelope(UUID.randomUUID().toString(), "ProductStatusChanged", 1,
-                OffsetDateTime.now(), "6", json.valueToTree(Map.of("productId", 6)));
+                OffsetDateTime.now(), "6", json.valueToTree(payload(6L, SPECIES_ID, "ACTIVE", false, 1)));
 
-        assertThatThrownBy(() -> listener.on(v1)).isInstanceOf(JacksonException.class);
+        assertThatThrownBy(() -> listener.on(v1)).isInstanceOf(MessageConversionException.class);
         assertThat(snapshotRepository.findById(6L)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("version 2인데 필수 칸이 비면 Jackson 예외(재시도 없이 DLT)이고 저장하지 않는다")
+    void rejectsPayloadWithoutRequiredFields() {
+        listener.on(event("ProductRegistered", 8L, "ACTIVE", false, 1));
+        EventEnvelope missingVersion = envelope("ProductStatusChanged", 8L,
+                Map.of("productId", 8, "speciesId", SPECIES_ID, "sellerId", SELLER_ID, "status", "SOLD_OUT",
+                        "hidden", false));
+
+        assertThatThrownBy(() -> listener.on(missingVersion)).isInstanceOf(JacksonException.class);
+        assertThat(snapshot(8L).status()).isEqualTo("ACTIVE");
     }
 
     @Test
