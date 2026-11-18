@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-18 · reference/ports.md · infra/deploy.md · 404-express를 앱 서버 사설 IP `10.0.7.76:3000`에만 공개(market → `COURIER_BASE_URL`), 웹훅은 Gateway NodePort 30080으로, 배포는 404-express 레포 CD (#525)
 - 2026-11-18 · infra/observability.md · 배송 예약 · 취소 지연 알림을 지표 `replant_shipment_stuck{status="READY"|"CANCEL_PENDING"}`(10분 넘게 남은 배송 수)로, market에 actuator · Prometheus(`/actuator/prometheus`, 내부망 전용) 추가. testing/scenarios.md S-F09 ~ F12 추가 (#490)
 - 2026-11-18 · flows/cancel-refund.md · services/market.md · reference/schedulers.md · glossary.md · 택배 취소를 큐로: 취소 API는 `CANCEL_PENDING` + `cancel_requested_at` 기록만(`READY`도), 택배 취소 큐가 주문번호 + 누른 시각으로 보내고 택배사가 기사 거리로 판정(2km 안 `CANCEL_LOCKED`, 잠금 직후 30초 유예, 장애로 이미 수거되면 택배사 반송), 결과는 `SHIPMENT_CANCEL_RESULT` → 주문 Saga가 환불. 예약 · 취소 큐 `last_error` 추가, 용어 「취소 불가」 · 「반송」 추가. ADR 0026 추가 (#490)
 - 2026-11-18 · testing/scenarios.md · S-C10 재검수 「1회」 → 「2회」(flows/image-review.md · services/product.md 기준으로 문구 맞춤) (#497)
