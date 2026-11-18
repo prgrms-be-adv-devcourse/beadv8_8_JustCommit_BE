@@ -5,13 +5,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -23,17 +22,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest
 @Testcontainers
 @ActiveProfiles("test")
+// 앱 전체를 띄우면 스케줄러도 돈다. 공유 DB를 건드리지 않게 끝나면 컨텍스트를 닫는다
+@DirtiesContext
 class MemberApplicationTests {
-
-    @Container
-    @ServiceConnection
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
 
     // 테스트할 때마다 새 RSA 키 쌍을 만들어 개인키 · 공개키를 함께 넣는다 (키를 파일에 남기지 않음)
     private static final KeyPair JWT_KEY_PAIR = newKeyPair();
 
     @DynamicPropertySource
     static void jwtKeys(DynamicPropertyRegistry registry) {
+        SharedPostgres.register(registry);
         registry.add("jwt.private-key", () -> encode(JWT_KEY_PAIR.getPrivate().getEncoded()));
         registry.add("jwt.public-key", () -> encode(JWT_KEY_PAIR.getPublic().getEncoded()));
     }

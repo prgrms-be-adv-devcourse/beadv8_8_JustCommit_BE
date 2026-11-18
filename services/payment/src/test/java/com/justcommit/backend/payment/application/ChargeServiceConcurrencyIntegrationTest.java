@@ -37,8 +37,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
@@ -76,14 +75,9 @@ class ChargeServiceConcurrencyIntegrationTest {
     private static final Long MEMBER_ID = 1L;
     private static final BigDecimal CHARGE_AMOUNT = new BigDecimal("10000");
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        SharedPostgres.register(registry);
     }
 
     @Autowired ChargeConfirmFacade chargeConfirmFacade;
@@ -251,7 +245,6 @@ class ChargeServiceConcurrencyIntegrationTest {
             executor.shutdownNow();
         }
     }
-
 
     @Test
     @DisplayName("토스 승인 금액이 다르면 적립하지 않고 PENDING으로 남는다")

@@ -13,8 +13,9 @@ import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactor
 import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.junit.jupiter.Container;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import com.justcommit.backend.common.testcontainers.SharedRedis;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Duration;
@@ -43,12 +44,14 @@ import static org.mockito.Mockito.spy;
 @Testcontainers(disabledWithoutDocker = true)
 class RefreshTokenRedisStoreTest {
 
+  @DynamicPropertySource
+  static void containers(DynamicPropertyRegistry registry) {
+    SharedRedis.register(registry);
+  }
+
   // SHA-256("abc")는 표준 테스트 벡터라 값이 고정되어 있음
   private static final String SHA256_OF_ABC = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
   private static final Duration TTL = Duration.ofDays(1);
-
-  @Container
-  static final GenericContainer<?> REDIS = new GenericContainer<>("redis:8-alpine").withExposedPorts(6379);
 
   private static LettuceConnectionFactory connectionFactory;
   private static StringRedisTemplate redisTemplate;
@@ -58,7 +61,7 @@ class RefreshTokenRedisStoreTest {
   @BeforeAll
   static void connect() {
     connectionFactory = new LettuceConnectionFactory(
-        new RedisStandaloneConfiguration(REDIS.getHost(), REDIS.getMappedPort(6379)));
+        new RedisStandaloneConfiguration(SharedRedis.container().getHost(), SharedRedis.container().getMappedPort(6379)));
     connectionFactory.afterPropertiesSet();
     connectionFactory.start();
     redisTemplate = new StringRedisTemplate(connectionFactory);

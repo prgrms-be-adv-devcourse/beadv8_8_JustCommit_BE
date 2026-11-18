@@ -24,8 +24,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
 
@@ -59,14 +58,9 @@ class PaymentServiceConcurrencyIntegrationTest {
 
     private static final int THREADS = 8;
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        SharedPostgres.register(registry);
     }
 
     @Autowired PaymentService paymentUseCase;
@@ -311,14 +305,12 @@ class PaymentServiceConcurrencyIntegrationTest {
         assertThat(walletTransactionRepository.count()).isEqualTo(1);
     }
 
-
     @Test
     @DisplayName("배송비 수납과 환불이 동시에 발생해도 한쪽만 처리된다")
     void preventsConcurrentShippingFeeCollectionAndRefund() throws Exception {
         Long sellerOrderId = 700L;
         Long buyerId = 20L;
         BigDecimal shippingFee = new BigDecimal("3000");
-
 
         // 초기 지갑 준비
         Wallet holding = walletRepository.findByWalletType(WalletType.HOLDING)
