@@ -108,6 +108,7 @@ write() { cat > "$S/$1.env"; chmod 600 "$S/$1.env"; echo "  작성: $1.env"; }
   echo "AWS_REGION=ap-northeast-2"
   echo "S3_BUCKET_NAME=$(ext S3_BUCKET_NAME)"
   echo "S3_PUBLIC_BASE_URL=$(ext S3_PUBLIC_BASE_URL)"
+  echo "OPENSEARCH_URL=http://$DATA_IP:9200"   # 상품 검색 (#484), 데이터 서버 replant-opensearch
   opt OPENAI_API_KEY
   opt ANTHROPIC_API_KEY
 } | write product

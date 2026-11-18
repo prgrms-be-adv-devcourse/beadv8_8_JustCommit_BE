@@ -96,6 +96,7 @@ docker compose up -d
 | Redis | `localhost` | `6379` | 없음 |
 | Kafka | `localhost` | `9092` | 암호화되지 않은 로컬 브로커 |
 | S3 (RustFS) | `localhost` | `9000` (API), `9001` (웹 콘솔) | access/secret key: `replantlocal` / `replantlocal123` (로컬 전용) |
+| OpenSearch | `localhost` | `9200` | 없음 (보안 플러그인 끔, 한국어 분석기 `nori` 포함 이미지를 처음에 빌드) |
 
 PostgreSQL 데이터는 `postgres-data` Docker 볼륨에 유지됩니다. 서비스는 `docker compose down`으로 종료하고, 로컬 데이터를 지우려는 경우에만 `docker compose down -v`를 사용합니다.
 
