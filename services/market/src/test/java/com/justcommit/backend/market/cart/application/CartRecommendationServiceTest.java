@@ -37,6 +37,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class CartRecommendationServiceTest {
 
     private static final long MEMBER_ID = 10L;
+    private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 11, 15, 10, 30);
 
     @Mock CartItemRepository cartItemRepository;
     @Mock OrderQuery orderQuery;
@@ -60,6 +61,7 @@ class CartRecommendationServiceTest {
                         org.assertj.core.groups.Tuple.tuple(202L, "이유 B"),
                         org.assertj.core.groups.Tuple.tuple(201L, "이유 A"));
         assertThat(result.getFirst().title()).isEqualTo("상품 202");
+        assertThat(result.getFirst().createdAt()).isEqualTo(CREATED_AT);
 
         ArgumentCaptor<LocalDateTime> since = ArgumentCaptor.forClass(LocalDateTime.class);
         verify(orderQuery).getRecentConfirmedProductIds(eq(MEMBER_ID), since.capture(), eq(20));
@@ -163,6 +165,6 @@ class CartRecommendationServiceTest {
 
     private static ProductResult product(long productId, long sellerId, ProductStatus status, boolean hidden) {
         return new ProductResult(productId, sellerId, "상품 " + productId, BigDecimal.valueOf(10_000), status, hidden,
-                "https://img/" + productId, "몬스테라");
+                "https://img/" + productId, "몬스테라", CREATED_AT);
     }
 }
