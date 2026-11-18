@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -12,25 +13,17 @@ import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 // 설정한 임베딩 차원이 Flyway가 만든 species_vector_store.embedding vector(1536)와 다르면 시작할 때 실패해야 한다 (#508)
-@Testcontainers
+// 모듈 공유 pgvector 컨테이너에 이 클래스 전용 빈 DB를 만들어 Flyway를 돌린다 (docs/testing/strategy.md 「통합 테스트 컨테이너 규칙」)
 class VectorStoreConfigTest {
-
-    @Container
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer(
-            DockerImageName.parse("pgvector/pgvector:pg17").asCompatibleSubstituteFor("postgres"));
 
     static JdbcTemplate jdbcTemplate;
 
     @BeforeAll
     static void migrate() {
-        DriverManagerDataSource dataSource = new DriverManagerDataSource(
-                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+        DriverManagerDataSource dataSource = new DriverManagerDataSource(SharedPostgres.createDatabase(),
+                SharedPostgres.container().getUsername(), SharedPostgres.container().getPassword());
         Flyway.configure().dataSource(dataSource).load().migrate();
         jdbcTemplate = new JdbcTemplate(dataSource);
     }
