@@ -18,6 +18,7 @@ import com.github.tomakehurst.wiremock.http.Fault;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.justcommit.backend.common.client.exception.InternalApiErrorException;
 import com.justcommit.backend.common.client.exception.InternalApiResultUnknownException;
+import com.justcommit.backend.common.client.exception.InternalApiUnavailableException;
 import com.justcommit.backend.market.client.InternalApiClientTestSupport;
 import java.io.IOException;
 import java.math.BigDecimal;

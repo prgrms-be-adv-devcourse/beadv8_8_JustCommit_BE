@@ -140,7 +140,7 @@ class PasswordChangeIntegrationTest {
   }
 
   @Test
-  @DisplayName("바꾼 뒤: 이전 Refresh 재발급 실패, 이전 Access는 iat <= 폐기 시각, 옛 비밀번호 로그인 실패, 새 비밀번호로만 로그인")
+  @DisplayName("[S-A08] 바꾼 뒤: 이전 Refresh 재발급 실패, 이전 Access는 iat <= 폐기 시각, 옛 비밀번호 로그인 실패, 새 비밀번호로만 로그인")
   void afterChangeOldTokensAndPasswordRejected() {
     Member member = saveMember();
     LoginResult before = login(member, OLD_PASSWORD);

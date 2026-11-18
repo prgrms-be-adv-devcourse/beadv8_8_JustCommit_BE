@@ -120,7 +120,7 @@ class OrderSchedulerConcurrencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("결제 대기 만료를 두 파드가 동시에 돌려도 주문마다 한 번만 만료 · 예약 해제하고, 주문을 나눠 처리한다")
+    @DisplayName("[S-D02] 결제 대기 만료를 두 파드가 동시에 돌려도 주문마다 한 번만 만료 · 예약 해제하고, 주문을 나눠 처리한다")
     void expiresEachOrderOnceWhenTwoPodsRunTogether() throws Exception {
         List<Long> orderIds = saveOrders(false);
         jdbcTemplate.update("update orders set created_at = ?", LocalDateTime.now().minusMinutes(11));

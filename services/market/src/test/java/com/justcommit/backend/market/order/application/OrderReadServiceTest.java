@@ -17,6 +17,7 @@ import com.justcommit.backend.market.client.product.ProductResult;
 import com.justcommit.backend.market.client.product.ProductStatus;
 import com.justcommit.backend.market.client.settlement.SellerOrderSettlement;
 import com.justcommit.backend.market.client.settlement.SettlementQuery;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -158,6 +159,7 @@ class OrderReadServiceTest {
     }
 
     @Test
+    @DisplayName("[S-A07] 구매자는 남의 주문을 조회할 수 없음(404)")
     void buyerCannotReadAnotherBuyersOrder() {
         when(ordersRepository.findByIdAndBuyerId(9L, 11L)).thenReturn(Optional.empty());
 
@@ -192,6 +194,7 @@ class OrderReadServiceTest {
     }
 
     @Test
+    @DisplayName("[S-A07] 판매자는 남의 판매 주문을 조회할 수 없음(404)")
     void sellerCannotReadAnotherSellersOrder() {
         when(sellerOrderRepository.findByIdAndSellerId(7L, 21L)).thenReturn(Optional.empty());
 
