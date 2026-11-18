@@ -7,7 +7,7 @@
 
 ## 기록
 
-- 2026-11-18 · reference/kafka-topics.md · reference/internal-apis.md · services/settlement.md · 판매자 부담금 반영: `PurchaseConfirmed` payload에 `sellerBurdenAmount`(없으면 0, 정산금 = 판매액 − 수수료 − 부담금), 정산 지급 요청에 `sellerOrderId` · `shippingFee`(배송비 모르는 정산은 0) · `sellerBurdenAmount` 추가, 정산 지급 경로를 코드에 맞춰 `settlementPayouts`로 (#433)
+- 2026-11-18 · reference/kafka-topics.md · reference/internal-apis.md · services/settlement.md · 판매자 부담금 반영: `PurchaseConfirmed` payload에 `sellerBurdenAmount`(없으면 0, 정산금 = 판매액 − 수수료 − 부담금), 정산 지급 요청에 `sellerOrderId` · `shippingFee`(배송비 모르는 정산은 0) · `sellerBurdenAmount` 추가, 정산 지급 경로를 코드에 맞춰 `settlementPayouts`로 (#433) (#538)
 - 2026-11-18 · testing/strategy.md · 「통합 테스트 컨테이너 규칙」 표 추가: `common-core` testFixtures의 `SharedPostgres` · `SharedRedis` · `SharedKafka`를 모듈마다 한 번 띄워 공유, PostgreSQL은 컨텍스트마다 새 DB, Kafka는 컨텍스트마다 새 그룹 id + 리스너 클래스 `@DirtiesContext`, Redis `flushAll`, `withReuse` 안 씀 (#524)
 - 2026-11-18 · infra/observability.md · 배송 예약 · 취소 지연 알림을 지표 `replant_shipment_stuck{status="READY"|"CANCEL_PENDING"}`(10분 넘게 남은 배송 수)로, market에 actuator · Prometheus(`/actuator/prometheus`, 내부망 전용) 추가. testing/scenarios.md S-F09 ~ F12 추가 (#490)
 - 2026-11-18 · flows/cancel-refund.md · services/market.md · reference/schedulers.md · glossary.md · 택배 취소를 큐로: 취소 API는 `CANCEL_PENDING` + `cancel_requested_at` 기록만(`READY`도), 택배 취소 큐가 주문번호 + 누른 시각으로 보내고 택배사가 기사 거리로 판정(2km 안 `CANCEL_LOCKED`, 잠금 직후 30초 유예, 장애로 이미 수거되면 택배사 반송), 결과는 `SHIPMENT_CANCEL_RESULT` → 주문 Saga가 환불. 예약 · 취소 큐 `last_error` 추가, 용어 「취소 불가」 · 「반송」 추가. ADR 0026 추가 (#490)
