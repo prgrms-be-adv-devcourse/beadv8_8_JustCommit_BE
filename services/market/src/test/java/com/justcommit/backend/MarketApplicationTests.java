@@ -42,12 +42,12 @@ class MarketApplicationTests {
     }
 
     @Test
-    @DisplayName("빈 DB에서 Flyway V1 ~ V4가 적용되고 ddl-auto validate로 market 서비스가 뜬다")
+    @DisplayName("빈 DB에서 Flyway V1 ~ V6가 적용되고 ddl-auto validate로 market 서비스가 뜬다")
     void contextLoads(@Autowired Flyway flyway) {
         assertThat(flyway.info().applied())
                 .extracting(info -> info.getVersion().getVersion(), MigrationInfo::getState)
                 .contains(tuple("1", MigrationState.SUCCESS), tuple("2", MigrationState.SUCCESS), tuple("3", MigrationState.SUCCESS),
-                        tuple("4", MigrationState.SUCCESS));
+                        tuple("4", MigrationState.SUCCESS), tuple("5", MigrationState.SUCCESS), tuple("6", MigrationState.SUCCESS));
     }
 
     @Test

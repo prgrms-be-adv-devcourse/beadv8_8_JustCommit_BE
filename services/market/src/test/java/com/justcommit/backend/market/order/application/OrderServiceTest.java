@@ -532,7 +532,7 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("결제 응답을 기다리는 사이 다른 시도가 선점했으면 늦게 온 결과는 반영하지 않는다")
+    @DisplayName("[S-D12] 결제 응답을 기다리는 사이 다른 시도가 선점했으면 늦게 온 결과는 반영하지 않는다")
     void ignoresStaleOutcomeWhenAnotherAttemptTookOver() {
         Orders order = pendingOrder(10L);
         stubOrderRows(order);

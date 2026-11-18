@@ -143,7 +143,7 @@ class OrderPaymentTransactionsIntegrationTest {
     }
 
     @Test
-    @DisplayName("TX3: 첫 호출의 연결 실패는 확정 실패 + order-failed, 복구의 연결 실패는 결과 불명")
+    @DisplayName("[S-D15] TX3: 첫 호출의 연결 실패는 확정 실패 + order-failed, 복구의 연결 실패는 결과 불명")
     void notDeliveredDependsOnSource() {
         Long first = saveOrder();
         int firstAttempt = transactions.startAttempt(first).getAsInt();
@@ -164,7 +164,7 @@ class OrderPaymentTransactionsIntegrationTest {
     }
 
     @Test
-    @DisplayName("TX3: 시도 번호가 다르면(다른 시도가 선점) 늦게 온 결과는 아무것도 바꾸지 않는다")
+    @DisplayName("[S-D12] TX3: 시도 번호가 다르면(다른 시도가 선점) 늦게 온 결과는 아무것도 바꾸지 않는다")
     void ignoresStaleAttempt() {
         Long orderId = saveOrder();
         int attemptNo = transactions.startAttempt(orderId).getAsInt();

@@ -99,7 +99,7 @@ class OrderRecoveryIntegrationTest {
     }
 
     @Test
-    @DisplayName("결과 불명 주문을 같은 orderId로 다시 불러 결제됐으면 결제 완료 + 판매 완료 이벤트")
+    @DisplayName("[S-D04] 결과 불명 주문을 같은 orderId로 다시 불러 결제됐으면 결제 완료 + 판매 완료 이벤트")
     void recoversPaidOrder() {
         Long orderId = processingOrder(1, 0, 20);
         when(paymentUseCase.pay(orderId, BUYER_ID, AMOUNT)).thenReturn(PaymentOutcome.paid());
@@ -114,7 +114,7 @@ class OrderRecoveryIntegrationTest {
     }
 
     @Test
-    @DisplayName("복구 결과가 잔액 부족이면 결제 대기로 되돌린다")
+    @DisplayName("[S-D05] 복구 결과가 잔액 부족이면 결제 대기로 되돌린다")
     void returnsToPendingWhenBalanceIsInsufficient() {
         Long orderId = processingOrder(1, 0, 20);
         when(paymentUseCase.pay(orderId, BUYER_ID, AMOUNT)).thenReturn(PaymentOutcome.insufficientBalance());
@@ -127,7 +127,7 @@ class OrderRecoveryIntegrationTest {
     }
 
     @Test
-    @DisplayName("복구 중 4xx(401 · 403 포함)는 확정 실패: 주문 실패 + order-failed + 장바구니 복원")
+    @DisplayName("[S-D16] 복구 중 4xx(401 · 403 포함)는 확정 실패: 주문 실패 + order-failed + 장바구니 복원")
     void failsOrderWhenRecoveryIsRejected() {
         Long unauthorized = processingOrder(1, 0, 20);
         Long forbidden = processingOrder(1, 0, 20);
@@ -145,7 +145,7 @@ class OrderRecoveryIntegrationTest {
     }
 
     @Test
-    @DisplayName("장바구니 복원이 실패하면 주문 실패도 함께 되돌려 결제 처리 중으로 남기고 다음 주기에 다시 시도한다")
+    @DisplayName("[S-D16] 장바구니 복원이 실패하면 주문 실패도 함께 되돌려 결제 처리 중으로 남기고 다음 주기에 다시 시도한다")
     void keepsProcessingWhenCartRestoreFails() {
         Long orderId = processingOrder(1, 0, 20);
         when(paymentUseCase.pay(orderId, BUYER_ID, AMOUNT)).thenReturn(PaymentOutcome.rejected("WALLET_NOT_FOUND"));
@@ -159,7 +159,7 @@ class OrderRecoveryIntegrationTest {
     }
 
     @Test
-    @DisplayName("복구 중 연결 실패는 결과 불명: 결제 처리 중 유지 + last_error, order-failed 없음")
+    @DisplayName("[S-D15] 복구 중 연결 실패는 결과 불명: 결제 처리 중 유지 + last_error, order-failed 없음")
     void keepsProcessingWhenRecoveryIsNotDelivered() {
         Long orderId = processingOrder(1, 0, 20);
         when(paymentUseCase.pay(orderId, BUYER_ID, AMOUNT)).thenReturn(PaymentOutcome.notDelivered());
@@ -173,7 +173,7 @@ class OrderRecoveryIntegrationTest {
     }
 
     @Test
-    @DisplayName("마지막 시도에서 10초가 안 지난 주문은 아직 진행 중일 수 있어 건드리지 않는다")
+    @DisplayName("[S-D05] 마지막 시도에서 10초가 안 지난 주문은 아직 진행 중일 수 있어 건드리지 않는다")
     void skipsOrderWithinGrace() {
         Long orderId = processingOrder(1, 0, 5);
 
@@ -184,7 +184,7 @@ class OrderRecoveryIntegrationTest {
     }
 
     @Test
-    @DisplayName("5번째 복구도 결과 불명이면 그 자리에서 확인 필요로 바꾸고 시도 번호를 올린다")
+    @DisplayName("[S-D14] 5번째 복구도 결과 불명이면 그 자리에서 확인 필요로 바꾸고 시도 번호를 올린다")
     void requiresReviewWhenLastRecoveryIsUnknown() {
         Long orderId = processingOrder(5, 4, 20);
         when(paymentUseCase.pay(orderId, BUYER_ID, AMOUNT)).thenReturn(PaymentOutcome.unknown("TIMEOUT"));
@@ -199,7 +199,7 @@ class OrderRecoveryIntegrationTest {
     }
 
     @Test
-    @DisplayName("5번째 선점 뒤 반영 없이 유예가 지나면 결제를 부르지 않고 확인 필요, 그 뒤 늦은 응답은 반영하지 않는다")
+    @DisplayName("[S-D14] 5번째 선점 뒤 반영 없이 유예가 지나면 결제를 부르지 않고 확인 필요, 그 뒤 늦은 응답은 반영하지 않는다")
     void requiresReviewWhenLastClaimWasNeverApplied() {
         Long orderId = processingOrder(6, 5, 20); // 5번째 선점(attempt_no 6) 뒤 파드가 죽음
 
@@ -215,7 +215,7 @@ class OrderRecoveryIntegrationTest {
     }
 
     @Test
-    @DisplayName("늦게 온 이전 시도 결과는 복구가 선점한 새 시도를 덮지 않는다")
+    @DisplayName("[S-D12] 늦게 온 이전 시도 결과는 복구가 선점한 새 시도를 덮지 않는다")
     void staleResultDoesNotOverwriteNewAttempt() {
         Long orderId = processingOrder(1, 0, 20);
         when(paymentUseCase.pay(orderId, BUYER_ID, AMOUNT)).thenAnswer(invocation -> {
@@ -233,7 +233,7 @@ class OrderRecoveryIntegrationTest {
     }
 
     @Test
-    @DisplayName("두 파드가 동시에 복구를 돌려도 주문마다 결제를 한 번만 다시 부른다")
+    @DisplayName("[S-D13] 두 파드가 동시에 복구를 돌려도 주문마다 결제를 한 번만 다시 부른다")
     void twoPodsRecoverEachOrderOnce() throws Exception {
         List<Long> orderIds = IntStream.range(0, 4).mapToObj(i -> processingOrder(1, 0, 20)).toList();
         Queue<Long> called = new ConcurrentLinkedQueue<>();

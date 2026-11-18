@@ -160,7 +160,7 @@ class OrderSchedulerConcurrencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("결제 시작 · 만료 경합: 만료가 먼저 주문을 잠그면 결제 시작(TX2)은 잠금이 풀린 뒤 0건이 되어 결제를 부르지 않는다")
+    @DisplayName("[S-D11] 결제 시작 · 만료 경합: 만료가 먼저 주문을 잠그면 결제 시작(TX2)은 잠금이 풀린 뒤 0건이 되어 결제를 부르지 않는다")
     void paymentStartLosesWhenExpirationLocksFirst() throws Exception {
         Long orderId = saveOrders(false).getFirst();
         // 파드 시계 차이로 만료 파드는 기한이 지났다고 보고, 재결제 파드는 아직 기한 안이라고 보는 경계 상황
@@ -189,7 +189,7 @@ class OrderSchedulerConcurrencyIntegrationTest {
     }
 
     @Test
-    @DisplayName("결제 시작 · 만료 경합: 결제 시작(TX2)이 먼저 커밋되면 결제를 기다리는 동안 기한이 지나도 만료하지 않는다")
+    @DisplayName("[S-D11] 결제 시작 · 만료 경합: 결제 시작(TX2)이 먼저 커밋되면 결제를 기다리는 동안 기한이 지나도 만료하지 않는다")
     void expirationSkipsOrderOncePaymentStarted() {
         Long orderId = saveOrders(false).getFirst();
         when(paymentUseCase.pay(eq(orderId), eq(BUYER_ID), any())).thenAnswer(invocation -> {
