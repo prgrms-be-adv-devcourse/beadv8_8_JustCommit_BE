@@ -24,6 +24,7 @@ dependencyManagement {
 dependencies {
     implementation project(':common:common-core')
     implementation project(':common:common-web')
+    implementation project(':common:common-logging') // /actuator/prometheus (#301)
     implementation project(':common:common-security-servlet')
     implementation project(':common:common-messaging')
 
