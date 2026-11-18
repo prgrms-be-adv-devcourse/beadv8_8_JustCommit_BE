@@ -4,7 +4,6 @@
 
 > 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: Miro 14, 노션 기획안 「장애 처리」
 
-
 ## 공통값
 
 | 항목 | 값 |
@@ -29,7 +28,7 @@
 | Gateway → Redis (요청 수 제한) | 명령 1초 | 없음 | SCG 기본대로 통과 (제한 없이 진행) |
 | 내부 REST (기본) | 1초 / 3초 | 연결 실패만 1회 | 조회는 fallback, 돈 · 상태는 결과 불명 처리 |
 | market → product 예약 | 1초 / 3초 (product 처리 상한 2초) | 연결 실패만 1회 | 주문 실패. 응답 타임아웃이면 다시 호출하지 않고 주문 실패 + `market.order-failed.v1`로 해제 |
-| market → payment 결제 | 1초 / 3초 | 연결 실패만 1회 | 안 간 게 확실하면 해제 후 실패, 타임아웃이면 결과 불명 → Saga 복구가 같은 orderId로 다시 호출 (⬜ 잠금 방식 → [미정](../open-questions.md)) |
+| market → payment 결제 | 1초 / 3초 | 연결 실패만 1회 | 4xx와 첫 호출의 연결 실패는 확정 실패라 예약 해제 후 실패. 응답 타임아웃, 5xx, Saga 복구 중 연결 실패는 결과 불명 → `PAYMENT_PROCESSING` 유지, Saga 복구가 같은 orderId로 다시 호출 → [ADR 0023](../decisions/0023-order-payment-transaction-saga.md) |
 | market → payment 환불 | 1초 / 3초 | 연결 실패만 1회 | 타임아웃이면 결과 불명 → 주문상품 「취소 중」, Saga 복구가 같은 키로 다시 요청, 5번 안 되면 `REVIEW_REQUIRED` |
 | member → market · payment · settlement (탈퇴 확인) | 1초 / 3초, **병렬** | 연결 실패만 1회 | Fail-closed: 탈퇴 막음. 최악 약 4초라 Gateway 10초 안 |
 | market → ai 추천 | 1초 / 2초 | 연결 실패만 1회 (common-web 공통, 최악 약 4.2초) | 빈 목록 (장바구니 조회는 영향 없음, 화면은 최신 상품으로 대신 → [ADR 0029](../decisions/0029-cart-recommendation-latest-fallback-on-screen.md)) |
@@ -52,7 +51,7 @@
 
 응답 타임아웃이 났다고 **바로 보상(되돌리기)하지 않습니다.** 상대가 처리했을 수도 있기 때문입니다.
 
-1. 업무 상태는 도메인별 "진행 중" 상태 하나로 둡니다 (`PAYMENT_PENDING`, `CANCEL_PENDING` 등).
+1. 업무 상태는 도메인별 "진행 중" 상태 하나로 둡니다 (`PAYMENT_PROCESSING`, `CANCEL_PENDING` 등).
 2. 원인은 `last_error` 칸에 남깁니다 (`TIMEOUT`, `CONNECTION_REFUSED` 등).
 3. 스케줄러가 같은 멱등 키로 다시 요청하거나 결과를 조회합니다.
 4. 실제로 실패한 것이 확인될 때만 보상합니다.

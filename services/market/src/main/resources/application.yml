@@ -39,6 +39,12 @@ spring:
 
 server:
   port: 8083
+# Prometheus 수집용. 인증 없이 열지 · 관리 포트를 둘지는 관측 구성(#301)에서 정한다
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
 jwt:
   public-key: ${JWT_PUBLIC_KEY}
 internal-api:

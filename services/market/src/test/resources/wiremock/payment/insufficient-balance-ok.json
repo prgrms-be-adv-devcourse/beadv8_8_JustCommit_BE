@@ -1,0 +1,1 @@
+{ "status": 200, "message": "결제를 처리했습니다.", "data": { "status": "INSUFFICIENT_BALANCE", "balanceAfter": 1000 } }
