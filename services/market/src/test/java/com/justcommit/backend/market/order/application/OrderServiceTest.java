@@ -516,9 +516,9 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("재결제가 확정 실패(4xx)면 주문 실패 + order-failed, 장바구니는 건드리지 않는다")
+    @DisplayName("재결제가 확정 실패(4xx)면 주문 실패 + order-failed, create가 지운 장바구니를 주문 당시 가격으로 되돌린다")
     void failsOrderWhenRepaymentIsRejected() {
-        Orders order = pendingOrder(10L);
+        Orders order = pendingOrderWithItem(10L);
         stubOrderRows(order);
         when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentOutcome.rejected("HTTP_403_FORBIDDEN"));
 
@@ -528,7 +528,35 @@ class OrderServiceTest {
         assertThat(order.getLastError()).isEqualTo("HTTP_403_FORBIDDEN");
         verify(outboxPublisher).publish(new OrderFailed(99L));
         verify(cartService, never()).removeSelectedItems(any(Long.class), any());
-        verify(cartService, never()).restoreItem(anyLong(), anyLong(), any()); // repayment는 장바구니를 바꾸지 않는다
+        verify(cartService).restoreItem(10L, 101L, money("10000"));
+    }
+
+    @Test
+    @DisplayName("재결제 요청이 payment에 닿지 않으면(연결 실패) 확정 실패로 주문 실패 + 장바구니 복원")
+    void failsOrderAndRestoresCartWhenRepaymentIsNotDelivered() {
+        Orders order = pendingOrderWithItem(10L);
+        stubOrderRows(order);
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentOutcome.notDelivered());
+
+        OrderCreateResponse response = orderService.repayment(10L, 99L);
+
+        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+        assertThat(order.getLastError()).isEqualTo("CONNECTION_FAILED");
+        verify(outboxPublisher).publish(new OrderFailed(99L));
+        verify(cartService).restoreItem(10L, 101L, money("10000"));
+    }
+
+    @Test
+    @DisplayName("재결제가 잔액 부족이면 결제 대기로 두고 장바구니는 바꾸지 않는다")
+    void keepsPendingWithoutTouchingCartWhenRepaymentBalanceIsInsufficient() {
+        Orders order = pendingOrderWithItem(10L);
+        stubOrderRows(order);
+        when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentOutcome.insufficientBalance());
+
+        OrderCreateResponse response = orderService.repayment(10L, 99L);
+
+        assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+        verify(cartService, never()).restoreItem(anyLong(), anyLong(), any());
     }
 
     @Test
@@ -639,6 +667,7 @@ class OrderServiceTest {
         verify(outboxPublisher).publish(new OrderFailed(99L));
         verify(outboxPublisher, never()).publish(any(OrderPaid.class));
         verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+        verify(cartService, never()).restoreItem(anyLong(), anyLong(), any()); // 지우지 않았으니 되돌릴 것도 없음
     }
 
     @Test
@@ -1072,6 +1101,16 @@ class OrderServiceTest {
     private void stubInsufficientBalance() {
         when(paymentUseCase.pay(eq(99L), eq(10L), any(BigDecimal.class)))
                 .thenReturn(PaymentOutcome.insufficientBalance());
+    }
+
+    // 재결제 장바구니 복원용: 상품 1개(101, 10000원) + 배송비 3000원 = 13000원
+    private Orders pendingOrderWithItem(long buyerId) {
+        Orders order = pendingOrder(buyerId);
+        SellerOrder sellerOrder = new SellerOrder(order, 20L);
+        sellerOrder.addItems(List.of(new OrdersItem(sellerOrder, 101L, "몬스테라", money("10000"))));
+        sellerOrder.setShippingFee(money("3000"));
+        order.addSellerOrders(List.of(sellerOrder));
+        return order;
     }
 
     private Orders pendingOrder(long buyerId) {

@@ -121,8 +121,14 @@ public class OrderPaymentTransactions {
     // TX3: 결제 처리 중이고 자기 시도 번호일 때만 결과를 반영한다. 반영하지 못하면 false (아무것도 바꾸지 않음).
     // 10분 기한은 보지 않는다. 기한이 지났어도 결제됐으면 결제 완료로 처리한다
     public boolean applyOutcome(Long orderId, int attemptNo, PaymentOutcome outcome, AttemptSource source) {
-        // 첫 호출(create · repayment)은 장바구니를 복원하지 않는다. create는 확정 실패면 지우지 않았고, repayment는 장바구니를 바꾸지 않는다
-        return apply(orderId, attemptNo, outcome, targetStatus(outcome, source), false);
+        return applyOutcome(orderId, attemptNo, outcome, source, false);
+    }
+
+    // restoreCartOnFailure: 확정 실패면 같은 트랜잭션에서 장바구니를 되돌린다.
+    // create는 확정 실패면 장바구니를 지우지 않았으니 false, repayment는 create가 이미 지웠으니 true (ADR 0023)
+    public boolean applyOutcome(Long orderId, int attemptNo, PaymentOutcome outcome, AttemptSource source,
+                                boolean restoreCartOnFailure) {
+        return apply(orderId, attemptNo, outcome, targetStatus(outcome, source), restoreCartOnFailure);
     }
 
     // 복구 결과 반영. 마지막(5번째) 복구까지 결과를 모르면 그 자리에서 확인 필요로 바꾼다

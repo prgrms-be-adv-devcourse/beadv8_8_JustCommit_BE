@@ -149,7 +149,7 @@ public class OrderService {
             return toResponse(orderPaymentTransactions.getOrder(orderId));
         }
 
-        PaymentOutcome outcome = payInAttempt(orderId, saved.getBuyerId(), saved.getTotalAmount());
+        PaymentOutcome outcome = payInAttempt(orderId, saved.getBuyerId(), saved.getTotalAmount(), false);
 
         // 예약 실패 · 결제 확정 실패가 아니면 선택 항목을 비운다 (잔액 부족 · 결과 불명 포함, ADR 0023 장바구니)
         if (OrderPaymentTransactions.targetStatus(outcome, AttemptSource.FIRST_CALL) != OrderStatus.PAYMENT_FAILED) {
@@ -167,20 +167,21 @@ public class OrderService {
         if (order.getStatus() == OrderStatus.PAID) {
             return toResponse(order);
         }
-        // 재결제는 장바구니를 바꾸지 않는다
-        payInAttempt(orderId, order.getBuyerId(), order.getTotalAmount());
+        // 재결제는 확정 실패일 때만 장바구니를 되돌린다 (create가 이미 지웠으므로). 그 밖의 결과는 장바구니를 바꾸지 않는다
+        payInAttempt(orderId, order.getBuyerId(), order.getTotalAmount(), true);
         return toResponse(orderPaymentTransactions.getOrder(orderId));
     }
 
     // TX2 → 결제 REST → TX3. 결제 시작을 선점하지 못하면 결제를 부르지 않고 지금 상태에 맞는 에러로 끝낸다
-    private PaymentOutcome payInAttempt(Long orderId, Long buyerId, BigDecimal amount) {
+    private PaymentOutcome payInAttempt(Long orderId, Long buyerId, BigDecimal amount, boolean restoreCartOnFailure) {
         OptionalInt attemptNo = orderPaymentTransactions.startAttempt(orderId);
         if (attemptNo.isEmpty()) {
             return rejectNotStarted(orderId);
         }
         PaymentOutcome outcome = paymentUseCase.pay(orderId, buyerId, amount);
         try {
-            orderPaymentTransactions.applyOutcome(orderId, attemptNo.getAsInt(), outcome, AttemptSource.FIRST_CALL);
+            orderPaymentTransactions.applyOutcome(orderId, attemptNo.getAsInt(), outcome, AttemptSource.FIRST_CALL,
+                    restoreCartOnFailure);
         } catch (RuntimeException e) {
             // 반영 실패(DB 오류 등): 주문은 결제 처리 중으로 남아 Saga 복구가 같은 orderId로 확정한다
             log.error("결제 결과 반영 실패, Saga 복구에 맡김: orderId={}, attemptNo={}, outcome={}",
