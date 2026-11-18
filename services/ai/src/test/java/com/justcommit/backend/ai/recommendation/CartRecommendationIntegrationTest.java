@@ -103,6 +103,34 @@ class CartRecommendationIntegrationTest {
     }
 
     @Test
+    @DisplayName("벡터가 없는 기준 품종(행운목)은 환경 점수 · 이유 문장에서도 빠지고 몬스테라만 기준이 된다")
+    void baseSpeciesWithoutVectorIsIgnored() throws Exception {
+        // 행운목 203: 21~25℃ · 중간~높은 광도라 기준에 남으면 데코라고무나무의 이유가 「행운목과 …」로 바뀜
+        snapshot(6001, 203, "ACTIVE", false);
+
+        HttpResponse<String> response = recommend("""
+                {"cartProductIds":[1001,6001],"purchasedProductIds":[],"size":10}
+                """);
+
+        JsonNode items = json.readTree(response.body()).get("data").get("items");
+        assertThat(productIds(items)).containsExactly(2002L, 3001L, 4001L, 3101L, 2001L);
+        assertThat(items.get(1).get("reason").asString()).isEqualTo("몬스테라와 권장 광도가 겹쳐요");
+    }
+
+    @Test
+    @DisplayName("기준 품종에 벡터가 하나도 없으면 빈 목록")
+    void emptyWhenNoBaseVector() throws Exception {
+        snapshot(6001, 203, "ACTIVE", false);
+
+        HttpResponse<String> response = recommend("""
+                {"cartProductIds":[6001],"purchasedProductIds":[],"size":10}
+                """);
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(json.readTree(response.body()).get("data").get("items").isEmpty()).isTrue();
+    }
+
+    @Test
     @DisplayName("받은 size만큼만 돌려준다")
     void respectsSize() throws Exception {
         HttpResponse<String> response = recommend("""

@@ -43,9 +43,11 @@ public class CartRecommendationService {
         Set<Long> sourceProducts = new LinkedHashSet<>(cart);
         sourceProducts.addAll(purchasedProductIds);
 
-        // 1. 상품 → 기준 품종 (모든 상태, 품종은 한 번만)
+        // 1. 상품 → 기준 품종 (모든 상태, 품종은 한 번만). 「기타」와 벡터가 없는 품종은 벡터 평균 · 환경 점수 ·
+        //    난이도 감점 · 이유 문장 모두에서 빼야 해서 여기서 거른다
         Set<Integer> baseSpeciesIds = new LinkedHashSet<>(queryRepository.findSpeciesIds(sourceProducts).values());
         baseSpeciesIds.remove(OTHER_SPECIES_ID);
+        baseSpeciesIds.retainAll(queryRepository.findSpeciesIdsWithVector(baseSpeciesIds));
         if (baseSpeciesIds.isEmpty()) {
             return List.of();
         }

@@ -39,6 +39,17 @@ public class RecommendationQueryRepository {
         return speciesIds;
     }
 
+    /** 그중 품종 벡터가 있는 품종만 (벡터가 없는 품종은 기준에서 완전히 뺀다) */
+    public List<Integer> findSpeciesIdsWithVector(Collection<Integer> speciesIds) {
+        if (speciesIds.isEmpty()) {
+            return List.of();
+        }
+        return jdbcClient.sql("SELECT id FROM species_vector_store WHERE id IN (:ids)")
+                .param("ids", speciesIds)
+                .query(Integer.class)
+                .list();
+    }
+
     /**
      * 기준 품종 벡터의 평균과 가까운 품종을 고른다. 판매 중(ACTIVE · 숨김 아님) 상품이 있는 품종 안에서만 찾아,
      * 후보는 있는데 팔리는 상품이 없어 추천이 비는 일을 막는다. 기준 품종 자체 · 장바구니 상품만 있는 품종은 뺀다.
