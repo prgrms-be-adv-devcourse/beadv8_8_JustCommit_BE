@@ -145,7 +145,7 @@ class ShipmentCancelIntegrationTest {
     }
 
     @Test
-    @DisplayName("같은 배송을 다시 취소하면 아무것도 바꾸지 않고 처음 누른 시각을 유지한다")
+    @DisplayName("[S-E04] 같은 배송을 다시 취소하면 아무것도 바꾸지 않고 처음 누른 시각을 유지한다")
     void cancelTwiceKeepsFirstRequest() {
         createBookedShipment();
         inTransaction(() -> shipmentService.cancelShipment(7L));
@@ -184,7 +184,7 @@ class ShipmentCancelIntegrationTest {
     }
 
     @Test
-    @DisplayName("기사가 2km 안(CANCEL_LOCKED)이거나 수거된 배송은 취소를 거부한다")
+    @DisplayName("[S-E03] 기사가 2km 안(CANCEL_LOCKED)이거나 수거된 배송은 취소를 거부한다")
     void rejectsLockedOrPickedUp() {
         createBookedShipment();
         inTransaction(() -> {
@@ -209,7 +209,7 @@ class ShipmentCancelIntegrationTest {
     }
 
     @Test
-    @DisplayName("예약 큐가 택배사를 기다리는 사이 취소가 먼저 저장되면 예약 결과가 취소를 덮어쓰지 않는다")
+    @DisplayName("[S-F06] 예약 큐가 택배사를 기다리는 사이 취소가 먼저 저장되면 예약 결과가 취소를 덮어쓰지 않는다")
     void cancelWinsOverConcurrentBooking() {
         AtomicInteger bookCalls = new AtomicInteger();
         when(courierClient.book(anyString(), any(CourierBookingRequest.class))).thenAnswer(invocation -> {
