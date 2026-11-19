@@ -8,6 +8,7 @@ import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
+import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -26,12 +27,18 @@ public class AddressService {
 
   private final AddressRepository addressRepository;
   private final MemberLocker memberLocker;
+  private final MemberRepository memberRepository;
   private final SellerRepository sellerRepository;
   private final SellerAddressEventFactory sellerAddressEventFactory;
   private final OutboxPublisher outboxPublisher;
 
-  // 목록
+  // 목록: 탈퇴(#407) · 카카오 연결 해제(INACTIVE, #422) 회원은 404 (내 정보 조회와 같은 방식).
+  // 폐기가 Redis에 반영되기 전이면 폐기하려던 기존 세션의 Access가 여기까지 올 수 있어 member에서 막는다.
+  // 요청 시점의 상태 확인이며 잠그지 않는다 (조회 도중의 상태 변경까지 막지는 않음)
   public List<AddressResult> getAddresses(Long memberId) {
+    memberRepository.findById(memberId)
+        .filter(m -> m.getStatus() == MemberStatus.ACTIVE)
+        .orElseThrow(() -> new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
     return addressRepository.findAllByMemberIdOrderByIsDefaultDescIdDesc(memberId).stream()
         .map(AddressResult::from)
         .toList();

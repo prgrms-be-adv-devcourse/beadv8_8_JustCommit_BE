@@ -19,7 +19,7 @@
 | S-A08 | 비밀번호 변경 · 재설정 · 탈퇴 · 소셜 연결 해제 → 폐기 시각 기록 후 `iat <= 끊은 시각`인 Access는 Gateway 401. 옛 인증 버전 Refresh 삭제를 시도하며, 삭제 실패 시에도 인증 버전 비교로 재발급 401 | 보안 | 통합 | PR |  | 검증 (11/19): 직접 탈퇴 · Refresh 폐기(`WithdrawalScenarioTest`, `TokenRevocationServiceIntegrationTest`), Gateway Access 차단(`JwtAuthenticationIntegrationTest`), 소셜 연결 해제 `SOCIAL_UNLINKED` 폐기 · 폐기 후 버전 계약(`TokenRevocationServiceIntegrationTest`, `KakaoUnlinkProcessorIntegrationTest`) |
 | S-A09 | 인증번호 5회 오답 시 폐기. 같은 이메일 · 같은 용도의 첫 예약부터 24시간 동안 최대 5회 예약 허용, 한도 초과 시 추가 예약 · 메일 발송 없음(가입 인증은 429, 재설정 · 가입 계정 안내는 기존 200 응답 유지) | 규칙 | 통합 | PR |  |  |
 | S-A10 | 탈퇴 재확인: 로컬 비밀번호 오답이 비밀번호 변경과 합산되고, 누적 5번째 오답까지 400, 이후 요청부터 429 `PASSWORD_CHANGE_LOCKED` + `Retry-After`. 비밀번호가 맞아도 탈퇴가 완료되지 않으면 실패 횟수 유지 / 탈퇴 토큰을 다른 회원 · 발급 뒤 인증 버전 변경 · 재사용으로 쓰면 400 `INVALID_WITHDRAWAL_TOKEN` / 공개 인증 경로의 `WITHDRAWAL` 목적은 400 | 보안 | 통합 | PR |  | 완료 (11/18): `WithdrawalServiceIntegrationTest`(비밀번호 변경과 실패 횟수 합산 · 막힌 탈퇴의 횟수 유지 포함), `WithdrawalVerificationIntegrationTest` |
-| S-A11 | 폐기 기록이 `PENDING`인 동안 탈퇴 회원의 기존 Access로 내 정보 · 배송지 등록 · 판매자 등록 → 404 `MEMBER_NOT_FOUND`(member 상태 검사), `INACTIVE` 회원의 Refresh 재발급 → 401 `INVALID_REFRESH_TOKEN` | 보안 | 통합 | PR |  | 검증 (11/19): `DELETED` · `INACTIVE` 회원 접근 차단(`WithdrawnMemberAccessIntegrationTest`), `INACTIVE` 재발급 401(`TokenReissueServiceTest`) |
+| S-A11 | 폐기 기록이 `PENDING`인 동안 탈퇴 회원의 기존 Access로 내 정보 · 배송지 조회 · 배송지 등록 · 판매자 등록 → 404 `MEMBER_NOT_FOUND`(member 상태 검사), `INACTIVE` 회원의 Refresh 재발급 → 401 `INVALID_REFRESH_TOKEN` | 보안 | 통합 | PR |  | 검증 (11/19): `DELETED` · `INACTIVE` 회원 접근 차단(`WithdrawnMemberAccessIntegrationTest`), `INACTIVE` 재발급 401(`TokenReissueServiceTest`) |
 
 ## B. 회원
 

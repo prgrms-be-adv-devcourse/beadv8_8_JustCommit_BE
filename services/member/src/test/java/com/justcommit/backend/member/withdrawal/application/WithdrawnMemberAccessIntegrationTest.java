@@ -138,9 +138,34 @@ class WithdrawnMemberAccessIntegrationTest {
     assertThat(sellerRepository.existsById(memberId)).isFalse();
   }
 
+  @Test
+  @DisplayName("[S-A11] 배송지 목록 조회: ACTIVE는 목록(없으면 빈 목록), INACTIVE(배송지가 남아 있어도) · 탈퇴 · 없는 회원은 404 (#422)")
+  void addressListOnlyForActiveMember() {
+    Long memberId = activeMemberId();
+    assertThat(addressService.getAddresses(memberId)).isEmpty();
+    addressService.addAddress(memberId, new AddressCreateCommand(
+        "홍길동", "01012345678", "12345", "서울시 어딘가 1", "101호", "집", true));
+    assertThat(addressService.getAddresses(memberId)).hasSize(1);
+
+    // 카카오 연결 해제로 INACTIVE: 배송지는 남아 있지만 목록은 404
+    jdbcTemplate.update("update member set status = 'INACTIVE' where id = ?", memberId);
+    assertNotFound(() -> addressService.getAddresses(memberId));
+    assertThat(addressRepository.countByMemberId(memberId)).isEqualTo(1);
+
+    assertNotFound(() -> addressService.getAddresses(withdrawnMemberId()));
+    assertNotFound(() -> addressService.getAddresses(Long.MAX_VALUE));
+  }
+
   private static void assertNotFound(org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
     assertThatThrownBy(call).isInstanceOfSatisfying(BusinessException.class,
         e -> assertThat(e.getErrorCode()).isEqualTo(MemberErrorCode.MEMBER_NOT_FOUND));
+  }
+
+  private Long activeMemberId() {
+    int n = SEQ.incrementAndGet();
+    return memberRepository.save(Member.createLocal(
+        "active" + n + "@test.com", "encoded-password", "활동" + n, String.format("015%08d", n),
+        "004", "v1:test-account", null, "홍길동")).getId();
   }
 
   // 카카오 연결 해제 직후 모습: 상태 INACTIVE, 개인정보 · 계좌는 그대로

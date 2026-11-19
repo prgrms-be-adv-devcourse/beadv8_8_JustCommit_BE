@@ -8,6 +8,7 @@ import org.mockito.Answers;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
+import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.event.MemberAddressChanged;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
@@ -29,6 +30,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class AddressServiceTest {
@@ -40,6 +42,9 @@ class AddressServiceTest {
 
   @Mock
   MemberLocker memberLocker;
+
+  @Mock
+  MemberRepository memberRepository;
 
   @Mock
   SellerRepository sellerRepository;
@@ -74,6 +79,7 @@ class AddressServiceTest {
   @Test
   @DisplayName("배송지 목록을 저장소 정렬 순서 그대로 반환")
   void getAddresses() {
+    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(activeMember()));
     given(addressRepository.findAllByMemberIdOrderByIsDefaultDescIdDesc(MEMBER_ID))
             .willReturn(List.of(address(1L, true), address(3L, false), address(2L, false)));
 
@@ -431,6 +437,31 @@ class AddressServiceTest {
 
   // 서비스는 ACTIVE 회원만 처리하므로(탈퇴 · INACTIVE는 404, #422) 상태만 ACTIVE로 답하는 가짜 회원.
   // given() 안에서 다시 given()을 부르지 않도록 스텁 대신 기본 응답으로 만든다
+  @Test
+  @DisplayName("ACTIVE 회원이고 배송지가 없으면 빈 목록")
+  void getAddresses_empty() {
+    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(activeMember()));
+    given(addressRepository.findAllByMemberIdOrderByIsDefaultDescIdDesc(MEMBER_ID)).willReturn(List.of());
+
+    assertThat(addressService.getAddresses(MEMBER_ID)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("[#422] ACTIVE가 아니거나 없는 회원의 목록 조회는 404 MEMBER_NOT_FOUND, 배송지를 읽지 않음")
+  void getAddresses_notActive() {
+    Member inactive = mock(Member.class);
+    given(inactive.getStatus()).willReturn(MemberStatus.INACTIVE);
+    given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(inactive));
+    given(memberRepository.findById(2L)).willReturn(Optional.empty());
+
+    for (Long id : List.of(MEMBER_ID, 2L)) {
+      assertThatThrownBy(() -> addressService.getAddresses(id))
+          .isInstanceOfSatisfying(BusinessException.class,
+              e -> assertThat(e.getErrorCode()).isEqualTo(MemberErrorCode.MEMBER_NOT_FOUND));
+    }
+    verifyNoInteractions(addressRepository);
+  }
+
   private static Member activeMember() {
     return mock(Member.class, invocation -> "getStatus".equals(invocation.getMethod().getName())
         ? MemberStatus.ACTIVE : Answers.RETURNS_DEFAULTS.answer(invocation));
