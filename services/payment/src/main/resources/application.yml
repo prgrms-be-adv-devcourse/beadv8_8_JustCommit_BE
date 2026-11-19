@@ -9,6 +9,11 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
+  http:
+    serviceclient:
+      # 계좌 조회 (인출 신청 때). 타임아웃은 common-web 내부 호출 기본값(연결 1초, 응답 3초)
+      internal-member:
+        base-url: ${MEMBER_SERVICE_URL:http://localhost:8081}
 
 server:
   port: 8084
@@ -16,9 +21,12 @@ server:
 jwt:
   public-key: ${JWT_PUBLIC_KEY}
 
-# /internal/** 요청의 X-Internal-Key 확인용 (common-security). 비어 있으면 앱은 뜨고 내부 요청만 401
+# /internal/** 요청의 X-Internal-Key 확인용 (common-security), 내부 호출 때 보내는 키
+# 내부 호출 그룹이 있어 키가 비어 있으면 앱이 시작하지 않는다
 internal-api:
-  key: ${INTERNAL_API_KEY:}
+  key: ${INTERNAL_API_KEY}
+  groups:
+    - internal-member
 
 custom:
   payment:
@@ -40,3 +48,6 @@ custom:
       auth-error-delay: 15m
       # 한 건을 확보한 뒤 다른 인스턴스가 다시 잡지 않게 미루는 시간 (토스 응답 타임아웃 60초보다 길게)
       lease: 2m
+  # 인출 지급 은행. fake: 메모리에서 항상 성공 (모의 은행 서버 연결은 #389)
+  bank:
+    mode: ${BANK_MODE:fake}

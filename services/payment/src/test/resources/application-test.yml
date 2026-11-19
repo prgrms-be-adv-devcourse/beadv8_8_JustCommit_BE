@@ -3,3 +3,6 @@ custom:
   payment:
     toss:
       key-encryption-key: ${PAYMENT_KEY_ENCRYPTION_KEY:ioS+/EE8gO4Wm0h9V9RsOB0L/S3pTG8UUIB+CC2rvK0=}
+
+internal-api:
+  key: test-internal-key
