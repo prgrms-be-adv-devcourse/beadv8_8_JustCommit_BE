@@ -4,6 +4,7 @@ import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.exception.CommonErrorCode;
+import com.justcommit.backend.common.messaging.EventEnvelopeMapper;
 import com.justcommit.backend.common.exception.ErrorCode;
 import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
@@ -46,6 +47,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import com.justcommit.backend.common.testcontainers.SharedRedis;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import tools.jackson.databind.JsonNode;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -138,6 +140,8 @@ class WithdrawalServiceIntegrationTest {
   // 경합 · 롤백을 만들 때만 동작을 바꾸고, 평소에는 실제 빈 그대로 (테스트마다 원래대로 돌아감)
   @MockitoSpyBean WithdrawalCheckService withdrawalCheckService;
   @MockitoSpyBean DatabaseClock databaseClock;
+  // Outbox에 저장된 봉투 JSON을 읽어 payload를 확인한다 (운영과 같은 공통 형식)
+  private static final EventEnvelopeMapper ENVELOPE_MAPPER = new EventEnvelopeMapper();
   @MockitoSpyBean TokenRevocationService tokenRevocationService;
 
   @AfterEach
@@ -440,7 +444,10 @@ class WithdrawalServiceIntegrationTest {
     doAnswer(invocation -> {
       if (checks.incrementAndGet() == 1) {
         firstChecking.countDown();
-        release.await(10, TimeUnit.SECONDS);
+        // 시간 초과로 풀리면 의도한 순서가 깨진 것이라 조용히 진행하지 않는다 (예외는 Future로 전달돼 아래 단언에 드러남)
+        if (!release.await(30, TimeUnit.SECONDS)) {
+          throw new IllegalStateException("두 번째 요청이 끝나기 전에 첫 요청의 대기 시간이 지남");
+        }
       }
       return invocation.callRealMethod();
     }).when(withdrawalCheckService).check(anyLong());
@@ -462,7 +469,7 @@ class WithdrawalServiceIntegrationTest {
 
       // 첫 요청 재개: 최종 잠금에서 이미 DELETED → 404, 이 요청의 변경 · 이벤트는 커밋되지 않음
       release.countDown();
-      assertThat(first.get(10, TimeUnit.SECONDS)).isInstanceOfSatisfying(BusinessException.class,
+      assertThat(first.get(30, TimeUnit.SECONDS)).isInstanceOfSatisfying(BusinessException.class,
           e -> assertThat(e.getErrorCode()).isEqualTo(MemberErrorCode.MEMBER_NOT_FOUND));
     } finally {
       // 테스트가 중간에 실패해도 첫 요청이 풀리게
@@ -604,8 +611,11 @@ class WithdrawalServiceIntegrationTest {
       assertThat(r.getPhoneHash()).isEqualTo(memberHmac.phoneHash(before.getPhone()));
     });
     // 같은 트랜잭션에서 MemberWithdrawn 1건 (토픽 member.events.v1, 키 memberId, payload { memberId })
-    assertThat(withdrawnEvents(memberId)).singleElement()
-        .satisfies(envelope -> assertThat(envelope).contains("\"memberId\":" + memberId));
+    assertThat(withdrawnEvents(memberId)).singleElement().satisfies(json -> {
+      JsonNode payload = ENVELOPE_MAPPER.fromJson(json).payload();
+      assertThat(payload.size()).isEqualTo(1);
+      assertThat(payload.get("memberId").asLong()).isEqualTo(memberId);
+    });
   }
 
   private void assertUnchanged(Long memberId, Member before) {
