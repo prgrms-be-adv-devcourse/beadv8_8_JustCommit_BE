@@ -1,7 +1,7 @@
 # 테스트 시나리오
 
 > 언제 읽나: 시나리오 ID로 내용을 찾거나 결과를 기록할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: [노션 「테스트 시나리오」 4절](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: [노션 「테스트 시나리오」 4절](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
 
 시나리오마다 어느 서비스의 테스트인지, 무엇을 대신 세우는지(WireMock · 테스트 Kafka · Clock 등), 무엇을 확인하는지는 노션 「테스트 시나리오」 4절 표에 있습니다. 이 문서는 ID · 문장 · 결과 기록용입니다.
 
@@ -29,7 +29,7 @@
 | S-B02 | 닉네임 변경 → `MemberUpdated` → 각 서비스 복제본 갱신 | 정상 | 통합 | PR |  |  |
 | S-B03 | 같은 `MemberCreated` 두 번 → 지갑 · 장바구니 1개만 | 중복 | 통합 | PR |  |  |
 | S-B04 | 탈퇴 확인 3곳 병렬 호출, 하나라도 실패하면 탈퇴 막음 (Fail-closed) | 장애 | 통합 | PR |  | 완료 (11/18): `WithdrawalScenarioTest`, `WithdrawalCheckServiceIntegrationTest` |
-| S-B05 | 직접 탈퇴(로컬 비밀번호 · 카카오 탈퇴 토큰) → 개인정보 컬럼 NULL · 배송지 삭제 · 탈퇴 기록 저장 · `MemberWithdrawn` Outbox 저장이 한 트랜잭션, 저장이 실패하면 Outbox까지 모두 롤백 | 정상 | 통합 | PR |  | 부분 검증 (11/18): 직접 탈퇴 및 롤백(`WithdrawalServiceIntegrationTest`). `MemberWithdrawn` Outbox 원자성은 #408 |
+| S-B05 | 직접 탈퇴(로컬 비밀번호 · 카카오 탈퇴 토큰) → 개인정보 컬럼 NULL · 배송지 삭제 · 탈퇴 기록 저장 · `MemberWithdrawn` Outbox 저장이 한 트랜잭션, 저장이 실패하면 Outbox까지 모두 롤백 | 정상 | 통합 | PR |  | 완료 (11/19): 직접 탈퇴(로컬 · 카카오)에서 익명화 · 배송지 · 탈퇴 기록 · `MemberWithdrawn` Outbox가 함께 커밋되고 저장 실패 시 함께 롤백, 같은 회원의 동시 요청도 이벤트 1건(`WithdrawalServiceIntegrationTest`) |
 | S-B06 | 탈퇴 조건 미충족 → 409 `WITHDRAWAL_BLOCKED`, 회원 · 토큰 · 탈퇴 기록 변화 없음. 사전 확인 GET은 차단 사유를 보여 주고, GET이 `ALLOWED`였어도 POST에서 다시 확인 | 규칙 | 통합 | PR |  | 완료 (11/18): `WithdrawalServiceIntegrationTest`(사전 확인 `ALLOWED` 뒤 최종 탈퇴 재확인 포함) |
 | S-B07 | 재가입 제한: 탈퇴한 이메일만 · 휴대폰만 · 둘 다 같으면 30일 이내 로컬 · 소셜 가입 거절(일치 항목을 구분하지 않는 같은 응답), 30일이 지나면 가입 가능(정리 스케줄러가 기록을 아직 지우지 않았어도) | 경계 | 통합 | PR |  | 완료 (11/18): `RejoinRestrictionIntegrationTest` |
 | S-B08 | 같은 이메일 · 휴대폰으로 가입과 탈퇴가 동시에 진행 → 탈퇴가 커밋되면 가입이 재가입 제한을 우회하지 못함 (실제 PostgreSQL) | 경계 | 통합 | PR |  | 완료 (11/18): 실제 PostgreSQL에서 커밋 전후 · 사전 검사 통과 후 가입 · 탈퇴가 끼어드는 경합(로컬 가입 경로, `RejoinRestrictionIntegrationTest`) |
@@ -112,9 +112,13 @@
 |---|---|---|---|---|---|---|
 | S-G01 | 배송 완료 → 구매 확정 → 정산 생성 → 정산금 지급 (settlement → payment REST) | 정상 | E2E | 야간 |  |  |
 | S-G02 | 배송 완료 72시간 후 자동 구매 확정 | 규칙 | 통합 | PR |  |  |
-| S-G03 | 정산 지급 때 배송비 `HOLDING` → `REVENUE`, 배송비가 환불된 판매자 주문은 건너뜀 | 정상 | 통합 | PR |  |  |
-| S-G04 | 정산금 지급을 같은 settlementId로 두 번 → 1번만 입금 | 중복 | 통합 | PR |  |  |
-| S-G05 | 전부 반품 → 음수 정산 → 판매자 정산금 · 충전금에서 회수 → 부족분 미수금 → 다음 입금에서 먼저 차감, 미수금 있으면 인출 불가 | 경계 | 통합 | PR |  |  |
+| S-G03 | 정산 지급 때 배송비 `HOLDING` → `REVENUE`, 배송비가 환불된 판매자 주문은 건너뜀 | 정상 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |
+| S-G04 | 정산금 지급을 같은 settlementId로 두 번 → 1번만 입금 | 중복 | 통합 | PR |  | 완료 (11/19): `PaymentIdempotencyIntegrationTest`, `PaymentSettlementIntegrationTest` |
+| S-G05 | 전부 반품 → 음수 정산 → 판매자 잔액에서 회수 → 부족분 미수금 → 다음 입금에서 먼저 차감, 미수금 있으면 인출 불가 | 경계 | 통합 | PR |  | 부분 검증 (11/19): 잔액에서 회수와 부족분 미수금(`PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest`), 다음 입금(충전, 정산금, 환불)에서 먼저 차감(`MemberWalletDepositorTest`, `PaymentServiceSettlementTest`, `PaymentServiceRefundTest`, `ReceivableCollectionIntegrationTest`). 인출 불가는 인출 구현 때 |
+| S-G06 | 0원 정산 (판매자 부담금 = 판매액 − 수수료) → 판매자 잔액은 그대로, 판매자 지갑에 `SETTLEMENT` 0원 행 1건, 부담금은 `REVENUE`로 | 경계 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |
+| S-G07 | 판매액 0 (전부 반품, 수수료 0) → `HOLDING`에서 판매액을 꺼내지 않고 판매자 잔액에서만 회수, 부족분 미수금 | 경계 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |
+| S-G08 | 배송비를 이미 옮긴 판매자 주문의 정산 지급 → 배송비는 다시 옮기지 않고 정산은 지급 | 중복 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |
+| S-G09 | 0원 정산과 음수 정산을 같은 settlementId로 다시 보내거나 동시에 보냄 → 회수, 미수금, 배송비 이동이 1번만 | 중복 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |
 
 ## H. 이벤트 신뢰성
 
@@ -154,7 +158,8 @@
 
 | ID | 시나리오 | 종류 | 수준 | 자동화 | 남길 실측값 | 결과 |
 |---|---|---|---|---|---|---|
-| S-P01 | 충전 취소: 5만 원 충전 · 1만 원 사용 → 4만 원 취소, 토스 거절이면 충전금 복원 · 기회 유지 | 규칙 | 통합 | PR |  |  |
 | S-P02 | 충전 승인 결과 불명 → `PENDING` → 조회로 승인 또는 실패 확정 | 결과 불명 | 통합 | PR |  |  |
+
+S-P01(충전 취소)은 충전 취소를 하지 않기로 해서 지웠습니다. 번호는 다시 쓰지 않습니다.
 
 ⬜ ai(추천 fallback) 시나리오는 Sprint 2에 추가합니다.

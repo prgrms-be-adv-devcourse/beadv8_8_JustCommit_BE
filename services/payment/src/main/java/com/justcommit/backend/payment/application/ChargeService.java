@@ -18,7 +18,6 @@ import com.justcommit.backend.payment.presentation.dto.ChargeCreateResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.justcommit.backend.payment.infrastructure.repository.WalletTransactionRepository;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -30,9 +29,9 @@ import java.util.Optional;
 public class ChargeService {
     private final ChargeRepository chargeRepository;
     private final WalletRepository walletRepository;
-    private final WalletTransactionRepository walletTransactionRepository;
     private final PaymentKeyCipher paymentKeyCipher;
     private final WalletService walletService;
+    private final MemberWalletDepositor memberWalletDepositor;
     private final ChargeRecoveryProperties recoveryProperties;
     private final Clock clock;
 
@@ -68,7 +67,8 @@ public class ChargeService {
         return ChargeConfirmResponse.from(charge);
     }
 
-    // TX2: 토스 승인 성공(사용자 승인 요청 또는 복구 스케줄러 조회) → APPROVED + 적립 + 거래 내역. 잠금 순서는 지갑 → 충전
+    // TX2: 토스 승인 성공(사용자 승인 요청 또는 복구 스케줄러 조회) → APPROVED + 적립 + 거래 내역 + 미수금 차감.
+    // 잠금 순서는 지갑 → 충전 → REVENUE(미수금이 있을 때만). REVENUE를 잡은 뒤 충전 행을 잡는 경로는 없다
     @Transactional
     public ChargeConfirmResponse completeConfirm(Long chargeId, LocalDateTime approvedAt) {
         Long memberId = chargeRepository.findMemberIdById(chargeId)
@@ -79,9 +79,9 @@ public class ChargeService {
         Charge charge = chargeRepository.findByIdAndMemberIdForUpdate(chargeId, memberId)
                 .orElseThrow(() -> new BusinessException(PaymentErrorCode.CHARGE_NOT_FOUND));
 
+        // 이미 처리된 충전이면 여기서 CHARGE_ALREADY_PROCESSED → 입금과 차감까지 가지 않는다
         charge.completeConfirm(approvedAt);
-        wallet.credit(charge.getAmount());
-        walletTransactionRepository.save(WalletTransaction.chargeIn(wallet, charge));
+        memberWalletDepositor.deposit(wallet, charge.getAmount(), w -> WalletTransaction.chargeIn(w, charge));
 
         return ChargeConfirmResponse.from(charge);
     }

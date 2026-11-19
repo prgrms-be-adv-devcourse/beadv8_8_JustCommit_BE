@@ -170,7 +170,8 @@ class WithdrawalControllerIntegrationTest {
   @Test
   @DisplayName("폐기 기록이 늦어져도(PENDING) 탈퇴는 커밋돼 200 · revocationCompleted=false, 쿠키 만료")
   void withdrawPending() throws Exception {
-    Login login = login(saveMember());
+    Member member = saveMember();
+    Login login = login(member);
     stubChecks(PASS, PASS, PASS);
     doThrow(new RedisConnectionFailureException("Redis 기록 실패 (테스트)"))
         .when(revokedMemberRedisStore).recordCutoff(anyLong(), any(), any());
@@ -180,6 +181,10 @@ class WithdrawalControllerIntegrationTest {
     assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
     assertThat(response.body()).contains("\"revocationCompleted\":false");
     assertThat(response.headers().firstValue("Set-Cookie")).hasValueSatisfying(c -> assertThat(c).contains("Max-Age=0"));
+    // 폐기 기록(Redis)만 늦어졌고 탈퇴와 MemberWithdrawn은 함께 커밋돼 있음 (#408)
+    assertThat(jdbcTemplate.queryForObject(
+        "select count(*) from outbox_event where event_type = 'MemberWithdrawn' and aggregate_id = ?",
+        Long.class, String.valueOf(member.getId()))).isEqualTo(1);
   }
 
   @Test

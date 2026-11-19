@@ -51,7 +51,7 @@ import static org.mockito.BDDMockito.given;
 })
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, PaymentService.class, WalletService.class})
+@Import({JpaAuditingConfig.class, PaymentService.class, WalletService.class, MemberWalletDepositor.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class PaymentServiceConcurrencyIntegrationTest {
@@ -168,7 +168,7 @@ class PaymentServiceConcurrencyIntegrationTest {
         walletRepository.saveAndFlush(holding);
         walletRepository.saveAndFlush(Wallet.system(WalletType.REVENUE));
 
-        paymentUseCase.distributeSettlement(1L, sellerId, new BigDecimal("9500"), new BigDecimal("500"));
+        paymentUseCase.distributeSettlement(1L, sellerId, null, new BigDecimal("9500"), new BigDecimal("500"), BigDecimal.ZERO, BigDecimal.ZERO);
 
         assertThat(balanceOf(sellerId)).isEqualByComparingTo("9500");
         assertThat(holdingBalance()).isEqualByComparingTo("0");
