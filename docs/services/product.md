@@ -10,7 +10,7 @@
 | 상품 | 등록 · 수정 · 삭제 · 숨김, 상태 6개, 판매자별 등록 제한 |
 | 예약 · 판매 완료 · 판매 재개 | 예약은 market의 내부 REST, 판매 완료 · 결제 전 예약 해제 · 판매 재개는 market 이벤트 구독 (거절 · 반품이면 숨김) → [ADR 0016](../decisions/0016-product-sale-events-from-market.md) |
 | 품종 | 농사로 215종, 학명 · 학명 동의어 · 별칭. 판매 금지 품종은 `banned_species`로 따로. 목록에 없는 식물은 「기타」(id 218 고정, V11) — 학명 · 관리 속성 · 카테고리 · 사진이 없고 사진 검수는 항상 관리자 확인, 추천 · 품종 통계에서는 뺌 |
-| 검색 | OpenSearch(alias `products` → `products_v1`, 시작 시 생성), 색인 리스너 → [검색 · 추천](../flows/search-recommend.md) |
+| 검색 | OpenSearch(alias `products` → `products_v{n}`, 시작 시 `products_v1` 생성, 매핑이 바뀌면 무중단 재색인), 색인 리스너 → [검색 · 추천](../flows/search-recommend.md) |
 | 사진 검수 | OpenAI Moderation + Claude Haiku, 관리자 확인, 이의 신청 → [사진 검수](../flows/image-review.md) |
 
 ## 소유 테이블
@@ -32,7 +32,7 @@
 
 ## 외부 API
 
-`products` (목록 · 등록 · 상세 · 수정 · 삭제) · `products/{id}/hidden` · `products/me` · `products/me/counts` · `products/images/uploadUrls` · `products/{id}/imageReviews`(검수 기록 · 기한 초과 재요청) · `products/{id}/appeals`(이의 신청) · `species` · `species/{id}` · `admin/imageReviews` → [외부 API 목록](../reference/external-apis.md)
+`products` (목록 · 등록 · 상세 · 수정 · 삭제) · `products/{id}/hidden` · `products/me` · `products/me/counts` · `products/images/uploadUrls` · `products/{id}/imageReviews`(검수 기록 · 기한 초과 재요청) · `products/{id}/appeals`(이의 신청) · `species` · `species/{id}` · `admin/imageReviews` · `admin/products/searchIndex`(전체 색인 · `rebuilds` 무중단 재색인) → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 

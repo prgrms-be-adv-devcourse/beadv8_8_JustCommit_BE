@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-19 · flows/search-recommend.md · reference/external-apis.md · services/product.md · 검색 2단계: 찾는 곳에 설명 추가(가중치 제목 3 > 품종명 · 별칭 · 학명 2 > 설명 1), 오타 허용 `AUTO:3,6`을 제목 · 품종명 · 별칭 · 학명의 `.word` 하위 필드(`ko_word`, 공백으로만 자름)에서 가중치 절반으로, 인덱스 이름 `products_v{n}` · 매핑 파일 `opensearch/products.json`, 무중단 재색인 `POST admin/products/searchIndex/rebuilds`(새 인덱스 채움 → refresh → alias 이동 → 따라잡기 색인 → 옛 인덱스 삭제, 따라잡기 실패 시 옛 인덱스 유지, 전체 색인 · 재색인은 한 서버에서 하나만 · 진행 중 409 `SEARCH_INDEXING_IN_PROGRESS`) (#487)
 - 2026-11-19 · reference/external-apis.md · flows/search-recommend.md · 상품 목록 `status`가 여러 값을 받음(`status=ACTIVE&status=PAYMENT_PENDING`, 하나라도 노출 상태 밖이면 400): 판매자 상점 판매 중 칸이 결제 대기도 함께 한 번에 받음 (#559)
 - 2026-11-19 · reference/kafka-topics.md · flows/image-review.md · 관리자 검수 지연 알림 notification 합의 반영: 관리자 역할(ADMIN)로 알림 1건 · 관리자끼리 읽음 공유, `event_key` `ADMIN_REVIEW_DELAYED:{eventId}`, 새로 지연된 건만 1번 · payload 추가 없음, 구독은 notification Kafka 구독 연결 때 (#509)
 - 2026-11-19 · infra/deploy.md · CD 기동 대기(compose 헬스체크 `start_period` 60→120초) · 실패 로그(compose 상태 · 헬스 기록 · 로그, K3s 파드 상태 · 이벤트 · 로그, 비밀값 가림) 규칙 추가 (#555)

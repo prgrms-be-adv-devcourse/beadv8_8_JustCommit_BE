@@ -6,7 +6,7 @@ import com.justcommit.backend.product.species.domain.Species;
 import java.util.List;
 
 /**
- * OpenSearch 상품 문서 (문서 ID = 상품 ID). 필드는 resources/opensearch/products-v1.json 매핑과 1:1이다.
+ * OpenSearch 상품 문서 (문서 ID = 상품 ID). 필드는 resources/opensearch/products.json 매핑과 1:1이다.
  * 매핑이 {@code dynamic: strict}라 여기에 없는 필드를 넣으면 OpenSearch가 거절한다.
  *
  * <p>상태 · 숨김도 함께 저장하고, 검색할 때 노출 규칙(ACTIVE · PAYMENT_PENDING · SOLD_OUT, 숨김 아님)으로 거른다 (#486).

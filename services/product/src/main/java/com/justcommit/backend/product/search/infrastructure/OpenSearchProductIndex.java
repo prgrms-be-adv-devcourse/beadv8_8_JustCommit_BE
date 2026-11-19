@@ -37,6 +37,7 @@ public class OpenSearchProductIndex implements ProductSearchIndex {
     private static final String VERSION_CONFLICT = "version_conflict_engine_exception";
 
     private final OpenSearchClient client;
+    private final ProductIndexAdmin indexAdmin;
 
     @Override
     public void save(ProductDocument document, long version) {
@@ -96,6 +97,15 @@ public class OpenSearchProductIndex implements ProductSearchIndex {
 
     @Override
     public BulkResult bulk(List<Write> writes) {
+        return bulk(ProductIndexInitializer.ALIAS, true, writes);
+    }
+
+    @Override
+    public BulkResult bulkInto(String index, List<Write> writes) {
+        return bulk(index, false, writes);
+    }
+
+    private BulkResult bulk(String target, boolean requireAlias, List<Write> writes) {
         if (writes.isEmpty()) {
             return new BulkResult(0, 0, 0);
         }
@@ -103,8 +113,8 @@ public class OpenSearchProductIndex implements ProductSearchIndex {
         BulkResponse response;
         try {
             response = client.bulk(request -> request
-                    .index(ProductIndexInitializer.ALIAS)
-                    .requireAlias(true)
+                    .index(target)
+                    .requireAlias(requireAlias)
                     .operations(operations));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -126,6 +136,54 @@ public class OpenSearchProductIndex implements ProductSearchIndex {
             }
         }
         return new BulkResult(applied, skipped, failed);
+    }
+
+    @Override
+    public String currentIndex() {
+        try {
+            return indexAdmin.currentIndex()
+                    .orElseThrow(() -> new IllegalStateException("상품 검색 alias '" + ProductIndexAdmin.ALIAS + "'가 없음"));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    @Override
+    public String createNextIndex(String current) {
+        String next = ProductIndexAdmin.nextIndexName(current);
+        try {
+            indexAdmin.create(next, false);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return next;
+    }
+
+    @Override
+    public void refresh(String index) {
+        try {
+            client.indices().refresh(request -> request.index(index));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    @Override
+    public void switchAlias(String from, String to) {
+        try {
+            indexAdmin.switchAlias(from, to);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    @Override
+    public void deleteIndex(String index) {
+        try {
+            indexAdmin.delete(index);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private static BulkOperation toOperation(Write write) {
