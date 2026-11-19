@@ -410,7 +410,7 @@ public class OrderCancelTransactions {
     // 구매자 취소 알림. 주문과 판매자 주문을 잠근 트랜잭션에서, 이 주문상품의 결과를 반영한 뒤 부른다.
     // 다른 상품이 남거나 판매자가 거절한 상품이 섞여 있으면 이 상품의 일부 취소 알림, 판매자 주문 전부가 구매자 취소면
     // 취소 중이 하나도 남지 않았을 때(모두 취소 완료 또는 확인 필요) 전부 취소 알림을 한 번 보낸다.
-    // 판매자 거절, 자동 거절은 판매자에게 「구매자 취소」를 알리지 않는다 (거절 알림은 #288)
+    // 판매자 거절, 자동 거절은 판매자에게 「구매자 취소」를 알리지 않는다 (거절 알림은 #288에서 결정 시점에 발행)
     private SellerOrder notifySeller(RefundClaim claim, LocalDateTime now) {
         SellerOrder sellerOrder = sellerOrderRepository.findById(claim.sellerOrderId()).orElseThrow();
         if (claim.reason() != OrderItemCancelled.CancelReason.BUYER) {
