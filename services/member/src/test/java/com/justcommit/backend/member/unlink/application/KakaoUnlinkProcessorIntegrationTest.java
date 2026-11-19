@@ -3,6 +3,8 @@ package com.justcommit.backend.member.unlink.application;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import com.justcommit.backend.common.testcontainers.SharedRedis;
+import com.justcommit.backend.member.auth.application.SocialLoginCommand;
+import com.justcommit.backend.member.auth.application.SocialLoginService;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Provider;
@@ -10,6 +12,7 @@ import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReceipt;
 import com.justcommit.backend.member.unlink.infrastructure.mail.KakaoUnlinkNoticeMailSender;
 import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
+import com.justcommit.backend.member.withdrawal.application.WithdrawalCheckService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,6 +26,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.security.KeyPair;
@@ -45,6 +49,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
@@ -96,6 +101,10 @@ class KakaoUnlinkProcessorIntegrationTest {
 
   // 실제 SMTP 대신 가짜 (보낸 주소 · 횟수만 확인)
   @MockitoBean KakaoUnlinkNoticeMailSender noticeMailSender;
+
+  // 3곳 확인이 진행되는 "도중"에 다른 일을 끼워 넣기 위해 가로챔. 평소에는 실제 빈 그대로
+  @MockitoSpyBean WithdrawalCheckService withdrawalCheckService;
+  @Autowired SocialLoginService socialLoginService;
 
   // 탈퇴하면 이메일이 비워지므로 만든 회원 id로 정리한다
   private final List<Long> memberIds = new ArrayList<>();
@@ -350,6 +359,56 @@ class KakaoUnlinkProcessorIntegrationTest {
 
     assertMember(member.getId(), MemberStatus.ACTIVE, 1);
     assertThat(row(receiptId)).containsEntry("status", "INVALIDATED");
+  }
+
+  @Test
+  @DisplayName("[S-B11] 3곳 확인 도중 실제 카카오 재로그인이 끼어들면, 확인이 ALLOWED여도 최종 탈퇴는 잠금 안 재확인에서 멈춘다")
+  void reloginDuringCheckBlocksFinalWithdrawal() {
+    Member member = kakaoMember("9200000030");
+    Long receiptId = receive("9200000030", "UNLINK_FROM_APPS");
+    stubUnlinked();
+    stubChecks(PASS);
+    // 처리 기록이 정해지고 3곳을 확인하는 사이에 사용자가 다시 카카오로 로그인 (복구 + 미처리 기록 무효)
+    doAnswer(invocation -> {
+      socialLoginService.login(new SocialLoginCommand(Provider.KAKAO, "9200000030", "race30@kakao.com"));
+      return invocation.callRealMethod();
+    }).when(withdrawalCheckService).check(member.getId());
+
+    processor.processDue();
+
+    verify(withdrawalCheckService).check(member.getId()); // 경쟁 경로를 실제로 지났는지
+    assertMember(member.getId(), MemberStatus.ACTIVE, 1); // 연결 해제 폐기만, 탈퇴 폐기 없음
+    assertThat(memberRepository.findById(member.getId()).orElseThrow().getEmail()).isNotNull();
+    assertThat(jdbcTemplate.queryForObject(
+        "select count(*) from outbox_event where event_type = 'MemberWithdrawn' and aggregate_id = ?",
+        Long.class, String.valueOf(member.getId()))).isZero();
+    assertThat(row(receiptId)).containsEntry("status", "INVALIDATED");
+  }
+
+  @Test
+  @DisplayName("[S-B10] 3곳 확인 도중 임대가 넘어가 다른 작업자가 다시 확보하면(처리권 +1), 이전 작업자는 ALLOWED여도 탈퇴하지 않음")
+  void takeoverDuringCheckBlocksFinalWithdrawal() {
+    Member member = kakaoMember("9200000031");
+    Long receiptId = receive("9200000031", "UNLINK_FROM_APPS");
+    stubUnlinked();
+    stubChecks(PASS);
+    // 확인이 늦어지는 사이 임대가 끝나 다른 작업자가 같은 기록을 다시 확보한 상태를 만든다
+    doAnswer(invocation -> {
+      jdbcTemplate.update("update member_kakao_unlink_receipt set attempt_no = attempt_no + 1,"
+          + " lease_until = now() + interval '60 seconds' where id = ?", receiptId);
+      return invocation.callRealMethod();
+    }).when(withdrawalCheckService).check(member.getId());
+
+    processor.processDue();
+
+    verify(withdrawalCheckService).check(member.getId());
+    assertMember(member.getId(), MemberStatus.INACTIVE, 1); // INACTIVE 그대로, 탈퇴 폐기 없음
+    assertThat(jdbcTemplate.queryForObject(
+        "select count(*) from outbox_event where event_type = 'MemberWithdrawn' and aggregate_id = ?",
+        Long.class, String.valueOf(member.getId()))).isZero();
+    // 새 작업자의 기록은 그대로 (이전 작업자가 덮어쓰지 않음)
+    assertThat(row(receiptId)).containsEntry("status", "INACTIVATED").containsEntry("handles_withdrawal", true)
+        .containsEntry("attempt_no", 3).containsEntry("failure_count", 0);
   }
 
   // ===== ③ NOTICE_PENDING · 운영자 재개 =====
