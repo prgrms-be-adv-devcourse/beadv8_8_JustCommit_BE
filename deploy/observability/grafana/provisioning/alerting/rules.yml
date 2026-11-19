@@ -446,7 +446,7 @@ groups:
             params:
             - 0
     for: 0s
-    noDataState: KeepLast
+    noDataState: OK
     execErrState: Error
     annotations:
       summary: '{{ $labels.service }}: 재시도를 다 써서 멈춘 카카오 연결 해제 웹훅 {{ $values.A.Value }}건 — member_kakao_unlink_receipt의 FAILED 기록(last_error · resume_state) 확인, member 담당에게 연락'

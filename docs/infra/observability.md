@@ -55,7 +55,7 @@
 | 정산 지급 지연 | 10분 넘게 미지급(`PENDING`, `FAILED`)인 정산 1건 이상 (`max(settlement_payouts_delayed) > 0`) | 상태 기준 1번, 반복 1시간 |
 | `REVIEW_REQUIRED` | 결제 확인 필요 주문 1건 이상 (`max(market_orders_review_required) > 0`) → [처리 순서](payment-review-runbook.md) | 상태 기준 1번, 반복 1시간 |
 | 카카오 연결 해제 웹훅 저장 실패 | 5분 동안 수신 기록 저장 실패 1건 이상 (`sum by (service) (increase(replant_kakao_unlink_receive_failures_total[5m])) > 0`). 200으로 응답해 5xx 알림에 안 잡히고 카카오가 다시 보내지 않음 → [대응](../flows/signup-and-replica.md#운영-알림과-대응) | 즉시 |
-| 카카오 연결 해제 웹훅 처리 멈춤 | 재시도를 다 쓴 `FAILED` 기록 1건 이상 (`max by (service) (replant_kakao_unlink_failed) > 0`). member가 수집 때마다 DB에서 세고, 여러 인스턴스가 같은 DB를 보므로 `max`. DB를 못 읽으면 NaN이라 데이터 없음이면 직전 상태 유지(`KeepLast`) → [대응](../flows/signup-and-replica.md#운영-알림과-대응) | 상태 기준 1번, 반복 1시간 |
+| 카카오 연결 해제 웹훅 처리 멈춤 | 재시도를 다 쓴 `FAILED` 기록 1건 이상 (`max by (service) (replant_kakao_unlink_failed) > 0`). member가 수집 때마다 DB에서 세고, 여러 인스턴스가 같은 DB를 보므로 `max`. DB를 못 읽으면 NaN(배송 지연 지표와 같은 방식, `noDataState: OK`). NaN은 데이터 없음으로 보지 않을 수 있어 이미 울린 알림이 해소로 바뀔 수 있음(한계) → [대응](../flows/signup-and-replica.md#운영-알림과-대응) | 상태 기준 1번, 반복 1시간 |
 
 규칙 · 보내는 곳 · 반복 간격은 파일로 등록합니다: `deploy/observability/grafana/provisioning/alerting/` (`rules.yml` · `contact-points.yml` · `policies.yml`). 같은 알림 · 같은 서비스는 한 메시지로 묶고, 해소되지 않으면 1시간마다 다시 보냅니다.
 
