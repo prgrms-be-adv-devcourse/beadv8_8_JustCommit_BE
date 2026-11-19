@@ -41,7 +41,7 @@ sequenceDiagram
 | 확인 | market · payment · settlement 내부 API 3개를 **병렬** 호출 (`GET /internal/v1/{orders, payments, settlements}/members/{memberId}/withdrawalCheck`, 공통 응답 `hasWithdrawalBlocker` · `blockingReasons` · `details`). 결과는 `ALLOWED` · `BLOCKED` · `UNAVAILABLE`이고 **탈퇴는 `ALLOWED`일 때만** 진행. 호출 실패 · 응답 형식 오류(값 누락, 차단 여부와 사유 불일치)는 `UNAVAILABLE`(Fail-closed), 차단과 실패가 함께면 `UNAVAILABLE` |
 | 잔액 | 회원이 탈퇴 전에 직접 정리 (토스 취소 기한 안은 충전 취소, 나머지는 계좌 인출). 정리를 시작하면 지갑이 잠김 |
 | 다른 서비스 | 복제본은 지우지 않고 탈퇴 상태로 ("탈퇴한 회원"). product는 판매 중 · 검수 중 · 반려 상품을 `DELETED` |
-| 한계 | 3곳 확인은 읽기 전용이라 확인과 member 커밋 사이(카카오 연결 해제 포함 수 초)의 다른 서비스 변경은 막지 못함: 본인이 충전하면 잔액이 남을 수 있음(운영자가 처리). 그 사이 다른 구매자가 이 판매자의 상품을 주문해도 판매자 수락 전(`ACCEPT_PENDING`)이라 배송이 생기지 않고, 24시간 무응답으로 자동 거절 · 환불됨(구매자는 그 전에 언제든 취소 가능) → [판매자 수락](../services/market.md#정책) |
+| 한계 | 3곳 확인은 읽기 전용이라 확인 이후의 다른 서비스 변경은 막지 못함: 본인이 충전하면 잔액이 남을 수 있음(운영자가 처리). 또 확인부터 `MemberWithdrawn`이 소비돼 product의 상품 정리가 반영될 때까지(카카오 연결 해제 · 이벤트 전달 지연 포함) 다른 구매자가 이 판매자의 상품을 주문할 수 있음. 이런 주문은 판매자 수락 정책(결제 후 `ACCEPT_PENDING`, 24시간 무응답이면 자동 거절 · 환불, 구매자는 그 전에 언제든 취소)으로 처리 → [판매자 수락](../services/market.md#정책). ⬜ 미구현(#284): 수락 단계가 들어가기 전에는 이 주문이 일반 주문처럼 진행될 수 있음 |
 
 ### 직접 탈퇴
 
