@@ -310,6 +310,67 @@ class OrderCancelRefundIntegrationTest {
         // 배송비 환불은 한 번만 부르고 재시도하지 않는다
         verify(paymentUseCase, times(1)).refundShippingFee(anyLong(), anyLong(), anyLong(), any());
         verify(outboxPublisher, never()).publish(any());
+        // 환불은 사람이 확인하지만 택배는 취소됐으므로 판매자에게는 전부 취소를 한 번 알린다
+        verify(sellerOrderEventPublisher, times(1)).publishAfterCommit(any(SellerOrderCancelledEvent.class));
+    }
+
+    @Test
+    @DisplayName("전부 취소에서 한 상품은 환불, 한 상품은 확인 필요로 끝나도 판매자 전부 취소 알림은 한 번 나간다 (판매 재개는 환불된 상품만)")
+    void notifiesSellerOnceWhenSomeItemsRequireReview() {
+        Fixture fixture = paidOrder(2);
+        Long refunded = fixture.itemIds().get(0);
+        Long rejected = fixture.itemIds().get(1);
+        when(paymentUseCase.refundCancelledItem(eq(refunded), anyLong(), anyLong(), any()))
+                .thenReturn(RefundOutcome.refunded());
+        when(paymentUseCase.refundCancelledItem(eq(rejected), anyLong(), anyLong(), any()))
+                .thenReturn(RefundOutcome.rejected("HTTP_409_REFUND_NOT_ALLOWED"));
+        when(paymentUseCase.refundShippingFee(anyLong(), anyLong(), anyLong(), any()))
+                .thenReturn(RefundOutcome.refunded());
+        cancelTransactions.requestCancel(BUYER_ID, fixture.orderId());
+        courierResult(fixture, "CANCELLED");
+
+        recoveryService.recoverCancelResults();
+
+        assertThat(item(refunded)).containsEntry("status", "CANCELLED");
+        assertThat(item(rejected)).containsEntry("status", "REVIEW_REQUIRED");
+        assertThat(orderStatus(fixture.orderId())).isEqualTo("PAID");
+        verify(sellerOrderEventPublisher, times(1)).publishAfterCommit(any(SellerOrderCancelledEvent.class));
+        verify(sellerOrderEventPublisher, never()).publishAfterCommit(any(OrderItemCancelledEvent.class));
+        verify(outboxPublisher, times(1)).publish(new OrderItemCancelled(fixture.orderId(), refunded, 101L,
+                OrderItemCancelled.CancelReason.BUYER));
+        verify(outboxPublisher, times(1)).publish(any(OrderItemCancelled.class));
+    }
+
+    @Test
+    @DisplayName("일부 취소 상품이 확인 필요가 되면 판매자에게 그 상품의 일부 취소를 알린다")
+    void notifiesSellerOfPartialCancelWhenItemRequiresReview() {
+        Fixture fixture = paidOrder(2);
+        Long itemId = fixture.itemIds().getFirst();
+        when(paymentUseCase.refundCancelledItem(anyLong(), anyLong(), anyLong(), any()))
+                .thenReturn(RefundOutcome.rejected("HTTP_409_REFUND_NOT_ALLOWED"));
+
+        itemCancel(itemId);
+
+        assertThat(item(itemId)).containsEntry("status", "REVIEW_REQUIRED");
+        verify(sellerOrderEventPublisher, times(1)).publishAfterCommit(any(OrderItemCancelledEvent.class));
+        verify(sellerOrderEventPublisher, never()).publishAfterCommit(any(SellerOrderCancelledEvent.class));
+        verify(outboxPublisher, never()).publish(any());
+    }
+
+    @Test
+    @DisplayName("복구 횟수를 다 쓰고 유예가 지난 상품을 확인 필요로 바꿀 때도 판매자에게 알린다 (환불은 다시 부르지 않음)")
+    void notifiesSellerWhenExhaustedItemRequiresReview() {
+        Fixture fixture = paidOrder(1);
+        Long itemId = fixture.itemIds().getFirst();
+        cancelTransactions.requestCancel(BUYER_ID, fixture.orderId());
+        jdbcTemplate.update("update orders_item set attempt_count = 5, last_error = 'TIMEOUT', attempted_at = ? where id = ?",
+                Timestamp.valueOf(LocalDateTime.now().minusSeconds(20)), itemId);
+
+        recoveryService.recoverProcessingRefunds();
+
+        assertThat(item(itemId)).containsEntry("status", "REVIEW_REQUIRED").containsEntry("last_error", "TIMEOUT");
+        verify(paymentUseCase, never()).refundCancelledItem(any(), any(), any(), any());
+        verify(sellerOrderEventPublisher, times(1)).publishAfterCommit(any(SellerOrderCancelledEvent.class));
     }
 
     // OrderService.itemCancel과 같은 순서: 취소 중 커밋 → (트랜잭션 밖) 바로 환불

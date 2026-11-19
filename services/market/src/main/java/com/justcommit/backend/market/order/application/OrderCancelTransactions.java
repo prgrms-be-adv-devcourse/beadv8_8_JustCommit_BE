@@ -247,30 +247,41 @@ public class OrderCancelTransactions {
     }
 
     // 결과 불명 환불 하나를 선점한다 (SKIP LOCKED). 잠근 뒤 취소 중, 유예 경과를 다시 본다.
-    // 복구를 이미 5번 했으면 환불을 부르지 않고 확인 필요로 바꾼다 (5번째 선점 뒤 반영 없이 유예가 지난 경우 포함)
+    // 복구를 이미 5번 했으면 환불을 부르지 않고 확인 필요로 바꾼다 (5번째 선점 뒤 반영 없이 유예가 지난 경우 포함).
+    // 확인 필요 전환은 선점 트랜잭션이 끝난 뒤 주문 → 판매자 주문 잠금으로 한다. 주문상품 행을 쥔 채 주문을 잠그면
+    // 결과 반영(주문 → 판매자 주문 → 주문상품)과 순서가 거꾸로라 교착이 날 수 있다
     public Optional<RefundClaim> claimRefundRetry(Long orderItemId) {
-        return transactionTemplate.execute(status -> {
+        RetryClaim retry = transactionTemplate.execute(status -> {
             LocalDateTime now = LocalDateTime.now();
             OrdersItem item = ordersItemRepository.findByIdForUpdateSkipLocked(orderItemId).orElse(null);
             if (item == null || item.getStatus() != OrderItemStatus.CANCEL_PROCESSING || item.getAttemptedAt() == null
                     || item.getAttemptedAt().isAfter(now.minus(RECOVERY_GRACE))) {
-                return Optional.<RefundClaim>empty();
+                return null;
             }
             SellerOrder sellerOrder = item.getSellerOrder();
             Long orderId = sellerOrder.getOrder().getId();
+            Long buyerId = sellerOrder.getOrder().getBuyerId();
             if (item.getAttemptCount() >= MAX_RECOVERY_ATTEMPTS) {
-                ordersItemRepository.applyRefund(orderItemId, OrderItemStatus.REVIEW_REQUIRED, item.getLastError(), now,
-                        OrderItemStatus.CANCEL_PROCESSING);
-                logReviewRequired(orderItemId, orderId, item.getAttemptCount(), item.getLastError(),
-                        "복구 횟수를 다 쓰고 유예가 지남");
-                return Optional.<RefundClaim>empty();
+                return new RetryClaim(new RefundClaim(orderItemId, orderId, sellerOrder.getId(), buyerId,
+                        item.getProductId(), item.getPrice(), null, item.getAttemptCount()), true, item.getLastError());
             }
-            RefundClaim claim = new RefundClaim(orderItemId, orderId, sellerOrder.getId(),
-                    sellerOrder.getOrder().getBuyerId(), item.getProductId(), item.getPrice(),
-                    shippingFeeToRetry(sellerOrder), item.getAttemptCount() + 1);
+            RefundClaim claim = new RefundClaim(orderItemId, orderId, sellerOrder.getId(), buyerId,
+                    item.getProductId(), item.getPrice(), shippingFeeToRetry(sellerOrder), item.getAttemptCount() + 1);
             ordersItemRepository.claimRefundRetry(orderItemId, now, OrderItemStatus.CANCEL_PROCESSING);
-            return Optional.of(claim);
+            return new RetryClaim(claim, false, null);
         });
+        if (retry == null) {
+            return Optional.empty();
+        }
+        if (retry.exhausted()) {
+            requireReview(retry.claim(), retry.lastError(), "복구 횟수를 다 쓰고 유예가 지남");
+            return Optional.empty();
+        }
+        return Optional.of(retry.claim());
+    }
+
+    // 선점 결과. exhausted면 복구 횟수를 다 써서 환불을 부르지 않고 확인 필요로 바꾼다
+    private record RetryClaim(RefundClaim claim, boolean exhausted, String lastError) {
     }
 
     // 판매자 주문이 전부 취소 흐름에 있고 택배가 취소됐을 때만 배송비도 다시 요청한다 (같은 키라 이미 됐으면 ALREADY_REFUNDED)
@@ -311,19 +322,8 @@ public class OrderCancelTransactions {
                     OrderItemCancelled.CancelReason.BUYER));
 
             // 벌크 UPDATE가 영속성 컨텍스트를 비웠으므로 다시 읽는다
-            SellerOrder sellerOrder = sellerOrderRepository.findById(claim.sellerOrderId()).orElseThrow();
+            SellerOrder sellerOrder = notifySeller(claim, now);
             Orders order = sellerOrder.getOrder();
-            List<OrdersItem> items = sellerOrder.getItems();
-            if (items.stream().allMatch(item -> item.getStatus() == OrderItemStatus.CANCELLED)) {
-                sellerOrderEventPublisher.publishAfterCommit(new SellerOrderCancelledEvent(
-                        order.getId(), sellerOrder.getId(), sellerOrder.getSellerId(), order.getBuyerId(), now));
-            } else if (items.stream().anyMatch(item -> !item.isInCancellation())) {
-                // 판매자 주문의 일부만 취소 (배송 유지)
-                String productName = items.stream().filter(item -> item.getId().equals(claim.orderItemId()))
-                        .map(OrdersItem::getProductName).findFirst().orElse(null);
-                sellerOrderEventPublisher.publishAfterCommit(new OrderItemCancelledEvent(claim.orderItemId(),
-                        order.getId(), sellerOrder.getId(), sellerOrder.getSellerId(), productName, now));
-            }
             boolean allCancelled = order.getSellerOrders().stream()
                     .flatMap(other -> other.getItems().stream())
                     .allMatch(item -> item.getStatus() == OrderItemStatus.CANCELLED);
@@ -336,14 +336,44 @@ public class OrderCancelTransactions {
         return Boolean.TRUE.equals(applied);
     }
 
+    // 확인 필요: 환불은 사람이 확인하지만 구매자 취소와 택배 취소는 끝났으므로 판매자에게는 알린다 (판매 재개는 하지 않음)
     private boolean requireReview(RefundClaim claim, String reason, String why) {
-        Boolean applied = transactionTemplate.execute(status -> ordersItemRepository.applyRefund(claim.orderItemId(),
-                OrderItemStatus.REVIEW_REQUIRED, reason, LocalDateTime.now(), OrderItemStatus.CANCEL_PROCESSING) == 1);
+        Boolean applied = transactionTemplate.execute(status -> {
+            LocalDateTime now = LocalDateTime.now();
+            // 완료 반영과 같은 잠금 순서. 같은 판매자 주문의 결과 반영을 줄 세워 판매자 알림이 한 번만 나가게 한다
+            ordersRepository.findLockedById(claim.orderId()).orElseThrow();
+            sellerOrderRepository.findLockedById(claim.sellerOrderId()).orElseThrow();
+            if (ordersItemRepository.applyRefund(claim.orderItemId(), OrderItemStatus.REVIEW_REQUIRED, reason, now,
+                    OrderItemStatus.CANCEL_PROCESSING) == 0) {
+                return false;
+            }
+            notifySeller(claim, now);
+            return true;
+        });
         if (Boolean.TRUE.equals(applied)) {
             logReviewRequired(claim.orderItemId(), claim.orderId(), claim.attemptCount(), reason, why);
         }
         logNotApplied(claim, Boolean.TRUE.equals(applied), OrderItemStatus.REVIEW_REQUIRED);
         return Boolean.TRUE.equals(applied);
+    }
+
+    // 판매자 알림. 주문과 판매자 주문을 잠근 트랜잭션에서, 이 주문상품의 결과를 반영한 뒤 부른다.
+    // 다른 상품이 남으면(배송 유지) 이 상품의 일부 취소 알림, 판매자 주문 전부가 취소 흐름이면
+    // 취소 중이 하나도 남지 않았을 때(모두 취소 완료 또는 확인 필요) 전부 취소 알림을 한 번 보낸다
+    private SellerOrder notifySeller(RefundClaim claim, LocalDateTime now) {
+        SellerOrder sellerOrder = sellerOrderRepository.findById(claim.sellerOrderId()).orElseThrow();
+        Orders order = sellerOrder.getOrder();
+        List<OrdersItem> items = sellerOrder.getItems();
+        if (items.stream().anyMatch(item -> !item.isInCancellation())) {
+            String productName = items.stream().filter(item -> item.getId().equals(claim.orderItemId()))
+                    .map(OrdersItem::getProductName).findFirst().orElse(null);
+            sellerOrderEventPublisher.publishAfterCommit(new OrderItemCancelledEvent(claim.orderItemId(),
+                    order.getId(), sellerOrder.getId(), sellerOrder.getSellerId(), productName, now));
+        } else if (items.stream().noneMatch(item -> item.getStatus() == OrderItemStatus.CANCEL_PROCESSING)) {
+            sellerOrderEventPublisher.publishAfterCommit(new SellerOrderCancelledEvent(
+                    order.getId(), sellerOrder.getId(), sellerOrder.getSellerId(), order.getBuyerId(), now));
+        }
+        return sellerOrder;
     }
 
     // 결과 불명: 취소 중 그대로 두고 원인만 남긴다. 유예가 지나면 복구가 같은 키로 다시 요청한다
