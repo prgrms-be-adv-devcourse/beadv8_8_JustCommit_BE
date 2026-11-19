@@ -63,8 +63,9 @@ class MarketApplicationTests {
 
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(response.body())
-                .contains("replant_shipment_stuck{status=\"READY\"")
-                .contains("replant_shipment_stuck{status=\"CANCEL_PENDING\"");
+                // common-logging이 모든 지표에 application 태그를 붙이므로 라벨 순서와 상관없이 찾는다 (#301)
+                .containsPattern("replant_shipment_stuck\\{[^}]*status=\"READY\"")
+                .containsPattern("replant_shipment_stuck\\{[^}]*status=\"CANCEL_PENDING\"");
     }
 
     @Test
