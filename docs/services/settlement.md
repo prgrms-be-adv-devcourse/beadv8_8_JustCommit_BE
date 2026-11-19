@@ -1,7 +1,7 @@
 # settlement 서비스
 
 > 언제 읽나: settlement 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: Miro 5, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 5, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -28,7 +28,7 @@
 | API | 부르는 서비스 | 상태 |
 |---|---|---|
 | `GET /internal/v1/settlements/seller-orders/{sellerOrderId}` | market | 🟨 제안 |
-| ⬜ 탈퇴 확인 (`hasWithdrawalBlocker` + 사유 코드) | member | ✅ 기능 · ⬜ 경로 |
+| `GET /internal/v1/settlements/members/{memberId}/withdrawalCheck` | member (탈퇴 확인) | ✅ 확정 |
 
 상세 → [내부 API 목록](../reference/internal-apis.md)
 
@@ -67,7 +67,7 @@
 | 수수료 | 5%, 판매액에만 (배송비 제외), 원 단위 미만 버림 |
 | 생성 | 판매자 주문이 끝나면 1번. 반품 진행 중이면 만들지 않음, 모두 수거 전 취소면 만들지 않음, 모두 반품이면 부담금만큼 음수 정산 |
 | 상태 | `PENDING` · `COMPLETED` · `FAILED` (`HOLD` 없음), 실패하면 재시도 |
-| 지급 | 건별, `settlementId` 멱등. 0 이상이면 판매자 인출 가능 금액으로, 음수면 판매자 정산금 → 충전금 순으로 회수, 못 받은 금액은 미수금 |
+| 지급 | 건별, `settlementId` 멱등. 0 이상이면 판매자 잔액으로, 음수면 판매자 잔액에서 회수하고 못 받은 금액은 미수금 |
 | 돈의 이동 | 정산금 → 판매자 지갑, 수수료 · 배송비 · 판매자 부담금 → `REVENUE` |
 | 탈퇴 | 미지급 정산(대기 · 실패)이 있으면 불가. 미수금은 payment가 확인 |
 | 대사 | 구매 확정된 판매자 주문 ↔ 정산 기록, 완료 정산 ↔ 판매자 지갑 입금 |

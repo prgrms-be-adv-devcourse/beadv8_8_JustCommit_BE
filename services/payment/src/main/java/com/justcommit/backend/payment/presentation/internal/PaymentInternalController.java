@@ -56,13 +56,14 @@ public class PaymentInternalController {
                 paymentService.refundShippingFee(sellerOrderId, request.buyerId(), request.amount()));
     }
 
-    // settlement 정산금 지급. 같은 settlementId로 다시 오면 지급하지 않고 성공
+    // settlement 정산금 지급 (양수: 지급, 0원 · 음수: 회수 후 미수금). 같은 settlementId로 다시 오면 지급하지 않고 성공
     @PostMapping("/settlementPayouts")
     public ApiResponse<Void> payoutSettlement(@RequestHeader(IDEMPOTENCY_KEY) Long idempotencyKey,
                                               @RequestBody SettlementPayoutRequest request) {
         requireSameKey(idempotencyKey, request.settlementId(), "settlementId");
         paymentService.distributeSettlement(
-                request.settlementId(), request.sellerId(), request.payoutAmount(), request.fee());
+                request.settlementId(), request.sellerId(), request.sellerOrderId(),
+                request.payoutAmount(), request.fee(), request.shippingFee(), request.sellerBurdenAmount());
         return ApiResponse.ok("정산금을 지급했습니다.");
     }
 
