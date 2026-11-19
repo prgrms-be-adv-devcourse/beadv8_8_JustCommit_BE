@@ -16,7 +16,10 @@ import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import com.justcommit.backend.market.OrderItemCancelledEvent;
 import com.justcommit.backend.market.OrderQuery;
+import com.justcommit.backend.market.SellerOrderAcceptedEvent;
 import com.justcommit.backend.market.SellerOrderCancelledEvent;
+import com.justcommit.backend.market.SellerOrderRejectReason;
+import com.justcommit.backend.market.SellerOrderRejectedEvent;
 import com.justcommit.backend.market.cart.application.CartService;
 import com.justcommit.backend.market.client.payment.PaymentUseCase;
 import com.justcommit.backend.market.client.payment.RefundOutcome;
@@ -482,6 +485,114 @@ class SellerOrderDecisionIntegrationTest {
         }
     }
 
+    // ===== 수락, 거절 이벤트 (#288). 판매자 주문당 결정 시점에 정확히 1건, 환불이 끝난 뒤에도 늘지 않는다
+
+    @Test
+    @DisplayName("전체 수락: SellerOrderAccepted 1건(rejectedItemCount 0, 주문, 판매자 주문, 판매자, 구매자 ID 일치), 거절 이벤트 없음")
+    void acceptPublishesAcceptedOnce() {
+        Fixture fixture = pendingOrder(2);
+
+        decisions.accept(SELLER_ID, fixture.sellerOrderId());
+
+        assertThat(acceptedEvents(fixture)).singleElement().satisfies(event -> {
+            assertThat(event).isEqualTo(new SellerOrderAcceptedEvent(fixture.orderId(), fixture.sellerOrderId(),
+                    SELLER_ID, BUYER_ID, 0, event.acceptedAt()));
+            assertThat(event.acceptedAt()).isNotNull();
+        });
+        assertThat(rejectedEvents(fixture)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("일부 거절(3개 중 1개): 환불까지 끝난 뒤에도 SellerOrderAccepted 1건(rejectedItemCount 1), SellerOrderRejected 없음")
+    void partialRejectPublishesAcceptedWithRejectedCount() {
+        Fixture fixture = pendingOrder(3);
+        mockRefunds(RefundOutcome.refunded(), RefundOutcome.refunded());
+
+        reject(fixture, List.of(fixture.itemIds().getFirst()));
+
+        assertThat(item(fixture.itemIds().getFirst())).containsEntry("status", "CANCELLED");
+        assertThat(acceptedEvents(fixture)).singleElement().isEqualTo(new SellerOrderAcceptedEvent(fixture.orderId(),
+                fixture.sellerOrderId(), SELLER_ID, BUYER_ID, 1, acceptedEvents(fixture).getFirst().acceptedAt()));
+        assertThat(rejectedEvents(fixture)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("전부 거절: 환불까지 끝난 뒤에도 SellerOrderRejected(SELLER) 1건, SellerOrderAccepted와 구매자 취소 알림 없음")
+    void rejectAllPublishesRejectedBySeller() {
+        Fixture fixture = pendingOrder(2);
+        mockRefunds(RefundOutcome.refunded(), RefundOutcome.refunded());
+
+        reject(fixture, fixture.itemIds());
+
+        assertThat(itemStatuses(fixture)).containsOnly("CANCELLED");
+        assertRejectedOnce(fixture, SellerOrderRejectReason.SELLER);
+        assertThat(acceptedEvents(fixture)).isEmpty();
+        verify(sellerOrderEventPublisher, never()).publishAfterCommit(any(SellerOrderCancelledEvent.class));
+        verify(sellerOrderEventPublisher, never()).publishAfterCommit(any(OrderItemCancelledEvent.class));
+    }
+
+    @Test
+    @DisplayName("구매자가 1개를 먼저 취소한 뒤 남은 상품을 전부 거절하면 SellerOrderRejected(SELLER) 1건, 구매자 판매자 주문 전부 취소 알림 없음")
+    void rejectRemainingAfterBuyerItemCancelPublishesRejected() {
+        Fixture fixture = pendingOrder(3);
+        mockRefunds(RefundOutcome.refunded(), RefundOutcome.refunded());
+        itemCancel(fixture.itemIds().getFirst());
+
+        reject(fixture, fixture.itemIds().subList(1, 3));
+
+        assertThat(itemStatuses(fixture)).containsOnly("CANCELLED");
+        assertRejectedOnce(fixture, SellerOrderRejectReason.SELLER);
+        assertThat(acceptedEvents(fixture)).isEmpty();
+        verify(sellerOrderEventPublisher, never()).publishAfterCommit(any(SellerOrderCancelledEvent.class));
+    }
+
+    @Test
+    @DisplayName("[S-D09] 자동 거절: 환불까지 끝난 뒤 SellerOrderRejected(AUTO) 1건, 다시 돌려도 늘지 않는다")
+    void autoRejectPublishesRejectedAutoOnce() {
+        Fixture fixture = pendingOrder(2);
+        paidAgo(fixture, 25 * 60);
+        mockRefunds(RefundOutcome.refunded(), RefundOutcome.refunded());
+
+        orderService.autoRejectExpiredSellerOrders();
+        orderService.autoRejectExpiredSellerOrders();
+        assertThat(decisions.autoReject(fixture.sellerOrderId())).isEmpty(); // 이미 처리된 건을 직접 다시 불러도 빈 목록
+
+        assertThat(itemStatuses(fixture)).containsOnly("CANCELLED");
+        assertRejectedOnce(fixture, SellerOrderRejectReason.AUTO);
+        assertThat(acceptedEvents(fixture)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("이미 수락된 판매자 주문에 늦게 온 거절은 409, 자동 거절 재실행은 건너뛰고 수락 이벤트 1건만 남는다")
+    void lateDecisionsPublishNothing() {
+        Fixture fixture = pendingOrder(2);
+        decisions.accept(SELLER_ID, fixture.sellerOrderId());
+        paidAgo(fixture, 25 * 60);
+
+        assertNotAcceptable(() -> decisions.reject(SELLER_ID, fixture.sellerOrderId(), fixture.itemIds()));
+        assertNotAcceptable(() -> decisions.accept(SELLER_ID, fixture.sellerOrderId()));
+        assertThat(decisions.autoReject(fixture.sellerOrderId())).isEmpty();
+        orderService.autoRejectExpiredSellerOrders();
+
+        assertThat(acceptedEvents(fixture)).hasSize(1);
+        assertThat(rejectedEvents(fixture)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("자동 거절이 먼저 처리한 판매자 주문에 늦게 온 수락, 거절은 409이고 거절 이벤트 1건만 남는다")
+    void lateDecisionsAfterAutoRejectPublishNothing() {
+        Fixture fixture = pendingOrder(1);
+        paidAgo(fixture, 25 * 60);
+        mockRefunds(RefundOutcome.refunded(), RefundOutcome.refunded());
+        orderService.autoRejectExpiredSellerOrders();
+
+        assertNotAcceptable(() -> decisions.accept(SELLER_ID, fixture.sellerOrderId()));
+        assertNotAcceptable(() -> decisions.reject(SELLER_ID, fixture.sellerOrderId(), fixture.itemIds()));
+
+        assertRejectedOnce(fixture, SellerOrderRejectReason.AUTO);
+        assertThat(acceptedEvents(fixture)).isEmpty();
+    }
+
     // ===== helpers
 
     // OrderService.rejectSellerOrderItems와 같은 순서: 거절 커밋 → (트랜잭션 밖) 판매자 주문별 환불
@@ -536,6 +647,33 @@ class SellerOrderDecisionIntegrationTest {
         } finally {
             executor.shutdownNow();
         }
+    }
+
+    private void assertRejectedOnce(Fixture fixture, SellerOrderRejectReason reason) {
+        assertThat(rejectedEvents(fixture)).singleElement().satisfies(event -> {
+            assertThat(event).isEqualTo(new SellerOrderRejectedEvent(fixture.orderId(), fixture.sellerOrderId(),
+                    SELLER_ID, BUYER_ID, reason, event.rejectedAt()));
+            assertThat(event.rejectedAt()).isNotNull();
+        });
+    }
+
+    // SellerOrderEventPublisher 목에 넘어간 이벤트 중 이 판매자 주문의 것 (Outbox에 남을 행)
+    private List<SellerOrderAcceptedEvent> acceptedEvents(Fixture fixture) {
+        return publishedEvents(SellerOrderAcceptedEvent.class).stream()
+                .filter(event -> event.sellerOrderId().equals(fixture.sellerOrderId())).toList();
+    }
+
+    private List<SellerOrderRejectedEvent> rejectedEvents(Fixture fixture) {
+        return publishedEvents(SellerOrderRejectedEvent.class).stream()
+                .filter(event -> event.sellerOrderId().equals(fixture.sellerOrderId())).toList();
+    }
+
+    private <T> List<T> publishedEvents(Class<T> type) {
+        return org.mockito.Mockito.mockingDetails(sellerOrderEventPublisher).getInvocations().stream()
+                .flatMap(invocation -> java.util.Arrays.stream(invocation.getArguments()))
+                .filter(type::isInstance)
+                .map(type::cast)
+                .toList();
     }
 
     private void mockRefunds(RefundOutcome item, RefundOutcome shippingFee) {
