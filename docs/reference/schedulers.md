@@ -10,7 +10,7 @@
 | 작업 | 서비스 | 주기 | 종류 | 도구 | 하는 일 |
 |---|---|---|---|---|---|
 | 결제 대기 만료 | market | 30초 | – | SKIP LOCKED | 뒷정리만: 기한 지난 결제 대기(`PAYMENT_PENDING`) 주문 만료 · `market.order-expired.v1` 발행. 기한 확인은 결제할 때 market이 직접 함(`PAYMENT_WINDOW_EXPIRED`). 결제 결과를 모르는 주문은 제외 (기한 → [market 정책](../services/market.md#정책)) |
-| 수락 자동 거절 | market | 10분 | – | SKIP LOCKED | 기한 지난 `ACCEPT_PENDING` 주문상품 자동 거절 → 전액 환불 (기한 → [market 정책](../services/market.md#정책)) |
+| 수락 자동 거절 | market | 10분 | – | SKIP LOCKED | 기한 지난 `ACCEPT_PENDING` 주문상품 자동 거절 → 전액 환불. 한 번 실행할 때 수락 마감이 지난 판매자 주문을 오래된 결제 완료 시각부터 최대 100건 읽고(잠그지 않음), 판매자 주문마다 짧은 트랜잭션에서 주문 행을 SKIP LOCKED로 잡은 뒤 판매자 주문을 잠그고 다시 확인. 환불은 커밋 뒤 트랜잭션 밖, 결과를 모르면 Saga 복구가 이어받음 (기한 → [market 정책](../services/market.md#정책)) |
 | 반품 자동 승인 | market | 10분 | – | SKIP LOCKED | 기한 안에 판매자가 응답하지 않은 반품 신청 자동 승인 (기한 → [market 정책](../services/market.md#정책)) |
 | 자동 구매 확정 | market | 1시간 | – | SKIP LOCKED | 기한 지난 `NORMAL` 주문상품 구매 확정, 반품 신청한 주문상품 제외 (기한 → [market 정책](../services/market.md#정책)) |
 | 택배 예약 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `READY` 배송(반품 포함) 택배 예약. 한 번 실행할 때 최대 20건을 한 건씩 확보(다음 시도 시각을 30초 뒤로 미루는 임대)하고, 택배사 호출은 임대 후 트랜잭션 밖에서 함. 실패하면 다음 시도까지 10초 → 30초 → 1분 고정 (건별 `next_attempt_at` · `attempt_count`, 마지막 실패 원인 `last_error`). 결제 · 수락 흐름은 `READY` 행만 만들고 택배사를 부르지 않음 |
