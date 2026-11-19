@@ -29,6 +29,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -144,7 +145,9 @@ public class AdminImageReviewService {
     // 이번에 묶은 건수를 돌려줌
     @Transactional
     public int notifyDelayed() {
-        LocalDateTime now = LocalDateTime.now(clock);
+        // DB(timestamp, 마이크로초)에 저장되는 알림 시각과 이벤트의 checkedAt이 같은 값이 되도록 마이크로초로 자름
+        // (Linux 시계는 나노초까지 줘서, 자르지 않으면 저장하며 반올림된 값과 이벤트 값이 달라짐)
+        LocalDateTime now = LocalDateTime.now(clock).truncatedTo(ChronoUnit.MICROS);
         List<ImageReview> delayed = imageReviewRepository.lockDelayedUnnotified(now.minus(DELAY_AFTER), now.minus(EXPIRE_AFTER));
         if (delayed.isEmpty()) {
             return 0;
