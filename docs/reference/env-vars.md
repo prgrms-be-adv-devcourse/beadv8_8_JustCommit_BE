@@ -1,7 +1,7 @@
 # 환경변수
 
 > 언제 읽나: 환경변수 · 비밀값을 추가하거나 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: Miro A3
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro A3
 
 ## 변수 표
 
@@ -33,6 +33,8 @@
 | `AWS_REGION` · S3 버킷 | product | 사진 업로드 (자격 증명은 EC2 IAM 역할) |
 | `OPENAI_API_KEY` | product | OpenAI Moderation (사진 · 글 유해 검사). 없으면 검수가 관리자 확인으로 |
 | `ANTHROPIC_API_KEY` | product | Claude Haiku 식물 식별. 없으면 검수가 관리자 확인으로 |
+| `GF_SECURITY_ADMIN_PASSWORD` · `SLACK_WEBHOOK_URL` | Grafana (데이터 서버 `~/secrets/grafana.env`) | Grafana 관리자 비밀번호 · 알림을 보낼 Slack 채널 웹훅. 웹훅이 없으면 Grafana는 뜨고 알림 전송만 실패 |
+| `DATA_SOURCE_PASS` | postgres-exporter (데이터 서버 `~/secrets/postgres-exporter.env`) | 읽기 전용 감시 계정 `monitoring`(`pg_monitor`) 비밀번호 |
 | `OPENAI_API_KEY` | ai-service | 외부 임베딩 (OpenAI). 없어도 앱은 뜨고 임베딩 호출만 실패 |
 | `EMBEDDING_MODEL` · `EMBEDDING_DIMENSIONS` | ai-service | 임베딩 모델 이름 · 차원 (`custom.embedding.*`, Spring AI 설정도 이 값을 씀). 없으면 `text-embedding-3-small` · `1536`. 차원은 `species_vector_store`의 `vector(1536)` 칸과 같아야 하고, 다르면 앱 시작이 실패함 (#508) |
 

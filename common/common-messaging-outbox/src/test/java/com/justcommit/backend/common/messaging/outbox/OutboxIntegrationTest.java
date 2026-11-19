@@ -1,5 +1,6 @@
 package com.justcommit.backend.common.messaging.outbox;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -154,9 +155,33 @@ class OutboxIntegrationTest extends OutboxIntegrationTestSupport {
     assertThat(jdbcTemplate.queryForObject("select count(*) from outbox_event where id = ?", Integer.class, recent)).isOne();
   }
 
+  @Test
+  @DisplayName("알림 지표: 가장 오래된 PENDING의 나이(초)와 FAILED 행 수를 내보내고, 없으면 0 (#301)")
+  void metricsReportOldestPendingAgeAndFailedCount() {
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    OutboxMetrics metrics = new OutboxMetrics(repository, registry, Clock.systemUTC());
+
+    metrics.refresh();
+    assertThat(gauge(registry, OutboxMetrics.PENDING_OLDEST_AGE)).isZero();
+    assertThat(gauge(registry, OutboxMetrics.FAILED)).isZero();
+
+    insertPending("outbox-test", "1", "30 seconds");
+    insertPending("outbox-test", "2", "2 minutes");
+    UUID failed = insertPending("outbox-test", "3", "1 second");
+    jdbcTemplate.update("update outbox_event set status = 'FAILED' where id = ?", failed);
+
+    metrics.refresh();
+    assertThat(gauge(registry, OutboxMetrics.PENDING_OLDEST_AGE)).isBetween(120.0, 180.0);
+    assertThat(gauge(registry, OutboxMetrics.FAILED)).isEqualTo(1.0);
+  }
+
+  private static double gauge(SimpleMeterRegistry registry, String name) {
+    return registry.get(name).gauge().value();
+  }
+
   // 스케줄러는 테스트에서 꺼 두었으므로 직접 만듦 (두 개 만들면 파드 두 개를 흉내 냄)
   private OutboxScheduler scheduler() {
-    return new OutboxScheduler(repository, relay, transactionManager, Clock.systemUTC());
+    return new OutboxScheduler(repository, relay, transactionManager, Clock.systemUTC(), null);
   }
 
   private UUID insertPending(String topic, String aggregateId, String age) {
