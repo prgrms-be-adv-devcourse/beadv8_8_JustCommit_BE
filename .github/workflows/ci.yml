@@ -106,3 +106,26 @@ jobs:
           name: test-report
           path: '**/build/reports/tests/test'
           retention-days: 7
+
+      # CI 실패 시 AI 원인 분석(ci-failure-ai.yml)이 받아 읽을 실패 테스트 결과 (#534)
+      # 전체 XML은 Spring 로그(system-out)까지 들어 있어 크므로, 실패 · 오류가 있는 파일만 모은다
+      - name: 실패 테스트 XML 모으기
+        if: failure() && steps.pick.outputs.tasks != ''
+        run: |
+          mkdir -p "$RUNNER_TEMP/test-failures"
+          find . -path '*/build/test-results/test/*.xml' -print0 \
+            | xargs -0 -r grep -lE '<(failure|error)[ >]' \
+            | while read -r f; do
+                mkdir -p "$RUNNER_TEMP/test-failures/$(dirname "$f")"
+                cp "$f" "$RUNNER_TEMP/test-failures/$f"
+              done
+          echo "모은 파일:"; find "$RUNNER_TEMP/test-failures" -name '*.xml'
+
+      - name: Upload test failures
+        if: failure() && steps.pick.outputs.tasks != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-failures
+          path: ${{ runner.temp }}/test-failures
+          if-no-files-found: ignore # 컴파일 실패면 XML이 없다 (AI 분석은 실패 로그로 본다)
+          retention-days: 7
