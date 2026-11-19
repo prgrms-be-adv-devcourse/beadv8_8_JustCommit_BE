@@ -22,6 +22,10 @@ public interface SellerOrderRepository extends JpaRepository<SellerOrder, Long> 
     @Query("select s from SellerOrder s where s.id = :sellerOrderId")
     Optional<SellerOrder> findLockedById(@Param("sellerOrderId") Long sellerOrderId);
 
+    // 잠금 순서(주문 → 판매자 주문)를 지키려고 판매자 주문을 잠그기 전에 주문 id만 읽는다
+    @Query("select s.order.id from SellerOrder s where s.id = :sellerOrderId")
+    Optional<Long> findOrderIdById(@Param("sellerOrderId") Long sellerOrderId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from SellerOrder s where s.order.id = :orderId order by s.id")
     List<SellerOrder> findAllLockedByOrderId(@Param("orderId") Long orderId);
