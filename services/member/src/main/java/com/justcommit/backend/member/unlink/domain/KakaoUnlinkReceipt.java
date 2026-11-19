@@ -137,6 +137,29 @@ public class KakaoUnlinkReceipt extends BaseTimeEntity {
     }
   }
 
+  // 이 연결 해제 상태의 자동 탈퇴 처리 기록으로 지정 (회원 잠금 안에서 기존 처리 기록이 없을 때만)
+  public void markHandlesWithdrawal() {
+    this.handlesWithdrawal = true;
+  }
+
+  public void markDone() {
+    finish(KakaoUnlinkStatus.DONE);
+  }
+
+  // 같은 연결 해제 상태를 다른 기록이 처리
+  public void markDuplicate() {
+    finish(KakaoUnlinkStatus.DUPLICATE);
+  }
+
+  // 탈퇴 조건 BLOCKED: INACTIVE로 두고 안내 메일 단계로 (단계가 넘어가면 실패 횟수 0)
+  public void markNoticePending(Instant now) {
+    this.status = KakaoUnlinkStatus.NOTICE_PENDING;
+    this.failureCount = 0;
+    this.lastError = null;
+    this.leaseUntil = null;
+    this.nextAttemptAt = now;
+  }
+
   private void finish(KakaoUnlinkStatus finalStatus) {
     this.status = finalStatus;
     this.resumeState = null;

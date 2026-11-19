@@ -33,6 +33,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
+import java.util.function.Consumer;
+
 /**
  * 직접 탈퇴 (#407). 흐름: docs/flows/signup-and-replica.md 「직접 탈퇴」, 결정: ADR 0028
  * - 트랜잭션을 열지 않는다. 외부 호출(3곳 확인 · 카카오 연결 해제) 동안 회원 잠금 · DB 트랜잭션을 잡지 않고,
@@ -159,7 +161,7 @@ public class WithdrawalService {
   }
 
   // 최종 처리: revoke()의 회원 잠금 · 트랜잭션 안에서 실행. 여기서 던진 예외는 그대로 전달되고 전부 롤백된다
-  // #422 자동 탈퇴는 웹훅 전용 진입점에서 INACTIVE 조건을 따로 확인한 뒤 이 처리를 재사용한다
+  // 직접 탈퇴의 조건(ACTIVE · 재확인한 인증 버전)을 확인한 뒤 공통 최종 처리(removePersonalData)
   private void anonymize(Member member, int verifiedVersion) {
     // 그사이 다른 요청 · 웹훅이 먼저 탈퇴시켰거나 연결이 끊겼으면 중복 처리하지 않는다
     if (member.getStatus() != MemberStatus.ACTIVE) {
@@ -171,6 +173,25 @@ public class WithdrawalService {
           ? MemberErrorCode.INVALID_CURRENT_PASSWORD
           : MemberErrorCode.INVALID_WITHDRAWAL_TOKEN);
     }
+    removePersonalData(member);
+  }
+
+  /**
+   * 카카오 연결 해제 웹훅의 자동 탈퇴 (#422). 재확인 · 카카오 연결 해제 없이 최종 처리만 하며, 이 경로에서만 INACTIVE 회원의 탈퇴를 허용한다.
+   * check는 같은 회원 잠금 · 트랜잭션 안에서 먼저 실행된다(수신 기록 확인 · 갱신). 예외를 던지면 전부 롤백
+   */
+  public RevocationResult withdrawUnlinkedMember(Long memberId, Consumer<Member> check) {
+    return tokenRevocationService.revoke(memberId, RevocationReason.WITHDRAWN, member -> {
+      check.accept(member);
+      if (member.getStatus() != MemberStatus.INACTIVE) {
+        throw new IllegalStateException("카카오 연결 해제 자동 탈퇴는 INACTIVE 회원만 가능: " + member.getStatus());
+      }
+      removePersonalData(member);
+    });
+  }
+
+  // 탈퇴 공통 최종 처리 (직접 탈퇴 · 웹훅 자동 탈퇴): 탈퇴 기록 · 배송지 · 소개글 · 익명화 · MemberWithdrawn
+  private void removePersonalData(Member member) {
     // 탈퇴 기록은 익명화 전 이메일 · 휴대폰으로 (재가입 제한, DB 시각)
     recordRepository.save(MemberWithdrawalRecord.create(
         memberHmac.emailHash(member.getEmail()), memberHmac.phoneHash(member.getPhone()), databaseClock.now()));
