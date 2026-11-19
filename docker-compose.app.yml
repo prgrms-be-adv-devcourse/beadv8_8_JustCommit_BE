@@ -25,7 +25,9 @@ x-service: &service
     interval: 10s
     timeout: 3s
     retries: 3
-    start_period: 60s
+    # 평소 시작은 24~34초지만, 서버가 막 켜졌거나 여러 서비스가 함께 뜰 때 80초를 넘긴 적이 있다 (#555).
+    # 이 시간 안의 실패는 세지 않으므로 늦어도 120초 + 10초 × 3 = 약 150초까지 기다린다 (cd.yml --wait-timeout 180보다 짧게)
+    start_period: 120s
 
 services:
   redis:
