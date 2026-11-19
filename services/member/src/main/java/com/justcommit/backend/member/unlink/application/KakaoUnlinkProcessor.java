@@ -9,6 +9,7 @@ import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReceipt;
+import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReferrer;
 import com.justcommit.backend.member.unlink.domain.KakaoUnlinkStatus;
 import com.justcommit.backend.member.unlink.infrastructure.mail.KakaoUnlinkNoticeMailSender;
 import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
@@ -25,7 +26,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.util.Optional;
-import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -55,12 +55,6 @@ public class KakaoUnlinkProcessor {
   static final String MAIL_FAILED = "MAIL_FAILED";
   static final String PROCESS_FAILED = "PROCESS_FAILED";
 
-  private static final String INCOMPLETE_SIGN_UP = "INCOMPLETE_SIGN_UP";
-  private static final String UNLINK_FROM_ADMIN = "UNLINK_FROM_ADMIN";
-  // 자동 탈퇴 대상 사유 (관리자 해제는 사용자 의사를 알 수 없어 INACTIVE까지만)
-  private static final Set<String> AUTO_WITHDRAWAL_TYPES =
-      Set.of("ACCOUNT_DELETE", "FORCED_ACCOUNT_DELETE", "UNLINK_FROM_APPS");
-
   private final TransactionTemplate transactionTemplate;
   private final KakaoUnlinkReceiptRepository receiptRepository;
   private final MemberRepository memberRepository;
@@ -89,8 +83,9 @@ public class KakaoUnlinkProcessor {
   }
 
   // 확보한 시점의 처리권과 단계. 결과 반영은 이 번호와 단계가 그대로일 때만
+  // 연결 해제 버전은 담지 않는다: 판단은 항상 잠근 수신 기록의 최신 값으로
   record Claim(Long id, int attemptNo, KakaoUnlinkStatus status, String providerId, String referrerType,
-               Long memberId, Integer unlinkVersion) {
+               Long memberId) {
   }
 
   Optional<Claim> claimNext() {
@@ -98,7 +93,7 @@ public class KakaoUnlinkProcessor {
         .map(receipt -> {
           receipt.claim(databaseClock.now().plus(LEASE));
           return new Claim(receipt.getId(), receipt.getAttemptNo(), receipt.getStatus(), receipt.getProviderId(),
-              receipt.getReferrerType(), receipt.getMemberId(), receipt.getUnlinkVersion());
+              receipt.getReferrerType(), receipt.getMemberId());
         }));
   }
 
@@ -121,7 +116,7 @@ public class KakaoUnlinkProcessor {
 
   private void processPending(Claim claim) {
     // 기록만 대상: 카카오 조회 없이 끝냄
-    if (INCOMPLETE_SIGN_UP.equals(claim.referrerType())) {
+    if (KakaoUnlinkReferrer.INCOMPLETE_SIGN_UP.matches(claim.referrerType())) {
       reflect(claim, receipt -> receipt.ignore(NOT_TARGET));
       return;
     }
@@ -226,7 +221,7 @@ public class KakaoUnlinkProcessor {
       Optional<KakaoUnlinkReceipt> handler = receiptRepository
           .findByMemberIdAndUnlinkVersionAndHandlesWithdrawalTrue(receipt.getMemberId(), receipt.getUnlinkVersion());
       boolean handledByOther = handler.isPresent() && !handler.get().getId().equals(receipt.getId());
-      if (UNLINK_FROM_ADMIN.equals(receipt.getReferrerType())) {
+      if (KakaoUnlinkReferrer.UNLINK_FROM_ADMIN.matches(receipt.getReferrerType())) {
         if (handledByOther) {
           receipt.markDuplicate();
         } else {
@@ -234,7 +229,8 @@ public class KakaoUnlinkProcessor {
         }
         return false;
       }
-      if (!AUTO_WITHDRAWAL_TYPES.contains(receipt.getReferrerType())) {
+      // 자동 탈퇴 대상이 아닌 사유는 INACTIVE까지만 (관리자 해제는 위에서, 모르는 값은 수신에서 이미 IGNORED)
+      if (!KakaoUnlinkReferrer.from(receipt.getReferrerType()).map(KakaoUnlinkReferrer::isAutoWithdrawal).orElse(false)) {
         receipt.markDone();
         return false;
       }

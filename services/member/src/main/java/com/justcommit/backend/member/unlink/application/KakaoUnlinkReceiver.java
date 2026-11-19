@@ -2,6 +2,7 @@ package com.justcommit.backend.member.unlink.application;
 
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReceipt;
+import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReferrer;
 import com.justcommit.backend.member.unlink.infrastructure.metrics.KakaoUnlinkMetrics;
 import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -13,7 +14,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
-import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -36,10 +36,6 @@ public class KakaoUnlinkReceiver {
   static final String RECEIVE_FAILED_EVENT = "KAKAO_UNLINK_RECEIVE_FAILED";
   // 검증을 통과하지 못한 값 대신 남기는 표시 (입력 원문을 로그에 남기지 않기 위해)
   static final String INVALID = "invalid";
-
-  // 카카오 문서의 referrer_type. 처리 대상인지(자동 탈퇴 · INACTIVE · 기록만)는 처리 단계에서 정한다
-  static final Set<String> KNOWN_REFERRER_TYPES = Set.of(
-      "ACCOUNT_DELETE", "FORCED_ACCOUNT_DELETE", "UNLINK_FROM_APPS", "UNLINK_FROM_ADMIN", "INCOMPLETE_SIGN_UP");
 
   private static final Pattern USER_ID = Pattern.compile("\\d{1," + KakaoUnlinkReceipt.PROVIDER_ID_MAX_LENGTH + "}");
   // 수신 저장의 DB 대기 한도 (카카오 3초 응답 안에 끝내기 위해)
@@ -116,9 +112,9 @@ public class KakaoUnlinkReceiver {
           : KakaoUnlinkReceipt.ignored(providerId, referrerType, ignoreCode, now);
     }
 
-    // 알려진 사유인지 (Set.of는 null을 물으면 예외라 먼저 거른다)
+    // 알려진 사유인지 (처리 대상인지는 처리 단계에서 정한다)
     boolean knownReferrer() {
-      return referrerType != null && KNOWN_REFERRER_TYPES.contains(referrerType);
+      return KakaoUnlinkReferrer.from(referrerType).isPresent();
     }
 
     // PENDING(정상 처리 대상) 또는 IGNORED:<오류 코드>(처리 제외 대상)
@@ -138,7 +134,7 @@ public class KakaoUnlinkReceiver {
     if (providerId == null) {
       return new Validation(null, referrer, INVALID_USER_ID);
     }
-    if (referrer == null || !KNOWN_REFERRER_TYPES.contains(referrer)) {
+    if (KakaoUnlinkReferrer.from(referrer).isEmpty()) {
       return new Validation(providerId, referrer, UNKNOWN_REFERRER_TYPE);
     }
     return new Validation(providerId, referrer, null);
