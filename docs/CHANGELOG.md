@@ -1,13 +1,14 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
 - 2026-11-18 · reference/env-vars.md · product `OPENSEARCH_URL` 추가(운영은 `make-env.sh`가 데이터 서버 `http://{데이터 서버 IP}:9200`, 로컬은 `docker-compose.yml`에 추가한 `opensearch` — 운영과 같은 `docker/opensearch` 이미지 · nori · 보안 플러그인 끔 · 힙 512MB) (#532)
+- 2026-11-19 · testing/strategy.md · ② PR CI 결과를 PR 댓글 1개(모듈별 통과 · 실패 · 건너뜀 · 시간 표 + 실패 목록, 커밋마다 갱신, 빌드 대상이 없는 PR은 댓글 없음)로 남기고, CI가 실패하면 같은 레포 PR에 Claude 원인 분석 댓글(`ci-failure-ai.yml`, `workflow_run`, PR 코드 실행 없음, 커밋당 1개) (#534) (#536)
 - 2026-11-19 · reference/external-apis.md · flows/image-review.md · glossary.md · 판매자 화면용 응답 보강: `products/me`에 지금 검수 버전의 표시 상태 · 반려 사유와 문구 · 판정 주체, `products/me/counts`에 오늘 등록 · 사진 검수 횟수와 한도(20 · 30), `products/{id}/imageReviews`에 관리자 확인 기한 `expiresAt`(관리자 목록과 같은 계산), `admin/imageReviews`에 판매자 닉네임 `sellerNickname`(복제본 없으면 「알 수 없는 회원」) · 가격 `price` · 검수 요청 시각 `requestedAt`, 용어 「알 수 없는 회원」 추가 (#519) (#539)
 - 2026-11-18 · reference/kafka-topics.md · reference/internal-apis.md · services/settlement.md · 판매자 부담금 반영: `PurchaseConfirmed` payload에 `sellerBurdenAmount`(없으면 0, 정산금 = 판매액 − 수수료 − 부담금), 정산 지급 요청에 `sellerOrderId` · `shippingFee`(배송비 모르는 정산은 0) · `sellerBurdenAmount` 추가, 정산 지급 경로를 코드에 맞춰 `settlementPayouts`로 (#433) (#538)
 - 2026-11-18 · flows/search-recommend.md · reference/env-vars.md · services/product.md · 상품 검색 인덱스 반영: alias `products` → `products_v1`(product 시작 시 없으면 생성, OpenSearch가 꺼져 있어도 앱은 뜸), 분석기 `ko_text` · `ko_compact`(공백 · 기호 제거 + `nori` + 소문자), 정규화는 공백 · 기호 · 대소문자까지이고 한글 ↔ 영문은 동의어(2단계)라고 명시, 환경변수 `OPENSEARCH_URL`(운영은 `make-env.sh` product 블록에서 데이터 서버 9200), 로컬 compose에 `opensearch` 추가, 시작할 때 OpenSearch가 꺼져 있으면 1분마다 다시 준비 (#484) (#533)

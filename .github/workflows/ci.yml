@@ -18,6 +18,7 @@ concurrency:
 permissions:
   contents: read
   checks: write # 테스트 결과를 PR Checks에 표시
+  pull-requests: write # 테스트 결과 요약 댓글 (포크 PR은 읽기 전용 토큰이라 댓글 단계를 건너뜀)
 
 jobs:
   build:
@@ -78,10 +79,53 @@ jobs:
           report_paths: '**/build/test-results/test/*.xml'
           detailed_summary: true
 
+      # 모듈별 표 + 실패 목록을 PR 댓글 1개로 남기고, 새 커밋마다 같은 댓글을 고친다 (#534)
+      # 빌드할 모듈이 없는 PR(docs만)은 댓글 없음. 표시 문자열 <!-- ci-test-summary -->로 이전 댓글을 찾는다
+      - name: 테스트 결과 댓글
+        if: >-
+          !cancelled() && steps.pick.outputs.tasks != '' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 .github/scripts/test_summary.py "$SHA" > "$RUNNER_TEMP/test-summary.md"
+          cat "$RUNNER_TEMP/test-summary.md"
+          id="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate             --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- ci-test-summary -->"))) | .id' | head -n 1)"
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F "body=@$RUNNER_TEMP/test-summary.md" > /dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F "body=@$RUNNER_TEMP/test-summary.md" > /dev/null
+          fi
+
       - name: Upload test report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: test-report
           path: '**/build/reports/tests/test'
+          retention-days: 7
+
+      # CI 실패 시 AI 원인 분석(ci-failure-ai.yml)이 받아 읽을 실패 테스트 결과 (#534)
+      # 전체 XML은 Spring 로그(system-out)까지 들어 있어 크므로, 실패 · 오류가 있는 파일만 모은다
+      - name: 실패 테스트 XML 모으기
+        if: failure() && steps.pick.outputs.tasks != ''
+        run: |
+          mkdir -p "$RUNNER_TEMP/test-failures"
+          find . -path '*/build/test-results/test/*.xml' -print0 \
+            | xargs -0 -r grep -lE '<(failure|error)[ >]' \
+            | while read -r f; do
+                mkdir -p "$RUNNER_TEMP/test-failures/$(dirname "$f")"
+                cp "$f" "$RUNNER_TEMP/test-failures/$f"
+              done
+          echo "모은 파일:"; find "$RUNNER_TEMP/test-failures" -name '*.xml'
+
+      - name: Upload test failures
+        if: failure() && steps.pick.outputs.tasks != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-failures
+          path: ${{ runner.temp }}/test-failures
+          if-no-files-found: ignore # 컴파일 실패면 XML이 없다 (AI 분석은 실패 로그로 본다)
           retention-days: 7
