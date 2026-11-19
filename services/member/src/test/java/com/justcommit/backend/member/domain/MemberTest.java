@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class MemberTest {
 
@@ -54,5 +55,35 @@ class MemberTest {
     assertThat(member.getAccountHash()).isEqualTo("new-hash");
     assertThat(member.getAccountHolder()).isEqualTo("김철수");
     assertThat(member.getAccountUpdatedAt()).isAfterOrEqualTo(before);
+  }
+
+  @Test
+  @DisplayName("카카오 연결 해제는 ACTIVE에서 INACTIVE로, 복구는 INACTIVE에서 ACTIVE로만 바뀐다 (#422)")
+  void socialUnlinkAndRestore() {
+    Member member = activeMember();
+
+    member.markSocialUnlinked();
+    assertThat(member.getStatus()).isEqualTo(MemberStatus.INACTIVE);
+    assertThatThrownBy(member::markSocialUnlinked).isInstanceOf(IllegalStateException.class);
+
+    member.restoreActive();
+    assertThat(member.getStatus()).isEqualTo(MemberStatus.ACTIVE);
+    assertThatThrownBy(member::restoreActive).isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  @DisplayName("탈퇴한 회원은 연결 해제 상태로도, 복구로도 바뀌지 않는다 (#422)")
+  void deletedMemberCannotChange() {
+    Member member = activeMember();
+    member.withdraw();
+
+    assertThatThrownBy(member::markSocialUnlinked).isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(member::restoreActive).isInstanceOf(IllegalStateException.class);
+    assertThat(member.getStatus()).isEqualTo(MemberStatus.DELETED);
+  }
+
+  private static Member activeMember() {
+    return Member.createLocal("unlink@gmail.com", "encoded", "연결", "01012345678",
+        "004", "v1:account", "hash", "홍길동");
   }
 }
