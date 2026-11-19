@@ -43,6 +43,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -82,6 +83,9 @@ public class  ProductServiceTest {
 
     @Mock
     private ReviewRequester reviewRequester;
+
+    @Mock
+    private ReviewStatusReader reviewStatusReader;
 
     // 등록 제한의 "오늘" 기준을 고정 (2026-11-11 12:00 KST)
     @Spy
@@ -523,6 +527,7 @@ public class  ProductServiceTest {
 
         given(productRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .willReturn(new PageImpl<>(List.of(product)));
+        given(reviewStatusReader.latestReviews(List.of(product))).willReturn(Map.of());
 
         Page<MyProductResponse> result = productService.getMyProducts(SELLER_ID, new MyProductSearchRequest(null,null, null, null));
 
@@ -597,10 +602,38 @@ public class  ProductServiceTest {
     }
 
     @Test
+    @DisplayName("내 판매 목록: 페이지의 상품을 한 번에 넘겨 받은 검수 결과를 상품마다 붙이고, 기록이 없으면 null")
+    void getMyProductsWithLatestReview() {
+        Product rejected = product(ProductStatus.REJECTED);
+        Product legacy = product(ProductStatus.ACTIVE);
+        ReflectionTestUtils.setField(legacy, "id", 11L);
+        given(productRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .willReturn(new PageImpl<>(List.of(rejected, legacy)));
+        given(reviewStatusReader.latestReviews(List.of(rejected, legacy))).willReturn(Map.of(PRODUCT_ID,
+                new ReviewStatusReader.LatestReview("REJECTED", "NOT_PLANT", "식물 사진이 아니에요", "ENGINE")));
+
+        List<MyProductResponse> items = productService.getMyProducts(SELLER_ID, new MyProductSearchRequest(null, null, null, null))
+                .getContent();
+
+        // 상품마다가 아니라 페이지 전체로 한 번만 조회 (N+1 없음)
+        verify(reviewStatusReader, times(1)).latestReviews(any());
+        assertThat(items.get(0).reviewStatus()).isEqualTo("REJECTED");
+        assertThat(items.get(0).rejectReason()).isEqualTo("NOT_PLANT");
+        assertThat(items.get(0).rejectMessage()).isEqualTo("식물 사진이 아니에요");
+        assertThat(items.get(0).decidedBy()).isEqualTo("ENGINE");
+        assertThat(items.get(1).reviewStatus()).isNull();
+        assertThat(items.get(1).rejectReason()).isNull();
+    }
+
+    @Test
     @DisplayName("상태별 개수를 탭 개수로 변환하고 없는 상태는 0, 전체는 합계")
     void getMyProductCounts() {
         given(productRepository.countByStatus(SELLER_ID, null))
                 .willReturn(List.of(statusCount(ProductStatus.ACTIVE, 2), statusCount(ProductStatus.SOLD_OUT, 1)));
+        // 오늘 등록 수는 등록 제한과 같은 기준: 고정 시계 2026-11-11 12:00 KST → 그날 00:00부터 (삭제 포함 조회)
+        given(productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(SELLER_ID, LocalDateTime.of(2026, 11, 11, 0, 0)))
+                .willReturn(4L);
+        given(reviewStatusReader.todayPhotoReviews(SELLER_ID)).willReturn(new ReviewStatusReader.DailyUsage(7, 30));
 
         MyProductCountResponse result = productService.getMyProductCounts(SELLER_ID, null);
 
@@ -608,6 +641,10 @@ public class  ProductServiceTest {
         assertThat(result.active()).isEqualTo(2);
         assertThat(result.paymentPending()).isZero();
         assertThat(result.soldOut()).isEqualTo(1);
+        assertThat(result.todayRegistered()).isEqualTo(4);
+        assertThat(result.dailyRegisterLimit()).isEqualTo(20);
+        assertThat(result.todayPhotoReviews()).isEqualTo(7);
+        assertThat(result.dailyPhotoReviewLimit()).isEqualTo(30);
     }
 
 

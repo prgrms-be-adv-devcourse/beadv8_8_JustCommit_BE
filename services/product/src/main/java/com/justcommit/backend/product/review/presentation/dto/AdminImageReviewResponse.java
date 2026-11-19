@@ -6,6 +6,7 @@ import com.justcommit.backend.product.review.domain.ImageReview;
 import com.justcommit.backend.product.species.domain.Species;
 import tools.jackson.databind.JsonNode;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -15,8 +16,10 @@ public record AdminImageReviewResponse(
         Long productId,
         int reviewVersion,
         Long sellerId,
+        String sellerNickname,          // 회원 복제본의 닉네임 (탈퇴했으면 「탈퇴한 회원」, 복제본이 없으면 「알 수 없는 회원」)
         String title,
         String description,
+        BigDecimal price,
         List<String> imageUrls,
         Long speciesId,
         String speciesName,
@@ -29,23 +32,24 @@ public record AdminImageReviewResponse(
         String rejectReason,            // 이의 신청이면 원래 자동 반려 사유
         String appealMemo,              // 판매자의 이의 신청 메모 (이의 신청이 아니면 null)
         LocalDateTime appealedAt,
+        LocalDateTime requestedAt,      // 이 검수 버전의 검수 요청 시각 (등록 · 수정 시각)
         LocalDateTime reviewedAt,       // 관리자 확인으로 간 시각 (이의 신청이면 이의 신청 시각)
         LocalDateTime expiresAt,        // 이때까지 처리하지 않으면 REVIEW_EXPIRED로 자동 반려
         boolean delayed                 // 12시간이 지남
 ) {
 
-    public static AdminImageReviewResponse of(ImageReview review, Product product, JsonNode engineResult,
+    public static AdminImageReviewResponse of(ImageReview review, Product product, String sellerNickname, JsonNode engineResult,
                                               LocalDateTime expiresAt, boolean delayed) {
         Species species = product.getSpecies();
         return new AdminImageReviewResponse(
-                review.getId(), review.getProductId(), review.getReviewVersion(), review.getSellerId(),
-                product.getTitle(), product.getDescription(), product.getImages().stream().map(ProductImage::getS3Url).toList(),
+                review.getId(), review.getProductId(), review.getReviewVersion(), review.getSellerId(), sellerNickname,
+                product.getTitle(), product.getDescription(), product.getPrice(), product.getImages().stream().map(ProductImage::getS3Url).toList(),
                 species.getId(), species.getName(), species.getScientificName(), species.isOther(),
                 review.getScope().name(),
                 review.getManualReason() == null ? null : review.getManualReason().name(),
                 review.getDetail(), engineResult,
                 review.getRejectReason() == null ? null : review.getRejectReason().name(),
                 review.getAppealMemo(), review.getAppealedAt(),
-                review.getReviewedAt(), expiresAt, delayed);
+                review.getCreatedAt(), review.getReviewedAt(), expiresAt, delayed);
     }
 }
