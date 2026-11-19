@@ -45,7 +45,7 @@
 | `product.events.v1` | 상품 변경 — `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged` | product(색인 리스너) · ai | product: DB에서 최신 상품을 읽어 OpenSearch 문서를 덮어씀. ai: payload로 상품 스냅샷 upsert (`productVersion`이 저장값보다 클 때만) → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md) |
 | `product.events.v1` | `ProductApproved` | notification | 판매자에게 통과 알림 (색인 리스너는 건너뜀, 상태는 함께 나가는 `ProductStatusChanged`로 색인) |
 | `product.events.v1` | `ProductRejected` | notification | 판매자에게 반려 사유와 함께 알림 |
-| `product.events.v1` | `ImageReviewDelayed` | notification (🟨 합의 중) | 관리자에게 「검수 지연 N건」 알림. 관리자 수신자 · 문구 · `event_key`는 notification 담당과 합의 중 (product 색인 리스너 · ai는 건너뜀) |
+| `product.events.v1` | `ImageReviewDelayed` | notification (구독은 notification Kafka 구독 연결 때) | 관리자에게 「검수 지연 N건」 알림. 관리자 역할(ADMIN)로 알림 1건을 만들어 관리자끼리 읽음을 공유, `event_key`는 `ADMIN_REVIEW_DELAYED:{eventId}`(봉투 `eventId`), 새로 지연된 건만 1번, payload 추가 없음 (notification 담당 합의 11/19). product 색인 리스너 · ai는 건너뜀 |
 | `product.review.v1` | `ProductReviewRequested` (`review_version` 포함) | product | 사진 검수 (비동기) |
 | `settlement.events.v1` | `SettlementCompleted` | notification | 정산 알림 |
 
