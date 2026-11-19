@@ -46,6 +46,13 @@ public class OrderScheduler {
         }
     }
 
+    // 수락 자동 거절 (#285): 결제 완료 후 24시간 무응답인 판매자 주문의 남은 상품을 거절하고 환불한다
+    // (주기 → docs/reference/schedulers.md)
+    @Scheduled(fixedDelay = 600_000, initialDelay = 45_000)
+    public void autoRejectExpiredSellerOrders() {
+        orderService.autoRejectExpiredSellerOrders();
+    }
+
     @Scheduled(fixedDelay = 3_600_000, initialDelay = 60_000)
     public void autoConfirmDeliveredItems() {
         orderService.autoConfirmDeliveredItems();

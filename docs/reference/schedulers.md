@@ -10,7 +10,7 @@
 | 작업 | 서비스 | 주기 | 종류 | 도구 | 하는 일 |
 |---|---|---|---|---|---|
 | 결제 대기 만료 | market | 30초 | – | SKIP LOCKED | 뒷정리만: 기한 지난 결제 대기(`PAYMENT_PENDING`) 주문 만료 · `market.order-expired.v1` 발행. 기한 확인은 결제할 때 market이 직접 함(`PAYMENT_WINDOW_EXPIRED`). 결제 결과를 모르는 주문은 제외 (기한 → [market 정책](../services/market.md#정책)) |
-| 수락 자동 거절 | market | 10분 | – | SKIP LOCKED | 기한 지난 `ACCEPT_PENDING` 주문상품 자동 거절 → 전액 환불 (기한 → [market 정책](../services/market.md#정책)) |
+| 수락 자동 거절 | market | 10분 | – | SKIP LOCKED | 기한 지난 `ACCEPT_PENDING` 주문상품 자동 거절 → 전액 환불. 한 번 실행할 때 수락 마감이 지난 판매자 주문을 오래된 결제 완료 시각부터 최대 100건 읽고(잠그지 않음), 판매자 주문마다 짧은 트랜잭션에서 주문 행을 SKIP LOCKED로 잡은 뒤 판매자 주문을 잠그고 다시 확인. 환불은 커밋 뒤 트랜잭션 밖, 결과를 모르면 Saga 복구가 이어받음 (기한 → [market 정책](../services/market.md#정책)) |
 | 반품 자동 승인 | market | 10분 | – | SKIP LOCKED | 기한 안에 판매자가 응답하지 않은 반품 신청 자동 승인 (기한 → [market 정책](../services/market.md#정책)) |
 | 자동 구매 확정 | market | 1시간 | – | SKIP LOCKED | 기한 지난 `NORMAL` 주문상품 구매 확정, 반품 신청한 주문상품 제외 (기한 → [market 정책](../services/market.md#정책)) |
 | 택배 예약 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `READY` 배송(반품 포함) 택배 예약. 한 번 실행할 때 최대 20건을 한 건씩 확보(다음 시도 시각을 30초 뒤로 미루는 임대)하고, 택배사 호출은 임대 후 트랜잭션 밖에서 함. 실패하면 다음 시도까지 10초 → 30초 → 1분 고정 (건별 `next_attempt_at` · `attempt_count`, 마지막 실패 원인 `last_error`). 결제 · 수락 흐름은 `READY` 행만 만들고 택배사를 부르지 않음 |
@@ -37,6 +37,7 @@
 | 규칙 | 내용 |
 |---|---|
 | 여러 파드 | market은 파드가 2개라 스케줄러도 두 번 돈다 (Gateway는 스케줄러 없음). DB 행을 처리하는 작업은 `FOR UPDATE SKIP LOCKED`로 나눠 가져가고, 행이 아닌 한 번만 할 일은 ShedLock으로 한 인스턴스만 실행 |
+| 스케줄러 스레드 | market은 `@Scheduled` 스레드 4개(`spring.task.scheduling.pool.size`, 기본 1). 외부를 부르는 작업(수락 자동 거절, Saga 복구, 택배 예약 큐, 택배 취소 큐)이 길어져도 다른 작업이 제 주기에 돎. 같은 작업은 앞 실행이 끝나야 다음 실행을 잡고(`fixedDelay`), 서로 다른 작업이 한 파드에서 동시에 도는 것은 파드 2개와 같아 위 SKIP LOCKED나 임대로 막음 |
 | 끝까지 | 멱등이라 계속 보내도 안전 → 포기하지 않음 (택배 예약 · 취소, 정산 지급). 알림은 건마다가 아니라 "오래 남은 건이 있다"는 상태 기준으로 한 번 (예: 10분 넘게 `READY`). 상품 판매 완료 · 예약 해제는 이벤트라 스케줄러 없이 Outbox 재전송 · 소비 재시도 · DLT를 따름 |
 | 보관 기한까지 재시도 | 토큰 폐기 기록을 보관 기한까지 재시도하고, 기한이 지나면 `EXPIRED`로 처리함 |
 | 확인 후 포기 | 정한 횟수 뒤 `REVIEW_REQUIRED` (Saga 복구 5회, 토스 조회 실패 3회) · Outbox는 5회 뒤 `FAILED` + 팀 알림 · 검수 엔진 오류는 3회 뒤 관리자 확인 |

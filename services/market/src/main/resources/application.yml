@@ -23,6 +23,12 @@ spring:
       value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
         spring.deserializer.value.delegate.class: com.justcommit.backend.common.messaging.consumer.EventEnvelopeDeserializer
+  # @Scheduled 스레드 수 (기본 1). 자동 거절, Saga 복구, 택배 예약처럼 외부를 부르는 작업이 길어져도
+  # 다른 작업이 제 주기에 돌게 한다. 작업마다 SKIP LOCKED나 임대로 막고 있어 동시에 돌아도 안전하다 (docs/reference/schedulers.md)
+  task:
+    scheduling:
+      pool:
+        size: 4
   # 내부 API 그룹 주소. 연결 1초 · 응답 3초는 common-web 기본값
   http:
     serviceclient:
