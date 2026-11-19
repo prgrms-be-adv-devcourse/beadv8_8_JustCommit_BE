@@ -93,4 +93,22 @@ public interface ImageReviewRepository extends JpaRepository<ImageReview, Long> 
             FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
     Optional<Long> lockNextExpiredTarget(@Param("expireBefore") LocalDateTime expireBefore);
+
+    // 12시간 지연 알림 (#509): 관리자 확인 목록에 남아 있는 검수 중 지연 기준이 지났고 아직 알리지 않은 건을 모두 잠금
+    // 목록과 같은 조건(상품이 그 버전 · 검수 중)이라 그사이 수정 · 삭제된 옛 검수는 알리지 않음
+    // 24시간이 지나 자동 반려를 기다리는 건도 뺌 (반려 스케줄러와 주기가 달라 아직 MANUAL로 남아 있을 수 있음)
+    // 파드 여러 개가 동시에 돌아도 먼저 잠근 쪽만 보냄 (SKIP LOCKED, 늦은 쪽은 0건이라 보내지 않음)
+    @Query(value = """
+            SELECT r.* FROM image_review r JOIN product p ON p.id = r.product_id
+            WHERE r.status = 'DONE' AND r.decision = 'MANUAL'
+              AND r.reviewed_at <= :delayedBefore
+              AND r.reviewed_at > :expireBefore
+              AND r.delay_notified_at IS NULL
+              AND p.review_version = r.review_version
+              AND p.status = 'REVIEW_PENDING'
+            ORDER BY r.reviewed_at, r.id
+            FOR UPDATE OF r SKIP LOCKED
+            """, nativeQuery = true)
+    List<ImageReview> lockDelayedUnnotified(@Param("delayedBefore") LocalDateTime delayedBefore,
+                                             @Param("expireBefore") LocalDateTime expireBefore);
 }

@@ -1,7 +1,7 @@
 # product 서비스
 
 > 언제 읽나: product 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: Miro 5 · 13-1 · 17, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 5 · 13-1 · 17, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -51,7 +51,7 @@
 
 | 토픽 | 이벤트 |
 |---|---|
-| `product.events.v1` | `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged` · `ProductApproved` · `ProductRejected` |
+| `product.events.v1` | `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged` · `ProductApproved` · `ProductRejected` · `ImageReviewDelayed` |
 | `product.review.v1` | `ProductReviewRequested` |
 
 품종 이벤트(`species.events.v1`)는 발행하지 않습니다 → [ADR 0020](../decisions/0020-species-profile-ai-seed.md)
@@ -74,7 +74,7 @@
 
 ## 스케줄러
 
-검수 엔진 오류 재처리 · 관리자 확인 지연 · 상품 검색 인덱스 준비 · Outbox 재전송 → [스케줄러 표](../reference/schedulers.md)
+검수 엔진 오류 재처리 · 관리자 확인 지연 · 관리자 확인 지연 알림 · 상품 검색 인덱스 준비 · Outbox 재전송 → [스케줄러 표](../reference/schedulers.md)
 
 ## 정책
 
