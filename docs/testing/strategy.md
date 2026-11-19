@@ -31,11 +31,23 @@
 | 도구 | 쓰는 곳 |
 |---|---|
 | Testcontainers | 통합 테스트의 PostgreSQL · Kafka · Redis |
-| 공유 컨테이너 | `common-core` testFixtures의 `SharedPostgres` · `SharedRedis` · `SharedKafka`. 모듈(테스트 JVM)마다 한 번만 띄우고 `@DynamicPropertySource`에서 `register(registry)`를 부름. 커밋하는 테스트는 `@AfterEach`로 자기 데이터를 지우고, Kafka는 클래스마다 컨슈머 그룹 · key를 다르게. 앱 전체를 띄우는 테스트(`@SpringBootTest`)는 스케줄러가 공유 DB를 건드리지 않게 `@DirtiesContext` |
+| 공유 컨테이너 | `common-core` testFixtures의 `SharedPostgres` · `SharedRedis` · `SharedKafka`. 모듈(테스트 JVM)마다 종류별로 한 번만 띄움 → 아래 「통합 테스트 컨테이너 규칙」 |
 | WireMock | 다른 서비스 · 토스 · 택배사 응답 흉내 |
 | Toxiproxy | E2E에서 지연 · 끊김 주입 |
 | JUnit `@Tag("e2e")` · `@Tag("chaos")` | 골라 실행 (`./gradlew :e2e:test`) |
 | k6 | 부하 테스트 → [관측](../infra/observability.md#부하-테스트) |
+
+**통합 테스트 컨테이너 규칙** — `@Container static`으로 클래스마다 띄우지 않습니다. 모듈 `build.gradle`에 `testImplementation testFixtures(project(':common:common-core'))`
+
+| 할 일 | 방법 | 이유 |
+|---|---|---|
+| 연결 | `@DynamicPropertySource` 안에서 `SharedPostgres.register(registry)` · `SharedRedis.register(registry)` · `SharedKafka.register(registry)` | 처음 부를 때 컨테이너가 뜨고, 다음 클래스부터는 그대로 씀 |
+| PostgreSQL | `register`가 컨텍스트마다 빈 DB(`test_N`)를 새로 만듦. 스프링 없이 붙을 때는 `SharedPostgres.createDatabase()` | 클래스끼리 데이터 · 스키마(Flyway, `ddl-auto`)가 섞이지 않음 |
+| pgvector | 모듈 `test` 태스크에 `systemProperty 'shared.postgres.image', 'pgvector/pgvector:pg17'` | 이미지는 모듈에 하나 |
+| Redis | `@AfterEach`(또는 `@BeforeEach`)에서 `flushAll` | Redis는 하나를 같이 씀 |
+| Kafka | `register`가 컨텍스트마다 컨슈머 그룹 id를 새로 정함. 리스너가 도는 클래스는 `@DirtiesContext`, 메시지는 key로 거름 | 끝난 클래스의 리스너가 다음 클래스 메시지를 가로채지 않게 |
+| 앱 전체 (`@SpringBootTest` 앱 기동 확인) | `@DirtiesContext` | 스케줄러 · 커넥션 풀이 다른 클래스 실행 중에 남지 않게 |
+| 로컬 재사용 | `withReuse(true)`는 쓰지 않음 | 모듈끼리 같은 컨테이너를 잡고 실행 사이에 데이터가 남음, CI는 효과 없음 |
 
 **WireMock 규칙** — 내 서비스가 다른 서비스 · 외부 API를 REST로 부를 때만 씁니다. 남이 내 API를 부르는 경우는 MockMvc · WebTestClient, 이벤트를 받는 경우는 테스트 Kafka에 직접 넣고, 여러 서비스를 진짜로 이을 때는 E2E입니다. 예시 코드 → 노션 「테스트 시나리오」 3절
 

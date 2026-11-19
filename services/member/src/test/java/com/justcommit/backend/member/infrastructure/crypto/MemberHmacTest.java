@@ -41,6 +41,24 @@ class MemberHmacTest {
   }
 
   @Test
+  @DisplayName("이메일은 앞뒤 공백 · 대소문자가 달라도 같은 값 (가입 · 로그인과 같은 정규화)")
+  void emailHash_normalized() {
+    assertThat(hmac.emailHash("  Plant@Test.COM ")).isEqualTo(hmac.emailHash("plant@test.com"));
+  }
+
+  @Test
+  @DisplayName("같은 휴대폰 번호는 항상 같은 값")
+  void phoneHash_sameInput() {
+    assertThat(hmac.phoneHash("01012345678")).isEqualTo(hmac.phoneHash("01012345678"));
+  }
+
+  @Test
+  @DisplayName("같은 문자열이어도 이메일 · 휴대폰 해시는 다름 (용도 접두사로 구분)")
+  void prefixesSeparateUsage() {
+    assertThat(hmac.emailHash("01012345678")).isNotEqualTo(hmac.phoneHash("01012345678"));
+  }
+
+  @Test
   @DisplayName("키가 Base64가 아니면 생성 실패")
   void invalidBase64Key() {
     assertThatThrownBy(() -> new MemberHmac("not-base64!!"))

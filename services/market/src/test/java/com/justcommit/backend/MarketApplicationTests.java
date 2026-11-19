@@ -28,7 +28,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
-// 앱 전체를 띄우면 주문 만료 · 배송 예약 스케줄러도 돈다. 공유 DB에서 다른 테스트의 데이터를 건드리지 않게 끝나면 컨텍스트를 닫는다
+// 앱 전체를 띄우면 스케줄러 · 커넥션 풀이 계속 돈다. 다른 클래스가 실행되는 동안 남지 않게 끝나면 컨텍스트를 닫는다
 @DirtiesContext
 class MarketApplicationTests {
 
@@ -45,12 +45,26 @@ class MarketApplicationTests {
     }
 
     @Test
-    @DisplayName("빈 DB에서 Flyway V1 ~ V6가 적용되고 ddl-auto validate로 market 서비스가 뜬다")
+    @DisplayName("빈 DB에서 Flyway V1 ~ V7이 적용되고 ddl-auto validate로 market 서비스가 뜬다")
     void contextLoads(@Autowired Flyway flyway) {
         assertThat(flyway.info().applied())
                 .extracting(info -> info.getVersion().getVersion(), MigrationInfo::getState)
                 .contains(tuple("1", MigrationState.SUCCESS), tuple("2", MigrationState.SUCCESS), tuple("3", MigrationState.SUCCESS),
-                        tuple("4", MigrationState.SUCCESS), tuple("5", MigrationState.SUCCESS), tuple("6", MigrationState.SUCCESS));
+                        tuple("4", MigrationState.SUCCESS), tuple("5", MigrationState.SUCCESS), tuple("6", MigrationState.SUCCESS),
+                        tuple("7", MigrationState.SUCCESS));
+    }
+
+    @Test
+    @DisplayName("Prometheus가 토큰 없이 /actuator/prometheus에서 오래 남은 배송 지표를 읽을 수 있다")
+    void prometheusExposesStuckShipmentMetric(@Value("${local.server.port}") int port) throws Exception {
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/actuator/prometheus")).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body())
+                .contains("replant_shipment_stuck{status=\"READY\"")
+                .contains("replant_shipment_stuck{status=\"CANCEL_PENDING\"");
     }
 
     @Test
@@ -78,7 +92,6 @@ class MarketApplicationTests {
                 .contains("market_orders_review_required")
                 .contains("hikaricp_connections_active")
                 // 알림용 지표 (docs/infra/observability.md 「알림 규칙」)
-                .contains("market_shipments_booking_delayed")
                 .contains("outbox_pending_oldest_age_seconds")
                 .contains("outbox_failed");
     }

@@ -51,7 +51,7 @@
 | DLT 유입 | `*.DLT` 토픽에 1건이라도 (kafka-exporter offset 증가) | 즉시 |
 | 디스크 | 80% 이상 | 5분 |
 | 메모리 | 앱 서버: 컨테이너 · 파드 한도의 90% 이상, 데이터 서버: 서버 메모리 90% 이상 | 5분 |
-| 배송 예약 지연 | 10분 넘게 `READY`인 배송 1건 이상 (`max(market_shipments_booking_delayed) > 0`) | 상태 기준 1번, 반복 1시간 |
+| 배송 예약 · 취소 지연 | `replant_shipment_stuck{status="READY"}`(만든 지 10분 넘게 택배 예약 안 됨) 또는 `{status="CANCEL_PENDING"}`(취소를 누른 지 10분 넘게 택배사 결과 없음) 1 이상. market이 수집 때마다 DB에서 셈, 원인은 배송 `last_error` | 상태 기준 1번, 반복 1시간 |
 | 정산 지급 지연 | 10분 넘게 미지급(`PENDING`, `FAILED`)인 정산 1건 이상 (`max(settlement_payouts_delayed) > 0`) | 상태 기준 1번, 반복 1시간 |
 | `REVIEW_REQUIRED` | 결제 확인 필요 주문 1건 이상 (`max(market_orders_review_required) > 0`) → [처리 순서](payment-review-runbook.md) | 상태 기준 1번, 반복 1시간 |
 

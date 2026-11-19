@@ -18,8 +18,8 @@
 | POST | `auth/login` | 로그인 | 공개 |
 | POST | `auth/logout` | 로그아웃 | 공개(Refresh 쿠키 · 선택 `Authorization`) |
 | POST | `auth/reissue` | 토큰 재발급 | 공개(Refresh 쿠키) |
-| POST | `users` | 회원가입 | 공개 |
-| POST | `users/social` | 소셜 가입 완료 | 공개 |
+| POST | `users` | 회원가입 (30일 안에 탈퇴한 이메일 · 휴대폰이면 409 `REJOIN_RESTRICTED`) | 공개 |
+| POST | `users/social` | 소셜 가입 완료 (30일 안에 탈퇴한 이메일 · 휴대폰이면 409 `REJOIN_RESTRICTED`) | 공개 |
 | GET | `users/nicknameAvailability?nickname=` | 닉네임 중복 확인 | 공개 |
 | GET | `users/phoneAvailability?phone=` | 휴대폰 중복 확인 | 공개 |
 | GET | `users/me` | 내 정보 | 로그인 |
@@ -28,10 +28,10 @@
 | POST | `users/me/account/verifications` | 계좌 변경 인증번호 발송(회원 정보의 이메일로) → [계좌 변경](#계좌-변경) | 로그인 |
 | POST | `users/me/account/changeTokens` | 인증번호 확인 → 계좌 변경 토큰 | 로그인 |
 | PATCH | `users/me/account` | 계좌 변경 | 로그인 |
-| GET | `users/me/withdrawal` | 탈퇴 가능 여부 · 차단 사유 (화면 안내용) → [회원 탈퇴](#회원-탈퇴). ⬜ 미구현(#407) | 로그인 |
-| POST | `users/me/withdrawal/verifications` | 탈퇴 인증번호 발송(회원 정보의 이메일로, 카카오 회원만) → [회원 탈퇴](#회원-탈퇴). ⬜ 미구현(#407) | 로그인 |
-| POST | `users/me/withdrawal/tokens` | 인증번호 확인 → 탈퇴 토큰. ⬜ 미구현(#407) | 로그인 |
-| POST | `users/me/withdrawal` | 탈퇴 → [회원 탈퇴](#회원-탈퇴). ⬜ 미구현(#407) | 로그인 |
+| GET | `users/me/withdrawal` | 탈퇴 가능 여부 · 차단 사유 (화면 안내용) → [회원 탈퇴](#회원-탈퇴) | 로그인 |
+| POST | `users/me/withdrawal/verifications` | 탈퇴 인증번호 발송(회원 정보의 이메일로, 카카오 회원만) → [회원 탈퇴](#회원-탈퇴) | 로그인 |
+| POST | `users/me/withdrawal/tokens` | 인증번호 확인 → 탈퇴 토큰 | 로그인 |
+| POST | `users/me/withdrawal` | 탈퇴 → [회원 탈퇴](#회원-탈퇴) (Gateway 응답 타임아웃 20초) | 로그인 |
 | GET · POST | `users/me/addresses` | 배송지 목록 · 추가 | 로그인 |
 | PATCH | `users/me/addresses/{id}/default` | 기본 배송지 변경 | 로그인 |
 | PATCH · DELETE | `users/me/addresses/{id}` | 배송지 수정(보낸 항목만. 우편번호나 기본 주소가 바뀌면 상세 주소도 함께 보냄, 비우려면 `""`. 아무 항목도 없으면 400, 지금과 같은 값만 보내면 200 · 변경 · 이벤트 없음) · 삭제(기본 배송지는 409) | 로그인 |
@@ -49,7 +49,7 @@
 | 생략 · `SIGNUP` | 가입 (생략하면 기존 요청과 같게 가입으로 처리). 가입된 이메일 409 `DUPLICATE_EMAIL`, 발송 제한 429 `EMAIL_SEND_COOLDOWN` · `EMAIL_SEND_DAILY_LIMIT`(+ `Retry-After`), 메일 작업 제출 거절 500 `EMAIL_SEND_FAILED`(→ [메일 발송](#메일-발송)), 확인 실패는 `EMAIL_CODE_MISMATCH` · `EMAIL_CODE_EXPIRED` · `EMAIL_CODE_ATTEMPTS_EXCEEDED` |
 | `PASSWORD_RESET` | 비밀번호 재설정 (아래 응답 규칙) |
 | `ACCOUNT_CHANGE` | 공개 경로에서는 받지 않음(400 `EMAIL_PURPOSE_NOT_SUPPORTED`). 계좌 변경 인증은 로그인 필수 전용 경로로 → [계좌 변경](#계좌-변경) |
-| `WITHDRAWAL` | 공개 경로에서는 받지 않음(400 `EMAIL_PURPOSE_NOT_SUPPORTED`). 탈퇴 인증은 로그인 필수 전용 경로로 → [회원 탈퇴](#회원-탈퇴). ⬜ 미구현(#407) |
+| `WITHDRAWAL` | 공개 경로에서는 받지 않음(400 `EMAIL_PURPOSE_NOT_SUPPORTED`). 탈퇴 인증은 로그인 필수 전용 경로로 → [회원 탈퇴](#회원-탈퇴) |
 
 Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` · `account-change` · `withdrawal`) → [Redis 키](redis-keys.md)
 
@@ -94,7 +94,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 
 #### 회원 탈퇴
 
-⬜ 미구현(#407). 처리 순서 · 익명화 · 재가입 제한은 [탈퇴 흐름](../flows/signup-and-replica.md#직접-탈퇴)에 있습니다. 사전 확인(GET)은 화면 안내용이고, 최종 탈퇴(POST)에서 다시 확인합니다. 응답은 캐시하지 않습니다.
+처리 순서 · 익명화 · 재가입 제한은 [탈퇴 흐름](../flows/signup-and-replica.md#직접-탈퇴)에 있습니다. 사전 확인(GET)은 화면 안내용이고, 최종 탈퇴(POST)에서 다시 확인합니다. 응답은 캐시하지 않습니다.
 
 | 단계 | 요청 | 동작 · 응답 |
 |---|---|---|
@@ -115,7 +115,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | 카카오 연결 해제 실패 | 503 `SOCIAL_UNLINK_FAILED`. 회원 정보는 바뀌지 않았지만 탈퇴 토큰은 이미 소비돼 이메일 재인증 후 다시 시도해야 함. 카카오 연결이 이미 해제된 상태라면 다시 시도할 때 같은 회원번호의 `-101`을 성공으로 처리하므로 연결 해제 재호출은 안전 |
 | 성공 | 200 "회원 탈퇴가 완료되었습니다." `data: { revocationCompleted }` + 이 기기 Refresh 쿠키 만료. `false`여도 탈퇴는 커밋됐고 폐기 기록만 재처리 대기 중 → 프론트는 Access를 지우고 로그아웃 상태로 이동 |
 | 커밋 결과 불명 | 503 `RESULT_UNKNOWN`. 쿠키를 유지하고 자동 재요청하지 않음 (비밀번호 변경과 같음) |
-| Gateway 응답 타임아웃 | 504는 탈퇴 결과를 알 수 없으므로 자동 재요청하지 않음. 최종 요청의 실제 처리 시간(3곳 확인 · 카카오 연결 해제 · 저장)이 Gateway 응답 타임아웃(10초) 안에 드는지는 #407에서 검증 |
+| Gateway 응답 타임아웃 | 최종 탈퇴 POST는 Gateway 응답 타임아웃을 20초로 따로 둠(3곳 확인 · 카카오 연결 해제 · DB · Redis 처리 시간이 이어질 수 있어서). 11초 지연 응답이 정상 전달되는 것은 Gateway 통합 테스트로 확인(라우트 설정 확인이며 실제 탈퇴 처리 시간 측정은 아님). 전체 탈퇴 처리 시간은 #408 · #422 구현 뒤 최종 통합 단계에서 측정. 20초를 넘어 504가 나면 탈퇴 결과를 알 수 없으므로 자동 재요청하지 않음 |
 
 토큰 처리: 확인 실패 · 차단 · 잠금 대기 초과처럼 토큰을 꺼내기 전에 끝나면 토큰이 남아 다시 쓸 수 있습니다. 카카오 연결 해제 직전에 꺼내므로 그 뒤의 실패(연결 해제 실패 · 저장 실패)는 토큰이 소모되어 이메일 인증부터 다시 해야 합니다.
 

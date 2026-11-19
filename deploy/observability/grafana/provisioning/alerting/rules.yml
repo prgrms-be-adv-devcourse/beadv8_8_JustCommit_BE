@@ -283,8 +283,8 @@ groups:
     labels:
       team: replant
     isPaused: false
-  - uid: replant-shipment-booking-delayed
-    title: 배송 예약 지연
+  - uid: replant-shipment-stuck
+    title: 배송 예약 · 취소 지연
     condition: C
     data:
     - refId: A
@@ -294,7 +294,7 @@ groups:
       datasourceUid: prometheus
       model:
         refId: A
-        expr: max(market_shipments_booking_delayed)
+        expr: max by (status) (replant_shipment_stuck)
         instant: true
         intervalMs: 60000
         maxDataPoints: 43200
@@ -313,7 +313,7 @@ groups:
     noDataState: OK
     execErrState: Error
     annotations:
-      summary: 10분 넘게 READY인 배송 {{ $values.A.Value }}건 — 택배 예약 큐 로그(market)와 404-express 상태 확인
+      summary: '{{ $labels.status }} 상태로 10분 넘게 멈춘 배송 {{ $values.A.Value }}건 (READY = 택배 예약 안 됨, CANCEL_PENDING = 택배사 취소 결과 없음) — 배송 last_error · 404-express 상태 확인'
     labels:
       team: replant
     isPaused: false

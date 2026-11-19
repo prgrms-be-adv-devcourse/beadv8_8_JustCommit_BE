@@ -18,8 +18,8 @@ public class SpeciesDocumentFactory {
     private final String embeddingVersion;
 
     public SpeciesDocumentFactory(
-            @Value("${spring.ai.openai.embedding.model}") String model,
-            @Value("${spring.ai.openai.embedding.dimensions}") int dimensions) {
+            @Value("${custom.embedding.model}") String model,
+            @Value("${custom.embedding.dimensions}") int dimensions) {
         this.embeddingVersion = model + ":" + dimensions;
     }
 

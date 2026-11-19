@@ -117,6 +117,17 @@ member:
     retry:
       enabled: true
       interval: PT10S
+  # 30일 지난 탈퇴 기록 정리 (#407). 끄려면 enabled: false
+  withdrawal-record:
+    cleanup:
+      enabled: true
+      interval: PT1H
+  # 카카오 어드민 API (#407 연결 해제, #422 상태 조회 예정). 어드민 키는 기본값 없음: 없거나 비어 있으면 member가 시작하지 않음
+  kakao:
+    admin-key: ${KAKAO_ADMIN_KEY}
+    api-base-url: https://kapi.kakao.com
+    connect-timeout: 1s
+    read-timeout: 3s
   # 메일 발송 전용 실행기 (#421). 인증 메일 · 가입 계정 안내 메일을 요청 밖에서 보낸다
   mail:
     executor:

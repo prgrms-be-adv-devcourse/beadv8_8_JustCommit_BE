@@ -3,6 +3,7 @@ package com.justcommit.backend.member.member.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
@@ -26,6 +27,7 @@ public class MyInfoService {
 
   public MyInfoResult getMyInfo(Long memberId) {
     Member member = memberRepository.findById(memberId)
+            .filter(m -> m.getStatus() != MemberStatus.DELETED) // 탈퇴 회원은 없는 회원과 같은 404 (#407, 계좌가 NULL이라 복호화 전에 막음)
             .orElseThrow(() -> new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
 
     // 복호화한 원문은 이 메서드 안에서만 쓰고 밖으로는 마스킹한 값만 내보냄

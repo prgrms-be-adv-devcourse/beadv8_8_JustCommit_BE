@@ -19,10 +19,15 @@ public interface PaymentInternalApi {
             @RequestBody SettlementPayoutRequest request
     );
 
+    // payoutAmount = 판매액 - fee - sellerBurdenAmount (0원 · 음수 가능).
+    // payment는 sellerOrderId로 배송비 수납 · 환불 중복을 막고, shippingFee · sellerBurdenAmount를 REVENUE로 옮긴다
     record SettlementPayoutRequest(
             Long settlementId,
             Long sellerId,
+            Long sellerOrderId,
             BigDecimal payoutAmount,
-            BigDecimal fee
+            BigDecimal fee,
+            BigDecimal shippingFee,
+            BigDecimal sellerBurdenAmount
     ) {}
 }
