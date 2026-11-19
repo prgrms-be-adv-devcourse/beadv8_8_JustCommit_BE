@@ -607,6 +607,20 @@ class ProductControllerTest {
     }
 
     @Test
+    @DisplayName("status=처럼 값을 비우면 빈 리스트로 전달 (서비스는 조건 없음과 같게 처리)")
+    void searchProductsWithEmptyStatus() throws Exception {
+        given(productSearchService.search(any()))
+                .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+        mockMvc.perform(get("/api/v1/products").param("status", ""))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ProductSearchRequest> captor = ArgumentCaptor.forClass(ProductSearchRequest.class);
+        verify(productSearchService).search(captor.capture());
+        assertThat(captor.getValue().status()).isEmpty();
+    }
+
+    @Test
     @DisplayName("검색 노출 상태 밖의 status(REVIEW_PENDING)면 400 INVALID_SEARCH_STATUS")
     void searchProductsWithNonSearchableStatus() throws Exception {
         given(productSearchService.search(any()))

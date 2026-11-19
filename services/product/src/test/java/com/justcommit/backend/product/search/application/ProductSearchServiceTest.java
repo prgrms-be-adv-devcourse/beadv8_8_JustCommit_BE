@@ -181,6 +181,20 @@ class ProductSearchServiceTest {
                 .isEqualTo(ProductErrorCode.INVALID_SEARCH_STATUS);
     }
 
+    @Test
+    @DisplayName("status가 빈 리스트(status=)면 조건 없음과 같게 노출 상태 3개 모두, 400 아님")
+    void emptyStatusMeansNoFilter() {
+        given(keywordSearch.search(any(), any(), anyInt(), anyInt()))
+                .willReturn(new ProductKeywordSearch.Result(List.of(), 0));
+        ArgumentCaptor<ProductKeywordSearch.Condition> captor = ArgumentCaptor.forClass(ProductKeywordSearch.Condition.class);
+
+        service.search(statusRequest(List.of()));
+
+        verify(keywordSearch).search(captor.capture(), any(), anyInt(), anyInt());
+        assertThat(captor.getValue().statuses())
+                .containsExactly(ProductStatus.ACTIVE, ProductStatus.PAYMENT_PENDING, ProductStatus.SOLD_OUT);
+    }
+
     private static ProductSearchRequest statusRequest(List<ProductStatus> statuses) {
         return new ProductSearchRequest("몬스테라", null, null, null, null, null, null, null, null, null, statuses,
                 null, null, null);
