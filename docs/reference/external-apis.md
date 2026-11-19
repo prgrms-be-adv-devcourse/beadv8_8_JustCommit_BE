@@ -206,6 +206,8 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | `POST orders/{id}/cancel` | `PATCH orders/{id}` `{"status":"CANCELLED"}` |
 | `POST orders/items/{id}/cancel` | `PATCH orderItems/{id}` `{"status":"CANCELLED"}` |
 | `POST orders/items/{id}/confirm` | `PATCH orderItems/{id}` `{"status":"CONFIRMED"}` |
+| `POST orders/seller/{id}/accept` | `POST orders/seller/{id}/acceptances` |
+| `POST orders/seller/{id}/reject` | `POST orders/seller/{id}/rejections` `{"orderItemIds":[...]}` |
 | `PATCH users/me/addresses/{id}/default` | `PATCH users/me/addresses/{id}` `{"isDefault":true}` |
 
 🟨 팀이 고를 것: `products/me` → `users/me/products`, `orders/seller` → `sellerOrders`, `cart/items/{productId}` 유지 또는 cartItemId. ⬜ 바꾸는 시점(서비스 분리 때 · 프론트 동시 수정)은 미정.

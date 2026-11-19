@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-19 · reference/external-apis.md · 「경로 개선안」에 판매자 수락 `orders/seller/{id}/accept` → `acceptances`, 거절 `orders/seller/{id}/reject` → `rejections` 추가 (동사형 경로, 기존 `cancel`, `confirm`과 함께 바꿈) (#284) (#552)
 - 2026-11-19 · services/market.md · reference/external-apis.md · reference/internal-apis.md · flows/signup-and-replica.md · glossary.md · testing/scenarios.md · 판매자 수락, 거절 구현 반영: 결제 완료 시 주문상품 `ACCEPT_PENDING`과 `seller_order.paid_at`(Flyway V9), 수락 `orders/seller/{id}/accept`, 거절 `orders/seller/{id}/reject`(고른 상품 환불, 사유 `SELLER`, 나머지 수락, 전부 거절이면 배송비 환불), 배송은 수락 시점에 수락된 상품만 담아 생성, 수락 전 구매자 취소는 택배사 없이 바로 환불, 늦게 온 수락과 거절은 409 `SELLER_ORDER_NOT_ACCEPTABLE`, 판매자 주문 응답에 수락 마감 `acceptDeadline`, 주문상품 `cancel_reason`(Saga 복구 때 판매 재개 사유 유지), 탈퇴 확인 진행 중에 `ACCEPT_PENDING`, 용어 「수락 마감」 「취소 사유」, 시나리오 S-D17, S-D18 추가 (#284) (#552)
 - 2026-11-19 · reference/env-vars.md · Gateway `GATEWAY_TRUSTED_PROXIES` 추가: Nginx(10.x · 127.0.0.1)가 붙인 `X-Forwarded-*`를 서비스까지 넘김. 없으면 Gateway가 헤더를 지워 카카오 `redirect_uri`가 member 내부 주소로 나가 KOE006 (#550)
 - 2026-11-19 · infra/observability.md · reference/env-vars.md · 알림 규칙 11개를 Grafana 파일 등록으로 구현(Outbox 대기 · 발행 포기, 메모리 앱 · 데이터를 나눔), 5xx 급증은 5분 요청 30건 넘을 때만, 서비스 다운은 수집 데이터가 없어도, Slack 웹훅 · Grafana · postgres-exporter 비밀값 변수 추가 (#301)
