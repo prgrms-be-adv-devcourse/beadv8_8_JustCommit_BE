@@ -74,7 +74,8 @@ public class SettlementPayoutService {
     private void payout(PayoutTarget target) {
         try {
             settlementPayoutClient.distributeSettlement(
-                    target.settlementId(), target.sellerId(), target.payoutAmount(), target.fee());
+                    target.settlementId(), target.sellerId(), target.sellerOrderId(), target.payoutAmount(),
+                    target.fee(), target.shippingFee(), target.sellerBurdenAmount());
         } catch (RuntimeException e) {
             recordFailure(target, e);
             return;
