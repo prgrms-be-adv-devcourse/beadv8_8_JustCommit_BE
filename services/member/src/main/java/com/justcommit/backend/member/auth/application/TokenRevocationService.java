@@ -62,6 +62,13 @@ public class TokenRevocationService {
     this.retention = accessTokenExpiration.plus(retentionMargin);
   }
 
+  // 폐기 콜백(change) 안에서만 쓴다: 이번 폐기가 커밋되면 회원이 갖게 될 인증 버전 (#422)
+  // revoke()는 콜백 실행 → 인증 버전 +1 순서라, 콜백 안의 현재 버전 + 1이 폐기 후 버전이다
+  // 버전을 예약하거나 바꾸지 않는 계산값이며, 회원 잠금이 잡힌 폐기 콜백 밖에서는 의미가 없다
+  public static int versionAfterRevocation(Member member) {
+    return member.getTokenVersion() + 1;
+  }
+
   public RevocationResult revoke(Long memberId, RevocationReason reason, Consumer<Member> change) {
     if (TransactionSynchronizationManager.isActualTransactionActive()) {
       throw new IllegalStateException("토큰 폐기는 트랜잭션 밖에서 호출해야 합니다.");

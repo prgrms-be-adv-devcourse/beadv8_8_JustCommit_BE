@@ -196,6 +196,20 @@ class TokenReissueServiceTest {
   }
 
   @Test
+  @DisplayName("카카오 연결 해제(INACTIVE) 회원이면 INVALID_REFRESH_TOKEN, 새 토큰 발급 안 함 (#422)")
+  void reissue_inactiveMember() {
+    Member member = seller();
+    member.markSocialUnlinked();
+    givenFoundAndLocked(member);
+    given(refreshTokenStore.findAndDelete(REFRESH_TOKEN)).willReturn(Optional.of(OWNER_V0));
+
+    assertInvalidRefreshToken();
+
+    then(jwtProvider).shouldHaveNoInteractions();
+    then(refreshTokenIssuer).shouldHaveNoInteractions();
+  }
+
+  @Test
   @DisplayName("꺼낸 Refresh의 인증 버전이 DB와 다르면(비밀번호 변경 · 탈퇴 후) INVALID_REFRESH_TOKEN, Access · 새 Refresh 발급 안 함")
   void reissue_versionMismatch() {
     Member member = seller();

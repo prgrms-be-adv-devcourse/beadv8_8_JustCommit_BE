@@ -53,8 +53,8 @@ public class TokenReissueService {
     if (owner.memberId() != member.getId()) {
       throw new BusinessException(MemberErrorCode.INVALID_REFRESH_TOKEN);
     }
-    // 탈퇴 회원은 재발급하지 않음 (없는 회원과 같은 응답)
-    if (member.getStatus() == MemberStatus.DELETED) {
+    // 탈퇴 · 카카오 연결 해제(INACTIVE, #422) 회원은 재발급하지 않음 (없는 회원과 같은 응답)
+    if (member.getStatus() != MemberStatus.ACTIVE) {
       throw new BusinessException(MemberErrorCode.INVALID_REFRESH_TOKEN);
     }
     // 비밀번호 변경 · 탈퇴로 인증 버전이 올라갔으면, 그 전에 발급한 Refresh는 거절 (#409)
