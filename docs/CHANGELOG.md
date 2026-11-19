@@ -1,12 +1,14 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-19 · services/settlement.md · 제공하는 내부 API의 탈퇴 확인 경로를 `GET /internal/v1/settlements/members/{memberId}/withdrawalCheck`로 확정 표시 (reference/internal-apis.md, member 호출 코드와 같게) (#379)
+- 2026-11-19 · services/payment.md · services/settlement.md · flows/confirm-settlement.md · reference/internal-apis.md · testing/scenarios.md · 정산 지급 구현 반영: 판매액(정산금 + 수수료 + 판매자 부담금)을 `HOLDING`에서 꺼내고, 정산금 0 이상은 판매자 잔액에 입금, 음수는 판매자 잔액에서 회수(`SETTLEMENT_COLLECTION`)하고 부족분은 미수금. `REVENUE`에 수수료, 실제로 받은 부담금(`SELLER_BURDEN`), 배송비(`sellerOrderId` 기준 한 번만, 이미 옮겼거나 환불됐으면 건너뜀). 판매자 `SETTLEMENT` 행 정산마다 1건(0원과 음수는 금액 0), 검증 실패는 4xx `INVALID_AMOUNT`. `WALLET_TRANSACTION.receivable_after` 추가, 정산 지급 경로를 `settlementPayouts`로 정정, 시나리오 S-G06 ~ S-G09 추가와 S-G03 ~ S-G05 결과 기록 (#379)
 - 2026-11-18 · services/member.md · flows/signup-and-replica.md · reference/external-apis.md · reference/redis-keys.md · reference/env-vars.md · reference/schedulers.md · conventions/resilience.md · open-questions.md · testing/scenarios.md · 회원 직접 탈퇴 구현 반영: 탈퇴 API(사전 확인 · 인증번호 · 탈퇴 토큰 · 최종 탈퇴) 구현 표시, 가입 재가입 제한 409 `REJOIN_RESTRICTED`, 탈퇴 기록 정리 1시간, 카카오 연결 해제 1초/3초 · HTTP 400 + `-101`만 이미 해제로 처리 · `KAKAO_ADMIN_KEY` 필수, 소개글 수정도 회원 행 잠금, 탈퇴 확인 연결 실패 · 재시도 시간 계산 약 5.2초로 정정, Gateway 탈퇴 POST 전용 20초, 확인 뒤 제3자 주문 유입 한계와 처리 책임 미정 등록, 시나리오 결과 기록 (#407) (#530)
 - 2026-11-18 · flows/search-recommend.md · glossary.md · 장바구니 추천 환경 점수에 봄 물주기 단계(0.2) · 분류(잎보기 · 꽃보기, 0.15) 일치 추가, 생육 온도 0.6 → 0.4 · 광도 0.4 → 0.25. 추천 평가 세트(정답 20쌍) Top-10 적중 2 → 5, 결과 표 · 후보 30개 밖 정답 13쌍 · 품종 문서에서 생육 조건 문구를 뺀 실험(3 / 20, 반영 안 함) 기록, 용어 「추천 평가 세트」 (#507) (#529)
 - 2026-11-18 · reference/env-vars.md · services/ai.md · ai 임베딩 설정 키를 모델 이름 없는 `custom.embedding.model` · `custom.embedding.dimensions`로(환경변수 `EMBEDDING_MODEL` · `EMBEDDING_DIMENSIONS`, 기본값 `text-embedding-3-small` · `1536`), Spring AI `spring.ai.openai.embedding.*`도 이 값을 참조, 설정 차원이 `vector(1536)` 칸과 다르면 앱 시작 실패 (#508)

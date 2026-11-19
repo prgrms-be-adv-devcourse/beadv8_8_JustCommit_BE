@@ -1,7 +1,7 @@
 # 테스트 시나리오
 
 > 언제 읽나: 시나리오 ID로 내용을 찾거나 결과를 기록할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: [노션 「테스트 시나리오」 4절](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: [노션 「테스트 시나리오」 4절](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
 
 시나리오마다 어느 서비스의 테스트인지, 무엇을 대신 세우는지(WireMock · 테스트 Kafka · Clock 등), 무엇을 확인하는지는 노션 「테스트 시나리오」 4절 표에 있습니다. 이 문서는 ID · 문장 · 결과 기록용입니다.
 
@@ -112,9 +112,13 @@
 |---|---|---|---|---|---|---|
 | S-G01 | 배송 완료 → 구매 확정 → 정산 생성 → 정산금 지급 (settlement → payment REST) | 정상 | E2E | 야간 |  |  |
 | S-G02 | 배송 완료 72시간 후 자동 구매 확정 | 규칙 | 통합 | PR |  |  |
-| S-G03 | 정산 지급 때 배송비 `HOLDING` → `REVENUE`, 배송비가 환불된 판매자 주문은 건너뜀 | 정상 | 통합 | PR |  |  |
-| S-G04 | 정산금 지급을 같은 settlementId로 두 번 → 1번만 입금 | 중복 | 통합 | PR |  |  |
-| S-G05 | 전부 반품 → 음수 정산 → 판매자 정산금 · 충전금에서 회수 → 부족분 미수금 → 다음 입금에서 먼저 차감, 미수금 있으면 인출 불가 | 경계 | 통합 | PR |  |  |
+| S-G03 | 정산 지급 때 배송비 `HOLDING` → `REVENUE`, 배송비가 환불된 판매자 주문은 건너뜀 | 정상 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |
+| S-G04 | 정산금 지급을 같은 settlementId로 두 번 → 1번만 입금 | 중복 | 통합 | PR |  | 완료 (11/19): `PaymentIdempotencyIntegrationTest`, `PaymentSettlementIntegrationTest` |
+| S-G05 | 전부 반품 → 음수 정산 → 판매자 잔액에서 회수 → 부족분 미수금 → 다음 입금에서 먼저 차감, 미수금 있으면 인출 불가 | 경계 | 통합 | PR |  | 부분 검증 (11/19): 잔액에서 회수와 부족분 미수금(`PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest`). 입금 시 먼저 차감은 #380, 인출 불가는 인출 구현 때 |
+| S-G06 | 0원 정산 (판매자 부담금 = 판매액 − 수수료) → 판매자 잔액은 그대로, 판매자 지갑에 `SETTLEMENT` 0원 행 1건, 부담금은 `REVENUE`로 | 경계 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |
+| S-G07 | 판매액 0 (전부 반품, 수수료 0) → `HOLDING`에서 판매액을 꺼내지 않고 판매자 잔액에서만 회수, 부족분 미수금 | 경계 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |
+| S-G08 | 배송비를 이미 옮긴 판매자 주문의 정산 지급 → 배송비는 다시 옮기지 않고 정산은 지급 | 중복 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |
+| S-G09 | 0원 정산과 음수 정산을 같은 settlementId로 다시 보내거나 동시에 보냄 → 회수, 미수금, 배송비 이동이 1번만 | 중복 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |
 
 ## H. 이벤트 신뢰성
 
