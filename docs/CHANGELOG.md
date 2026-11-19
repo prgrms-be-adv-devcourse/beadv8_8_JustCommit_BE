@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-19 · reference/kafka-topics.md · services/market.md · 판매자 수락, 거절 이벤트 발행: `SellerOrderAccepted`(`rejectedItemCount`, 전체 수락 0, 일부 거절은 이번에 거절한 수), `SellerOrderRejected`(`reason` `SELLER` · `AUTO`)를 수락, 거절, 자동 거절 트랜잭션 마지막에 판매자 주문당 1건 `market.events.v1`로, payload 표 추가. 409와 건너뛴 자동 거절은 발행 안 함, `SellerOrderCancelled`는 구매자 취소 전용 유지 (#288)
 - 2026-11-19 · reference/schedulers.md · market `@Scheduled` 스레드를 1개에서 4개로(`spring.task.scheduling.pool.size`): 자동 거절 환불이 길어져도 결제 대기 만료, Saga 복구, 택배 예약이 밀리지 않게 (#285)
 - 2026-11-19 · services/market.md · reference/schedulers.md · open-questions.md · testing/scenarios.md · 24시간 자동 거절 구현 반영: 수락 마감이 지난 판매자 주문을 10분마다 최대 100건 읽어 주문 행 SKIP LOCKED → 판매자 주문 잠금 → 다시 확인 후 남은 상품을 자동 거절(`AUTO`)하고 커밋 뒤 환불, 결제 완료 시각이 없는 판매자 주문은 제외. 수락과 자동 거절이 겹치면 먼저 주문을 잠근 쪽이 처리(늦은 수락, 거절은 409, 자동 거절은 건너뜀)로 확정하고 미정 항목에서 삭제, S-D09 결과 기록 (#285) (#564)
 - 2026-11-19 · flows/search-recommend.md · reference/external-apis.md · services/product.md · 검색 2단계: 찾는 곳에 설명 추가(가중치 제목 3 > 품종명 · 별칭 · 학명 2 > 설명 1), 오타 허용 `AUTO:3,6`을 제목 · 품종명 · 별칭 · 학명의 `.word` 하위 필드(`ko_word`, 공백으로만 자름)에서 가중치 절반으로, 인덱스 이름 `products_v{n}` · 매핑 파일 `opensearch/products.json`, 무중단 재색인 `POST admin/products/searchIndex/rebuilds`(새 인덱스 채움 → refresh → alias 이동 → 따라잡기 색인 → 옛 인덱스 삭제, 따라잡기 실패 시 옛 인덱스 유지, 전체 색인 · 재색인은 한 서버에서 하나만 · 진행 중 409 `SEARCH_INDEXING_IN_PROGRESS`) (#487)
