@@ -136,7 +136,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 
 | 메서드 | 경로 | 설명 | 권한 |
 |---|---|---|---|
-| GET | `products` | 목록 · 검색 · 필터. `keyword`가 있으면 OpenSearch(관련도순 기본), 없으면 DB(최신순 기본), `sort` `relevance` · `latest` · `priceAsc` · `priceDesc`. 판매자 상점 조건 `sellerId` · `status`(`ACTIVE` · `PAYMENT_PENDING` · `SOLD_OUT` 중 하나, 그 밖이면 400 `INVALID_SEARCH_STATUS`), 판매 완료 개수는 `sellerId` + `status=SOLD_OUT`의 `totalElements`. 응답 항목에 `sellerId` → [검색 · 추천](../flows/search-recommend.md) | 공개 |
+| GET | `products` | 목록 · 검색 · 필터. `keyword`가 있으면 OpenSearch(관련도순 기본), 없거나 `sellerId`가 있으면 DB(최신순 기본), `sort` `relevance` · `latest` · `priceAsc` · `priceDesc`. 판매자 상점 조건 `sellerId` · `status`(`ACTIVE` · `PAYMENT_PENDING` · `SOLD_OUT` 중 하나, 그 밖이면 400 `INVALID_SEARCH_STATUS`), 판매 완료 개수는 `sellerId` + `status=SOLD_OUT`의 `totalElements`. 응답 항목에 `sellerId` → [검색 · 추천](../flows/search-recommend.md) | 공개 |
 | POST | `products` | 등록 | SELLER |
 | GET | `products/{id}` | 상세 | 공개 |
 | PUT | `products/{id}` | 수정 | SELLER |

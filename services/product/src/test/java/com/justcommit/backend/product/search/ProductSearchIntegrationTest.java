@@ -196,7 +196,7 @@ class ProductSearchIntegrationTest {
     }
 
     @Test
-    @DisplayName("[완료 기준 4] sellerId + status=SOLD_OUT으로 판매자 상점의 판매 완료 목록과 전체 개수 (키워드 있음 · 없음 모두)")
+    @DisplayName("[완료 기준 4] sellerId + status=SOLD_OUT으로 판매자 상점의 판매 완료 목록과 전체 개수 (판매자 상점은 키워드가 있어도 DB)")
     void sellerShopSoldOut() throws IOException {
         Product sold1 = save(MONSTERA_ID, SELLER_ID, "몬스테라 1", "설명", ProductStatus.SOLD_OUT);
         Product sold2 = save(SCINDAPSUS_ID, SELLER_ID, "스킨답서스 2", "설명", ProductStatus.SOLD_OUT);
@@ -210,11 +210,11 @@ class ProductSearchIntegrationTest {
         assertThat(shop.getTotalElements()).isEqualTo(2);
         assertThat(shop.getContent()).extracting(ProductSearchResponse::sellerId).containsOnly(SELLER_ID);
 
-        // 키워드 있음 → OpenSearch (문서에 sellerId 색인)
+        // 키워드가 있어도 DB(LIKE) — OpenSearch 문서에는 판매자를 색인하지 않음
         Page<ProductSearchResponse> keyword = searchService.search(
                 request("몬스테라", null, SELLER_ID, ProductStatus.SOLD_OUT, null));
         assertThat(ids(keyword)).containsExactly(sold1.getId());
-        // 화면 값(썸네일)은 DB에서 다시 읽음 (지연 로딩도 서비스 트랜잭션 안에서)
+        // 썸네일 지연 로딩도 서비스의 읽기 전용 트랜잭션 안에서
         assertThat(keyword.getContent().getFirst().thumbnailUrl()).endsWith("/a.jpg");
         assertThat(keyword.getTotalElements()).isEqualTo(1);
     }

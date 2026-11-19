@@ -214,7 +214,7 @@ class ProductSearchIndexScenarioTest {
         Long productId = tx.execute(status -> productRepository.save(newProduct("새 제목")).getId());
         Product product = productRepository.findWithSpeciesById(productId).orElseThrow();
         ProductDocument newer = ProductDocument.of(product, List.of());
-        ProductDocument older = new ProductDocument(productId, newer.sellerId(), "옛 제목", newer.description(), newer.speciesId(),
+        ProductDocument older = new ProductDocument(productId, "옛 제목", newer.description(), newer.speciesId(),
                 newer.speciesName(), List.of(), newer.scientificName(), newer.category(), newer.light(),
                 newer.watering(), newer.difficulty(), newer.price(), "REVIEW_PENDING", false, newer.createdAt());
 

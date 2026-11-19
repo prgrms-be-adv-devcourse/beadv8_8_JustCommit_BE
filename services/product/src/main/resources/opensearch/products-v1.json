@@ -40,7 +40,6 @@
     "dynamic": "strict",
     "properties": {
       "productId": { "type": "long" },
-      "sellerId": { "type": "long" },
       "title": {
         "type": "text",
         "analyzer": "ko_text",

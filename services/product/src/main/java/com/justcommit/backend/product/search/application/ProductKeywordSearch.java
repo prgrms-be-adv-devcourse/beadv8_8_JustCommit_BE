@@ -29,8 +29,7 @@ public interface ProductKeywordSearch {
             String watering,
             String difficulty,
             BigDecimal minPrice,
-            BigDecimal maxPrice,
-            Long sellerId
+            BigDecimal maxPrice
     ) {
     }
 

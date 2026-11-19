@@ -105,9 +105,6 @@ public class OpenSearchProductSearch implements ProductKeywordSearch {
                 return range;
             })));
         }
-        if (condition.sellerId() != null) {
-            filters.add(term("sellerId", FieldValue.of(condition.sellerId())));
-        }
 
         List<Query> should = List.of(
                 match("title", keyword, TITLE_BOOST),

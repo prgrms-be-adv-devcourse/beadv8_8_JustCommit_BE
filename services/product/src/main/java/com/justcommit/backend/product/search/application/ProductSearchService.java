@@ -27,6 +27,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <ul>
  *   <li>키워드 없음 → DB 조회 (Specifications). 원본이라 색인 지연이 없고 전체 개수가 정확하다.</li>
+ *   <li>판매자 상점({@code sellerId}) → 키워드가 있어도 DB 조회. 시안에 상점 안 검색창이 없어 OpenSearch 문서에
+ *       판매자를 색인하지 않는다 (키워드가 오면 LIKE로 거름).</li>
  *   <li>키워드 있음 → OpenSearch로 id · 전체 개수를 받고, 화면 값은 DB에서 다시 읽는다 (응답 형식이 DB 조회와 같음).</li>
  *   <li>OpenSearch 장애 → 경고 로그를 남기고 DB LIKE 검색으로 대신 (관련도 · 한국어 분석 없음, 최신순).</li>
  * </ul>
@@ -54,7 +56,7 @@ public class ProductSearchService {
     public Page<ProductSearchResponse> search(ProductSearchRequest request) {
         List<ProductStatus> statuses = statusesOf(request);
         Pageable pageable = request.toPageable();
-        if (!request.hasKeyword()) {
+        if (!request.hasKeyword() || request.sellerId() != null) {
             return searchDb(request, pageable);
         }
         try {
@@ -97,7 +99,7 @@ public class ProductSearchService {
         ProductKeywordSearch.Condition condition = new ProductKeywordSearch.Condition(
                 request.keyword().trim(), statuses, request.speciesId(),
                 nameOf(request.category()), nameOf(request.light()), nameOf(request.watering()),
-                nameOf(request.difficulty()), request.minPrice(), request.maxPrice(), request.sellerId());
+                nameOf(request.difficulty()), request.minPrice(), request.maxPrice());
         ProductKeywordSearch.Result result = keywordSearch.search(
                 condition, request.searchSort(), pageable.getPageNumber(), pageable.getPageSize());
 

@@ -135,15 +135,15 @@ class ProductSearchServiceTest {
     }
 
     @Test
-    @DisplayName("노출 상태: 기본 3개, onSale=true면 ACTIVE만, status=SOLD_OUT이면 그 상태만 · sellerId도 넘김")
-    void statusesAndSellerPassedToOpenSearch() {
+    @DisplayName("노출 상태: 기본 3개, onSale=true면 ACTIVE만, status=SOLD_OUT이면 그 상태만")
+    void statusesPassedToOpenSearch() {
         given(keywordSearch.search(any(), any(), anyInt(), anyInt()))
                 .willReturn(new ProductKeywordSearch.Result(List.of(), 0));
         ArgumentCaptor<ProductKeywordSearch.Condition> captor = ArgumentCaptor.forClass(ProductKeywordSearch.Condition.class);
 
         service.search(request("몬스테라", null, null, null, null));
         service.search(request("몬스테라", true, null, null, null));
-        service.search(request("몬스테라", null, 7L, ProductStatus.SOLD_OUT, null));
+        service.search(request("몬스테라", null, null, ProductStatus.SOLD_OUT, null));
 
         verify(keywordSearch, org.mockito.Mockito.times(3)).search(captor.capture(), any(), anyInt(), anyInt());
         List<ProductKeywordSearch.Condition> conditions = captor.getAllValues();
@@ -151,7 +151,17 @@ class ProductSearchServiceTest {
                 .containsExactly(ProductStatus.ACTIVE, ProductStatus.PAYMENT_PENDING, ProductStatus.SOLD_OUT);
         assertThat(conditions.get(1).statuses()).containsExactly(ProductStatus.ACTIVE);
         assertThat(conditions.get(2).statuses()).containsExactly(ProductStatus.SOLD_OUT);
-        assertThat(conditions.get(2).sellerId()).isEqualTo(7L);
+    }
+
+    @Test
+    @DisplayName("판매자 상점(sellerId)은 키워드가 있어도 OpenSearch를 부르지 않고 DB에서 조회 (상점 안 검색창 없음)")
+    void sellerShopUsesDbEvenWithKeyword() {
+        given(productRepository.findAll(any(Specification.class), any(Pageable.class))).willReturn(Page.empty());
+
+        service.search(request("몬스테라", null, 7L, ProductStatus.SOLD_OUT, null));
+
+        verifyNoInteractions(keywordSearch);
+        verify(productRepository).findAll(any(Specification.class), any(Pageable.class));
     }
 
     @Test

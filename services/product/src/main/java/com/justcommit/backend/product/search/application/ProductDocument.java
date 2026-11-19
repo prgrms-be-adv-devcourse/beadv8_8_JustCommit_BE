@@ -14,8 +14,6 @@ import java.util.List;
  */
 public record ProductDocument(
         Long productId,
-        // 판매자 상점 목록(sellerId 조건)용 (#486)
-        Long sellerId,
         String title,
         String description,
         Long speciesId,
@@ -37,7 +35,6 @@ public record ProductDocument(
         Species species = product.getSpecies();
         return new ProductDocument(
                 product.getId(),
-                product.getSellerId(),
                 product.getTitle(),
                 product.getDescription(),
                 species.getId(),
