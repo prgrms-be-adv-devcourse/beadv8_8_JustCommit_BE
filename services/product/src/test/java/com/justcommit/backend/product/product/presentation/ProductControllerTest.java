@@ -524,7 +524,7 @@ class ProductControllerTest {
         given(productImageService.issueUploadUrls(eq(SELLER_ID), any()))
                 .willReturn(List.of(new ImageUploadUrlResponse("https://signed-url", "https://bucket/products/1/a.jpg")));
 
-        mockMvc.perform(post("/api/v1/products/images/upload-urls")
+        mockMvc.perform(post("/api/v1/products/images/uploadUrls")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                             { "files": [ { "contentType": "image/jpeg", "size": 1000 } ] }
@@ -539,7 +539,7 @@ class ProductControllerTest {
     void issueImageUploadUrlsWithEmptyFiles() throws Exception {
         loginAs(SELLER_ID, SELLER);
 
-        mockMvc.perform(post("/api/v1/products/images/upload-urls")
+        mockMvc.perform(post("/api/v1/products/images/uploadUrls")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                             { "files": [] }
@@ -553,7 +553,7 @@ class ProductControllerTest {
     void issueImageUploadUrlsWithZeroSize() throws Exception {
         loginAs(SELLER_ID, SELLER);
 
-        mockMvc.perform(post("/api/v1/products/images/upload-urls")
+        mockMvc.perform(post("/api/v1/products/images/uploadUrls")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                             { "files": [ { "contentType": "image/jpeg", "size": 0 } ] }

@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-19 · product · 사진 업로드 경로 코드도 `upload-urls` → `uploadUrls`로 맞춤 (#553)
 - 2026-11-19 · reference/env-vars.md · Gateway `GATEWAY_TRUSTED_PROXIES` 추가: Nginx(10.x · 127.0.0.1)가 붙인 `X-Forwarded-*`를 서비스까지 넘김. 없으면 Gateway가 헤더를 지워 카카오 `redirect_uri`가 member 내부 주소로 나가 KOE006 (#550)
 - 2026-11-19 · infra/observability.md · reference/env-vars.md · 알림 규칙 11개를 Grafana 파일 등록으로 구현(Outbox 대기 · 발행 포기, 메모리 앱 · 데이터를 나눔), 5xx 급증은 5분 요청 30건 넘을 때만, 서비스 다운은 수집 데이터가 없어도, Slack 웹훅 · Grafana · postgres-exporter 비밀값 변수 추가 (#301)
 - 2026-11-18 · infra/observability.md · reference/ports.md · Kafka 수집 확정(kafka-exporter, DLT 유입 알림), 앱 서버 컨테이너 · 파드 메모리는 Alloy 내장 cAdvisor, 메모리 알림은 앱 서버 = 컨테이너 한도 90% · 데이터 서버 = 서버 메모리 90% (#301)
