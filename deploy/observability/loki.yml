@@ -1,0 +1,54 @@
+# 데이터 서버 Loki (#301). 단일 프로세스 · 디스크 저장 · 보관 14일
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+
+schema_config:
+  configs:
+    - from: 2026-11-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  retention_period: 336h # 14일
+  # 메모리 256m 안에서 버티게 받는 양 · 한 번에 읽는 양을 줄인다
+  ingestion_rate_mb: 4
+  ingestion_burst_size_mb: 8
+  max_query_series: 1000
+  allow_structured_metadata: true
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+query_range:
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true
+        max_size_mb: 32
+
+pattern_ingester:
+  enabled: false
+
+analytics:
+  reporting_enabled: false

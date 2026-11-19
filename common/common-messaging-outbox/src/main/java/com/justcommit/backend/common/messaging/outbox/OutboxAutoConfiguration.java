@@ -1,9 +1,11 @@
 package com.justcommit.backend.common.messaging.outbox;
 
 import com.justcommit.backend.common.messaging.EventEnvelopeMapper;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.persistence.EntityManager;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
 import org.springframework.context.annotation.Bean;
@@ -41,8 +43,12 @@ public class OutboxAutoConfiguration {
   @Bean
   @ConditionalOnBooleanProperty(name = "outbox.scheduler.enabled", matchIfMissing = true)
   OutboxScheduler outboxScheduler(OutboxEventRepository repository, OutboxRelay relay,
-                                  PlatformTransactionManager transactionManager) {
-    return new OutboxScheduler(repository, relay, transactionManager, Clock.systemUTC());
+                                  PlatformTransactionManager transactionManager,
+                                  ObjectProvider<MeterRegistry> meterRegistry) {
+    // 지표는 MeterRegistry가 있을 때만 (서비스는 common-logging으로 항상 있음)
+    OutboxMetrics metrics = meterRegistry.getIfAvailable() == null ? null
+        : new OutboxMetrics(repository, meterRegistry.getObject(), Clock.systemUTC());
+    return new OutboxScheduler(repository, relay, transactionManager, Clock.systemUTC(), metrics);
   }
 
   // 서비스의 Kafka 설정(주소 등)은 그대로 쓰고 직렬화만 문자열로 고정한 Outbox 전용 KafkaTemplate.
