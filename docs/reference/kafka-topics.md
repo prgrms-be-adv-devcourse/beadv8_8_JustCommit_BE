@@ -88,7 +88,7 @@
 | `ProductStatusChanged` | 아래 공통 칸 | 예약 · 판매 완료 · 예약 해제 · 판매 재개 · 숨김 · 삭제 · 판매자 탈퇴 정리 · 검수 결과(통과 · 반려 · 판매 중 → 관리자 확인) · 이의 신청 · 기한 초과 재요청 |
 | `ProductApproved` | `productId` · `sellerId` · `reviewVersion` (숫자), `productTitle` (문자열) | 검수 통과 알림용. 검수 중 → 판매 중으로 바뀔 때만 (판매 중 상품의 글 검사 통과는 보내지 않음) |
 | `ProductRejected` | `ProductApproved` 칸 + `reasonCode` (반려 사유 코드, 예: `HARMFUL_IMAGE`) · `reasonMessage` (판매자 문구, `OTHER`면 관리자 입력) | 검수 반려 알림용 (글 검사 반려 포함). 관리자 확인으로 넘어갈 때는 보내지 않음 |
-| `ImageReviewDelayed` | `delayedCount` (숫자, 이번에 묶은 건수), `checkedAt` (시각, 모은 시각) | 관리자 확인 12시간 지연 알림용 (#509). Key `image-review-delayed`(상품 하나에 묶이지 않음). 관리자 확인 지연 알림 스케줄러가 1시간마다 확인해 새로 12시간을 넘긴 건(24시간 전)이 있을 때만 1개, 같은 건은 한 번만 ([사진 검수](../flows/image-review.md) 「관리자 수동 검수」). 시각은 product 서버 시간(서울)의 `LocalDateTime` |
+| `ImageReviewDelayed` | `delayedCount` (숫자, 이번에 묶은 건수), `checkedAt` (시각, 모은 시각) | 관리자 확인 12시간 지연 알림용 (#509). Key `image-review-delayed`(상품 하나에 묶이지 않음). 관리자 확인 지연 알림 스케줄러가 한국 시간 09~21시 매 정각에 확인해 새로 12시간을 넘긴 건(24시간 전)이 있을 때만 1개, 같은 건은 한 번만 ([사진 검수](../flows/image-review.md) 「관리자 수동 검수」). 시각은 product 서버 시간(서울)의 `LocalDateTime` |
 
 세 이벤트의 공통 payload (`version` 2, [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md)):
 

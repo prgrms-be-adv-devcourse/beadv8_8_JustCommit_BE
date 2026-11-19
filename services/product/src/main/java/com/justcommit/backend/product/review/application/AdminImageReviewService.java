@@ -41,7 +41,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AdminImageReviewService {
 
-    // 관리자 확인으로 간 지 이만큼 지나면 목록에 「지연」 표시 + 관리자 알림 이벤트(ImageReviewDelayed, 1시간마다 묶어서) 1번
+    // 관리자 확인으로 간 지 이만큼 지나면 목록에 「지연」 표시 + 관리자 알림 이벤트(ImageReviewDelayed, 09~21시 매 정각 묶어서) 1번
     static final Duration DELAY_AFTER = Duration.ofHours(12);
     // 이만큼 지나면 자동 반려 (자동 승인은 하지 않음)
     static final Duration EXPIRE_AFTER = Duration.ofHours(24);
