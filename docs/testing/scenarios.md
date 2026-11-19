@@ -42,7 +42,7 @@
 | ID | 시나리오 | 종류 | 수준 | 자동화 | 남길 실측값 | 결과 |
 |---|---|---|---|---|---|---|
 | S-C01 | 상품 등록(Presigned 업로드 사진) → 조회 · OpenSearch 검색 노출 (`product.events.v1` → 색인 리스너) | 정상 | 통합 | PR |  |  |
-| S-C02 | 상품 숨김 → 검색 · 목록 제외, 진행 중 결제는 유지 | 규칙 | 통합 | PR |  |  |
+| S-C02 | 상품 숨김 → 검색 · 목록 제외, 진행 중 결제는 유지 | 규칙 | 통합 | PR |  | 검색 · 목록 제외 확인 (11/19): 숨김 이벤트 → 문서 `hidden` → OpenSearch 검색 제외 · 해제 시 다시 노출(`ProductSearchIndexScenarioTest`), 키워드 검색 · LIKE 대체 · 목록 제외(`ProductSearchIntegrationTest` · `ProductSpecificationsTest`). 진행 중 결제 유지는 이 PR에서 확인 안 함 |
 | S-C03 | 판매 완료 이벤트(`market.order-paid.v1`)를 두 번 받음 → 1번만 반영, 이미 해제돼 바뀐 상품이 0건이어도 정상 | 중복 | 통합 | PR |  |  |
 | S-C04 | 같은 상품을 두 명이 동시 주문 → 한 명만 예약 성공 | 경계 | 통합 | PR |  |  |
 | S-C05 | 사진 검수: 유해 → `HARMFUL_IMAGE` / 씨앗 · 삽수 → `PROHIBITED_FORM` / 금지 품종 0.7 이상 → `BANNED_SPECIES` / 확신도 낮음 · 기타 품종 → 관리자 확인 / 통과 → `ACTIVE` · `ProductApproved` → 판매자 통과 알림 | 규칙 | 통합 | PR |  |  |

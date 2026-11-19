@@ -237,16 +237,6 @@ public class ProductService implements ProductQuery, ProductUseCase {
         return ProductDetailResponse.from(product, memberQuery.getNickname(product.getSellerId()));
     }
 
-    public Page<ProductSearchResponse> searchProducts(ProductSearchRequest request) {
-        return productRepository.findAll(
-                        ProductSpecifications.searchCondition(
-                                request.keyword(), request.speciesId(), request.category(),
-                                request.light(), request.watering(), request.difficulty(),
-                                request.minPrice(), request.maxPrice(), request.onSale()),
-                        request.toPageable())
-                .map(ProductSearchResponse::from);
-    }
-
     @Transactional
     public ProductDetailResponse updateProduct(Long memberId, Long productId, ProductRequest request) {
 
