@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-19 · decisions/0024 · services/ai.md · 로컬 임베딩 모델 「비교 예정」을 실측 결과로: `multilingual-e5-small`을 운영 이미지 · 메모리 상한으로 실측(int8 최소 2g · 최고 1.96GiB, fp32 최소 3g, 640m에서는 시작 중 OOM, 재임베딩 뒤에도 메모리 유지) → ai 파드에 상주 불가라 비교에서 제외, ADR 0024(OpenAI) 유지 (#507) (#543)
 - 2026-11-19 · services/payment.md · glossary.md · testing/scenarios.md · 입금 시 미수금 차감 구현 반영: 충전 승인, 양수 정산금, 환불이 들어오면 min(미수금, 입금액)을 먼저 `REVENUE`로(`RECEIVABLE_COLLECTION`, 회원 지갑 OUT과 `REVENUE` IN, `ref_id` = 입금 거래 행 ID), 입금 행 금액은 그대로, 미수금이 없으면 `REVENUE` 잠금 없음. 용어 「미수금 차감」 추가, S-G05 결과 갱신 (#380)
 - 2026-11-19 · services/payment.md · flows/cancel-refund.md · reference/internal-apis.md · reference/external-apis.md · glossary.md · overview.md · testing/scenarios.md · open-questions.md · 충전 취소를 빼고 충전금도 인출 허용, 회원 지갑은 잔액(`balance`) + 미수금(`receivable`)으로 단일화. 결제와 환불의 충전금 우선 규칙 삭제, 미수금은 입금 시 자동 차감(#380)이고 별도 납부 API 없음, 탈퇴는 잔액을 인출로 0으로 만든 뒤(잔액 정리 기능과 지갑 잠금 삭제). 용어 「충전금」 「인출 가능 금액」 「충전 취소」 삭제, 「예치금」 = 회원 지갑 잔액, S-P01 삭제, 미정 「탈퇴 잔액 정리 중 지갑 잠금 방식」 삭제 (#376)
 - 2026-11-19 · services/settlement.md · 제공하는 내부 API의 탈퇴 확인 경로를 `GET /internal/v1/settlements/members/{memberId}/withdrawalCheck`로 확정 표시 (reference/internal-apis.md, member 호출 코드와 같게) (#379)
