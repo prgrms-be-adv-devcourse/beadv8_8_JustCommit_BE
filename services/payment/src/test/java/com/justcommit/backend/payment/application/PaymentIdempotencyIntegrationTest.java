@@ -42,7 +42,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 })
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, PaymentService.class, WalletService.class})
+@Import({JpaAuditingConfig.class, PaymentService.class, WalletService.class, MemberWalletDepositor.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class PaymentIdempotencyIntegrationTest {

@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -33,6 +32,8 @@ import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 // 정산 지급의 돈 흐름. 거래 내역 저장소는 메모리 원장으로 흉내 내서 중복 판정(exists)이 저장한 행을 그대로 본다
@@ -50,7 +51,14 @@ class PaymentServiceSettlementTest {
     @Mock WalletRepository walletRepository;
     @Mock WalletTransactionRepository walletTransactionRepository;
     @Mock WalletService walletService;
-    @InjectMocks PaymentService paymentService;
+    PaymentService paymentService;
+
+    // 입금은 진짜 MemberWalletDepositor로 (목 저장소 사용) 해야 잔액, 원장을 확인할 수 있다
+    @BeforeEach
+    void createPaymentService() {
+        paymentService = new PaymentService(walletRepository, walletTransactionRepository, walletService,
+                new MemberWalletDepositor(walletRepository, walletTransactionRepository));
+    }
 
     private final List<WalletTransaction> ledger = new ArrayList<>();
     private Wallet seller;
@@ -68,6 +76,8 @@ class PaymentServiceSettlementTest {
         lenient().when(walletRepository.findByWalletTypeForUpdate(WalletType.REVENUE)).thenReturn(Optional.of(revenue));
         lenient().when(walletTransactionRepository.save(any())).thenAnswer(invocation -> {
             WalletTransaction transaction = invocation.getArgument(0);
+            // IDENTITY처럼 저장할 때 ID를 채운다 (미수금 차감 행의 ref_id = 입금 행 ID)
+            ReflectionTestUtils.setField(transaction, "id", (long) ledger.size() + 1000);
             ledger.add(transaction);
             return transaction;
         });
@@ -299,15 +309,89 @@ class PaymentServiceSettlementTest {
         verifyNoInteractions(walletRepository, walletTransactionRepository);
     }
 
+    // ===== 미수금 차감 (#380) =====
+
+    @Test
+    @DisplayName("[S-G05] 양수 정산, 미수금 < 정산금: 정산금에서 미수금을 먼저 빼 이미 잠근 REVENUE로 옮긴다")
+    void positivePayoutCollectsReceivableFirst() {
+        seller.increaseReceivable(new BigDecimal("3000"));
+
+        distribute(null, "9500", "500", "0", "0");
+
+        assertThat(seller.getBalance()).isEqualByComparingTo("6500");
+        assertThat(seller.getReceivable()).isEqualByComparingTo("0");
+        assertThat(revenue.getBalance()).isEqualByComparingTo("3500");
+        Long depositId = settlementRowId();
+        assertThat(rows())
+                .containsExactly(
+                        tuple(HOLDING_WALLET_ID, RefType.SETTLEMENT, SETTLEMENT_ID, TransactionStatus.OUT, "10000", "90000", "0"),
+                        tuple(REVENUE_WALLET_ID, RefType.SETTLEMENT_FEE, SETTLEMENT_ID, TransactionStatus.IN, "500", "500", "0"),
+                        tuple(SELLER_WALLET_ID, RefType.SETTLEMENT, SETTLEMENT_ID, TransactionStatus.IN, "9500", "9500", "3000"),
+                        tuple(SELLER_WALLET_ID, RefType.RECEIVABLE_COLLECTION, depositId, TransactionStatus.OUT, "3000", "6500", "0"),
+                        tuple(REVENUE_WALLET_ID, RefType.RECEIVABLE_COLLECTION, depositId, TransactionStatus.IN, "3000", "3500", "0"));
+        // REVENUE는 처음 한 번만 잠근다
+        verify(walletRepository, times(1)).findByWalletTypeForUpdate(WalletType.REVENUE);
+        assertBalanced();
+    }
+
+    @ParameterizedTest(name = "미수금 {0}")
+    @CsvSource({"9500, 0", "12000, 2500"})
+    @DisplayName("[S-G05] 양수 정산, 미수금 ≥ 정산금: 정산금 전부를 차감해 판매자 잔액은 0")
+    void positivePayoutFullyCollected(String receivable, String remaining) {
+        seller.increaseReceivable(new BigDecimal(receivable));
+
+        distribute(null, "9500", "500", "0", "0");
+
+        assertThat(seller.getBalance()).isEqualByComparingTo("0");
+        assertThat(seller.getReceivable()).isEqualByComparingTo(remaining);
+        assertThat(revenue.getBalance()).isEqualByComparingTo("10000");
+        assertThat(sum(SELLER_WALLET_ID, RefType.RECEIVABLE_COLLECTION, TransactionStatus.OUT)).isEqualByComparingTo("9500");
+        assertBalanced();
+    }
+
+    @Test
+    @DisplayName("같은 settlementId로 다시 보내도 미수금 차감은 한 번만")
+    void positivePayoutRetryCollectsOnce() {
+        seller.increaseReceivable(new BigDecimal("3000"));
+
+        distribute(null, "9500", "500", "0", "0");
+        distribute(null, "9500", "500", "0", "0");
+
+        assertThat(seller.getBalance()).isEqualByComparingTo("6500");
+        assertThat(revenue.getBalance()).isEqualByComparingTo("3500");
+        assertThat(rowsOf(SELLER_WALLET_ID)).hasSize(2);
+        assertThat(sum(REVENUE_WALLET_ID, RefType.RECEIVABLE_COLLECTION, TransactionStatus.IN)).isEqualByComparingTo("3000");
+    }
+
+    @ParameterizedTest(name = "정산금 {0}")
+    @CsvSource({"0, 0, 1500", "-1000, 0, 2500"})
+    @DisplayName("0원, 음수 정산에는 미수금 차감이 없다 (#379 흐름 그대로)")
+    void nonPositivePayoutDoesNotCollectReceivable(String payout, String fee, String burden) {
+        seller.increaseReceivable(new BigDecimal("3000"));
+
+        distribute(null, payout, fee, "0", burden);
+
+        assertThat(sum(SELLER_WALLET_ID, RefType.RECEIVABLE_COLLECTION, TransactionStatus.OUT)).isEqualByComparingTo("0");
+        assertThat(sum(REVENUE_WALLET_ID, RefType.RECEIVABLE_COLLECTION, TransactionStatus.IN)).isEqualByComparingTo("0");
+        assertBalanced();
+    }
+
+    private Long settlementRowId() {
+        return ledger.stream()
+                .filter(t -> t.getWallet().getId().equals(SELLER_WALLET_ID) && t.getRefType() == RefType.SETTLEMENT)
+                .findFirst().orElseThrow().getId();
+    }
+
     private void distribute(Long sellerOrderId, String payoutAmount, String fee, String shippingFee, String burden) {
         paymentService.distributeSettlement(SETTLEMENT_ID, SELLER_ID, sellerOrderId,
                 new BigDecimal(payoutAmount), new BigDecimal(fee), new BigDecimal(shippingFee), new BigDecimal(burden));
     }
 
-    // HOLDING 차감(판매액 + 옮긴 배송비) + 판매자에게서 회수한 금액 = REVENUE 입금 + 판매자 입금
+    // HOLDING 차감(판매액 + 옮긴 배송비) + 판매자에게서 회수, 미수금 차감한 금액 = REVENUE 입금 + 판매자 입금
     private void assertBalanced() {
         BigDecimal holdingOut = sum(HOLDING_WALLET_ID, null, TransactionStatus.OUT);
-        BigDecimal collected = sum(SELLER_WALLET_ID, RefType.SETTLEMENT_COLLECTION, TransactionStatus.OUT);
+        BigDecimal collected = sum(SELLER_WALLET_ID, RefType.SETTLEMENT_COLLECTION, TransactionStatus.OUT)
+                .add(sum(SELLER_WALLET_ID, RefType.RECEIVABLE_COLLECTION, TransactionStatus.OUT));
         BigDecimal revenueIn = sum(REVENUE_WALLET_ID, null, TransactionStatus.IN);
         BigDecimal sellerIn = sum(SELLER_WALLET_ID, RefType.SETTLEMENT, TransactionStatus.IN);
 
