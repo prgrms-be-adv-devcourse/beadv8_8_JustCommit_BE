@@ -26,9 +26,14 @@ import org.springframework.stereotype.Component;
  * alias {@code products}에서 키워드로 상품을 찾는다 (#486).
  *
  * <p>쿼리 = bool { should: 키워드 (점수), filter: 노출 규칙 · 필터 (점수 없이 거르기만) }.
- * 찾는 곳 · 가중치는 제목 3 > 품종명 · 별칭 · 학명 2 (docs/flows/search-recommend.md 「찾는 곳」 · 「정렬」, 설명은 2단계).
+ * 찾는 곳 · 가중치는 제목 3 > 품종명 · 별칭 · 학명 2 > 설명 1 (docs/flows/search-recommend.md 「찾는 곳」 · 「정렬」).
  * 각 필드는 {@code .compact} 하위 필드(공백 · 기호를 지운 분석기)도 같은 가중치로 찾아 "몬 스테라"가 "몬스테라"에 걸리게 한다.
- * 별칭은 품종에 붙은 것이라, 별칭이 여러 품종에 걸리면 그 품종들의 상품이 모두 나온다. 오타 허용은 #487.
+ * 별칭은 품종에 붙은 것이라, 별칭이 여러 품종에 걸리면 그 품종들의 상품이 모두 나온다.
+ *
+ * <p>오타 허용(#487)은 {@code .word} 하위 필드(공백으로만 자름)에서 한다. 한국어 분석기는 모르는 단어를 다르게 잘라
+ * ("몬스테러" → 몬스 + 테러) 원래 토큰과 비교할 수 없기 때문. 단어 길이로 허용 글자 수가 정해진다
+ * ({@code AUTO:3,6}: 1 ~ 2글자는 정확히, 3 ~ 5글자는 1글자, 6글자 이상은 2글자). 오타 허용은 정확히 맞는 것보다
+ * 점수가 낮도록 가중치를 절반으로 둔다. 설명은 길어 엉뚱한 단어가 걸리기 쉬워 오타를 허용하지 않는다.
  *
  * <p>연결 실패 · 시간 초과는 1번 더 보낸다 (docs/conventions/resilience.md product → OpenSearch 재시도 1회).
  * 그래도 실패하거나 OpenSearch가 오류로 답하면 {@link ProductSearchUnavailableException} (서비스가 LIKE로 대신).
@@ -41,6 +46,10 @@ public class OpenSearchProductSearch implements ProductKeywordSearch {
     static final float TITLE_BOOST = 3f;
     // 품종명 · 별칭 · 학명은 모두 「어떤 품종인가」를 가리키므로 같은 가중치
     static final float SPECIES_BOOST = 2f;
+    static final float DESCRIPTION_BOOST = 1f;
+    // 오타 허용 매칭은 정확히 맞는 것보다 낮게
+    static final float TYPO_FACTOR = 0.5f;
+    static final String TYPO_FUZZINESS = "AUTO:3,6";
     private static final int MAX_ATTEMPTS = 2;
     // OpenSearch index.max_result_window 기본값. from + size가 이보다 크면 OpenSearch가 오류로 답한다
     static final int MAX_RESULT_WINDOW = 10_000;
@@ -119,7 +128,12 @@ public class OpenSearchProductSearch implements ProductKeywordSearch {
                 match("speciesAliases", keyword, SPECIES_BOOST),
                 match("speciesAliases.compact", keyword, SPECIES_BOOST),
                 match("scientificName", keyword, SPECIES_BOOST),
-                match("scientificName.compact", keyword, SPECIES_BOOST));
+                match("scientificName.compact", keyword, SPECIES_BOOST),
+                match("description", keyword, DESCRIPTION_BOOST),
+                typo("title.word", keyword, TITLE_BOOST),
+                typo("speciesName.word", keyword, SPECIES_BOOST),
+                typo("speciesAliases.word", keyword, SPECIES_BOOST),
+                typo("scientificName.word", keyword, SPECIES_BOOST));
 
         return Query.of(q -> q.bool(bool -> bool
                 .filter(filters)
@@ -135,6 +149,16 @@ public class OpenSearchProductSearch implements ProductKeywordSearch {
                 .query(FieldValue.of(keyword))
                 .operator(Operator.And)
                 .boost(boost)));
+    }
+
+    // 오타 허용: 공백으로 자른 단어마다 길이에 따라 1 ~ 2글자 다른 것도 맞음. 단어가 모두 맞아야 함(AND)
+    private static Query typo(String field, String keyword, float boost) {
+        return Query.of(q -> q.match(match -> match
+                .field(field)
+                .query(FieldValue.of(keyword))
+                .operator(Operator.And)
+                .fuzziness(TYPO_FUZZINESS)
+                .boost(boost * TYPO_FACTOR)));
     }
 
     private static Query term(String field, FieldValue value) {

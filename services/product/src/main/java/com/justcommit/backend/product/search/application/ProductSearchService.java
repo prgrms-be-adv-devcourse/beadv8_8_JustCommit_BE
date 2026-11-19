@@ -71,16 +71,16 @@ public class ProductSearchService {
 
     /**
      * 검색 노출 규칙으로 볼 상태: ACTIVE · PAYMENT_PENDING · SOLD_OUT. onSale=true면 ACTIVE만,
-     * status를 주면 그 상태만 (둘 다 주면 둘 다 만족해야 함). 노출 상태 밖의 status는 400.
+     * status를 주면 그 상태들만 (여러 개 가능, 둘 다 주면 둘 다 만족해야 함). 노출 상태 밖의 status가 하나라도 있으면 400.
      */
     private static List<ProductStatus> statusesOf(ProductSearchRequest request) {
-        ProductStatus status = request.status();
-        if (status != null && !ProductSpecifications.SEARCHABLE_STATUSES.contains(status)) {
+        List<ProductStatus> status = request.status() == null ? List.of() : request.status();
+        if (!ProductSpecifications.SEARCHABLE_STATUSES.containsAll(status)) {
             throw new BusinessException(ProductErrorCode.INVALID_SEARCH_STATUS);
         }
         return ProductSpecifications.SEARCHABLE_STATUSES.stream()
                 .filter(s -> !Boolean.TRUE.equals(request.onSale()) || s == ProductStatus.ACTIVE)
-                .filter(s -> status == null || s == status)
+                .filter(s -> status.isEmpty() || status.contains(s))
                 .toList();
     }
 

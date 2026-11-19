@@ -54,6 +54,29 @@ public class OrderController {
         return ResponseEntity.ok(orderReadService.sellerOrder(member.memberId(), sellerOrderId));
     }
 
+    // 판매자 수락 (#284): 남은 수락 대기 주문상품을 모두 수락한다. 이미 처리됐으면 409
+    @PostMapping("/seller/{sellerOrderId}/accept")
+    public ResponseEntity<Void> acceptSellerOrder(
+            @AuthenticationPrincipal AuthMember member, @PathVariable Long sellerOrderId) {
+        if (member == null) {
+            throw new BusinessException(OrderErrorCode.AUTH_REQUIRED);
+        }
+        orderService.acceptSellerOrder(member.memberId(), sellerOrderId);
+        return ResponseEntity.ok().build();
+    }
+
+    // 판매자 거절 (#284): 고른 주문상품은 환불, 나머지는 수락한다. 이미 처리됐으면 409
+    @PostMapping("/seller/{sellerOrderId}/reject")
+    public ResponseEntity<Void> rejectSellerOrderItems(
+            @AuthenticationPrincipal AuthMember member, @PathVariable Long sellerOrderId,
+            @Valid @RequestBody SellerOrderRejectRequest request) {
+        if (member == null) {
+            throw new BusinessException(OrderErrorCode.AUTH_REQUIRED);
+        }
+        orderService.rejectSellerOrderItems(member.memberId(), sellerOrderId, request.orderItemIds());
+        return ResponseEntity.ok().build();
+    }
+
     @PostMapping("/cart")
     public ResponseEntity<OrderCreateResponse> createFromCart(
             @AuthenticationPrincipal AuthMember member,

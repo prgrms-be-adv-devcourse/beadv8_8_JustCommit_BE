@@ -23,6 +23,7 @@ import com.justcommit.backend.product.product.presentation.dto.ProductSearchResp
 import com.justcommit.backend.product.search.infrastructure.OpenSearchConfig;
 import com.justcommit.backend.product.search.infrastructure.OpenSearchProductIndex;
 import com.justcommit.backend.product.search.infrastructure.OpenSearchProductSearch;
+import com.justcommit.backend.product.search.infrastructure.ProductIndexAdmin;
 import com.justcommit.backend.product.search.infrastructure.ProductIndexInitializer;
 import com.justcommit.backend.product.species.domain.Species;
 import com.justcommit.backend.product.species.infrastructure.SpeciesRepository;
@@ -72,7 +73,7 @@ import tools.jackson.databind.json.JsonMapper;
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaAuditingConfig.class, ClockConfig.class, ProductEventPublisher.class, ProductIndexService.class,
-        OpenSearchProductIndex.class, ProductSearchIndexListener.class, OpenSearchProductSearch.class,
+        OpenSearchProductIndex.class, ProductIndexAdmin.class, ProductSearchIndexListener.class, OpenSearchProductSearch.class,
         ProductSearchService.class, ProductSearchIndexScenarioTest.Config.class})
 @ImportAutoConfiguration({KafkaAutoConfiguration.class, MessagingConsumerAutoConfiguration.class,
         OutboxAutoConfiguration.class})
@@ -145,7 +146,7 @@ class ProductSearchIndexScenarioTest {
         if (client.indices().exists(request -> request.index(INDEX_V1)).value()) {
             client.indices().delete(request -> request.index(INDEX_V1));
         }
-        new ProductIndexInitializer(client).initialize();
+        new ProductIndexInitializer(new ProductIndexAdmin(client)).initialize();
         assertThat(client.indices().existsAlias(request -> request.name(ProductIndexInitializer.ALIAS)).value()).isTrue();
     }
 
