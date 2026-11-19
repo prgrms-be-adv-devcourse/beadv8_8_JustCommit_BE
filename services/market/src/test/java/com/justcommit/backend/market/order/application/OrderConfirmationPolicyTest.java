@@ -12,7 +12,10 @@ import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.infrastructure.kafka.PurchaseConfirmedEventPublisher;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -42,6 +45,44 @@ class OrderConfirmationPolicyTest {
     @Mock PurchaseConfirmedEventPublisher eventPublisher;
     @InjectMocks OrderItemConfirmationService confirmationService;
 
+    @ParameterizedTest
+    @EnumSource(value = OrderItemStatus.class, names = {"CANCEL_PROCESSING", "REVIEW_REQUIRED"})
+    @DisplayName("환불 결과를 기다리는 주문상품(취소 중, 확인 필요)이 남으면 다른 상품을 확정해도 정산, 주문 완료를 하지 않는다 (#282)")
+    void cancellationInProgressBlocksSettlement(OrderItemStatus pending) {
+        Fixture fixture = fixture();
+        ReflectionTestUtils.setField(fixture.second(), "status", pending);
+        stubDelivered(fixture, fixture.first());
+
+        confirmationService.confirm(10L, 11L);
+
+        assertThat(fixture.first().getStatus()).isEqualTo(OrderItemStatus.CONFIRMED);
+        assertThat(fixture.sellerOrder().getConfirmedAt()).isNull();
+        assertThat(fixture.sellerOrder().getOrder().getStatus()).isEqualTo(OrderStatus.PAID);
+        verify(eventPublisher, never()).publishAfterCommit(any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = OrderItemStatus.class, names = {"CANCEL_PROCESSING", "REVIEW_REQUIRED"})
+    @DisplayName("다른 판매자 주문에 취소 중, 확인 필요 주문상품이 남으면 이 판매자 주문은 정산하되 주문은 완료하지 않는다 (탈퇴 확인에 남도록)")
+    void cancellationInAnotherSellerOrderKeepsOrderPaid(OrderItemStatus pending) {
+        Fixture fixture = fixture();
+        ReflectionTestUtils.setField(fixture.second(), "status", OrderItemStatus.CONFIRMED);
+        Orders order = fixture.sellerOrder().getOrder();
+        SellerOrder other = new SellerOrder(order, 30L);
+        OrdersItem otherItem = new OrdersItem(other, 201L, "다른 판매자", new BigDecimal("5000"));
+        other.addItems(List.of(otherItem));
+        ReflectionTestUtils.setField(otherItem, "status", pending);
+        other.calculateSettlementBaseAmount(); // 취소 흐름 주문상품은 정산 기준액에서 빠져 0원
+        order.addSellerOrders(List.of(other));
+        stubDelivered(fixture, fixture.first());
+
+        confirmationService.confirm(10L, 11L);
+
+        assertThat(fixture.sellerOrder().getConfirmedAt()).isNotNull();
+        verify(eventPublisher, times(1)).publishAfterCommit(any());
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+    }
+
     @Test
     void refundRequestedItemBlocksSettlementAfterAnotherItemIsConfirmed() {
         Fixture fixture = fixture();
@@ -59,8 +100,8 @@ class OrderConfirmationPolicyTest {
     @Test
     void allCancelledItemsMakeTheOrderCancelledWithoutSettlement() {
         Fixture fixture = fixture();
-        fixture.first().cancel();
-        fixture.second().cancel();
+        ReflectionTestUtils.setField(fixture.first(), "status", OrderItemStatus.CANCELLED);
+        ReflectionTestUtils.setField(fixture.second(), "status", OrderItemStatus.CANCELLED);
         fixture.sellerOrder().calculateSettlementBaseAmount();
 
         ReflectionTestUtils.invokeMethod(confirmationService, "updateOrderStatus", fixture.sellerOrder().getOrder());
@@ -110,7 +151,7 @@ class OrderConfirmationPolicyTest {
     @Test
     void cancelledItemIsExcludedFromSettlementWithoutChangingOriginalAmounts() {
         Fixture fixture = fixture();
-        fixture.second().cancel();
+        ReflectionTestUtils.setField(fixture.second(), "status", OrderItemStatus.CANCELLED);
         fixture.sellerOrder().calculateSettlementBaseAmount();
         stubDelivered(fixture, fixture.first());
 

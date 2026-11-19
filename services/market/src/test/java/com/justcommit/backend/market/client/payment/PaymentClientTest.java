@@ -189,8 +189,8 @@ class PaymentClientTest {
         payment.stubFor(post(ITEM_REFUND).willReturn(okJson(json("payment/refunded.json"))));
 
         runner().run(context -> assertThat(context.getBean(PaymentUseCase.class)
-                .refundCancelledItem(5L, 99L, 10L, new BigDecimal("10000")).status())
-                .isEqualTo(PaymentStatus.REFUNDED));
+                .refundCancelledItem(5L, 99L, 10L, new BigDecimal("10000")))
+                .isEqualTo(RefundOutcome.refunded()));
         payment.verify(postRequestedFor(urlPathEqualTo(ITEM_REFUND))
                 .withHeader("Idempotency-Key", equalTo("5"))
                 .withRequestBody(equalToJson("{\"orderId\": 99, \"buyerId\": 10, \"amount\": 10000}")));
@@ -202,36 +202,43 @@ class PaymentClientTest {
         payment.stubFor(post(SHIPPING_FEE_REFUND).willReturn(okJson(json("payment/already-refunded.json"))));
 
         runner().run(context -> assertThat(context.getBean(PaymentUseCase.class)
-                .refundShippingFee(7L, 99L, 10L, new BigDecimal("3000")).status())
-                .isEqualTo(PaymentStatus.ALREADY_REFUNDED));
+                .refundShippingFee(7L, 99L, 10L, new BigDecimal("3000")))
+                .isEqualTo(RefundOutcome.refunded()));
         payment.verify(postRequestedFor(urlPathEqualTo(SHIPPING_FEE_REFUND))
                 .withHeader("Idempotency-Key", equalTo("7"))
                 .withRequestBody(equalToJson("{\"orderId\": 99, \"buyerId\": 10, \"amount\": 3000}")));
     }
 
     @Test
-    @DisplayName("환불 확정 실패(4xx)는 다시 부르지 않고 예외로 알려 취소를 롤백한다")
+    @DisplayName("환불 확정 실패(4xx)는 다시 부르지 않고 거절로 분류한다 (확인 필요, #282)")
     void refundRejectionIsNotRetried() {
         payment.stubFor(post(ITEM_REFUND).willReturn(error(409, "payment/refund-rejected.json")));
 
-        runner().run(context -> assertThatThrownBy(() -> context.getBean(PaymentUseCase.class)
+        runner().run(context -> assertThat(context.getBean(PaymentUseCase.class)
                 .refundCancelledItem(5L, 99L, 10L, new BigDecimal("10000")))
-                .isInstanceOfSatisfying(InternalApiErrorException.class, e -> {
-                    assertThat(e.status()).isEqualTo(409);
-                    assertThat(e.code()).isEqualTo("REFUND_NOT_ALLOWED");
-                }));
+                .isEqualTo(RefundOutcome.rejected("HTTP_409_REFUND_NOT_ALLOWED")));
         payment.verify(1, postRequestedFor(urlPathEqualTo(ITEM_REFUND)));
     }
 
     @Test
-    @DisplayName("환불 응답 타임아웃은 결과 불명으로 알려 취소를 실패로 응답한다 (같은 키로 다시 시도)")
+    @DisplayName("환불 응답 타임아웃은 결과 불명으로 분류한다 (같은 키로 다시 시도)")
     void refundTimeoutIsResultUnknown() {
         payment.stubFor(post(ITEM_REFUND).willReturn(okJson(json("payment/refunded.json")).withFixedDelay(1000)));
 
-        runner().run(context -> assertThatThrownBy(() -> context.getBean(PaymentUseCase.class)
+        runner().run(context -> assertThat(context.getBean(PaymentUseCase.class)
                 .refundCancelledItem(5L, 99L, 10L, new BigDecimal("10000")))
-                .isInstanceOf(InternalApiResultUnknownException.class));
+                .isEqualTo(RefundOutcome.unknown("TIMEOUT")));
         payment.verify(1, postRequestedFor(urlPathEqualTo(ITEM_REFUND)));
+    }
+
+    @Test
+    @DisplayName("환불 5xx는 결과 불명으로 분류한다")
+    void refundServerErrorIsResultUnknown() {
+        payment.stubFor(post(SHIPPING_FEE_REFUND).willReturn(error(503, "payment/server-error.json")));
+
+        runner().run(context -> assertThat(context.getBean(PaymentUseCase.class)
+                .refundShippingFee(7L, 99L, 10L, new BigDecimal("3000")).type())
+                .isEqualTo(RefundOutcome.Type.UNKNOWN));
     }
 
     private PaymentOutcome pay() {

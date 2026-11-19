@@ -117,6 +117,12 @@ class OrderServiceTest {
         ReflectionTestUtils.setField(orderService, "orderPaymentTransactions", new OrderPaymentTransactions(
                 new NoOpTransactionManager(), ordersRepository, outboxPublisher, orderQuery,
                 sellerOrderEventPublisher, shipmentService, cartService));
+        OrderCancelTransactions cancelTransactions = new OrderCancelTransactions(new NoOpTransactionManager(),
+                ordersRepository, sellerOrderRepository, ordersItemRepository, shipmentService, shipmentQuery,
+                outboxPublisher, sellerOrderEventPublisher);
+        ReflectionTestUtils.setField(orderService, "orderCancelTransactions", cancelTransactions);
+        ReflectionTestUtils.setField(orderService, "orderCancelRefunder",
+                new OrderCancelRefunder(paymentUseCase, cancelTransactions));
     }
 
     @Test
@@ -692,59 +698,6 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("전체 취소는 상품 · 배송비 환불이 모두 성공한 뒤 주문상품마다 판매 재개 이벤트를 남긴다")
-    void cancelPublishesItemCancelledAfterAllRefunds() {
-        Orders order = cancellableOrder();
-        when(paymentUseCase.refundCancelledItem(any(), eq(99L), eq(10L), any()))
-                .thenReturn(new PaymentResult(PaymentStatus.REFUNDED, money("0")));
-        when(paymentUseCase.refundShippingFee(eq(7L), eq(99L), eq(10L), any()))
-                .thenReturn(new PaymentResult(PaymentStatus.REFUNDED, money("0")));
-
-        orderService.cancel(10L, 99L);
-
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        InOrder inOrder = inOrder(paymentUseCase, outboxPublisher);
-        inOrder.verify(paymentUseCase).refundCancelledItem(11L, 99L, 10L, money("10000"));
-        inOrder.verify(paymentUseCase).refundCancelledItem(12L, 99L, 10L, money("20000"));
-        inOrder.verify(paymentUseCase).refundShippingFee(7L, 99L, 10L, money("3000"));
-        inOrder.verify(outboxPublisher).publish(
-                new OrderItemCancelled(99L, 11L, 101L, OrderItemCancelled.CancelReason.BUYER));
-        inOrder.verify(outboxPublisher).publish(
-                new OrderItemCancelled(99L, 12L, 102L, OrderItemCancelled.CancelReason.BUYER));
-    }
-
-    @Test
-    @DisplayName("상품 환불이 거절되면 판매 재개 이벤트를 남기지 않는다")
-    void cancelDoesNotPublishItemCancelledWhenRefundFails() {
-        cancellableOrder();
-        when(paymentUseCase.refundCancelledItem(any(), eq(99L), eq(10L), any()))
-                .thenReturn(new PaymentResult(PaymentStatus.WALLET_NOT_FOUND, null));
-
-        assertThatThrownBy(() -> orderService.cancel(10L, 99L))
-                .isInstanceOf(BusinessException.class);
-
-        verify(outboxPublisher, never()).publish(any());
-    }
-
-    @Test
-    @DisplayName("[S-E04] 같은 주문을 두 번 취소하면 두 번째는 아무것도 하지 않아 상품 · 배송비 환불은 1번씩만")
-    void cancelTwiceRefundsOnce() {
-        Orders order = cancellableOrder();
-        when(paymentUseCase.refundCancelledItem(any(), eq(99L), eq(10L), any()))
-                .thenReturn(new PaymentResult(PaymentStatus.REFUNDED, money("0")));
-        when(paymentUseCase.refundShippingFee(eq(7L), eq(99L), eq(10L), any()))
-                .thenReturn(new PaymentResult(PaymentStatus.REFUNDED, money("0")));
-
-        orderService.cancel(10L, 99L);
-        orderService.cancel(10L, 99L);
-
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        verify(paymentUseCase).refundCancelledItem(11L, 99L, 10L, money("10000"));
-        verify(paymentUseCase).refundCancelledItem(12L, 99L, 10L, money("20000"));
-        verify(paymentUseCase).refundShippingFee(7L, 99L, 10L, money("3000"));
-    }
-
-    @Test
     @DisplayName("[S-A07] 남의 주문을 취소하면 ORDER_NOT_FOUND(404), 환불하지 않음")
     void rejectsCancelFromAnotherMember() {
         when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(pendingOrder(10L)));
@@ -754,89 +707,6 @@ class OrderServiceTest {
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_NOT_FOUND));
         verify(paymentUseCase, never()).refundCancelledItem(any(), any(), any(), any());
         verify(paymentUseCase, never()).refundShippingFee(any(), any(), any(), any());
-    }
-
-    // 결제된 주문 1건 · 판매자 주문 1건 · 주문상품 2건 · 배송비 3,000원 · 배송 READY (취소 가능)
-    private Orders cancellableOrder() {
-        Orders order = pendingOrder(10L);
-        order.paid();
-        SellerOrder sellerOrder = new SellerOrder(order, 20L);
-        OrdersItem first = new OrdersItem(sellerOrder, 101L, "몬스테라", money("10000"));
-        OrdersItem second = new OrdersItem(sellerOrder, 102L, "선인장", money("20000"));
-        sellerOrder.addItems(List.of(first, second));
-        sellerOrder.setShippingFee(money("3000"));
-        order.addSellerOrders(List.of(sellerOrder));
-        ReflectionTestUtils.setField(sellerOrder, "id", 7L);
-        ReflectionTestUtils.setField(first, "id", 11L);
-        ReflectionTestUtils.setField(second, "id", 12L);
-        when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
-        when(sellerOrderRepository.findAllLockedByOrderId(99L)).thenReturn(List.of(sellerOrder));
-        when(shipmentQuery.findBySellerOrderIds(List.of(7L)))
-                .thenReturn(Map.of(7L, new ShipmentResult(8L, "READY", null)));
-        return order;
-    }
-
-    @Test
-    @DisplayName("부분 취소는 상품 환불이 성공한 뒤 그 주문상품의 판매 재개 이벤트를 남긴다")
-    void itemCancelPublishesItemCancelledAfterRefund() {
-        stubConfirmableItem();
-        when(shipmentQuery.findBySellerOrderId(7L)).thenReturn(new ShipmentResult(8L, "READY", null));
-        when(paymentUseCase.refundCancelledItem(11L, 99L, 10L, money("10000")))
-                .thenReturn(new PaymentResult(PaymentStatus.REFUNDED, money("0")));
-
-        orderService.itemCancel(10L, 11L);
-
-        InOrder inOrder = inOrder(paymentUseCase, outboxPublisher);
-        inOrder.verify(paymentUseCase).refundCancelledItem(11L, 99L, 10L, money("10000"));
-        inOrder.verify(outboxPublisher).publish(
-                new OrderItemCancelled(99L, 11L, 101L, OrderItemCancelled.CancelReason.BUYER));
-    }
-
-    @Test
-    @DisplayName("부분 취소에서 상품 환불이 거절되면 판매 재개 이벤트를 남기지 않는다")
-    void itemCancelDoesNotPublishItemCancelledWhenRefundFails() {
-        stubConfirmableItem();
-        when(shipmentQuery.findBySellerOrderId(7L)).thenReturn(new ShipmentResult(8L, "READY", null));
-        when(paymentUseCase.refundCancelledItem(11L, 99L, 10L, money("10000")))
-                .thenReturn(new PaymentResult(PaymentStatus.WALLET_NOT_FOUND, null));
-
-        assertThatThrownBy(() -> orderService.itemCancel(10L, 11L))
-                .isInstanceOf(BusinessException.class);
-
-        verify(outboxPublisher, never()).publish(any());
-    }
-
-    @Test
-    @DisplayName("[S-E02] 판매자 주문에 상품이 남는 부분 취소는 판매자에게 일부 취소 알림(OrderItemCancelled)을 보낸다")
-    void itemCancelPublishesPartialCancelNoticeWhenOtherItemsRemain() {
-        Orders order = pendingOrder(10L);
-        order.paid();
-        SellerOrder sellerOrder = new SellerOrder(order, 20L);
-        OrdersItem first = new OrdersItem(sellerOrder, 101L, "몬스테라", money("10000"));
-        OrdersItem second = new OrdersItem(sellerOrder, 102L, "선인장", money("20000"));
-        sellerOrder.addItems(List.of(first, second));
-        order.addSellerOrders(List.of(sellerOrder));
-        ReflectionTestUtils.setField(sellerOrder, "id", 7L);
-        ReflectionTestUtils.setField(first, "id", 11L);
-        ReflectionTestUtils.setField(second, "id", 12L);
-        when(ordersItemRepository.findOrderIdByItemId(11L)).thenReturn(Optional.of(99L));
-        when(ordersRepository.findLockedById(99L)).thenReturn(Optional.of(order));
-        when(ordersItemRepository.findSellerOrderIdByItemId(11L)).thenReturn(Optional.of(7L));
-        when(sellerOrderRepository.findLockedById(7L)).thenReturn(Optional.of(sellerOrder));
-        when(ordersItemRepository.findById(11L)).thenReturn(Optional.of(first));
-        when(shipmentQuery.findBySellerOrderId(7L)).thenReturn(new ShipmentResult(8L, "READY", null));
-        when(paymentUseCase.refundCancelledItem(11L, 99L, 10L, money("10000")))
-                .thenReturn(new PaymentResult(PaymentStatus.REFUNDED, money("0")));
-
-        orderService.itemCancel(10L, 11L);
-
-        ArgumentCaptor<OrderItemCancelledEvent> notice = ArgumentCaptor.forClass(OrderItemCancelledEvent.class);
-        verify(sellerOrderEventPublisher).publishAfterCommit(notice.capture());
-        assertThat(notice.getValue().orderItemId()).isEqualTo(11L);
-        assertThat(notice.getValue().sellerOrderId()).isEqualTo(7L);
-        assertThat(notice.getValue().sellerId()).isEqualTo(20L);
-        assertThat(notice.getValue().productName()).isEqualTo("몬스테라");
-        verify(sellerOrderEventPublisher, never()).publishAfterCommit(any(SellerOrderCancelledEvent.class));
     }
 
     @Test

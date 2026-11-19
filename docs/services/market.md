@@ -27,7 +27,7 @@ market 서비스가 소유하는 테이블입니다 (market DB).
 | `CART` | 장바구니 |
 | `ORDERS` | 구매자 주문 |
 | `SELLER_ORDER` | 판매자별 주문 (배송비 · 배송 단위 · `confirmedAt`) |
-| `ORDERS_ITEM` | 주문상품 (`ACCEPT_PENDING` · `NORMAL` · `CANCELLED` 등) |
+| `ORDERS_ITEM` | 주문상품 (`ACCEPT_PENDING` · `NORMAL` · `CANCEL_PROCESSING`, `CANCELLED`, `REVIEW_REQUIRED` 등, 환불 Saga 복구용 `attempt_count`, `attempted_at`, `last_error`) |
 | `SHIPMENT` | 배송 (방향: 가는 길 / 반품, 택배 예약 · 취소 큐용 `next_attempt_at` · `attempt_count` · `last_error`, 취소 누른 시각 `cancel_requested_at`) |
 | `SHIPMENT_CANCEL_RESULT` | 택배 취소 결과 (배송 · 판매자 주문 · 취소됨 / 취소 불가 · 시각). 택배 취소 큐가 쓰고 주문 Saga 복구가 읽어 환불 · 되돌림 → [ADR 0026](../decisions/0026-courier-cancel-queue-and-distance-judgment.md) |
 | ⬜ 반품 신청 (이름 미정) | 주문상품별 반품 사유 · 상태 |
