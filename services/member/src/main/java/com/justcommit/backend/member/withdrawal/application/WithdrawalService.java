@@ -2,6 +2,7 @@ package com.justcommit.backend.member.withdrawal.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.exception.CommonErrorCode;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.auth.application.RevocationOutcomeUnknownException;
 import com.justcommit.backend.member.auth.application.RevocationResult;
@@ -14,6 +15,7 @@ import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.domain.exception.PasswordChangeLockedException;
+import com.justcommit.backend.member.event.MemberWithdrawn;
 import com.justcommit.backend.member.infrastructure.crypto.MemberHmac;
 import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
@@ -59,6 +61,7 @@ public class WithdrawalService {
   private final SellerRepository sellerRepository;
   private final MemberHmac memberHmac;
   private final DatabaseClock databaseClock;
+  private final OutboxPublisher outboxPublisher;
 
   // 사전 확인 (화면 안내용, 결과를 저장하지 않음). 활동 중인 회원이 아니면 외부 확인 없이 404
   // 확인 실패(UNAVAILABLE)면 일부 서비스에서 받은 차단 사유도 보여 주지 않고 503
@@ -159,7 +162,8 @@ public class WithdrawalService {
     addressRepository.deleteAllByMemberId(member.getId());
     sellerRepository.findById(member.getId()).ifPresent(seller -> seller.changeIntro(null));
     member.withdraw();
-    // #408: MemberWithdrawn Outbox를 여기(같은 트랜잭션)에 저장한다
+    // 다른 서비스 복제본에 탈퇴를 알린다 (#408). 같은 트랜잭션이라 탈퇴가 롤백되면 이벤트도 남지 않음
+    outboxPublisher.publish(new MemberWithdrawn(member.getId()));
   }
 
   private Member findActiveMember(Long memberId) {
