@@ -57,7 +57,7 @@ class ProductIndexInitializerTest {
         if (client.indices().exists(request -> request.index(ProductIndexInitializer.INDEX_V1)).value()) {
             client.indices().delete(request -> request.index(ProductIndexInitializer.INDEX_V1));
         }
-        initializer = new ProductIndexInitializer(client);
+        initializer = new ProductIndexInitializer(new ProductIndexAdmin(client));
     }
 
     @Test
@@ -70,7 +70,7 @@ class ProductIndexInitializerTest {
     }
 
     @Test
-    @DisplayName("매핑: 검색 필드는 ko_text + .compact(ko_compact), 필터 · 정렬 필드는 keyword · long · boolean · date")
+    @DisplayName("매핑: 검색 필드는 ko_text + .compact(ko_compact) + .word(ko_word), 필터 · 정렬 필드는 keyword · long · boolean · date")
     void mapping() throws Exception {
         initializer.createIndexIfAbsent();
 
@@ -81,6 +81,8 @@ class ProductIndexInitializerTest {
             Property property = properties.get(field);
             assertThat(property.text().analyzer()).as(field).isEqualTo("ko_text");
             assertThat(property.text().fields().get("compact").text().analyzer()).as(field).isEqualTo("ko_compact");
+            // 오타 허용용: 공백으로만 자름 (#487)
+            assertThat(property.text().fields().get("word").text().analyzer()).as(field).isEqualTo("ko_word");
         }
         assertThat(properties.get("description").text().analyzer()).isEqualTo("ko_text");
         assertThat(properties.get("productId").isLong()).isTrue();
@@ -128,7 +130,7 @@ class ProductIndexInitializerTest {
     void startupDoesNotFailWhenOpenSearchIsDown() throws Exception {
         OpenSearchConfig config = new OpenSearchConfig("http://localhost:1", Duration.ofSeconds(1), Duration.ofSeconds(2));
         ProductIndexInitializer unreachable =
-                new ProductIndexInitializer(config.openSearchClient(config.openSearchTransport()));
+                new ProductIndexInitializer(new ProductIndexAdmin(config.openSearchClient(config.openSearchTransport())));
 
         assertThatCode(unreachable::initialize).doesNotThrowAnyException();
         assertThat(unreachable.isReady()).isFalse();

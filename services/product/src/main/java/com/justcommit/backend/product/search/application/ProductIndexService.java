@@ -1,6 +1,8 @@
 package com.justcommit.backend.product.search.application;
 
+import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.product.ProductStatus;
+import com.justcommit.backend.product.exception.ProductErrorCode;
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import com.justcommit.backend.product.search.application.ProductSearchIndex.BulkResult;
@@ -12,6 +14,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +41,8 @@ public class ProductIndexService {
     private final ProductRepository productRepository;
     private final SpeciesRepository speciesRepository;
     private final ProductSearchIndex searchIndex;
+    // 무중단 재색인은 한 번에 하나만 (같은 서버 안에서)
+    private final AtomicBoolean rebuilding = new AtomicBoolean(false);
 
     // 이벤트 한 건: 이 상품의 문서를 DB 최신 값으로 맞춤. OpenSearch 오류는 그대로 던져 공통 재시도 · DLT로 보냄
     public void sync(Long productId) {
@@ -64,6 +70,75 @@ public class ProductIndexService {
      * 삭제 상품은 문서를 지우고(남아 있던 문서 정리), 나머지는 덮어쓴다. 여러 번 돌려도 결과가 같다.
      */
     public ReindexResult reindexAll() {
+        return reindex(searchIndex::bulk);
+    }
+
+    /**
+     * 무중단 재색인 (#487): 매핑 · 분석기를 바꿨거나 별칭 · 학명 데이터가 바뀌었을 때 검색을 멈추지 않고 인덱스를 새로 만든다.
+     *
+     * <ol>
+     *   <li>지금 매핑으로 다음 번호의 인덱스(products_v{n+1})를 alias 없이 만든다. 그동안 검색 · 이벤트 색인은 옛 인덱스로 계속 간다.</li>
+     *   <li>DB 전체를 새 인덱스에 채운다. 실패한 건이 있으면 새 인덱스를 지우고 멈춘다 (alias는 그대로라 검색에 영향 없음).</li>
+     *   <li>새 인덱스를 refresh해 채운 문서가 모두 검색되게 한 뒤, alias를 한 요청으로 새 인덱스로 옮긴다
+     *       (refresh 전에 옮기면 최대 1초 동안 일부만 검색됨).</li>
+     *   <li>채우는 동안 옛 인덱스로 간 변경을 맞추려고 alias(이제 새 인덱스)에 전체 색인을 한 번 더 한다.
+     *       외부 버전이라 이미 같은 버전인 문서는 건너뛰고, 그사이 바뀐 상품만 반영된다.</li>
+     *   <li>옛 인덱스를 지운다. 실패해도 검색에는 영향이 없어 경고만 남긴다.</li>
+     * </ol>
+     */
+    public RebuildResult rebuild() {
+        if (!rebuilding.compareAndSet(false, true)) {
+            throw new BusinessException(ProductErrorCode.SEARCH_REBUILD_IN_PROGRESS);
+        }
+        try {
+            String previous = searchIndex.currentIndex();
+            String next = searchIndex.createNextIndex(previous);
+            log.info("상품 검색 무중단 재색인 시작: {} → {}", previous, next);
+
+            ReindexResult filled;
+            try {
+                filled = reindex(writes -> searchIndex.bulkInto(next, writes));
+            } catch (RuntimeException e) {
+                discard(next);
+                throw e;
+            }
+            if (filled.failed() > 0) {
+                discard(next);
+                throw new IllegalStateException("새 인덱스 " + next + "를 채우다 " + filled.failed()
+                        + "건이 실패해 재색인을 멈춤 (alias는 " + previous + " 그대로, 로그 확인 후 다시 실행)");
+            }
+
+            searchIndex.refresh(next);
+            searchIndex.switchAlias(previous, next);
+            log.info("상품 검색 alias를 {}에서 {}로 옮김", previous, next);
+            ReindexResult caughtUp = reindexAll();
+
+            boolean previousDeleted = true;
+            try {
+                searchIndex.deleteIndex(previous);
+            } catch (RuntimeException e) {
+                previousDeleted = false;
+                log.warn("옛 상품 검색 인덱스 {}를 지우지 못함 (검색에는 영향 없음, 직접 지워야 함)", previous, e);
+            }
+            RebuildResult result = new RebuildResult(previous, next, filled, caughtUp, previousDeleted);
+            log.info("상품 검색 무중단 재색인 끝: {}", result);
+            return result;
+        } finally {
+            rebuilding.set(false);
+        }
+    }
+
+    // 다 채우지 못한 새 인덱스는 지운다 (다음 재색인이 같은 이름으로 다시 만들 수 있게)
+    private void discard(String index) {
+        try {
+            searchIndex.deleteIndex(index);
+        } catch (RuntimeException e) {
+            log.warn("채우지 못한 상품 검색 인덱스 {}를 지우지 못함 (다음 재색인 전에 직접 지워야 함)", index, e);
+        }
+    }
+
+    // DB의 모든 상품을 id 순서로 BATCH_SIZE개씩 읽어 writer로 보낸다 (alias 또는 재색인 중인 새 인덱스)
+    private ReindexResult reindex(Function<List<Write>, BulkResult> writer) {
         long lastId = 0;
         int indexed = 0;
         int deleted = 0;
@@ -89,7 +164,7 @@ public class ProductIndexService {
             }
             BulkResult result;
             try {
-                result = searchIndex.bulk(writes);
+                result = writer.apply(writes);
             } catch (RuntimeException e) {
                 // 중간 배치에서 연결이 끊기면 그때까지 끝낸 범위를 남긴다 (멱등이라 처음부터 다시 실행하면 됨)
                 log.error("상품 전체 색인 중단: 끝낸 마지막 productId={}, 지금까지 indexed={}, deleted={}, skipped={}, failed={}",
@@ -120,5 +195,13 @@ public class ProductIndexService {
      * failed는 OpenSearch가 거절한 수 (0이 아니면 로그를 보고 다시 실행)
      */
     public record ReindexResult(int indexed, int deleted, int skipped, int failed) {
+    }
+
+    /**
+     * 무중단 재색인 결과. filled는 새 인덱스를 채운 결과, caughtUp은 alias를 옮긴 뒤 그사이 바뀐 상품을 맞춘 결과
+     * (대부분 skipped), previousDeleted가 false면 옛 인덱스를 직접 지워야 함
+     */
+    public record RebuildResult(String previousIndex, String currentIndex, ReindexResult filled,
+                                ReindexResult caughtUp, boolean previousDeleted) {
     }
 }

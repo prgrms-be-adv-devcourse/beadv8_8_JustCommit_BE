@@ -10,26 +10,26 @@
 1. 상품 등록 · 수정 · 상태 변경 · 숨김 · 삭제는 같은 트랜잭션에서 Outbox에 "상품 변경(상품 ID)"을 저장합니다.
 2. **product 안의 색인 리스너**(`ProductSearchIndexListener`)가 받아 DB에서 최신 상품 · 품종명 · 별칭 · 학명을 읽어 문서를 덮어씁니다 (문서 ID = 상품 ID). 이벤트 payload는 상품 ID만 쓰므로 같은 이벤트가 두 번 오거나 순서가 바뀌어도 결과가 같습니다. 삭제(`DELETED`) 상품은 문서를 지우고, 그 밖의 상태 · 숨김은 문서에 저장해 검색할 때 거릅니다.
 3. 반영까지 몇 초 걸릴 수 있습니다.
-4. 별칭 · 학명 동의어가 바뀌면 배포 후 새 인덱스를 채우고 alias를 바꿔 전체 재색인합니다 (검색은 멈추지 않음).
+4. 매핑 · 분석기나 별칭 · 학명 데이터가 바뀌면 배포 후 무중단 재색인 API로 새 인덱스를 채우고 alias를 바꿉니다 (검색은 멈추지 않음, 아래 「매핑 변경」).
 
 | 항목 | 내용 |
 |---|---|
 | 검색 대상 | 검색 노출 규칙: `ACTIVE` · `PAYMENT_PENDING` · `SOLD_OUT`이면서 숨김이 아닌 상품 (`onSale=true`면 판매 중만) |
-| 찾는 곳 | 제목 · 품종명 · 별칭 · 학명 (2단계부터 설명). 별칭이 여러 품종에 걸리면 모두 |
-| 정규화 | 띄어쓰기 · 특수문자 · 대소문자 무시 ("몬 스테라" → 몬스테라, "Mon-stera" → monstera). 한글 ↔ 영문("몬스테라" = "Monstera")은 정규화가 아니라 별칭 · 학명 동의어 (2단계) |
+| 찾는 곳 | 제목 · 품종명 · 별칭 · 학명 · 설명(2단계). 별칭이 여러 품종에 걸리면 모두 |
+| 정규화 | 띄어쓰기 · 특수문자 · 대소문자 무시 ("몬 스테라" → 몬스테라, "Mon-stera" → monstera). 한글 ↔ 영문("몬스테라" = "Monstera")은 정규화가 아니라 별칭 · 학명 필드로 찾음 |
 | 정렬 | 관련도(기본, 제목 > 품종명 · 별칭 > 설명) · 최신 · 가격 낮은순 · 높은순 |
-| 오타 허용 (2단계) | 3 ~ 5글자는 1글자, 6글자 이상은 2글자. 1 ~ 2글자는 정확히 일치만 |
-| 분석기 | `nori`. 검색 필드마다 `ko_text`(기호를 공백으로) + `.compact` 하위 필드 `ko_compact`(공백 · 기호 제거) |
-| 인덱스 | alias `products` → 실제 인덱스 `products_v1` (문서 ID = 상품 ID). product가 뜰 때 alias가 없으면 만듦, OpenSearch가 꺼져 있으면 경고만 남기고 뜸 |
+| 오타 허용 (2단계) | 3 ~ 5글자는 1글자, 6글자 이상은 2글자. 1 ~ 2글자는 정확히 일치만(`fuzziness` `AUTO:3,6`). 제목 · 품종명 · 별칭 · 학명의 `.word` 하위 필드에서 찾음(한국어 분석기는 모르는 단어를 다르게 잘라 "몬스테러" → 몬스 + 테러가 되므로 공백 단위로 비교). 오타로 맞으면 가중치 절반이라 정확히 맞는 상품이 앞. 설명은 오타 허용 안 함 |
+| 분석기 | `nori`. 검색 필드마다 `ko_text`(기호를 공백으로) + `.compact` 하위 필드 `ko_compact`(공백 · 기호 제거). 제목 · 품종명 · 별칭 · 학명은 오타 허용용 `.word` 하위 필드 `ko_word`(기호를 공백으로, 공백으로만 자름)도 둠 |
+| 인덱스 | alias `products` → 실제 인덱스 `products_v{n}` (문서 ID = 상품 ID). 처음은 `products_v1`, 무중단 재색인마다 번호 +1. 매핑은 번호와 상관없이 지금 코드의 `opensearch/products.json`. product가 뜰 때 alias가 없으면 `products_v1`을 만듦, OpenSearch가 꺼져 있으면 경고만 남기고 뜸 |
 | 색인 이벤트 | `product.events.v1`의 `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged`. `ProductApproved` · `ProductRejected`는 알림용이라 건너뜀(상태는 함께 나가는 `ProductStatusChanged`로 반영) |
 | 쓰기 순서 | 외부 버전(`version_type=external`, 버전 = 상품 `version`): 저장된 버전보다 클 때만 반영, 같거나 작으면(409) 건너뜀. 전체 색인과 이벤트 색인이 겹쳐도 옛 값이 새 값을 덮지 않음. 쓰기는 `require_alias`라 alias가 없으면 실패(매핑 없는 `products` 인덱스가 자동으로 생기지 않게) |
 | 색인 실패 | 공통 소비 설정대로 1 · 2 · 4초 재시도 후 `product.events.v1.DLT`. 상품 저장은 Outbox까지라 OpenSearch가 죽어도 등록 · 수정 API는 성공하고 색인만 늦어짐. 어긋난 문서는 전체 색인으로 맞춤 |
-| 전체 색인 | 관리자 API `POST admin/products/searchIndex`: 상품을 id 순서로 500개씩 읽어 bulk로 씀. 처음 띄울 때 · 인덱스를 다시 만들 때 · DLT로 빠진 색인을 맞출 때. 상품 DB를 비우고 다시 시작하면(상품 id · 버전이 처음부터) 남은 문서의 버전이 더 커서 건너뛰므로 인덱스(`products_v1`)도 지운 뒤 앱을 다시 띄움 |
+| 전체 색인 | 관리자 API `POST admin/products/searchIndex`: 상품을 id 순서로 500개씩 읽어 bulk로 씀. 처음 띄울 때 · 인덱스를 다시 만들 때 · DLT로 빠진 색인을 맞출 때. 상품 DB를 비우고 다시 시작하면(상품 id · 버전이 처음부터) 남은 문서의 버전이 더 커서 건너뛰므로 인덱스(`products_v*`)도 지운 뒤 앱을 다시 띄움 |
 | 검색 API | `GET products`: `keyword`가 있으면 OpenSearch로 상품 id · 전체 개수만 받고 화면 값은 DB에서 다시 읽음(응답 형식이 DB 조회와 같고, 색인 지연 중 숨김 · 상태가 바뀐 상품은 한 번 더 거름). `keyword`가 없거나 `sellerId`가 있으면 DB 조회(원본이라 색인 지연이 없고 개수가 정확, 관련도가 필요 없음) |
 | 판매자 상점 | `sellerId`(그 판매자 상품만) · `status`(노출 상태 중 하나, 밖이면 400). 상점 안 검색창이 없어(웹 시안) 키워드가 있어도 DB 조회, 문서에 판매자는 색인하지 않음. 판매 완료 개수는 `sellerId` + `status=SOLD_OUT`의 전체 개수 |
 | 페이지 | 기본 20, 최대 50 |
 | OpenSearch 장애 | 연결 실패 · 시간 초과는 1번 더 보내고, 그래도 실패하거나 OpenSearch가 오류로 답하면(인덱스 없음 등) 경고 로그 후 DB LIKE 검색(제목 · 품종명 포함, 최신순)으로 대신 (관련도 · 오타 · 한국어 분석 없음) |
-| 매핑 변경 | 지금은 `products_v1` 하나라 필드를 추가하면 기존 인덱스를 지우고 다시 채움: `products_v1` 삭제 → product 재시작(새 매핑으로 생성) → 전체 색인 API. 지우지 않으면 `dynamic: strict`라 새 필드가 든 쓰기가 거절됨. 무중단 교체(`products_v2` + alias 이동)는 #487 |
+| 매핑 변경 | 관리자 API `POST admin/products/searchIndex/rebuild`(무중단 재색인): `products_v{n+1}`을 alias 없이 만듦 → DB 전체를 채움(실패하면 새 인덱스를 지우고 멈춤, alias 그대로) → refresh → alias를 한 요청으로 옮김 → 그사이 옛 인덱스로 간 변경을 맞추는 전체 색인(같은 버전은 건너뜀) → 옛 인덱스 삭제. 그동안 검색 · 이벤트 색인은 옛 인덱스로 계속 됨. 이미 진행 중이면 409 `SEARCH_REBUILD_IN_PROGRESS`. 매핑을 바꾼 배포 뒤 한 번 부름(그 전에는 새 필드가 옛 인덱스에 없어 그 필드로는 안 찾힐 뿐 검색은 됨, 예: `.word` 오타 허용) |
 | 범위 밖 | 사진 검색 · 상품 의미 검색 · 초성 검색 · 자동완성, 0건 검색어 기록 |
 
 → [ADR 0005](../decisions/0005-opensearch-pgvector-external-embedding.md)
