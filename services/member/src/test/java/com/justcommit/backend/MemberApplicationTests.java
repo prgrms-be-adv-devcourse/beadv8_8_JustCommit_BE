@@ -39,7 +39,7 @@ class MemberApplicationTests {
     @Test
     @DisplayName("V1 · V2(Outbox) · V3(인증 버전) · V4(토큰 폐기 작업) · V5(재설정 폐기 사유) · V6(계좌 HMAC) · V7(판매자 검수 동의) · V8(탈퇴 익명화 · 탈퇴 기록) 마이그레이션이 적용되고 엔티티와 테이블이 맞는다 (ddl-auto: validate 통과)")
     void contextLoads(@Autowired Flyway flyway) {
-        assertThat(flyway.info().applied()).extracting(m -> m.getVersion().getVersion()).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
+        assertThat(flyway.info().applied()).extracting(m -> m.getVersion().getVersion()).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
     }
 
     private static KeyPair newKeyPair() {
