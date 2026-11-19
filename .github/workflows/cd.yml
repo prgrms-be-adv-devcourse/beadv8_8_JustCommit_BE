@@ -154,6 +154,39 @@ jobs:
           export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
           failed=""
 
+          # 실패 원인을 Actions 로그에 남긴다 (#555). 컨테이너를 다시 바꾸면 로그가 사라져서 실패한 그때 찍는다.
+          # 레포가 공개라 Actions 로그도 공개 → 환경변수가 담긴 docker inspect 전체 · kubectl describe 전체는 찍지 않고,
+          # 앱 로그도 password · secret · token · key = 값 모양과 URL 안의 비밀번호는 가린다
+          redact() {
+            sed -E \
+              -e 's/((password|passwd|secret|token|api[_-]?key|credential)[a-z_]*[\x27" ]*[=:][\x27" ]*)[^ ,;&\x27"]+/\1***/Ig' \
+              -e 's#(://[^/:@ ]+:)[^/@ ]+@#\1***@#g'
+          }
+          compose_diag() {
+            c="replant-$1"
+            echo "--- $c 상태 · 헬스체크 기록"
+            docker inspect --format '상태={{.State.Status}} 종료코드={{.State.ExitCode}} OOM={{.State.OOMKilled}} 재시작={{.RestartCount}}{{if .State.Health}} 헬스={{.State.Health.Status}}{{range .State.Health.Log}}{{"\n"}}  {{.Start}} exit={{.ExitCode}} {{.Output}}{{end}}{{end}}' "$c" 2>&1 | redact
+            echo "--- $c 로그 (마지막 80줄)"
+            docker logs --tail 80 "$c" 2>&1 | redact
+          }
+          k3s_diag() {
+            echo "--- deploy/$1 파드"
+            kubectl -n replant get pods -l "app=$1" -o wide 2>&1
+            # 새로 만든 파드가 가장 최근이다. 2개까지만 본다
+            for p in $(kubectl -n replant get pods -l "app=$1" --sort-by=.metadata.creationTimestamp -o name 2>/dev/null | tail -n 2); do
+              echo "--- $p 상태 · 이벤트 (describe 요약)"
+              out=$(kubectl -n replant describe "$p" 2>&1)
+              echo "$out" | grep -E '^\s+(State|Reason|Exit Code|Last State|Ready|Restart Count):'
+              echo "$out" | sed -n '/^Events:/,$p'
+              echo "--- $p 로그 (마지막 80줄)"
+              kubectl -n replant logs "$p" --tail 80 2>&1 | redact
+              if prev=$(kubectl -n replant logs "$p" --previous --tail 80 2>/dev/null); then
+                echo "--- $p 직전에 죽은 컨테이너 로그 (마지막 80줄)"
+                echo "$prev" | redact
+              fi
+            done
+          }
+
           for s in $SERVICES; do
             image="$IMAGE_PREFIX-$s:$TAG"
             echo "::group::$s → $image"
@@ -173,6 +206,7 @@ jobs:
                   echo "$s 배포 완료"
                 else
                   echo "::error::$s 롤아웃 실패 — 옛 파드가 계속 응답 중. kubectl -n replant rollout undo deploy/$s 로 되돌릴 수 있음"
+                  k3s_diag "$s"
                   failed="$failed $s"
                 fi
                 ;;
@@ -187,7 +221,8 @@ jobs:
                   && env "$var=$TAG" $COMPOSE up -d --no-deps --wait --wait-timeout 180 "$s"); then
                   echo "$s 배포 완료"
                 else
-                  echo "::error::$s 기동 실패 — docker logs replant-$s 확인"
+                  echo "::error::$s 기동 실패 — 아래 상태 · 로그 확인"
+                  compose_diag "$s"
                   failed="$failed $s"
                 fi
                 ;;
