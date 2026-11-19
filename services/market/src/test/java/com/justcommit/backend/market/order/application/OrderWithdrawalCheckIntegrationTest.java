@@ -105,6 +105,20 @@ class OrderWithdrawalCheckIntegrationTest {
     }
 
     @Test
+    @DisplayName("판매자 수락 대기(ACCEPT_PENDING) 주문상품은 구매자, 판매자 모두 진행 중으로 센다 (#284)")
+    void acceptPendingBlocks() {
+        save(MEMBER, OrderStatus.PAID, seller(OTHER, OrderItemStatus.ACCEPT_PENDING));
+        save(OTHER, OrderStatus.PAID, seller(MEMBER, OrderItemStatus.ACCEPT_PENDING, OrderItemStatus.CANCELLED));
+
+        WithdrawalCheckResponse result = service.check(MEMBER);
+
+        assertThat(result.hasWithdrawalBlocker()).isTrue();
+        assertThat(result.blockingReasons()).containsExactly(
+                WithdrawalBlockingReason.ACTIVE_BUYER_ORDER, WithdrawalBlockingReason.ACTIVE_SELLER_ORDER);
+        assertThat(result.details()).isEqualTo(new WithdrawalCheckResponse.Details(1, 1));
+    }
+
+    @Test
     @DisplayName("결제 처리 중 · 확인 필요 주문은 결제 결과를 모르므로 진행 중으로 센다")
     void paymentProcessingAndReviewRequiredBlock() {
         save(MEMBER, OrderStatus.PAYMENT_PROCESSING, seller(OTHER, OrderItemStatus.NORMAL));

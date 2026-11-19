@@ -268,7 +268,7 @@ class OrderCancelRefundIntegrationTest {
         // 늦게 온 같은 환불 결과는 이미 취소 완료라 반영하지 않는다
         Long itemId = fixture.itemIds().getFirst();
         RefundClaim late = new RefundClaim(itemId, fixture.orderId(), fixture.sellerOrderId(), BUYER_ID, 101L, PRICE,
-                null, 1);
+                null, 1, OrderItemCancelled.CancelReason.BUYER);
         assertThat(cancelTransactions.applyRefundOutcome(late, RefundOutcome.refunded())).isFalse();
         assertThat(cancelTransactions.applyRefundOutcome(late, RefundOutcome.rejected("HTTP_409"))).isFalse();
         assertThat(item(itemId)).containsEntry("status", "CANCELLED");
