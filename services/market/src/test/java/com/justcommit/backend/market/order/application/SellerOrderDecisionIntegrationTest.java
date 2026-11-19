@@ -6,13 +6,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.common.messaging.EventEnvelopeMapper;
+import com.justcommit.backend.common.messaging.outbox.OutboxAutoConfiguration;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
+import com.justcommit.backend.common.messaging.outbox.OutboxRelay;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import com.justcommit.backend.market.OrderItemCancelledEvent;
 import com.justcommit.backend.market.OrderQuery;
@@ -57,6 +61,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
@@ -64,7 +69,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,13 +80,16 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 // 판매자 수락, 거절, 24시간 자동 거절과 수락 전 구매자 취소를 실제 PostgreSQL로 확인한다 (#284, #285, ADR 0013).
 // 환불은 PaymentUseCase 목으로 결과만 흉내 낸다. 배송 생성, 취소는 ShipmentService 목으로 호출만 본다
-// (배송 행 자체는 ShipmentCreateIntegrationTest)
+// (배송 행 자체는 ShipmentCreateIntegrationTest).
+// Outbox는 실제 OutboxPublisher로 같은 트랜잭션에 outbox_event 행을 남기고, 커밋 뒤 Kafka 전송(OutboxRelay)만 목으로 둔다 (#288)
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaAuditingConfig.class, OrderPaymentTransactions.class, OrderRecoveryService.class,
         OrderCancelTransactions.class, OrderCancelRefunder.class, SellerOrderDecisionTransactions.class,
-        ShipmentQueryService.class, OrderService.class})
+        ShipmentQueryService.class, OrderService.class, SellerOrderEventPublisher.class, EventEnvelopeMapper.class})
+@ImportAutoConfiguration(OutboxAutoConfiguration.class)
+@TestPropertySource(properties = "outbox.scheduler.enabled=false")
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED) // 수락, 거절, 취소, 반영이 각자 트랜잭션을 열고 커밋한다
 class SellerOrderDecisionIntegrationTest {
@@ -88,6 +98,8 @@ class SellerOrderDecisionIntegrationTest {
     private static final long SELLER_ID = 20L;
     private static final BigDecimal PRICE = new BigDecimal("10000");
     private static final BigDecimal SHIPPING_FEE = new BigDecimal("3000");
+    // Outbox에 저장된 봉투 JSON을 읽어 payload를 확인한다 (운영과 같은 공통 형식)
+    private static final EventEnvelopeMapper ENVELOPE_MAPPER = new EventEnvelopeMapper();
 
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
@@ -95,8 +107,10 @@ class SellerOrderDecisionIntegrationTest {
     }
 
     @MockitoBean PaymentUseCase paymentUseCase;
-    @MockitoBean OutboxPublisher outboxPublisher;
-    @MockitoBean SellerOrderEventPublisher sellerOrderEventPublisher;
+    // 실제 빈을 감싸 호출도 확인한다. 행은 outbox_event에 실제로 남는다
+    @MockitoSpyBean OutboxPublisher outboxPublisher;
+    @MockitoSpyBean SellerOrderEventPublisher sellerOrderEventPublisher;
+    @MockitoBean OutboxRelay outboxRelay; // 커밋 뒤 Kafka 전송
     @MockitoBean ShipmentService shipmentService;
     @MockitoBean OrderQuery orderQuery;
     @MockitoBean CartService cartService;
@@ -118,7 +132,7 @@ class SellerOrderDecisionIntegrationTest {
 
     @AfterEach
     void cleanUp() {
-        jdbcTemplate.execute("truncate table shipment_cancel_result, shipment, orders_item, seller_order, orders");
+        jdbcTemplate.execute("truncate table outbox_event, shipment_cancel_result, shipment, orders_item, seller_order, orders");
     }
 
     @Test
@@ -197,7 +211,7 @@ class SellerOrderDecisionIntegrationTest {
 
         reject(fixture, List.of(itemId));
         assertThat(item(itemId)).containsEntry("status", "CANCEL_PROCESSING");
-        verify(outboxPublisher, never()).publish(any());
+        verify(outboxPublisher, never()).publish(any(OrderItemCancelled.class));
 
         passGrace(itemId);
         recoveryService.recoverProcessingRefunds();
@@ -401,7 +415,7 @@ class SellerOrderDecisionIntegrationTest {
 
         orderService.autoRejectExpiredSellerOrders();
         assertThat(item(itemId)).containsEntry("status", "CANCEL_PROCESSING").containsEntry("cancel_reason", "AUTO");
-        verify(outboxPublisher, never()).publish(any());
+        verify(outboxPublisher, never()).publish(any(OrderItemCancelled.class));
 
         orderService.autoRejectExpiredSellerOrders(); // 수락 대기가 없어 후보가 아니다
         verify(paymentUseCase, times(1)).refundCancelledItem(any(), any(), any(), any());
@@ -593,6 +607,22 @@ class SellerOrderDecisionIntegrationTest {
         assertThat(acceptedEvents(fixture)).isEmpty();
     }
 
+    @Test
+    @DisplayName("수락 트랜잭션이 이벤트 저장 뒤에 롤백되면 outbox_event 행도 남지 않고 주문상품은 수락 대기 그대로")
+    void rolledBackAcceptLeavesNoOutboxRow() {
+        Fixture fixture = pendingOrder(2);
+        doAnswer(invocation -> {
+            invocation.callRealMethod(); // 행을 저장한 뒤 실패
+            throw new IllegalStateException("롤백 유도");
+        }).when(outboxPublisher).publish(any(SellerOrderAcceptedEvent.class));
+
+        assertThatThrownBy(() -> decisions.accept(SELLER_ID, fixture.sellerOrderId()))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(outboxCount()).isZero();
+        assertThat(itemStatuses(fixture)).containsOnly("ACCEPT_PENDING");
+    }
+
     // ===== helpers
 
     // OrderService.rejectSellerOrderItems와 같은 순서: 거절 커밋 → (트랜잭션 밖) 판매자 주문별 환불
@@ -657,23 +687,27 @@ class SellerOrderDecisionIntegrationTest {
         });
     }
 
-    // SellerOrderEventPublisher 목에 넘어간 이벤트 중 이 판매자 주문의 것 (Outbox에 남을 행)
+    // 이 판매자 주문의 커밋된 outbox_event 행(market.events.v1, Key sellerOrderId)을 봉투 JSON에서 읽는다
     private List<SellerOrderAcceptedEvent> acceptedEvents(Fixture fixture) {
-        return publishedEvents(SellerOrderAcceptedEvent.class).stream()
-                .filter(event -> event.sellerOrderId().equals(fixture.sellerOrderId())).toList();
+        return outboxEvents("SellerOrderAccepted", fixture, SellerOrderAcceptedEvent.class);
     }
 
     private List<SellerOrderRejectedEvent> rejectedEvents(Fixture fixture) {
-        return publishedEvents(SellerOrderRejectedEvent.class).stream()
-                .filter(event -> event.sellerOrderId().equals(fixture.sellerOrderId())).toList();
+        return outboxEvents("SellerOrderRejected", fixture, SellerOrderRejectedEvent.class);
     }
 
-    private <T> List<T> publishedEvents(Class<T> type) {
-        return org.mockito.Mockito.mockingDetails(sellerOrderEventPublisher).getInvocations().stream()
-                .flatMap(invocation -> java.util.Arrays.stream(invocation.getArguments()))
-                .filter(type::isInstance)
-                .map(type::cast)
+    private <T> List<T> outboxEvents(String eventType, Fixture fixture, Class<T> type) {
+        return jdbcTemplate.queryForList("""
+                        select payload from outbox_event
+                        where event_type = ? and topic = 'market.events.v1' and aggregate_id = ?
+                        order by created_at""", String.class, eventType, String.valueOf(fixture.sellerOrderId()))
+                .stream()
+                .map(json -> ENVELOPE_MAPPER.readPayload(ENVELOPE_MAPPER.fromJson(json), type))
                 .toList();
+    }
+
+    private long outboxCount() {
+        return jdbcTemplate.queryForObject("select count(*) from outbox_event", Long.class);
     }
 
     private void mockRefunds(RefundOutcome item, RefundOutcome shippingFee) {
