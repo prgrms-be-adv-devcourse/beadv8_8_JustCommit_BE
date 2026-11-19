@@ -8,6 +8,7 @@ import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReceipt;
+import com.justcommit.backend.member.unlink.infrastructure.mail.KakaoUnlinkNoticeMailSender;
 import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,9 +18,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mail.MailSendException;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.security.KeyPair;
@@ -41,11 +44,17 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 /**
  * [S-B10] 카카오 연결 해제 웹훅 처리 (#422). 카카오 · 내부 서비스(3곳 확인)는 WireMock, DB · Redis는 실제.
  * ① PENDING: 기록만 대상 거르기 → 카카오 연결 조회 → INACTIVE + 토큰 폐기, 중복 폐기 없음, 재시도 · 실패, 이전 작업자 차단
  * ② INACTIVATED: 관리자 해제는 끝, 자동 탈퇴 사유는 처리 기록 하나만 3곳 확인 → 탈퇴 · 안내 대기 · 재시도
+ * ③ NOTICE_PENDING: 가입 이메일로 안내(메일은 가짜), 실패 · 운영자 재개 · 복구된 회원에게는 보내지 않음
  */
 @SpringBootTest
 @Testcontainers(disabledWithoutDocker = true)
@@ -83,6 +92,10 @@ class KakaoUnlinkProcessorIntegrationTest {
   @Autowired MemberRepository memberRepository;
   @Autowired JdbcTemplate jdbcTemplate;
   @Autowired StringRedisTemplate redisTemplate;
+  @Autowired KakaoUnlinkResumeService resumeService;
+
+  // 실제 SMTP 대신 가짜 (보낸 주소 · 횟수만 확인)
+  @MockitoBean KakaoUnlinkNoticeMailSender noticeMailSender;
 
   // 탈퇴하면 이메일이 비워지므로 만든 회원 id로 정리한다
   private final List<Long> memberIds = new ArrayList<>();
@@ -251,7 +264,7 @@ class KakaoUnlinkProcessorIntegrationTest {
   }
 
   @Test
-  @DisplayName("[S-B10] 자동 탈퇴 사유 + 3곳 BLOCKED면 INACTIVE 그대로 안내 대기(NOTICE_PENDING)")
+  @DisplayName("[S-B10] 자동 탈퇴 사유 + 3곳 BLOCKED면 INACTIVE 그대로 가입 이메일로 안내하고 DONE")
   void autoWithdrawalBlocked() {
     Member member = kakaoMember("9200000013");
     Long receiptId = receive("9200000013", "ACCOUNT_DELETE");
@@ -261,8 +274,9 @@ class KakaoUnlinkProcessorIntegrationTest {
     processor.processDue();
 
     assertMember(member.getId(), MemberStatus.INACTIVE, 1);
-    assertThat(row(receiptId)).containsEntry("status", "NOTICE_PENDING").containsEntry("handles_withdrawal", true)
+    assertThat(row(receiptId)).containsEntry("status", "DONE").containsEntry("handles_withdrawal", true)
         .containsEntry("failure_count", 0);
+    verify(noticeMailSender).send(member.getEmail());
   }
 
   @Test
@@ -298,7 +312,7 @@ class KakaoUnlinkProcessorIntegrationTest {
 
     assertThat(revocationCount(member.getId())).isEqualTo(1); // 연결 해제 폐기 한 번
     assertThat(row(admin)).containsEntry("status", "DONE").containsEntry("handles_withdrawal", false);
-    assertThat(row(apps)).containsEntry("status", "NOTICE_PENDING").containsEntry("handles_withdrawal", true)
+    assertThat(row(apps)).containsEntry("status", "DONE").containsEntry("handles_withdrawal", true)
         .containsEntry("unlink_version", 1);
   }
 
@@ -313,7 +327,8 @@ class KakaoUnlinkProcessorIntegrationTest {
 
     processor.processDue();
 
-    assertThat(row(first)).containsEntry("status", "NOTICE_PENDING").containsEntry("handles_withdrawal", true);
+    assertThat(row(first)).containsEntry("status", "DONE").containsEntry("handles_withdrawal", true);
+    verify(noticeMailSender, times(1)).send(any());
     assertThat(row(second)).containsEntry("status", "DUPLICATE").containsEntry("handles_withdrawal", false);
     assertThat(jdbcTemplate.queryForObject("select count(*) from member_kakao_unlink_receipt where handles_withdrawal",
         Long.class)).isEqualTo(1);
@@ -335,6 +350,69 @@ class KakaoUnlinkProcessorIntegrationTest {
 
     assertMember(member.getId(), MemberStatus.ACTIVE, 1);
     assertThat(row(receiptId)).containsEntry("status", "INVALIDATED");
+  }
+
+  // ===== ③ NOTICE_PENDING · 운영자 재개 =====
+
+  @Test
+  @DisplayName("[S-B10] 안내 메일이 5번 실패하면 FAILED(재개 단계 NOTICE_PENDING), 운영자 재개 뒤 다시 보내 DONE")
+  void noticeFailsThenOperatorResumes() {
+    Member member = kakaoMember("9200000021");
+    Long receiptId = receive("9200000021", "UNLINK_FROM_APPS");
+    stubUnlinked();
+    stubChecks(BLOCK);
+    doThrow(new MailSendException("SMTP 실패 (테스트)")).when(noticeMailSender).send(any());
+
+    processor.processDue();
+    for (int i = 0; i < 4; i++) {
+      makeDue(receiptId);
+      processor.processDue();
+    }
+    Map<String, Object> failed = row(receiptId);
+    assertThat(failed).containsEntry("status", "FAILED").containsEntry("resume_state", "NOTICE_PENDING")
+        .containsEntry("failure_count", 5).containsEntry("last_error", "MAIL_FAILED");
+    int attemptBefore = (Integer) failed.get("attempt_no");
+
+    assertThat(resumeService.resume(receiptId)).isTrue();
+    Map<String, Object> resumed = row(receiptId);
+    assertThat(resumed).containsEntry("status", "NOTICE_PENDING").containsEntry("failure_count", 0)
+        .containsEntry("attempt_no", attemptBefore + 1);
+    assertThat(resumed.get("resume_state")).isNull();
+
+    doNothing().when(noticeMailSender).send(any());
+    processor.processDue();
+
+    assertThat(row(receiptId)).containsEntry("status", "DONE");
+    verify(noticeMailSender, times(6)).send(member.getEmail());
+  }
+
+  @Test
+  @DisplayName("[S-B11] 안내 메일을 보내기 전에 회원이 ACTIVE로 돌아오면 보내지 않고 INVALIDATED")
+  void noticeSkippedWhenRestored() {
+    Member member = kakaoMember("9200000022");
+    Long receiptId = receive("9200000022", "UNLINK_FROM_APPS");
+    stubUnlinked();
+    stubChecks(BLOCK);
+    doThrow(new MailSendException("SMTP 실패 (테스트)")).when(noticeMailSender).send(any());
+    processor.processDue(); // 첫 발송 실패로 NOTICE_PENDING에서 대기
+
+    jdbcTemplate.update("update member set status = 'ACTIVE' where id = ?", member.getId());
+    makeDue(receiptId);
+    processor.processDue();
+
+    assertThat(row(receiptId)).containsEntry("status", "INVALIDATED");
+    verify(noticeMailSender, times(1)).send(any());
+  }
+
+  @Test
+  @DisplayName("[#422] 운영자 재개는 FAILED만: 무효(INVALIDATED) · 없는 기록은 재개하지 않음")
+  void resumeOnlyFailed() {
+    Long receiptId = receive("9200000023", "UNLINK_FROM_APPS");
+    jdbcTemplate.update("update member_kakao_unlink_receipt set status = 'INVALIDATED' where id = ?", receiptId);
+
+    assertThat(resumeService.resume(receiptId)).isFalse();
+    assertThat(resumeService.resume(Long.MAX_VALUE)).isFalse();
+    assertThat(row(receiptId)).containsEntry("status", "INVALIDATED").containsEntry("attempt_no", 0);
   }
 
   private void stubChecks(String body) {

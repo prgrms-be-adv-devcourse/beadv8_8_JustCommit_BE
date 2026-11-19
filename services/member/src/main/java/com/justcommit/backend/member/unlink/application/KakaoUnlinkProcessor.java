@@ -10,6 +10,7 @@ import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReceipt;
 import com.justcommit.backend.member.unlink.domain.KakaoUnlinkStatus;
+import com.justcommit.backend.member.unlink.infrastructure.mail.KakaoUnlinkNoticeMailSender;
 import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
 import com.justcommit.backend.member.withdrawal.application.WithdrawalCheckResult;
 import com.justcommit.backend.member.withdrawal.application.WithdrawalCheckService;
@@ -18,6 +19,7 @@ import com.justcommit.backend.member.withdrawal.infrastructure.kakao.KakaoAdminC
 import com.justcommit.backend.member.withdrawal.infrastructure.kakao.KakaoApiUnavailableException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.mail.MailException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -33,6 +35,7 @@ import java.util.function.Consumer;
  * - 회원을 바꾸는 트랜잭션은 회원 잠금 → 기록 잠금 순서 (토큰 폐기 콜백이 회원을 먼저 잠근다)
  * - PENDING: 기록만 대상 거르기 → 카카오 연결 조회 → INACTIVE + 토큰 폐기
  * - INACTIVATED: 관리자 해제는 끝, 자동 탈퇴 사유는 자동 탈퇴 처리 기록을 정한 뒤 3곳 확인 → 탈퇴 또는 안내 대기
+ * - NOTICE_PENDING: 발송 직전 처리권 · 회원 상태를 확인하고 가입 이메일로 안내 (SMTP는 잠금 밖)
  */
 @Slf4j
 @Service
@@ -49,6 +52,7 @@ public class KakaoUnlinkProcessor {
   static final String KAKAO_UNAVAILABLE = "KAKAO_UNAVAILABLE";
   static final String WITHDRAWAL_CHECK_UNAVAILABLE = "WITHDRAWAL_CHECK_UNAVAILABLE";
   static final String STATE_CHANGED = "STATE_CHANGED";
+  static final String MAIL_FAILED = "MAIL_FAILED";
   static final String PROCESS_FAILED = "PROCESS_FAILED";
 
   private static final String INCOMPLETE_SIGN_UP = "INCOMPLETE_SIGN_UP";
@@ -65,6 +69,7 @@ public class KakaoUnlinkProcessor {
   private final TokenRevocationService tokenRevocationService;
   private final WithdrawalCheckService withdrawalCheckService;
   private final WithdrawalService withdrawalService;
+  private final KakaoUnlinkNoticeMailSender noticeMailSender;
   private final DatabaseClock databaseClock;
 
   /**
@@ -102,6 +107,7 @@ public class KakaoUnlinkProcessor {
       switch (claim.status()) {
         case PENDING -> processPending(claim);
         case INACTIVATED -> processInactivated(claim);
+        case NOTICE_PENDING -> processNotice(claim);
         default -> log.warn("카카오 연결 해제 웹훅 처리 대상이 아닌 단계: receiptId={}, status={}", claim.id(), claim.status());
       }
     } catch (RuntimeException e) {
@@ -262,6 +268,31 @@ public class KakaoUnlinkProcessor {
         reflect(claim, receipt -> receipt.recordFailure(STATE_CHANGED, databaseClock.now()));
       }
     }
+  }
+
+  // ===== NOTICE_PENDING: 가입 이메일로 안내 =====
+
+  private void processNotice(Claim claim) {
+    // 발송 직전 처리권 · 단계 · 회원 상태 확인 (재로그인으로 무효가 됐으면 보내지 않음). 잠금은 확인하는 동안만
+    Optional<String> email = transactionTemplate.execute(status -> lockIfClaimed(claim)
+        .flatMap(receipt -> memberRepository.findById(claim.memberId()))
+        .filter(member -> member.getStatus() == MemberStatus.INACTIVE)
+        .map(Member::getEmail)
+        .filter(address -> !address.isBlank()));
+    if (email == null || email.isEmpty()) {
+      // 처리권이 바뀌었으면 아래 반영도 0건, 회원이 INACTIVE가 아니면(복구 · 탈퇴) 안내할 대상이 아님
+      reflect(claim, KakaoUnlinkReceipt::invalidate);
+      return;
+    }
+    try {
+      noticeMailSender.send(email.get());
+    } catch (MailException e) {
+      log.warn("카카오 연결 해제 안내 메일 발송 실패: receiptId={}, error={}", claim.id(), e.getClass().getSimpleName());
+      reflect(claim, receipt -> receipt.recordFailure(MAIL_FAILED, databaseClock.now()));
+      return;
+    }
+    // 발송 뒤 이 반영이 실패하면 다음 시도에서 다시 보낼 수 있다 (정확히 한 번은 보장하지 않음, 문서 「한계」)
+    reflect(claim, KakaoUnlinkReceipt::markDone);
   }
 
   // ===== 공통 =====

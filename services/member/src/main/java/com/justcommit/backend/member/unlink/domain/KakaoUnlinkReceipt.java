@@ -160,6 +160,19 @@ public class KakaoUnlinkReceipt extends BaseTimeEntity {
     this.nextAttemptAt = now;
   }
 
+  // 운영자 재개 (FAILED만): 재개할 단계로 되돌리고 실패 횟수 0. 처리권은 되돌리지 않고 올려 이전 작업자의 처리권을 무효화
+  public void resume(Instant now) {
+    if (this.status != KakaoUnlinkStatus.FAILED) {
+      throw new IllegalStateException("FAILED 기록만 재개할 수 있습니다: " + this.status);
+    }
+    this.status = this.resumeState;
+    this.resumeState = null;
+    this.failureCount = 0;
+    this.attemptNo++;
+    this.leaseUntil = null;
+    this.nextAttemptAt = now;
+  }
+
   private void finish(KakaoUnlinkStatus finalStatus) {
     this.status = finalStatus;
     this.resumeState = null;
