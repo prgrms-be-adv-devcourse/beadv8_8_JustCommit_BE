@@ -26,8 +26,11 @@ public class WalletService {
     private final WalletRepository walletRepository;
     private final WalletTransactionRepository walletTransactionRepository;
 
+    // 지갑이 없으면 만들지 않고 잔액 0 (docs/services/payment.md 「정책」 조회)
     public BigDecimal getBalance(Long memberId) {
-        return getWallet(memberId).getBalance();
+        return walletRepository.findByMemberId(memberId)
+                .map(Wallet::getBalance)
+                .orElse(BigDecimal.ZERO);
     }
 
     public Page<WalletTransactionResponse> getTransactions(Long memberId, RefType refType, Pageable pageable) {

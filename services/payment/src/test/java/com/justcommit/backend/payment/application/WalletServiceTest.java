@@ -9,6 +9,7 @@ import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
 import com.justcommit.backend.payment.infrastructure.repository.WalletRepository;
 import com.justcommit.backend.payment.infrastructure.repository.WalletTransactionRepository;
 import com.justcommit.backend.payment.presentation.dto.WalletTransactionResponse;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -109,6 +110,26 @@ class WalletServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", PaymentErrorCode.WALLET_NOT_FOUND);
         verifyNoInteractions(walletTransactionRepository);
+    }
+
+    @Test
+    @DisplayName("지갑이 없는 회원의 잔액은 0이고 지갑을 만들지 않는다")
+    void returnsZeroBalanceWhenMemberHasNoWallet() {
+        when(walletRepository.findByMemberId(MEMBER_ID)).thenReturn(Optional.empty());
+
+        assertThat(walletService.getBalance(MEMBER_ID)).isEqualByComparingTo("0");
+        verify(walletRepository, never()).save(any());
+        verify(walletRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("지갑이 있으면 잔액을 돌려준다")
+    void returnsWalletBalance() {
+        Wallet wallet = walletWithId();
+        wallet.credit(new BigDecimal("5000"));
+        when(walletRepository.findByMemberId(MEMBER_ID)).thenReturn(Optional.of(wallet));
+
+        assertThat(walletService.getBalance(MEMBER_ID)).isEqualByComparingTo("5000");
     }
 
     private Wallet walletWithId() {
