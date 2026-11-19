@@ -36,7 +36,7 @@ public class NicknameChangeService {
   public NicknameChangeResult changeNickname(Long memberId, String nickname) {
     // 대기 제한을 넘으면 409 MEMBER_BUSY, 아무것도 저장되지 않음
     Member member = memberLocker.lockById(memberId)
-        .filter(m -> m.getStatus() != MemberStatus.DELETED)
+        .filter(m -> m.getStatus() == MemberStatus.ACTIVE) // 탈퇴 · 카카오 연결 해제(INACTIVE, #422) 회원은 404
         .orElseThrow(() -> new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
 
     if (member.getNickname().equals(nickname)) {

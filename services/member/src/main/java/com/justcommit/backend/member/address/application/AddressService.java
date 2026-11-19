@@ -128,7 +128,7 @@ public class AddressService {
   // 대기 제한을 넘으면 MemberLocker가 409 MEMBER_BUSY로 바꾸고 트랜잭션은 롤백된다
   private Member lockMember(Long memberId) {
     return memberLocker.lockById(memberId)
-        .filter(m -> m.getStatus() != MemberStatus.DELETED) // 탈퇴 회원에게 배송지를 다시 저장하지 않음 (#407)
+        .filter(m -> m.getStatus() == MemberStatus.ACTIVE) // 탈퇴(#407) · 카카오 연결 해제(INACTIVE, #422) 회원에게 배송지를 저장하지 않음
         .orElseThrow(() -> new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
   }
 }
