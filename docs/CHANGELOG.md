@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-19 · reference/env-vars.md · Gateway `GATEWAY_TRUSTED_PROXIES` 추가: Nginx(10.x · 127.0.0.1)가 붙인 `X-Forwarded-*`를 서비스까지 넘김. 없으면 Gateway가 헤더를 지워 카카오 `redirect_uri`가 member 내부 주소로 나가 KOE006 (#550)
 - 2026-11-18 · flows/cancel-refund.md · services/market.md · glossary.md · reference/schedulers.md · testing/scenarios.md · 구매자 취소를 「취소 중」(`CANCEL_PROCESSING`) 커밋으로 바꾸고 환불은 택배 취소 결과 뒤(전부 취소) 또는 커밋 뒤 트랜잭션 밖(일부 취소)으로, 환불 결과 불명은 Saga 복구가 같은 키로 재요청(5번 안 되면 주문상품 `REVIEW_REQUIRED`), 환불 4xx는 바로 `REVIEW_REQUIRED`(배송비 환불 실패는 `last_error`가 `SHIPPING_FEE_`로 시작), 택배 취소 불가면 `NORMAL` 복귀. `ORDERS_ITEM`에 `attempt_count`, `attempted_at`, `last_error`(V8), 「확인 필요」를 주문상품에도, 시나리오 S-E11 ~ S-E13 추가, S-E01, 02, 04, 07 결과 기록 (#282) (#537)
 - 2026-11-18 · glossary.md · open-questions.md · 「취소 중」 주문상품 상태 코드 이름 `CANCEL_PROCESSING`으로 확정, 미정 목록에서 삭제 (#282)
 - 2026-11-19 · decisions/0024 · services/ai.md · 로컬 임베딩 모델 「비교 예정」을 실측 결과로: `multilingual-e5-small`을 운영 이미지 · 메모리 상한으로 실측(int8 최소 2g · 최고 1.96GiB, fp32 최소 3g, 640m에서는 시작 중 OOM, 재임베딩 뒤에도 메모리 유지) → ai 파드에 상주 불가라 비교에서 제외, ADR 0024(OpenAI) 유지 (#507) (#543)
