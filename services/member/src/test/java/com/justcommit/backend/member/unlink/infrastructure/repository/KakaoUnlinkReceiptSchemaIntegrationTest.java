@@ -6,6 +6,7 @@ import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReceipt;
 import com.justcommit.backend.member.unlink.domain.KakaoUnlinkStatus;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,6 +57,12 @@ class KakaoUnlinkReceiptSchemaIntegrationTest {
 
   @Autowired
   private JdbcTemplate jdbcTemplate;
+
+  // 회원을 가리키는 기록이 남으면 다른 테스트의 회원 삭제가 FK에 막히므로 지운다
+  @AfterEach
+  void cleanUp() {
+    jdbcTemplate.update("delete from member_kakao_unlink_receipt");
+  }
 
   @Test
   @DisplayName("정상 수신 기록은 PENDING · 바로 처리 대상으로 저장되고, 처리 칼럼은 기본값(시도 0 · 실패 0 · 처리 기록 아님)")
