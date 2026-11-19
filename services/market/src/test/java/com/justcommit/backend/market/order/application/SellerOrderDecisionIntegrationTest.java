@@ -1,6 +1,7 @@
 package com.justcommit.backend.market.order.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -19,6 +20,9 @@ import com.justcommit.backend.market.SellerOrderCancelledEvent;
 import com.justcommit.backend.market.cart.application.CartService;
 import com.justcommit.backend.market.client.payment.PaymentUseCase;
 import com.justcommit.backend.market.client.payment.RefundOutcome;
+import com.justcommit.backend.market.client.member.MemberQuery;
+import com.justcommit.backend.market.client.product.ProductQuery;
+import com.justcommit.backend.market.client.product.ProductUseCase;
 import com.justcommit.backend.market.config.JpaAuditingConfig;
 import com.justcommit.backend.market.order.application.OrderCancelTransactions.RefundClaim;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
@@ -38,10 +42,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
@@ -56,11 +62,13 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-// 판매자 수락, 거절과 수락 전 구매자 취소를 실제 PostgreSQL로 확인한다 (#284, ADR 0013).
+// 판매자 수락, 거절, 24시간 자동 거절과 수락 전 구매자 취소를 실제 PostgreSQL로 확인한다 (#284, #285, ADR 0013).
 // 환불은 PaymentUseCase 목으로 결과만 흉내 낸다. 배송 생성, 취소는 ShipmentService 목으로 호출만 본다
 // (배송 행 자체는 ShipmentCreateIntegrationTest)
 @DataJpaTest
@@ -68,7 +76,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaAuditingConfig.class, OrderPaymentTransactions.class, OrderRecoveryService.class,
         OrderCancelTransactions.class, OrderCancelRefunder.class, SellerOrderDecisionTransactions.class,
-        ShipmentQueryService.class})
+        ShipmentQueryService.class, OrderService.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED) // 수락, 거절, 취소, 반영이 각자 트랜잭션을 열고 커밋한다
 class SellerOrderDecisionIntegrationTest {
@@ -89,13 +97,21 @@ class SellerOrderDecisionIntegrationTest {
     @MockitoBean ShipmentService shipmentService;
     @MockitoBean OrderQuery orderQuery;
     @MockitoBean CartService cartService;
+    // OrderService.autoRejectExpiredSellerOrders만 쓰므로 나머지 의존성은 목으로 둔다
+    @MockitoBean MemberQuery memberQuery;
+    @MockitoBean ProductQuery productQuery;
+    @MockitoBean ProductUseCase productUseCase;
+    @MockitoBean OrderItemConfirmationService orderItemConfirmationService;
+    @MockitoBean OrderExpirationService orderExpirationService;
 
     @Autowired SellerOrderDecisionTransactions decisions;
     @Autowired OrderCancelTransactions cancelTransactions;
     @Autowired OrderCancelRefunder refunder;
     @Autowired OrderRecoveryService recoveryService;
     @Autowired OrderPaymentTransactions paymentTransactions;
+    @Autowired OrderService orderService;
     @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired PlatformTransactionManager transactionManager;
 
     @AfterEach
     void cleanUp() {
@@ -299,6 +315,173 @@ class SellerOrderDecisionIntegrationTest {
         verify(paymentUseCase, never()).refundCancelledItem(any(), any(), any(), any());
     }
 
+    @Test
+    @DisplayName("[S-D09] 자동 거절은 수락 마감(결제 완료 후 24시간)이 지난 판매자 주문만 거절한다. 23시간 59분, 결제 완료 시각 없음, 이미 수락된 판매자 주문은 그대로")
+    void autoRejectsOnlyExpiredSellerOrders() {
+        mockRefunds(RefundOutcome.refunded(), RefundOutcome.refunded());
+        Fixture expired = pendingOrder(1);
+        Fixture almost = pendingOrder(1);
+        Fixture noPaidAt = pendingOrder(1);
+        Fixture accepted = pendingOrder(1);
+        decisions.accept(SELLER_ID, accepted.sellerOrderId());
+        paidAgo(expired, 24 * 60);
+        paidAgo(almost, 24 * 60 - 1);
+        jdbcTemplate.update("update seller_order set paid_at = null where id = ?", noPaidAt.sellerOrderId());
+        paidAgo(accepted, 25 * 60);
+
+        orderService.autoRejectExpiredSellerOrders();
+
+        assertThat(itemStatuses(expired)).containsOnly("CANCELLED");
+        assertThat(itemStatuses(almost)).containsOnly("ACCEPT_PENDING");
+        assertThat(itemStatuses(noPaidAt)).containsOnly("ACCEPT_PENDING");
+        assertThat(itemStatuses(accepted)).containsOnly("NORMAL");
+        verify(paymentUseCase, times(1)).refundCancelledItem(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("[S-D09] 자동 거절: 남은 상품이 취소 중으로 커밋된 뒤 환불되고 CANCELLED, 취소 사유와 판매 재개 사유는 AUTO, 배송비 환불, 배송 없음, 판매자에게 구매자 취소 알림 없음")
+    void autoRejectRefundsAllRemainingItems() {
+        Fixture fixture = pendingOrder(2);
+        paidAgo(fixture, 25 * 60);
+        List<String> statusesAtRefund = new ArrayList<>();
+        when(paymentUseCase.refundCancelledItem(anyLong(), anyLong(), anyLong(), any())).thenAnswer(invocation -> {
+            statusesAtRefund.add(item(invocation.getArgument(0)).get("status").toString());
+            return RefundOutcome.refunded();
+        });
+        when(paymentUseCase.refundShippingFee(anyLong(), anyLong(), anyLong(), any())).thenReturn(RefundOutcome.refunded());
+
+        orderService.autoRejectExpiredSellerOrders();
+
+        assertThat(statusesAtRefund).containsExactly("CANCEL_PROCESSING", "CANCEL_PROCESSING");
+        for (Long itemId : fixture.itemIds()) {
+            assertThat(item(itemId)).containsEntry("status", "CANCELLED").containsEntry("cancel_reason", "AUTO");
+        }
+        verify(outboxPublisher).publish(new OrderItemCancelled(fixture.orderId(), fixture.itemIds().get(0), 101L,
+                CancelReason.AUTO));
+        verify(outboxPublisher).publish(new OrderItemCancelled(fixture.orderId(), fixture.itemIds().get(1), 102L,
+                CancelReason.AUTO));
+        verify(paymentUseCase, times(1)).refundShippingFee(eq(fixture.sellerOrderId()), eq(fixture.orderId()),
+                eq(BUYER_ID), argEquals(SHIPPING_FEE));
+        verify(shipmentService, never()).createShipment(any(), any());
+        verify(sellerOrderEventPublisher, never()).publishAfterCommit(any(OrderItemCancelledEvent.class));
+        verify(sellerOrderEventPublisher, never()).publishAfterCommit(any(SellerOrderCancelledEvent.class));
+        assertThat(orderStatus(fixture.orderId())).isEqualTo("CANCELLED");
+    }
+
+    @Test
+    @DisplayName("[S-D09] 구매자가 상품 하나를 미리 취소한 판매자 주문은 남은 상품만 자동 거절되고 배송비는 한 번만 환불 요청된다")
+    void autoRejectAfterBuyerItemCancelRefundsShippingFeeOnce() {
+        Fixture fixture = pendingOrder(2);
+        mockRefunds(RefundOutcome.refunded(), RefundOutcome.refunded());
+        itemCancel(fixture.itemIds().getFirst());
+        paidAgo(fixture, 25 * 60);
+
+        orderService.autoRejectExpiredSellerOrders();
+
+        assertThat(item(fixture.itemIds().get(0))).containsEntry("status", "CANCELLED").containsEntry("cancel_reason", "BUYER");
+        assertThat(item(fixture.itemIds().get(1))).containsEntry("status", "CANCELLED").containsEntry("cancel_reason", "AUTO");
+        verify(paymentUseCase, times(2)).refundCancelledItem(any(), any(), any(), any());
+        verify(paymentUseCase, times(1)).refundShippingFee(eq(fixture.sellerOrderId()), eq(fixture.orderId()),
+                eq(BUYER_ID), argEquals(SHIPPING_FEE));
+    }
+
+    @Test
+    @DisplayName("[S-D09] 자동 거절 환불이 결과 불명이면 취소 중으로 남고, Saga 복구가 같은 키로 다시 요청해 AUTO 사유로 끝낸다. 다음 주기 자동 거절은 다시 집지 않는다")
+    void recoveredAutoRejectRefundKeepsAutoReason() {
+        Fixture fixture = pendingOrder(1);
+        Long itemId = fixture.itemIds().getFirst();
+        paidAgo(fixture, 25 * 60);
+        when(paymentUseCase.refundCancelledItem(anyLong(), anyLong(), anyLong(), any()))
+                .thenReturn(RefundOutcome.unknown("TIMEOUT"), RefundOutcome.refunded());
+        when(paymentUseCase.refundShippingFee(anyLong(), anyLong(), anyLong(), any()))
+                .thenReturn(RefundOutcome.unknown("TIMEOUT"), RefundOutcome.refunded());
+
+        orderService.autoRejectExpiredSellerOrders();
+        assertThat(item(itemId)).containsEntry("status", "CANCEL_PROCESSING").containsEntry("cancel_reason", "AUTO");
+        verify(outboxPublisher, never()).publish(any());
+
+        orderService.autoRejectExpiredSellerOrders(); // 수락 대기가 없어 후보가 아니다
+        verify(paymentUseCase, times(1)).refundCancelledItem(any(), any(), any(), any());
+
+        passGrace(itemId);
+        recoveryService.recoverProcessingRefunds();
+
+        assertThat(item(itemId)).containsEntry("status", "CANCELLED").containsEntry("cancel_reason", "AUTO");
+        verify(paymentUseCase, times(2)).refundShippingFee(eq(fixture.sellerOrderId()), eq(fixture.orderId()),
+                eq(BUYER_ID), argEquals(SHIPPING_FEE));
+        verify(outboxPublisher, times(1)).publish(new OrderItemCancelled(fixture.orderId(), itemId, 101L,
+                CancelReason.AUTO));
+    }
+
+    @Test
+    @DisplayName("자동 거절이 먼저 처리한 판매자 주문에 온 수락, 거절은 409이고 배송을 만들지 않는다")
+    void acceptAfterAutoRejectIsConflict() {
+        Fixture fixture = pendingOrder(1);
+        paidAgo(fixture, 25 * 60);
+        mockRefunds(RefundOutcome.refunded(), RefundOutcome.refunded());
+
+        orderService.autoRejectExpiredSellerOrders();
+
+        assertNotAcceptable(() -> decisions.accept(SELLER_ID, fixture.sellerOrderId()));
+        assertNotAcceptable(() -> decisions.reject(SELLER_ID, fixture.sellerOrderId(), fixture.itemIds()));
+        verify(shipmentService, never()).createShipment(any(), any());
+    }
+
+    @Test
+    @DisplayName("수락, 거절, 구매자 취소가 주문을 잡고 있으면 자동 거절은 기다리지 않고 건너뛰어 다음 주기에 다시 본다")
+    void autoRejectSkipsLockedOrderWithoutWaiting() {
+        Fixture fixture = pendingOrder(1);
+        paidAgo(fixture, 25 * 60);
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            jdbcTemplate.queryForObject("select id from orders where id = ? for update", Long.class, fixture.orderId());
+            assertThatCode(() -> CompletableFuture.supplyAsync(() -> decisions.autoReject(fixture.sellerOrderId()))
+                    .get(2, TimeUnit.SECONDS)).doesNotThrowAnyException();
+        });
+
+        assertThat(itemStatuses(fixture)).containsOnly("ACCEPT_PENDING");
+        verify(paymentUseCase, never()).refundCancelledItem(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("자동 거절과 판매자 수락이 동시에 와도 하나만 반영되고, 배송 생성과 환불이 섞이지 않는다")
+    void concurrentAutoRejectAndAcceptApplyOnce() throws Exception {
+        for (int round = 0; round < 5; round++) {
+            Fixture fixture = pendingOrder(2);
+            paidAgo(fixture, 25 * 60);
+            org.mockito.Mockito.clearInvocations(paymentUseCase, shipmentService);
+            mockRefunds(RefundOutcome.refunded(), RefundOutcome.refunded());
+
+            List<Throwable> failures = runConcurrently(
+                    () -> {
+                        orderService.autoRejectExpiredSellerOrders();
+                        return null;
+                    },
+                    () -> {
+                        decisions.accept(SELLER_ID, fixture.sellerOrderId());
+                        return null;
+                    });
+
+            List<String> statuses = itemStatuses(fixture);
+            if (failures.isEmpty()) {
+                // 수락이 먼저 주문을 잡음: 자동 거절은 건너뛰거나 다시 확인에서 빠진다
+                assertThat(statuses).containsOnly("NORMAL");
+                verify(shipmentService, times(1)).createShipment(any(), any());
+                verify(paymentUseCase, never()).refundCancelledItem(any(), any(), any(), any());
+                verify(paymentUseCase, never()).refundShippingFee(any(), any(), any(), any());
+            } else {
+                // 자동 거절이 먼저 주문을 잡음: 늦게 온 수락은 409
+                assertThat(failures).singleElement().isInstanceOf(BusinessException.class)
+                        .extracting(e -> ((BusinessException) e).getErrorCode())
+                        .isEqualTo(OrderErrorCode.SELLER_ORDER_NOT_ACCEPTABLE);
+                assertThat(statuses).containsOnly("CANCELLED");
+                verify(shipmentService, never()).createShipment(any(), any());
+                verify(paymentUseCase, times(2)).refundCancelledItem(any(), any(), any(), any());
+                verify(paymentUseCase, times(1)).refundShippingFee(any(), any(), any(), any());
+            }
+        }
+    }
+
     // ===== helpers
 
     // OrderService.rejectSellerOrderItems와 같은 순서: 거절 커밋 → (트랜잭션 밖) 판매자 주문별 환불
@@ -382,6 +565,12 @@ class SellerOrderDecisionIntegrationTest {
         List<Long> itemIds = jdbcTemplate.queryForList(
                 "select id from orders_item where seller_order_id = ? order by id", Long.class, sellerOrderId);
         return new Fixture(orderId, sellerOrderId, itemIds);
+    }
+
+    // 결제 완료 시각을 지금(앱 시각)에서 minutes분 전으로 맞춘다
+    private void paidAgo(Fixture fixture, long minutes) {
+        jdbcTemplate.update("update seller_order set paid_at = ? where id = ?",
+                Timestamp.valueOf(LocalDateTime.now().minusMinutes(minutes)), fixture.sellerOrderId());
     }
 
     private void insertShipment(Long sellerOrderId, String status) {
