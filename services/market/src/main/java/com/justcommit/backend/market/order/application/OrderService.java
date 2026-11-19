@@ -249,7 +249,7 @@ public class OrderService {
         refundBySellerOrder(orderCancelTransactions.requestCancel(memberId, orderId));
     }
 
-    // 판매자 승인 (#284): 남은 수락 대기 주문상품을 모두 수락한다
+    // 판매자 수락 (#284): 남은 수락 대기 주문상품을 모두 수락한다
     public void acceptSellerOrder(Long sellerId, Long sellerOrderId) {
         sellerOrderDecisionTransactions.accept(sellerId, sellerOrderId);
     }

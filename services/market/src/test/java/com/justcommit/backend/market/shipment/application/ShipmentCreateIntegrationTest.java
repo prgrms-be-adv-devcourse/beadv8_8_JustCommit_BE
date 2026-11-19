@@ -45,7 +45,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-// 판매자 승인 트랜잭션 안에서 배송을 만들 때 READY 행만 만들고 택배사는 부르지 않는지 실제 DB로 확인한다 (#475, #284).
+// 판매자 수락 트랜잭션 안에서 배송을 만들 때 READY 행만 만들고 택배사는 부르지 않는지 실제 DB로 확인한다 (#475, #284).
 // 택배 예약은 예약 큐가 맡는다 → ShipmentBookingQueueIntegrationTest
 @DataJpaTest
 @ActiveProfiles("test")
@@ -75,7 +75,7 @@ class ShipmentCreateIntegrationTest {
     }
 
     @Test
-    @DisplayName("[S-F01] 승인 트랜잭션이 커밋돼도 택배사를 부르지 않고 READY 배송(택배 주문번호 · 상품 요약)만 남긴다")
+    @DisplayName("[S-F01] 수락 트랜잭션이 커밋돼도 택배사를 부르지 않고 READY 배송(택배 주문번호 · 상품 요약)만 남긴다")
     void createsReadyWithoutCallingCourier() {
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> shipmentService.createShipment(7L, List.of("몬스테라")));
 
@@ -101,11 +101,11 @@ class ShipmentCreateIntegrationTest {
     }
 
     @Test
-    @DisplayName("[S-F01] 승인 트랜잭션이 롤백되면 배송 행도 남지 않는다")
+    @DisplayName("[S-F01] 수락 트랜잭션이 롤백되면 배송 행도 남지 않는다")
     void rollbackLeavesNothing() {
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             shipmentService.createShipment(7L, List.of("몬스테라"));
-            status.setRollbackOnly(); // 승인 처리 중 에러로 롤백되는 상황
+            status.setRollbackOnly(); // 수락 처리 중 에러로 롤백되는 상황
         });
 
         assertThat(shipmentRepository.findBySellerOrderId(7L)).isEmpty();
@@ -113,7 +113,7 @@ class ShipmentCreateIntegrationTest {
     }
 
     @Test
-    @DisplayName("[S-F08] 택배사가 3초씩 늦어도 승인 쪽 배송 생성은 기다리지 않고, 예약은 큐가 나중에 끝낸다")
+    @DisplayName("[S-F08] 택배사가 3초씩 늦어도 수락 쪽 배송 생성은 기다리지 않고, 예약은 큐가 나중에 끝낸다")
     void paymentDoesNotWaitForSlowCourier() {
         when(orderQuery.getShippingInfo(anyLong())).thenReturn(
                 new OrderShippingInfo(9L, 10L, 20L, new BigDecimal("3000"), "구매자", "01000000000", "부산", null));

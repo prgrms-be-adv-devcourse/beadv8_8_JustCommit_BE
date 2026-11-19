@@ -432,7 +432,7 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("[S-D03] 결제 성공이면 주문 PAID와 판매 완료 이벤트(OrderPaid)를 Outbox에 남기고, 배송은 판매자 승인 전이라 만들지 않는다")
+    @DisplayName("[S-D03] 결제 성공이면 주문 PAID와 판매 완료 이벤트(OrderPaid)를 Outbox에 남기고, 배송은 판매자 수락 전이라 만들지 않는다")
     void paysOrderAndMarksReservedProductsSoldOut() {
         stubLookup(List.of(selected(1L, 101L, "10000")),
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));

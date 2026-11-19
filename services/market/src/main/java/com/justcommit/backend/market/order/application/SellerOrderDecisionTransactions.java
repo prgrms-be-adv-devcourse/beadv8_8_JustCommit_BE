@@ -22,10 +22,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-// 판매자 승인, 거절의 짧은 트랜잭션 (#284, ADR 0013). 거절 환불 REST는 이 클래스 밖, 커밋 뒤에 한다.
+// 판매자 수락, 거절의 짧은 트랜잭션 (#284, ADR 0013). 거절 환불 REST는 이 클래스 밖, 커밋 뒤에 한다.
 // 수락된(일반) 주문상품이 있으면 같은 트랜잭션에서 그 상품만 담은 배송(READY)을 만든다.
-// 잠금 순서는 구매자 취소와 같은 주문 → 판매자 주문이라 승인, 거절, 구매자 취소가 동시에 와도 하나씩 처리된다.
-// 먼저 처리된 쪽이 수락 대기를 없애므로 늦게 온 승인, 거절은 409다
+// 잠금 순서는 구매자 취소와 같은 주문 → 판매자 주문이라 수락, 거절, 구매자 취소가 동시에 와도 하나씩 처리된다.
+// 먼저 처리된 쪽이 수락 대기를 없애므로 늦게 온 수락, 거절은 409다
 @Slf4j
 @Component
 public class SellerOrderDecisionTransactions {
@@ -48,14 +48,14 @@ public class SellerOrderDecisionTransactions {
         this.shipmentService = shipmentService;
     }
 
-    // 승인: 남은 수락 대기 주문상품을 모두 일반으로 바꾸고 배송을 만든다
+    // 수락: 남은 수락 대기 주문상품을 모두 일반으로 바꾸고 배송을 만든다
     public void accept(Long sellerId, Long sellerOrderId) {
         transactionTemplate.executeWithoutResult(status -> {
             Locked locked = lock(sellerId, sellerOrderId);
             List<OrdersItem> pending = pendingItems(locked.sellerOrder());
             pending.forEach(OrdersItem::accept);
             createShipment(locked.sellerOrder());
-            log.info("판매자 승인: sellerOrderId={}, items={}", sellerOrderId, pending.size());
+            log.info("판매자 수락: sellerOrderId={}, items={}", sellerOrderId, pending.size());
         });
     }
 
@@ -117,7 +117,7 @@ public class SellerOrderDecisionTransactions {
         return new Locked(order, sellerOrder);
     }
 
-    // 수락 대기 주문상품. 하나도 없으면 이미 승인, 거절, 구매자 취소로 처리된 판매자 주문이다
+    // 수락 대기 주문상품. 하나도 없으면 이미 수락, 거절, 구매자 취소로 처리된 판매자 주문이다
     private static List<OrdersItem> pendingItems(SellerOrder sellerOrder) {
         List<OrdersItem> pending = sellerOrder.getItems().stream()
                 .filter(item -> item.getStatus() == OrderItemStatus.ACCEPT_PENDING)

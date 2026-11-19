@@ -60,7 +60,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-// 판매자 승인, 거절과 수락 전 구매자 취소를 실제 PostgreSQL로 확인한다 (#284, ADR 0013).
+// 판매자 수락, 거절과 수락 전 구매자 취소를 실제 PostgreSQL로 확인한다 (#284, ADR 0013).
 // 환불은 PaymentUseCase 목으로 결과만 흉내 낸다. 배송 생성, 취소는 ShipmentService 목으로 호출만 본다
 // (배송 행 자체는 ShipmentCreateIntegrationTest)
 @DataJpaTest
@@ -70,7 +70,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
         OrderCancelTransactions.class, OrderCancelRefunder.class, SellerOrderDecisionTransactions.class,
         ShipmentQueryService.class})
 @Testcontainers(disabledWithoutDocker = true)
-@Transactional(propagation = Propagation.NOT_SUPPORTED) // 승인, 거절, 취소, 반영이 각자 트랜잭션을 열고 커밋한다
+@Transactional(propagation = Propagation.NOT_SUPPORTED) // 수락, 거절, 취소, 반영이 각자 트랜잭션을 열고 커밋한다
 class SellerOrderDecisionIntegrationTest {
 
     private static final long BUYER_ID = 10L;
@@ -103,7 +103,7 @@ class SellerOrderDecisionIntegrationTest {
     }
 
     @Test
-    @DisplayName("[S-D08] 전체 승인: 수락 대기 상품이 모두 NORMAL, 모든 상품을 담은 배송 생성, 정산 기준액 유지, 환불 없음. 다시 승인하면 409")
+    @DisplayName("[S-D08] 전체 수락: 수락 대기 상품이 모두 NORMAL, 모든 상품을 담은 배송 생성, 정산 기준액 유지, 환불 없음. 다시 수락하면 409")
     void acceptsAllItems() {
         Fixture fixture = pendingOrder(2);
 
@@ -154,7 +154,7 @@ class SellerOrderDecisionIntegrationTest {
     }
 
     @Test
-    @DisplayName("수락 전에 구매자가 상품 하나를 취소한 뒤 승인하면 남은 상품만 배송한다")
+    @DisplayName("수락 전에 구매자가 상품 하나를 취소한 뒤 수락하면 남은 상품만 배송한다")
     void acceptAfterBuyerItemCancelShipsRemainingOnly() {
         Fixture fixture = pendingOrder(2);
         mockRefunds(RefundOutcome.refunded(), RefundOutcome.refunded());
@@ -208,7 +208,7 @@ class SellerOrderDecisionIntegrationTest {
     }
 
     @Test
-    @DisplayName("승인과 거절이 동시에 와도 하나만 반영되고, 늦게 온 쪽은 409")
+    @DisplayName("수락과 거절이 동시에 와도 하나만 반영되고, 늦게 온 쪽은 409")
     void concurrentAcceptAndRejectApplyOnce() throws Exception {
         Fixture fixture = pendingOrder(2);
         mockRefunds(RefundOutcome.refunded(), RefundOutcome.refunded());
@@ -228,14 +228,14 @@ class SellerOrderDecisionIntegrationTest {
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(OrderErrorCode.SELLER_ORDER_NOT_ACCEPTABLE);
         List<String> statuses = itemStatuses(fixture);
-        // 승인이 먼저면 둘 다 NORMAL, 거절이 먼저면 하나 CANCELLED + 하나 NORMAL
+        // 수락이 먼저면 둘 다 NORMAL, 거절이 먼저면 하나 CANCELLED + 하나 NORMAL
         assertThat(statuses).doesNotContain("ACCEPT_PENDING");
         assertThat(statuses.stream().filter("CANCELLED"::equals).count()).isLessThanOrEqualTo(1);
         verify(shipmentService, times(1)).createShipment(any(), any());
     }
 
     @Test
-    @DisplayName("구매자가 전체 취소한 뒤 온 승인, 거절은 409")
+    @DisplayName("구매자가 전체 취소한 뒤 온 수락, 거절은 409")
     void acceptAfterBuyerCancelIsConflict() {
         Fixture fixture = pendingOrder(2);
         mockRefunds(RefundOutcome.refunded(), RefundOutcome.refunded());
@@ -285,11 +285,11 @@ class SellerOrderDecisionIntegrationTest {
     }
 
     @Test
-    @DisplayName("승인 뒤 구매자 취소는 지금처럼 배송을 취소 대기로 두고 택배 결과를 기다린다 (환불 안 함)")
+    @DisplayName("수락 뒤 구매자 취소는 지금처럼 배송을 취소 대기로 두고 택배 결과를 기다린다 (환불 안 함)")
     void buyerCancelAfterAcceptWaitsForCourier() {
         Fixture fixture = pendingOrder(1);
         decisions.accept(SELLER_ID, fixture.sellerOrderId());
-        insertShipment(fixture.sellerOrderId(), "READY"); // ShipmentService가 목이라 승인이 만들 배송 행을 직접 넣는다
+        insertShipment(fixture.sellerOrderId(), "READY"); // ShipmentService가 목이라 수락이 만들 배송 행을 직접 넣는다
 
         buyerCancel(fixture.orderId());
 

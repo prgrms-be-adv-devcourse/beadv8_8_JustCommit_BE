@@ -248,7 +248,7 @@ public class OrderPaymentTransactions {
 
     // 결제 완료 후속 처리: 주문상품 수락 대기 + 결제 완료 시각, 판매 완료 Outbox, 판매자 알림.
     // 결과 반영과 같은 트랜잭션 (ADR 0013, 0016, 0023). 재결제, 복구로 확정돼도 같은 경로라 그 시각이 결제 완료 시각이다.
-    // 배송은 만들지 않는다. 판매자가 승인해야 수락된 상품만 담아 만든다 (SellerOrderDecisionTransactions)
+    // 배송은 만들지 않는다. 판매자가 수락하면 그때 수락된 상품만 담아 만든다 (SellerOrderDecisionTransactions)
     private void completePayment(Long orderId) {
         LocalDateTime paidAt = LocalDateTime.now();
         sellerOrderRepository.markPaid(orderId, paidAt);

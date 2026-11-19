@@ -67,7 +67,7 @@ public class OrdersItem extends BaseTimeEntity {
         this.status = OrderItemStatus.CONFIRMED;
     }
 
-    // 판매자 승인: 수락 대기 → 일반 (#284)
+    // 판매자 수락: 수락 대기 → 일반 (#284)
     public void accept() {
         if (this.status != OrderItemStatus.ACCEPT_PENDING) {
             throw new IllegalStateException("수락 대기 주문 상품만 수락할 수 있습니다.");

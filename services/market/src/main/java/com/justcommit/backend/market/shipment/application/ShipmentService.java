@@ -41,9 +41,9 @@ public class ShipmentService {
     private final ShipmentStatusChangedEventPublisher statusChangedEventPublisher;
     private final OrderQuery orderQuery;
 
-    // 판매자 승인 트랜잭션 안에서 호출된다 (#284, ADR 0013). 승인, 일부 거절 뒤 수락된 주문상품만 담는다.
-    // 배송 행(READY + courierOrderNo + 상품 요약)만 만들어 승인과 함께 커밋하고 끝낸다. 택배사는 부르지 않는다.
-    // 택배사 예약은 예약 큐(bookReadyShipments)가 맡는다. 승인 응답이 택배사 지연 · 장애와 무관해진다 (#351).
+    // 판매자 수락 트랜잭션 안에서 호출된다 (#284, ADR 0013). 수락, 일부 거절 뒤 수락된 주문상품만 담는다.
+    // 배송 행(READY + courierOrderNo + 상품 요약)만 만들어 수락과 함께 커밋하고 끝낸다. 택배사는 부르지 않는다.
+    // 택배사 예약은 예약 큐(bookReadyShipments)가 맡는다. 수락 응답이 택배사 지연 · 장애와 무관해진다 (#351).
     // 택배 주문번호의 날짜는 배송 생성일(= 수락일)이다
     public void createShipment(Long sellerOrderId, List<String> productNames) {
         Shipment shipment = shipmentRepository.save(new Shipment(sellerOrderId, itemSummary(productNames)));

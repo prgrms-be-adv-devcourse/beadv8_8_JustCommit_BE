@@ -54,7 +54,7 @@ public class OrderController {
         return ResponseEntity.ok(orderReadService.sellerOrder(member.memberId(), sellerOrderId));
     }
 
-    // 판매자 승인 (#284): 남은 수락 대기 주문상품을 모두 수락한다. 이미 처리됐으면 409
+    // 판매자 수락 (#284): 남은 수락 대기 주문상품을 모두 수락한다. 이미 처리됐으면 409
     @PostMapping("/seller/{sellerOrderId}/accept")
     public ResponseEntity<Void> acceptSellerOrder(
             @AuthenticationPrincipal AuthMember member, @PathVariable Long sellerOrderId) {

@@ -1,7 +1,7 @@
 package com.justcommit.backend.market;
 
 public enum OrderItemStatus {
-    // 수락 대기: 결제됐고 판매자의 승인 · 거절을 기다린다. 배송은 아직 없다 (#284, ADR 0013)
+    // 수락 대기: 결제됐고 판매자의 수락, 거절을 기다린다. 배송은 아직 없다 (#284, ADR 0013)
     ACCEPT_PENDING,
     // 일반: 결제 전이거나 판매자가 수락한 주문상품
     NORMAL,
