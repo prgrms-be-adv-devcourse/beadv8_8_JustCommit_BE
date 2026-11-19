@@ -98,7 +98,7 @@
 | 탈퇴 기록 | `MemberWithdrawalRecord` (`member_withdrawal_record`) | 재가입 제한 기록 | 탈퇴한 회원의 이메일 · 휴대폰 HMAC과 탈퇴 시각을 재가입 제한 판정용으로 보관하는 기록. 기간이 지나면 삭제 | [가입과 회원 복제본](flows/signup-and-replica.md#재가입-제한) |
 | 소셜 연결 해제 | `INACTIVE` (회원 상태) · `SOCIAL_UNLINKED` (폐기 사유) | 카카오 연결 끊김, 연결 해제됨 | 카카오 연결이 끊겼지만 아직 탈퇴하지 않은 회원의 상태. 기존 로그인을 폐기하고 일반 회원 기능을 막음. 재연결 시 복구는 흐름 문서의 정책을 따름 | [가입과 회원 복제본](flows/signup-and-replica.md#카카오-연결-해제-웹훅) |
 | 자동 탈퇴 처리 기록 | `handles_withdrawal` | – | 같은 회원 · 같은 연결 해제 상태에 들어온 카카오 연결 해제 웹훅 수신 기록 중 자동 탈퇴(확인 · 탈퇴 · 안내)를 진행하는 하나의 기록. 처리 완료 여부가 아니라 이 절차를 맡도록 선택됐는지를 뜻함 | [가입과 회원 복제본](flows/signup-and-replica.md#연결-해제-상태와-자동-탈퇴-처리-기록) |
-| 카카오 연결 해제 웹훅 | `/api/v1/webhooks/kakao/unlink` (수신 기록 테이블 이름 ⬜ 미정) | 연결 해제 알림, unlink callback | 카카오계정 탈퇴 · 강제 탈퇴 · 카카오 관리자 처리 · 사용자 직접 연결 해제로 앱 연결이 끊겼을 때 카카오가 보내는 HTTP 요청. 택배사 「웹훅」과 다름 | [가입과 회원 복제본](flows/signup-and-replica.md#카카오-연결-해제-웹훅) |
+| 카카오 연결 해제 웹훅 | `/api/v1/webhooks/kakao/unlink` (수신 기록 `member_kakao_unlink_receipt`) | 연결 해제 알림, unlink callback | 카카오계정 탈퇴 · 강제 탈퇴 · 카카오 관리자 처리 · 사용자 직접 연결 해제로 앱 연결이 끊겼을 때 카카오가 보내는 HTTP 요청. 택배사 「웹훅」과 다름 | [가입과 회원 복제본](flows/signup-and-replica.md#카카오-연결-해제-웹훅) |
 | 탈퇴 토큰 | `auth:withdrawal` | – | 카카오 회원이 이메일 재인증 후 받아 최종 탈퇴 요청에 쓰는 일회용 토큰 | [Redis 키](reference/redis-keys.md) |
 | Fail-closed | – | 막힘 처리 | 확인 조회가 실패하면 허용하지 않고 막는 정책 (탈퇴) | [가입과 회원 복제본](flows/signup-and-replica.md#탈퇴) |
 

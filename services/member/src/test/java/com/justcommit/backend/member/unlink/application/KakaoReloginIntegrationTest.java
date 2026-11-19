@@ -14,6 +14,7 @@ import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReceipt;
 import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
+import com.justcommit.backend.member.withdrawal.infrastructure.kakao.KakaoAdminClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -41,7 +42,9 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.verify;
 
 /**
  * [S-B11] 카카오 재로그인 (#422). 정상 카카오 로그인은 회원 잠금 안에서
@@ -74,6 +77,8 @@ class KakaoReloginIntegrationTest {
   @Autowired JwtVerifier jwtVerifier;
   // 같은 초를 확실하게 만들 때만 발급 시각을 고정하고, 평소에는 실제 DB 시계
   @MockitoSpyBean DatabaseClock databaseClock;
+  // 카카오 조회 응답을 받은 "직후"에 다른 일을 끼워 넣기 위해 가로챔. 평소에는 실제 빈 그대로
+  @MockitoSpyBean KakaoAdminClient kakaoAdminClient;
   @Autowired KakaoUnlinkProcessor processor;
   @Autowired KakaoUnlinkReceiptRepository receiptRepository;
   @Autowired MemberRepository memberRepository;
@@ -118,19 +123,24 @@ class KakaoReloginIntegrationTest {
   }
 
   @Test
-  @DisplayName("[S-B11] ACTIVE 회원이 로그인해도 미처리 기록은 무효: 작업자가 끊김을 확인한 직후 재로그인하면 옛 조회 결과로 INACTIVE가 되지 않음")
+  @DisplayName("[S-B11] 작업자가 카카오에서 끊김 응답을 받은 직후 재로그인하면(ACTIVE여도 미처리 기록 무효), 옛 조회 결과로 INACTIVE가 되지 않음")
   void reloginInvalidatesEvenWhenActive() {
     Member member = kakaoMember("9300000002");
     receiptRepository.save(KakaoUnlinkReceipt.received("9300000002", "UNLINK_FROM_APPS", Instant.now().minusSeconds(60)));
-    // 작업자가 기록을 확보하고 카카오에서 "끊김"을 받은 상태
-    KakaoUnlinkProcessor.Claim claim = processor.claimNext().orElseThrow();
     KAKAO.stubFor(get(urlPathEqualTo("/v2/user/me")).willReturn(aResponse().withStatus(400)
         .withHeader("Content-Type", "application/json")
         .withBody("{\"msg\":\"NotRegisteredUserException\",\"code\":-101}")));
+    // 작업자가 "끊김" 응답을 받은 직후(폐기하러 회원을 잠그기 전)에 사용자가 다시 카카오로 로그인
+    doAnswer(invocation -> {
+      Object linkStatus = invocation.callRealMethod();
+      socialLoginService.login(new SocialLoginCommand(Provider.KAKAO, "9300000002", "b@kakao.com"));
+      return linkStatus;
+    }).when(kakaoAdminClient).linkStatus("9300000002");
 
-    // 그 사이 사용자가 다시 카카오로 로그인
-    socialLoginService.login(new SocialLoginCommand(Provider.KAKAO, "9300000002", "b@kakao.com"));
+    KakaoUnlinkProcessor.Claim claim = processor.claimNext().orElseThrow();
     processor.process(claim);
+
+    verify(kakaoAdminClient).linkStatus("9300000002"); // 경쟁 경로를 실제로 지났는지
 
     Member after = memberRepository.findById(member.getId()).orElseThrow();
     assertThat(after.getStatus()).isEqualTo(MemberStatus.ACTIVE);

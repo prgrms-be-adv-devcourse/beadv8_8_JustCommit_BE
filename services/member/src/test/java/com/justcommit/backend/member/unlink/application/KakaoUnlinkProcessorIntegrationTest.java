@@ -411,6 +411,44 @@ class KakaoUnlinkProcessorIntegrationTest {
         .containsEntry("attempt_no", 3).containsEntry("failure_count", 0);
   }
 
+  @Test
+  @DisplayName("[S-B11] 첫 해제의 자동 탈퇴 작업이 3곳 확인 중인 사이 재로그인 → 다시 관리자 해제되면, 늦게 돌아온 첫 작업은 버전이 달라 새 연결 해제 상태를 탈퇴시키지 않음")
+  void staleWorkerCannotWithdrawNewerUnlinkState() {
+    Member member = kakaoMember("9200000032");
+    Long first = receive("9200000032", "UNLINK_FROM_APPS"); // 자동 탈퇴 사유 → v1의 자동 탈퇴 처리 기록
+    stubUnlinked();
+    stubChecks(PASS);
+    // 첫 작업자가 3곳을 확인하는 사이에 일어나는 일
+    doAnswer(invocation -> {
+      // 재로그인(ACTIVE 복구, 첫 기록 무효) → 다시 관리자 해제(INACTIVE v2, 탈퇴 대상 아님)
+      socialLoginService.login(new SocialLoginCommand(Provider.KAKAO, "9200000032", "stale32@kakao.com"));
+      receive("9200000032", "UNLINK_FROM_ADMIN");
+      processor.processDue();
+      // 첫 기록이 재로그인 무효화를 피했다고 가정하고 되살림 (처리권 · 단계는 첫 작업자가 확보한 그대로):
+      // 1차 방어선(처리권 · 단계)을 넘긴 경우의 2차 방어선(인증 버전 = 연결 해제 버전) 검증
+      jdbcTemplate.update("update member_kakao_unlink_receipt set status = 'INACTIVATED' where id = ?", first);
+      return invocation.callRealMethod();
+    }).when(withdrawalCheckService).check(member.getId());
+
+    processor.processDue();
+
+    // 3곳 확인은 ALLOWED였지만 최종 잠금 안에서 버전이 달라 멈춤: 관리자 해제 상태(v2)는 탈퇴되지 않음
+    verify(withdrawalCheckService).check(member.getId());
+    assertMember(member.getId(), MemberStatus.INACTIVE, 2);
+    assertThat(memberRepository.findById(member.getId()).orElseThrow().getEmail()).isNotNull();
+    assertThat(jdbcTemplate.queryForObject(
+        "select count(*) from outbox_event where event_type = 'MemberWithdrawn' and aggregate_id = ?",
+        Long.class, String.valueOf(member.getId()))).isZero();
+    assertThat(row(first)).containsEntry("status", "INACTIVATED").containsEntry("last_error", "STATE_CHANGED")
+        .containsEntry("unlink_version", 1);
+
+    // 다음 시도에서는 처리 기록을 정할 때 버전이 다른 것을 보고 끝냄
+    makeDue(first);
+    processor.processDue();
+    assertThat(row(first)).containsEntry("status", "INVALIDATED");
+    assertMember(member.getId(), MemberStatus.INACTIVE, 2);
+  }
+
   // ===== ③ NOTICE_PENDING · 운영자 재개 =====
 
   @Test
