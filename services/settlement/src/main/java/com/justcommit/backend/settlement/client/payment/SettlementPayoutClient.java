@@ -8,7 +8,10 @@ public interface SettlementPayoutClient {
     void distributeSettlement(
             Long settlementId,
             Long sellerId,
+            Long sellerOrderId,
             BigDecimal payoutAmount,
-            BigDecimal fee
+            BigDecimal fee,
+            BigDecimal shippingFee,
+            BigDecimal sellerBurdenAmount
     );
 }

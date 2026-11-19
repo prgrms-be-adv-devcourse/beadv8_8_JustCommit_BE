@@ -29,7 +29,7 @@
 | S-B02 | 닉네임 변경 → `MemberUpdated` → 각 서비스 복제본 갱신 | 정상 | 통합 | PR |  |  |
 | S-B03 | 같은 `MemberCreated` 두 번 → 지갑 · 장바구니 1개만 | 중복 | 통합 | PR |  |  |
 | S-B04 | 탈퇴 확인 3곳 병렬 호출, 하나라도 실패하면 탈퇴 막음 (Fail-closed) | 장애 | 통합 | PR |  | 완료 (11/18): `WithdrawalScenarioTest`, `WithdrawalCheckServiceIntegrationTest` |
-| S-B05 | 직접 탈퇴(로컬 비밀번호 · 카카오 탈퇴 토큰) → 개인정보 컬럼 NULL · 배송지 삭제 · 탈퇴 기록 저장 · `MemberWithdrawn` Outbox 저장이 한 트랜잭션, 저장이 실패하면 Outbox까지 모두 롤백 | 정상 | 통합 | PR |  | 부분 검증 (11/18): 직접 탈퇴 및 롤백(`WithdrawalServiceIntegrationTest`). `MemberWithdrawn` Outbox 원자성은 #408 |
+| S-B05 | 직접 탈퇴(로컬 비밀번호 · 카카오 탈퇴 토큰) → 개인정보 컬럼 NULL · 배송지 삭제 · 탈퇴 기록 저장 · `MemberWithdrawn` Outbox 저장이 한 트랜잭션, 저장이 실패하면 Outbox까지 모두 롤백 | 정상 | 통합 | PR |  | 완료 (11/19): 직접 탈퇴(로컬 · 카카오)에서 익명화 · 배송지 · 탈퇴 기록 · `MemberWithdrawn` Outbox가 함께 커밋되고 저장 실패 시 함께 롤백, 같은 회원의 동시 요청도 이벤트 1건(`WithdrawalServiceIntegrationTest`) |
 | S-B06 | 탈퇴 조건 미충족 → 409 `WITHDRAWAL_BLOCKED`, 회원 · 토큰 · 탈퇴 기록 변화 없음. 사전 확인 GET은 차단 사유를 보여 주고, GET이 `ALLOWED`였어도 POST에서 다시 확인 | 규칙 | 통합 | PR |  | 완료 (11/18): `WithdrawalServiceIntegrationTest`(사전 확인 `ALLOWED` 뒤 최종 탈퇴 재확인 포함) |
 | S-B07 | 재가입 제한: 탈퇴한 이메일만 · 휴대폰만 · 둘 다 같으면 30일 이내 로컬 · 소셜 가입 거절(일치 항목을 구분하지 않는 같은 응답), 30일이 지나면 가입 가능(정리 스케줄러가 기록을 아직 지우지 않았어도) | 경계 | 통합 | PR |  | 완료 (11/18): `RejoinRestrictionIntegrationTest` |
 | S-B08 | 같은 이메일 · 휴대폰으로 가입과 탈퇴가 동시에 진행 → 탈퇴가 커밋되면 가입이 재가입 제한을 우회하지 못함 (실제 PostgreSQL) | 경계 | 통합 | PR |  | 완료 (11/18): 실제 PostgreSQL에서 커밋 전후 · 사전 검사 통과 후 가입 · 탈퇴가 끼어드는 경합(로컬 가입 경로, `RejoinRestrictionIntegrationTest`) |

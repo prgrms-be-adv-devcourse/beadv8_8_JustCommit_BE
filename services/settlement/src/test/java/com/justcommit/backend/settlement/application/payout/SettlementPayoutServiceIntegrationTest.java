@@ -45,6 +45,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
@@ -89,14 +90,55 @@ class SettlementPayoutServiceIntegrationTest {
 
         assertThat(payoutService.payoutDue()).isEqualTo(1);
 
-        verify(payoutClient).distributeSettlement(eq(settlement.getId()), eq(SELLER_ID),
-                eq(new BigDecimal("28500")), eq(new BigDecimal("1500")));
+        verify(payoutClient).distributeSettlement(eq(settlement.getId()), eq(SELLER_ID), eq(1L),
+                amount("28500"), amount("1500"), amount("3000"), amount("0"));
         Settlement paid = reload(settlement);
         assertThat(paid.getStatus()).isEqualTo(SettlementStatus.COMPLETED);
         assertThat(paid.getCompletedAt()).isNotNull();
         assertThat(paid.getNextAttemptAt()).isNull();
         assertThat(paid.getLastError()).isNull();
         assertThat(paid.getAttemptCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("일부 반품 정산은 판매자 주문 · 배송비 · 부담금을 담아 지급 요청한다")
+    void requestsWithSellerBurden() {
+        Settlement settlement = save(Settlement.createSettlement(1L, SELLER_ID, new BigDecimal("30000"),
+                new BigDecimal("3000"), new BigDecimal("6000"), LocalDateTime.now().minusMinutes(1), "몬스테라"));
+
+        payoutService.payoutDue();
+
+        verify(payoutClient).distributeSettlement(eq(settlement.getId()), eq(SELLER_ID), eq(1L),
+                amount("22500"), amount("1500"), amount("3000"), amount("6000"));
+        assertThat(reload(settlement).getStatus()).isEqualTo(SettlementStatus.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("정산금이 0원 · 음수여도 지급 요청이 나간다")
+    void requestsZeroAndNegativePayout() {
+        Settlement zero = save(Settlement.createSettlement(1L, SELLER_ID, new BigDecimal("30000"),
+                new BigDecimal("3000"), new BigDecimal("28500"), LocalDateTime.now().minusMinutes(2), "0원"));
+        Settlement negative = save(Settlement.createSettlement(2L, SELLER_ID, new BigDecimal("10000"),
+                new BigDecimal("3000"), new BigDecimal("12000"), LocalDateTime.now().minusMinutes(1), "음수"));
+
+        assertThat(payoutService.payoutDue()).isEqualTo(2);
+
+        verify(payoutClient).distributeSettlement(eq(zero.getId()), eq(SELLER_ID), eq(1L),
+                amount("0"), amount("1500"), amount("3000"), amount("28500"));
+        verify(payoutClient).distributeSettlement(eq(negative.getId()), eq(SELLER_ID), eq(2L),
+                amount("-2500"), amount("500"), amount("3000"), amount("12000"));
+    }
+
+    @Test
+    @DisplayName("배송비가 없는 정산(옛 토픽으로만 받음)은 배송비 0으로 지급 요청한다")
+    void requestsZeroShippingFeeWhenAbsent() {
+        Settlement settlement = save(Settlement.createSettlement(1L, SELLER_ID, new BigDecimal("30000"), null,
+                BigDecimal.ZERO, LocalDateTime.now().minusMinutes(1), "몬스테라"));
+
+        payoutService.payoutDue();
+
+        verify(payoutClient).distributeSettlement(eq(settlement.getId()), eq(SELLER_ID), eq(1L),
+                amount("28500"), amount("1500"), amount("0"), amount("0"));
     }
 
     @Test
@@ -112,7 +154,7 @@ class SettlementPayoutServiceIntegrationTest {
                     "SELECT id FROM settlement WHERE id = ? FOR UPDATE NOWAIT", Long.class, settlement.getId());
             rowLockable.set(settlement.getId().equals(locked));
             return null;
-        }).when(payoutClient).distributeSettlement(anyLong(), anyLong(), any(), any());
+        }).when(payoutClient).distributeSettlement(anyLong(), anyLong(), anyLong(), any(), any(), any(), any());
 
         payoutService.payoutDue();
 
@@ -128,23 +170,23 @@ class SettlementPayoutServiceIntegrationTest {
 
         // 1번째 실패: 응답 타임아웃(결과 불명)
         doThrow(new InternalApiResultUnknownException(GROUP, null))
-                .when(payoutClient).distributeSettlement(anyLong(), anyLong(), any(), any());
+                .when(payoutClient).distributeSettlement(anyLong(), anyLong(), anyLong(), any(), any(), any(), any());
         assertFailure(settlement, 1, Duration.ofSeconds(10), "RESULT_UNKNOWN");
 
         // 다음 시도 시각 전에는 다시 요청하지 않음
         assertThat(payoutService.payoutDue()).isZero();
-        verify(payoutClient, times(1)).distributeSettlement(anyLong(), anyLong(), any(), any());
+        verify(payoutClient, times(1)).distributeSettlement(anyLong(), anyLong(), anyLong(), any(), any(), any(), any());
 
         // 2번째 실패: payment 4xx 업무 오류도 같은 방식으로 다시 시도
         makeDue(settlement);
         doThrow(new InternalApiErrorException(GROUP, 400, "INVALID_AMOUNT", "금액이 올바르지 않습니다."))
-                .when(payoutClient).distributeSettlement(anyLong(), anyLong(), any(), any());
+                .when(payoutClient).distributeSettlement(anyLong(), anyLong(), anyLong(), any(), any(), any(), any());
         assertFailure(settlement, 2, Duration.ofSeconds(30), "HTTP_400 INVALID_AMOUNT");
 
         // 3번째 실패: 연결 실패, 이후로는 1분 고정
         makeDue(settlement);
         doThrow(new InternalApiUnavailableException(GROUP, null))
-                .when(payoutClient).distributeSettlement(anyLong(), anyLong(), any(), any());
+                .when(payoutClient).distributeSettlement(anyLong(), anyLong(), anyLong(), any(), any(), any(), any());
         assertFailure(settlement, 3, Duration.ofMinutes(1), "CONNECTION_FAILED");
 
         makeDue(settlement);
@@ -152,26 +194,26 @@ class SettlementPayoutServiceIntegrationTest {
 
         // 성공: 같은 settlementId로 다시 요청 (payment 멱등)
         makeDue(settlement);
-        doNothing().when(payoutClient).distributeSettlement(anyLong(), anyLong(), any(), any());
+        doNothing().when(payoutClient).distributeSettlement(anyLong(), anyLong(), anyLong(), any(), any(), any(), any());
         assertThat(payoutService.payoutDue()).isEqualTo(1);
         Settlement paid = reload(settlement);
         assertThat(paid.getStatus()).isEqualTo(SettlementStatus.COMPLETED);
         assertThat(paid.getLastError()).isNull();
         assertThat(paid.getNextAttemptAt()).isNull();
-        verify(payoutClient, times(5)).distributeSettlement(eq(settlement.getId()), anyLong(), any(), any());
+        verify(payoutClient, times(5)).distributeSettlement(eq(settlement.getId()), anyLong(), anyLong(), any(), any(), any(), any());
     }
 
     @Test
     @DisplayName("다음 시도 시각 전인 정산과 COMPLETED 정산은 집지 않는다")
     void skipsNotDueAndCompleted() {
-        save(Settlement.createSettlement(1L, SELLER_ID, new BigDecimal("30000"), null,
+        save(Settlement.createSettlement(1L, SELLER_ID, new BigDecimal("30000"), null, BigDecimal.ZERO,
                 LocalDateTime.now().plusMinutes(1), "아직"));
         Settlement completed = pending(2L, 1);
         transactionTemplate.executeWithoutResult(status ->
                 settlementRepository.findById(completed.getId()).orElseThrow().complete(LocalDateTime.now()));
 
         assertThat(payoutService.payoutDue()).isZero();
-        verify(payoutClient, never()).distributeSettlement(anyLong(), anyLong(), any(), any());
+        verify(payoutClient, never()).distributeSettlement(anyLong(), anyLong(), anyLong(), any(), any(), any(), any());
     }
 
     @Test
@@ -180,7 +222,7 @@ class SettlementPayoutServiceIntegrationTest {
         Settlement failing = pending(1L, 2);
         Settlement other = pending(2L, 1);
         doThrow(new IllegalStateException("예상 밖 오류"))
-                .when(payoutClient).distributeSettlement(eq(failing.getId()), anyLong(), any(), any());
+                .when(payoutClient).distributeSettlement(eq(failing.getId()), anyLong(), anyLong(), any(), any(), any(), any());
 
         assertThat(payoutService.payoutDue()).isEqualTo(2);
 
@@ -244,7 +286,7 @@ class SettlementPayoutServiceIntegrationTest {
             calls.computeIfAbsent(invocation.getArgument(0), id -> new AtomicInteger()).incrementAndGet();
             Thread.sleep(20);
             return null;
-        }).when(payoutClient).distributeSettlement(anyLong(), anyLong(), any(), any());
+        }).when(payoutClient).distributeSettlement(anyLong(), anyLong(), anyLong(), any(), any(), any(), any());
 
         CountDownLatch start = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -283,7 +325,7 @@ class SettlementPayoutServiceIntegrationTest {
             jdbcTemplate.update("UPDATE settlement SET next_attempt_at = ? WHERE id = ?",
                     Timestamp.valueOf(otherLease), settlement.getId());
             throw new InternalApiResultUnknownException(GROUP, null);
-        }).when(payoutClient).distributeSettlement(anyLong(), anyLong(), any(), any());
+        }).when(payoutClient).distributeSettlement(anyLong(), anyLong(), anyLong(), any(), any(), any(), any());
 
         payoutService.payoutDue();
 
@@ -303,7 +345,7 @@ class SettlementPayoutServiceIntegrationTest {
                     UPDATE settlement SET status = 'COMPLETED', completed_at = now(), next_attempt_at = NULL
                      WHERE id = ?""", settlement.getId());
             throw new InternalApiResultUnknownException(GROUP, null);
-        }).when(payoutClient).distributeSettlement(anyLong(), anyLong(), any(), any());
+        }).when(payoutClient).distributeSettlement(anyLong(), anyLong(), anyLong(), any(), any(), any(), any());
 
         payoutService.payoutDue();
 
@@ -353,7 +395,12 @@ class SettlementPayoutServiceIntegrationTest {
     // minutesAgo분 전부터 지급 대상인 PENDING 정산 (판매액 30000 → 수수료 1500, 정산금 28500)
     private Settlement pending(long sellerOrderId, int minutesAgo) {
         return save(Settlement.createSettlement(sellerOrderId, SELLER_ID, new BigDecimal("30000"),
-                new BigDecimal("3000"), LocalDateTime.now().minusMinutes(minutesAgo), "몬스테라 외 1건"));
+                new BigDecimal("3000"), BigDecimal.ZERO, LocalDateTime.now().minusMinutes(minutesAgo), "몬스테라 외 1건"));
+    }
+
+    // 금액은 scale과 상관없이 값으로 비교
+    private static BigDecimal amount(String expected) {
+        return argThat(actual -> actual != null && actual.compareTo(new BigDecimal(expected)) == 0);
     }
 
     private Settlement save(Settlement settlement) {

@@ -90,6 +90,7 @@ class ProductReserveConcurrencyIntegrationTest {
     // 사진 검수는 ImageReviewServiceIntegrationTest에서
     @MockitoBean ImageReviewService imageReviewService;
     @MockitoBean ProductImageCleaner imageCleaner;
+    @MockitoBean ReviewStatusReader reviewStatusReader;
 
     private Species species;
 

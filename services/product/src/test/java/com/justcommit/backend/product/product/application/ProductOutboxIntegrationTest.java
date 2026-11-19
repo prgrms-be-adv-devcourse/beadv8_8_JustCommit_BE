@@ -105,6 +105,7 @@ class ProductOutboxIntegrationTest {
     // 사진 검수는 ImageReviewServiceIntegrationTest에서
     @MockitoBean ReviewRequester reviewRequester;
     @MockitoBean ProductImageCleaner imageCleaner;
+    @MockitoBean ReviewStatusReader reviewStatusReader;
 
     private Species species;
 

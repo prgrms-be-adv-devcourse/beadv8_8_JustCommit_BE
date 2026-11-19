@@ -87,6 +87,7 @@
 | 회원 | `MEMBER` | 사용자, 유저 | 가입한 사람. URL 경로는 `users`, 코드 · 필드는 `member` | [member](services/member.md) |
 | 판매자 | `SELLER` | 셀러 | 판매자로 등록한 회원 | [member](services/member.md) |
 | 회원 복제본 | `MEMBER_REPLICA` | 레플리카, 회원 사본 | 다른 서비스가 회원 이벤트로 채우는 회원 정보 사본 (계좌는 없음) | [가입과 회원 복제본](flows/signup-and-replica.md) |
+| 알 수 없는 회원 | `MemberReplica.UNKNOWN_NICKNAME` | 닉네임 없음, 미확인 회원 | 회원 복제본에 아직 없는 회원(가입 이벤트 반영 전 등)의 닉네임 대신 보여 주는 이름. 「탈퇴한 회원」과 다름 | [외부 API 목록](reference/external-apis.md) |
 | 블랙리스트 | `auth:blacklist` | 로그아웃 토큰, 토큰 차단 | 로그아웃한 Access 토큰을 거절하는 목록 | [인증 규칙](conventions/auth.md#토큰-폐기) |
 | 회원 단위 폐기 | `auth:revoked-member` | 전체 로그아웃, 모든 기기 로그아웃 | 탈퇴 · 비밀번호 변경 · 재설정 · 소셜 연결 해제로 그 전의 인증을 무효화하는 것. 인증 버전으로 이전 Refresh 재발급을 막고, Redis에 폐기 시각이 기록된 뒤부터 이전 Access도 거절 | [인증 규칙](conventions/auth.md#토큰-폐기) |
 | 이중 검증 | – | – | Gateway와 각 서비스가 모두 토큰을 검증하는 것 | [인증 규칙](conventions/auth.md) |

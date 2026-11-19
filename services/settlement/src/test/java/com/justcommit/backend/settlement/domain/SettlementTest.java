@@ -1,5 +1,7 @@
 package com.justcommit.backend.settlement.domain;
 
+import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.settlement.domain.exception.SettlementErrorCode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -8,12 +10,80 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SettlementTest {
 
     private static final LocalDateTime REQUESTED_AT = LocalDateTime.of(2026, 11, 12, 10, 0);
     private static final LocalDateTime COMPLETED_AT = REQUESTED_AT.plusSeconds(10);
     private static final LocalDateTime NEXT_ATTEMPT_AT = REQUESTED_AT.plusSeconds(30);
+
+    @Nested
+    @DisplayName("정산금 = 판매액 - 수수료 - 판매자 부담금")
+    class PayoutAmount {
+
+        @Test
+        @DisplayName("부담금이 0이면 기존과 같다: 판매액 30000 → 수수료 1500, 정산금 28500")
+        void noBurdenKeepsPreviousResult() {
+            Settlement settlement = withBurden("30000", "0");
+
+            assertThat(settlement.getFee()).isEqualByComparingTo("1500");
+            assertThat(settlement.getSellerBurdenAmount()).isEqualByComparingTo("0");
+            assertThat(settlement.getPayoutAmount()).isEqualByComparingTo("28500");
+        }
+
+        @Test
+        @DisplayName("일부 반품: 부담금 6000이면 수수료는 판매액에만 매겨 1500, 정산금 22500")
+        void partialReturnBurden() {
+            Settlement settlement = withBurden("30000", "6000");
+
+            assertThat(settlement.getFee()).isEqualByComparingTo("1500");
+            assertThat(settlement.getSellerBurdenAmount()).isEqualByComparingTo("6000");
+            assertThat(settlement.getPayoutAmount()).isEqualByComparingTo("22500");
+            assertThat(settlement.getStatus()).isEqualTo(SettlementStatus.PENDING);
+        }
+
+        @Test
+        @DisplayName("부담금이 판매액 - 수수료와 같으면 정산금은 정확히 0원이고 PENDING으로 만든다")
+        void zeroPayout() {
+            Settlement settlement = withBurden("30000", "28500");
+
+            assertThat(settlement.getPayoutAmount().signum()).isZero();
+            assertThat(settlement.getStatus()).isEqualTo(SettlementStatus.PENDING);
+        }
+
+        @Test
+        @DisplayName("부담금이 더 크면 정산금은 음수이고 PENDING으로 만든다")
+        void negativePayout() {
+            Settlement settlement = withBurden("10000", "12000");
+
+            assertThat(settlement.getFee()).isEqualByComparingTo("500");
+            assertThat(settlement.getPayoutAmount()).isEqualByComparingTo("-2500");
+            assertThat(settlement.getStatus()).isEqualTo(SettlementStatus.PENDING);
+        }
+
+        @Test
+        @DisplayName("부담금이 음수면 거절한다")
+        void rejectsNegativeBurden() {
+            assertThatThrownBy(() -> withBurden("30000", "-1"))
+                    .isInstanceOfSatisfying(BusinessException.class, e ->
+                            assertThat(e.getErrorCode()).isEqualTo(SettlementErrorCode.INVALID_SELLER_BURDEN_AMOUNT));
+        }
+
+        @Test
+        @DisplayName("부담금이 null이면 거절한다 (호출하는 쪽이 0으로 넘김)")
+        void rejectsNullBurden() {
+            assertThatThrownBy(() -> Settlement.createSettlement(10L, 7L, new BigDecimal("30000"), null, null,
+                    REQUESTED_AT, "몬스테라"))
+                    .isInstanceOfSatisfying(BusinessException.class, e ->
+                            assertThat(e.getErrorCode()).isEqualTo(SettlementErrorCode.INVALID_SELLER_BURDEN_AMOUNT));
+        }
+
+        private static Settlement withBurden(String saleAmount, String sellerBurdenAmount) {
+            return Settlement.createSettlement(10L, 7L, new BigDecimal(saleAmount), new BigDecimal("3000"),
+                    new BigDecimal(sellerBurdenAmount), REQUESTED_AT, "몬스테라");
+        }
+    }
 
     @Nested
     @DisplayName("배송비")
@@ -169,7 +239,7 @@ class SettlementTest {
     }
 
     private static Settlement settlement(BigDecimal shippingFee) {
-        return Settlement.createSettlement(10L, 7L, new BigDecimal("30000"), shippingFee,
+        return Settlement.createSettlement(10L, 7L, new BigDecimal("30000"), shippingFee, BigDecimal.ZERO,
                 REQUESTED_AT, "몬스테라");
     }
 }

@@ -142,14 +142,15 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | PUT | `products/{id}` | 수정 | SELLER |
 | DELETE | `products/{id}` | 삭제 | SELLER |
 | PATCH | `products/{id}/hidden` | 숨김 | SELLER |
-| GET | `products/me` · `products/me/counts` | 내 상품 · 상태별 개수 | SELLER |
+| GET | `products/me` · `products/me/counts` | 내 상품 (지금 검수 버전의 표시 상태 `reviewStatus` · 반려 사유 `rejectReason`와 문구 `rejectMessage` · 판정 주체 `decidedBy`, 검수 기록이 없으면 null) · 상태별 개수 (+ 오늘 등록 수 `todayRegistered` / 한도 `dailyRegisterLimit` 20 · 오늘 사진 검수 수 `todayPhotoReviews` / 한도 `dailyPhotoReviewLimit` 30, 세는 기준은 등록 제한 · 하루 사진 검수 제한과 같음) | SELLER |
 | POST | `products/images/uploadUrls` | 사진 Presigned URL | SELLER |
-| GET | `products/{id}/imageReviews` | 내 상품 검수 기록 (상태 · 반려 사유 · 남은 재검수 횟수 · 이의 신청 · 재요청 가능 여부) | SELLER |
+| GET | `products/{id}/imageReviews` | 내 상품 검수 기록 (상태 · 반려 사유 · 관리자 확인 기한 `expiresAt` · 남은 재검수 횟수 · 이의 신청 · 재요청 가능 여부) | SELLER |
 | POST | `products/{id}/imageReviews` | 기한 초과(`REVIEW_EXPIRED`) 상품 같은 내용으로 다시 검수 요청 | SELLER |
 | POST | `products/{id}/appeals` | 자동 반려 이의 신청 (`memo` 필수, 200자). 409 `APPEAL_NOT_ALLOWED` · `APPEAL_ALREADY_USED` · `REVIEW_PENDING_LIMIT_EXCEEDED` | SELLER |
 | GET | `species` · `species/{id}` | 품종 목록 · 상세 (학명 · 별칭) | 공개 |
-| GET | `admin/imageReviews?status=MANUAL&page&size` | 관리자 확인 대기 목록, 오래된 순 (사진 · 엔진 결과 · 판매자 품종 · 관리자 확인 사유 · 기한 `expiresAt` · 12시간 지연 `delayed`) | ADMIN |
+| GET | `admin/imageReviews?status=MANUAL&page&size` | 관리자 확인 대기 목록, 오래된 순 (사진 · 엔진 결과 · 판매자 품종 · 판매자 닉네임 `sellerNickname`(회원 복제본, 없으면 「알 수 없는 회원」) · 가격 `price` · 검수 요청 시각 `requestedAt` · 관리자 확인 사유 · 기한 `expiresAt` · 12시간 지연 `delayed`) | ADMIN |
 | PATCH | `admin/imageReviews/{id}` | 관리자 처리 `decision`(`APPROVED` · `REJECTED`) · `rejectReason` · `memo`(`OTHER`면 필수 200자, 다른 사유 · 통과면 저장하지 않음). 409 `REVIEW_ALREADY_PROCESSED` · `REVIEW_OUTDATED`, 400 `INVALID_REJECT_REASON` | ADMIN |
+| POST | `admin/products/searchIndex` | 상품 전체 색인: DB의 모든 상품을 OpenSearch에 다시 씀(삭제 상품은 문서 삭제). 응답 `indexed` · `deleted` · `skipped`(같거나 더 새 버전이 이미 있음) · `failed`, 여러 번 실행해도 결과가 같음 → [검색 · 추천](../flows/search-recommend.md) | ADMIN |
 
 ### market
 

@@ -2,6 +2,7 @@ package com.justcommit.backend.member.withdrawal.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.exception.CommonErrorCode;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.auth.application.RevocationOutcomeUnknownException;
 import com.justcommit.backend.member.auth.application.RevocationResult;
@@ -14,6 +15,7 @@ import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.domain.exception.PasswordChangeLockedException;
+import com.justcommit.backend.member.event.MemberWithdrawn;
 import com.justcommit.backend.member.infrastructure.crypto.MemberHmac;
 import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
@@ -25,6 +27,7 @@ import com.justcommit.backend.member.withdrawal.infrastructure.kakao.KakaoAdminC
 import com.justcommit.backend.member.withdrawal.infrastructure.redis.WithdrawalTokenStore;
 import com.justcommit.backend.member.withdrawal.infrastructure.repository.MemberWithdrawalRecordRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -38,6 +41,7 @@ import org.springframework.util.StringUtils;
  * - 결과: 커밋됐으면 성공 (Redis 폐기 기록 확인 여부는 revocationCompleted로 따로 전달),
  *   커밋 결과 불명만 503 RESULT_UNKNOWN. 그 밖의 예외는 원래 오류 그대로 (최종 처리 중 예외면 전부 롤백)
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class WithdrawalService {
@@ -59,6 +63,7 @@ public class WithdrawalService {
   private final SellerRepository sellerRepository;
   private final MemberHmac memberHmac;
   private final DatabaseClock databaseClock;
+  private final OutboxPublisher outboxPublisher;
 
   // 사전 확인 (화면 안내용, 결과를 저장하지 않음). 활동 중인 회원이 아니면 외부 확인 없이 404
   // 확인 실패(UNAVAILABLE)면 일부 서비스에서 받은 차단 사유도 보여 주지 않고 503
@@ -82,6 +87,7 @@ public class WithdrawalService {
 
     requireAllowed(withdrawalCheckService.check(memberId));
 
+    boolean unlinked = false;
     if (member.getProvider() == Provider.KAKAO) {
       // 연결 해제 직전에 토큰을 꺼낸다(한 번만). 이 뒤의 실패는 토큰이 소모돼 이메일 인증부터 다시 해야 한다
       VerificationBinding verified = new VerificationBinding(memberId, verifiedVersion);
@@ -91,6 +97,7 @@ public class WithdrawalService {
       }
       // 활동 중인 회원의 provider_id는 바뀌지 않으므로 처음에 읽은 값을 쓴다
       kakaoAdminClient.unlink(member.getProviderId());
+      unlinked = true;
     }
 
     try {
@@ -98,7 +105,19 @@ public class WithdrawalService {
           locked -> anonymize(locked, verifiedVersion));
       return new WithdrawalResult(result == RevocationResult.COMPLETED);
     } catch (RevocationOutcomeUnknownException e) {
+      // 카카오는 끊겼고 탈퇴 커밋 여부는 모름 (실제로 커밋됐을 수도 있어 커밋 안 됨과 다른 문구로 남김)
+      if (unlinked) {
+        log.warn("카카오 연결 해제 뒤 탈퇴 결과 불명: memberId={}", memberId);
+      }
       throw new BusinessException(MemberErrorCode.RESULT_UNKNOWN, RESULT_UNKNOWN_MESSAGE);
+    } catch (RuntimeException e) {
+      // 카카오는 끊겼는데 이 요청의 탈퇴는 커밋되지 않음 (트랜잭션 시작 전 실패 포함). 탈퇴 토큰이 소모돼 이메일 재인증 후 다시 탈퇴해야 함
+      // 카카오 회원번호 · 토큰 · 이메일은 남기지 않고 내부 회원 ID와 오류 종류 · 코드만. 예외는 그대로 전달
+      if (unlinked) {
+        log.warn("카카오 연결 해제 뒤 탈퇴 저장 실패(커밋 안 됨): memberId={}, error={}, code={}", memberId,
+            e.getClass().getSimpleName(), e instanceof BusinessException be ? be.getErrorCode() : "-");
+      }
+      throw e;
     }
   }
 
@@ -159,7 +178,8 @@ public class WithdrawalService {
     addressRepository.deleteAllByMemberId(member.getId());
     sellerRepository.findById(member.getId()).ifPresent(seller -> seller.changeIntro(null));
     member.withdraw();
-    // #408: MemberWithdrawn Outbox를 여기(같은 트랜잭션)에 저장한다
+    // 다른 서비스 복제본에 탈퇴를 알린다 (#408). 같은 트랜잭션이라 탈퇴가 롤백되면 이벤트도 남지 않음
+    outboxPublisher.publish(new MemberWithdrawn(member.getId()));
   }
 
   private Member findActiveMember(Long memberId) {

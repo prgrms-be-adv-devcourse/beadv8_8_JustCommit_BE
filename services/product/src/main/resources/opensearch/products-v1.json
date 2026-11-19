@@ -1,0 +1,75 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "analysis": {
+      "char_filter": {
+        "symbols_to_space": {
+          "type": "pattern_replace",
+          "pattern": "[^\\p{L}\\p{N}\\s]",
+          "replacement": " "
+        },
+        "remove_spaces_and_symbols": {
+          "type": "pattern_replace",
+          "pattern": "[^\\p{L}\\p{N}]",
+          "replacement": ""
+        }
+      },
+      "filter": {
+        "ko_part_of_speech": {
+          "type": "nori_part_of_speech"
+        }
+      },
+      "analyzer": {
+        "ko_text": {
+          "type": "custom",
+          "char_filter": ["symbols_to_space"],
+          "tokenizer": "nori_tokenizer",
+          "filter": ["ko_part_of_speech", "lowercase"]
+        },
+        "ko_compact": {
+          "type": "custom",
+          "char_filter": ["remove_spaces_and_symbols"],
+          "tokenizer": "nori_tokenizer",
+          "filter": ["ko_part_of_speech", "lowercase"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "productId": { "type": "long" },
+      "title": {
+        "type": "text",
+        "analyzer": "ko_text",
+        "fields": { "compact": { "type": "text", "analyzer": "ko_compact" } }
+      },
+      "speciesName": {
+        "type": "text",
+        "analyzer": "ko_text",
+        "fields": { "compact": { "type": "text", "analyzer": "ko_compact" } }
+      },
+      "speciesAliases": {
+        "type": "text",
+        "analyzer": "ko_text",
+        "fields": { "compact": { "type": "text", "analyzer": "ko_compact" } }
+      },
+      "scientificName": {
+        "type": "text",
+        "analyzer": "ko_text",
+        "fields": { "compact": { "type": "text", "analyzer": "ko_compact" } }
+      },
+      "description": { "type": "text", "analyzer": "ko_text" },
+      "speciesId": { "type": "long" },
+      "category": { "type": "keyword" },
+      "light": { "type": "keyword" },
+      "watering": { "type": "keyword" },
+      "difficulty": { "type": "keyword" },
+      "price": { "type": "long" },
+      "status": { "type": "keyword" },
+      "hidden": { "type": "boolean" },
+      "createdAt": { "type": "date" }
+    }
+  }
+}
