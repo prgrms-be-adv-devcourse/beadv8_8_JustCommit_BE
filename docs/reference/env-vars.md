@@ -22,6 +22,7 @@
 | `MEMBER_SERVICE_URL` · `PRODUCT_SERVICE_URL` · `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` · `NOTIFICATION_SERVICE_URL` | Gateway | 라우팅할 서비스 주소. 없으면 로컬 포트(8081 ~ 8086) |
 | `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` | member | 탈퇴 확인 내부 API 그룹 주소. 없으면 로컬 포트(8083 · 8084 · 8085) |
 | `PRODUCT_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` · `AI_SERVICE_URL` | market | 내부 API 그룹 주소. 없으면 로컬 포트(8082 · 8084 · 8085 · 8087) |
+| `GATEWAY_TRUSTED_PROXIES` | Gateway | `X-Forwarded-*`를 믿을 보낸 쪽 주소(정규식). 없으면 `10.x` · `127.0.0.1`(같은 서버 Nginx). 여기에 없는 곳이 보낸 `X-Forwarded-*`는 서비스에 넘기지 않음 |
 | `CORS_ALLOWED_ORIGINS` | Gateway | CORS 허용 출처 (쉼표로 여러 개, `*` 금지). 없으면 `http://localhost:5173` |
 | `KAKAO_CLIENT_ID` · `KAKAO_CLIENT_SECRET` | member | 카카오 로그인 (연결 해제는 어드민 키를 씀 → `KAKAO_ADMIN_KEY`) |
 | `KAKAO_ADMIN_KEY` | member | 카카오 대표 어드민 키. 연결 해제 · 연결 상태 조회 호출(`Authorization: KakaoAK`)과 연결 해제 웹훅 인증 헤더 확인에 같은 값을 씀. 서버에만 두고 프론트 · 로그에 남기지 않음. 기본값 없음(없거나 비어 있으면 member가 시작하지 않음). 연결 해제는 구현(#407), 상태 조회 · 웹훅 확인은 ⬜ 미구현(#422). 운영은 인프라 담당이 주입 |
