@@ -26,7 +26,7 @@
 | 색인 실패 | 공통 소비 설정대로 1 · 2 · 4초 재시도 후 `product.events.v1.DLT`. 상품 저장은 Outbox까지라 OpenSearch가 죽어도 등록 · 수정 API는 성공하고 색인만 늦어짐. 어긋난 문서는 전체 색인으로 맞춤 |
 | 전체 색인 | 관리자 API `POST admin/products/searchIndex`: 상품을 id 순서로 500개씩 읽어 bulk로 씀. 처음 띄울 때 · 인덱스를 다시 만들 때 · DLT로 빠진 색인을 맞출 때. 상품 DB를 비우고 다시 시작하면(상품 id · 버전이 처음부터) 남은 문서의 버전이 더 커서 건너뛰므로 인덱스(`products_v1`)도 지운 뒤 앱을 다시 띄움 |
 | 검색 API | `GET products`: `keyword`가 있으면 OpenSearch로 상품 id · 전체 개수만 받고 화면 값은 DB에서 다시 읽음(응답 형식이 DB 조회와 같고, 색인 지연 중 숨김 · 상태가 바뀐 상품은 한 번 더 거름). `keyword`가 없거나 `sellerId`가 있으면 DB 조회(원본이라 색인 지연이 없고 개수가 정확, 관련도가 필요 없음) |
-| 판매자 상점 | `sellerId`(그 판매자 상품만) · `status`(노출 상태 중 하나, 밖이면 400). 상점 안 검색창이 없어(웹 시안) 키워드가 있어도 DB 조회, 문서에 판매자는 색인하지 않음. 판매 완료 개수는 `sellerId` + `status=SOLD_OUT`의 전체 개수 |
+| 판매자 상점 | `sellerId`(그 판매자 상품만) · `status`(노출 상태 중 하나 이상, 하나라도 밖이면 400). 판매 중 칸은 `status=ACTIVE&status=PAYMENT_PENDING`(결제 대기도 함께, 웹 시안 ShopB). 상점 안 검색창이 없어(웹 시안) 키워드가 있어도 DB 조회, 문서에 판매자는 색인하지 않음. 판매 완료 개수는 `sellerId` + `status=SOLD_OUT`의 전체 개수 |
 | 페이지 | 기본 20, 최대 50 |
 | OpenSearch 장애 | 연결 실패 · 시간 초과는 1번 더 보내고, 그래도 실패하거나 OpenSearch가 오류로 답하면(인덱스 없음 등) 경고 로그 후 DB LIKE 검색(제목 · 품종명 포함, 최신순)으로 대신 (관련도 · 오타 · 한국어 분석 없음) |
 | 매핑 변경 | 지금은 `products_v1` 하나라 필드를 추가하면 기존 인덱스를 지우고 다시 채움: `products_v1` 삭제 → product 재시작(새 매핑으로 생성) → 전체 색인 API. 지우지 않으면 `dynamic: strict`라 새 필드가 든 쓰기가 거절됨. 무중단 교체(`products_v2` + alias 이동)는 #487 |

@@ -11,6 +11,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public record ProductSearchRequest
         (  String keyword,
@@ -24,8 +25,9 @@ public record ProductSearchRequest
            Boolean onSale,
            // 판매자 상점: 그 판매자 상품만 (#486)
            Long sellerId,
-           // 판매자 상점 탭: ACTIVE · PAYMENT_PENDING · SOLD_OUT 중 하나 (그 밖이면 400)
-           ProductStatus status,
+           // 판매자 상점 탭: ACTIVE · PAYMENT_PENDING · SOLD_OUT 중 하나 이상 (그 밖이면 400).
+           // 여러 개는 status=ACTIVE&status=PAYMENT_PENDING (판매 중 칸 = 판매 중 + 결제 대기). 비우면(status=) 조건 없음
+           List<ProductStatus> status,
            // relevance(키워드가 있을 때 기본) · latest(키워드가 없을 때 기본) · priceAsc · priceDesc
            String sort,
            Integer page,

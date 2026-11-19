@@ -11,6 +11,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 public final class ProductSpecifications {
@@ -25,7 +26,8 @@ public final class ProductSpecifications {
     public static Specification<Product> searchCondition(
             String keyword, Long speciesId, SpeciesCategory category,
             Light light, Watering watering, Difficulty difficulty,
-            BigDecimal minPrice, BigDecimal maxPrice, Boolean onSale, Long sellerId, ProductStatus status)  {
+            BigDecimal minPrice, BigDecimal maxPrice, Boolean onSale, Long sellerId,
+            Collection<ProductStatus> statuses)  {
         List<Specification<Product>> specs = new ArrayList<>();
 
         // 항상 적용: 검색 노출 상태만, 숨김 제외
@@ -69,8 +71,8 @@ public final class ProductSpecifications {
         if (sellerId != null) {
             specs.add((root, query, cb) -> cb.equal(root.get("sellerId"), sellerId));
         }
-        if (status != null) {
-            specs.add((root, query, cb) -> cb.equal(root.get("status"), status));
+        if (statuses != null && !statuses.isEmpty()) {
+            specs.add((root, query, cb) -> root.get("status").in(statuses));
         }
 
         return Specification.allOf(specs);

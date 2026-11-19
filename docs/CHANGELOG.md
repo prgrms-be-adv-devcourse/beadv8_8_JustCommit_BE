@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-19 · reference/external-apis.md · flows/search-recommend.md · 상품 목록 `status`가 여러 값을 받음(`status=ACTIVE&status=PAYMENT_PENDING`, 하나라도 노출 상태 밖이면 400): 판매자 상점 판매 중 칸이 결제 대기도 함께 한 번에 받음 (#559)
 - 2026-11-19 · reference/kafka-topics.md · flows/image-review.md · 관리자 검수 지연 알림 notification 합의 반영: 관리자 역할(ADMIN)로 알림 1건 · 관리자끼리 읽음 공유, `event_key` `ADMIN_REVIEW_DELAYED:{eventId}`, 새로 지연된 건만 1번 · payload 추가 없음, 구독은 notification Kafka 구독 연결 때 (#509)
 - 2026-11-19 · infra/deploy.md · CD 기동 대기(compose 헬스체크 `start_period` 60→120초) · 실패 로그(compose 상태 · 헬스 기록 · 로그, K3s 파드 상태 · 이벤트 · 로그, 비밀값 가림) 규칙 추가 (#555)
 - 2026-11-19 · reference/external-apis.md · 「경로 개선안」에 판매자 수락 `orders/seller/{id}/accept` → `acceptances`, 거절 `orders/seller/{id}/reject` → `rejections` 추가 (동사형 경로, 기존 `cancel`, `confirm`과 함께 바꿈) (#284) (#552)
