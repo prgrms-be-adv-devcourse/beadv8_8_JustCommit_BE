@@ -4,9 +4,9 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-// 시나리오 자리표시: 음수 정산 · 미수금이 아직 없음 (#433 · 테스트 #435)
-// 기능을 만드는 PR에서 본문을 채우고 @Disabled를 뗀다 (docs/testing/scenarios.md)
-@Disabled("기능 없음 · 음수 정산 · 미수금 #433")
+// 시나리오 자리표시: 음수 정산 생성 · 지급 요청은 #433에서 만들었고, 회수 · 미수금은 payment #379 이후
+// 미수금 기능을 만드는 PR에서 본문을 채우고 @Disabled를 뗀다 (docs/testing/scenarios.md)
+@Disabled("기능 없음 · 음수 정산 회수 · 미수금 payment #379")
 class NegativeSettlementScenarioTest {
 
     @Test

@@ -62,7 +62,7 @@
 | `SellerOrderCancelled` | `orderId` · `sellerOrderId` · `sellerId` · `buyerId` (숫자), `cancelledAt` (시각) | 판매자 주문 전부 취소 |
 | `OrderItemCancelled` | `orderItemId` · `orderId` · `sellerOrderId` · `sellerId` (숫자), `productName` (문자열), `cancelledAt` (시각) | 일부 취소. product용 판매 재개(`market.order-item-cancelled.v1`)와 이름은 같고 토픽이 다름 |
 | `OrderItemAutoConfirmed` | `orderItemId` · `orderId` · `sellerOrderId` · `buyerId` (숫자), `confirmedAt` (시각) | |
-| `PurchaseConfirmed` | `sellerOrderId` · `sellerId` (숫자), `saleAmount` · `shippingFee` (금액), `confirmedAt` (시각), `itemSummary` (문자열) | 정산은 `saleAmount`에만 수수료, `shippingFee`는 `REVENUE`로 |
+| `PurchaseConfirmed` | `sellerOrderId` · `sellerId` (숫자), `saleAmount` · `shippingFee` · `sellerBurdenAmount` (금액), `confirmedAt` (시각), `itemSummary` (문자열) | 정산은 `saleAmount`에만 수수료, `shippingFee`는 `REVENUE`로. `sellerBurdenAmount`(판매자 부담금)는 없으면 0, 정산금 = 판매액 − 수수료 − 판매자 부담금 |
 | `ShipmentStatusChanged` | `shipmentId` · `orderId` · `sellerOrderId` · `buyerId` · `sellerId` (숫자), `status` (`BOOKED` · `PICKED_UP` · `IN_TRANSIT` · `DELIVERED`), `occurredAt` (시각), `itemSummary` (문자열) | `occurredAt`은 배송 단계가 일어난 시각 |
 | `SellerOrderAccepted` · `SellerOrderRejected` · `Return*` · `OrderItemReturned` | ⬜ | 판매자 수락 · 거절(#283), 반품 때 |
 
