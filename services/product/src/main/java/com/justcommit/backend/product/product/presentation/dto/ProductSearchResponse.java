@@ -9,6 +9,8 @@ import java.time.LocalDateTime;
 
 public record ProductSearchResponse (
         Long productId,
+        // 화면이 본인 상품을 거를 때 씀 (ADR 0029)
+        Long sellerId,
         String title,
         BigDecimal price,
         String thumbnailUrl,
@@ -25,6 +27,7 @@ public record ProductSearchResponse (
         Species species = product.getSpecies();
         return new ProductSearchResponse(
                 product.getId(),
+                product.getSellerId(),
                 product.getTitle(),
                 product.getPrice(),
                 product.getThumbnailUrl(),

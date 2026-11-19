@@ -1,7 +1,7 @@
 # 테스트 시나리오
 
 > 언제 읽나: 시나리오 ID로 내용을 찾거나 결과를 기록할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: [노션 「테스트 시나리오」 4절](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: [노션 「테스트 시나리오」 4절](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
 
 시나리오마다 어느 서비스의 테스트인지, 무엇을 대신 세우는지(WireMock · 테스트 Kafka · Clock 등), 무엇을 확인하는지는 노션 「테스트 시나리오」 4절 표에 있습니다. 이 문서는 ID · 문장 · 결과 기록용입니다.
 
@@ -42,7 +42,7 @@
 | ID | 시나리오 | 종류 | 수준 | 자동화 | 남길 실측값 | 결과 |
 |---|---|---|---|---|---|---|
 | S-C01 | 상품 등록(Presigned 업로드 사진) → 조회 · OpenSearch 검색 노출 (`product.events.v1` → 색인 리스너) | 정상 | 통합 | PR |  |  |
-| S-C02 | 상품 숨김 → 검색 · 목록 제외, 진행 중 결제는 유지 | 규칙 | 통합 | PR |  |  |
+| S-C02 | 상품 숨김 → 검색 · 목록 제외, 진행 중 결제는 유지 | 규칙 | 통합 | PR |  | 검색 · 목록 제외 확인 (11/19): 숨김 이벤트 → 문서 `hidden` → OpenSearch 검색 제외 · 해제 시 다시 노출(`ProductSearchIndexScenarioTest`), 키워드 검색 · LIKE 대체 · 목록 제외(`ProductSearchIntegrationTest` · `ProductSpecificationsTest`). 진행 중 결제 유지는 이 PR에서 확인 안 함 |
 | S-C03 | 판매 완료 이벤트(`market.order-paid.v1`)를 두 번 받음 → 1번만 반영, 이미 해제돼 바뀐 상품이 0건이어도 정상 | 중복 | 통합 | PR |  |  |
 | S-C04 | 같은 상품을 두 명이 동시 주문 → 한 명만 예약 성공 | 경계 | 통합 | PR |  |  |
 | S-C05 | 사진 검수: 유해 → `HARMFUL_IMAGE` / 씨앗 · 삽수 → `PROHIBITED_FORM` / 금지 품종 0.7 이상 → `BANNED_SPECIES` / 확신도 낮음 · 기타 품종 → 관리자 확인 / 통과 → `ACTIVE` · `ProductApproved` → 판매자 통과 알림 | 규칙 | 통합 | PR |  |  |
