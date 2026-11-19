@@ -115,7 +115,8 @@ class OrderServiceTest {
                 sellerOrderRepository, shipmentQuery, purchaseConfirmedEventPublisher, sellerOrderEventPublisher);
         // 트랜잭션 경계 순서만 보는 단위 테스트라 실제 커밋 없이 동기화 콜백만 돈다. CAS 동작은 통합 테스트에서 확인
         ReflectionTestUtils.setField(orderService, "orderPaymentTransactions", new OrderPaymentTransactions(
-                new NoOpTransactionManager(), ordersRepository, outboxPublisher, orderQuery,
+                new NoOpTransactionManager(), ordersRepository, sellerOrderRepository, ordersItemRepository,
+                outboxPublisher, orderQuery,
                 sellerOrderEventPublisher, shipmentService, cartService));
         OrderCancelTransactions cancelTransactions = new OrderCancelTransactions(new NoOpTransactionManager(),
                 ordersRepository, sellerOrderRepository, ordersItemRepository, shipmentService, shipmentQuery,

@@ -1,6 +1,7 @@
 package com.justcommit.backend.market.order.application;
 
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
+import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.OrderResult;
 import com.justcommit.backend.market.OrderStatus;
@@ -11,7 +12,9 @@ import com.justcommit.backend.market.client.payment.PaymentOutcome;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.event.OrderFailed;
 import com.justcommit.backend.market.order.event.OrderPaid;
+import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
+import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.infrastructure.kafka.SellerOrderEventPublisher;
 import com.justcommit.backend.market.shipment.application.ShipmentService;
 import lombok.extern.slf4j.Slf4j;
@@ -64,6 +67,8 @@ public class OrderPaymentTransactions {
 
     private final TransactionTemplate transactionTemplate;
     private final OrdersRepository ordersRepository;
+    private final SellerOrderRepository sellerOrderRepository;
+    private final OrdersItemRepository ordersItemRepository;
     private final OutboxPublisher outboxPublisher;
     private final OrderQuery orderQuery;
     private final SellerOrderEventPublisher sellerOrderEventPublisher;
@@ -72,6 +77,8 @@ public class OrderPaymentTransactions {
 
     public OrderPaymentTransactions(PlatformTransactionManager transactionManager,
                                     OrdersRepository ordersRepository,
+                                    SellerOrderRepository sellerOrderRepository,
+                                    OrdersItemRepository ordersItemRepository,
                                     OutboxPublisher outboxPublisher,
                                     OrderQuery orderQuery,
                                     SellerOrderEventPublisher sellerOrderEventPublisher,
@@ -79,6 +86,8 @@ public class OrderPaymentTransactions {
                                     CartService cartService) {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.ordersRepository = ordersRepository;
+        this.sellerOrderRepository = sellerOrderRepository;
+        this.ordersItemRepository = ordersItemRepository;
         this.outboxPublisher = outboxPublisher;
         this.orderQuery = orderQuery;
         this.sellerOrderEventPublisher = sellerOrderEventPublisher;
@@ -241,11 +250,14 @@ public class OrderPaymentTransactions {
         };
     }
 
-    // 결제 완료 후속 처리: 판매 완료 Outbox · 판매자 알림 · 배송 행. 결과 반영과 같은 트랜잭션 (ADR 0016 · 0023)
+    // 결제 완료 후속 처리: 주문상품 수락 대기 + 결제 완료 시각, 판매 완료 Outbox, 판매자 알림, 배송 행.
+    // 결과 반영과 같은 트랜잭션 (ADR 0013, 0016, 0023). 재결제, 복구로 확정돼도 같은 경로라 그 시각이 결제 완료 시각이다
     private void completePayment(Long orderId) {
+        LocalDateTime paidAt = LocalDateTime.now();
+        sellerOrderRepository.markPaid(orderId, paidAt);
+        ordersItemRepository.markAcceptPending(orderId, paidAt, OrderItemStatus.NORMAL, OrderItemStatus.ACCEPT_PENDING);
         outboxPublisher.publish(new OrderPaid(orderId));
         OrderResult result = orderQuery.getOrder(orderId);
-        LocalDateTime paidAt = LocalDateTime.now();
         for (SellerOrderResult sellerOrder : result.sellerOrders()) {
             sellerOrderEventPublisher.publishAfterCommit(new SellerOrderPaidEvent(
                     sellerOrder.id(), sellerOrder.sellerId(), result.buyerId(), paidAt));

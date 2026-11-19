@@ -120,6 +120,12 @@ class OrderPaymentTransactionsIntegrationTest {
         assertThat(row(orderId).get("status")).isEqualTo("PAID");
         verify(outboxPublisher).publish(new OrderPaid(orderId));
         verify(shipmentService).createShipments(result);
+        // [#284] 결제 완료면 주문상품은 판매자 수락 대기, 판매자 주문에 결제 완료 시각
+        assertThat(jdbcTemplate.queryForList("""
+                select i.status from orders_item i join seller_order s on s.id = i.seller_order_id
+                 where s.order_id = ?""", String.class, orderId)).containsOnly("ACCEPT_PENDING");
+        assertThat(jdbcTemplate.queryForObject("select paid_at from seller_order where order_id = ?",
+                Object.class, orderId)).isNotNull();
     }
 
     @Test

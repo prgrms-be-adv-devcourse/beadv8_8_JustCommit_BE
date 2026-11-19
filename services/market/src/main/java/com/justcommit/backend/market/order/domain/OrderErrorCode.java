@@ -26,7 +26,9 @@ public enum OrderErrorCode implements ErrorCode {
     PAYMENT_WINDOW_EXPIRED(HttpStatus.CONFLICT, "주문 결제 시간이 만료되었습니다."),
     WALLET_NOT_FOUND(HttpStatus.NOT_FOUND, "예치금 지갑을 찾을 수 없습니다."),
     CHECKOUT_DATA_MISMATCH(HttpStatus.CONFLICT, "주문에 필요한 정보가 일치하지 않습니다."),
-    WITHDRAWN_MEMBER(HttpStatus.FORBIDDEN, "탈퇴한 회원은 주문할 수 없습니다.");
+    WITHDRAWN_MEMBER(HttpStatus.FORBIDDEN, "탈퇴한 회원은 주문할 수 없습니다."),
+    SELLER_ORDER_NOT_ACCEPTABLE(HttpStatus.CONFLICT, "수락 대기 중인 주문 상품이 없거나 이미 처리되었습니다."),
+    INVALID_REJECT_ITEMS(HttpStatus.BAD_REQUEST, "거절할 주문 상품이 이 판매자 주문에 없습니다.");
 
     private final HttpStatus status;
     private final String message;

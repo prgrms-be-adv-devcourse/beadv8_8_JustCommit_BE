@@ -65,6 +65,7 @@ public class OrderService {
     private final OrderPaymentTransactions orderPaymentTransactions;
     private final OrderCancelTransactions orderCancelTransactions;
     private final OrderCancelRefunder orderCancelRefunder;
+    private final SellerOrderDecisionTransactions sellerOrderDecisionTransactions;
 
     public OrderCreateResponse create(Long memberId, CartOrderCreateRequest request) {
         // 탈퇴한 회원의 주문을 막는 2차 방어 (1차는 Gateway의 토큰 폐기)
@@ -242,10 +243,29 @@ public class OrderService {
         orderItemConfirmationService.confirm(memberId, orderItemId);
     }
 
-    // 구매자 취소 (#282, ADR 0026): 주문상품을 취소 중으로 커밋하고, 판매자 주문이 전부 취소면 택배 취소 결과를 기다린다.
-    // 환불, 취소 완료, 판매 재개는 Saga 복구가 택배 취소 결과를 읽은 뒤에 한다. API 응답은 요청 접수까지
+    // 구매자 취소 (#282, #284, ADR 0026): 주문상품을 취소 중으로 커밋한다. 수락 후 판매자 주문은 택배 취소 결과를 기다리고
+    // (환불, 취소 완료, 판매 재개는 Saga 복구가 결과를 읽은 뒤), 수락 전 판매자 주문은 커밋 뒤 바로 환불한다
     public void cancel(Long memberId, Long orderId) {
-        orderCancelTransactions.requestCancel(memberId, orderId);
+        refundBySellerOrder(orderCancelTransactions.requestCancel(memberId, orderId));
+    }
+
+    // 판매자 승인 (#284): 남은 수락 대기 주문상품을 모두 수락한다
+    public void acceptSellerOrder(Long sellerId, Long sellerOrderId) {
+        sellerOrderDecisionTransactions.accept(sellerId, sellerOrderId);
+    }
+
+    // 판매자 거절 (#284): 고른 주문상품은 커밋 뒤 트랜잭션 밖에서 바로 환불하고(결과를 모르면 복구가 이어받음), 나머지는 수락한다
+    public void rejectSellerOrderItems(Long sellerId, Long sellerOrderId, List<Long> orderItemIds) {
+        refundBySellerOrder(sellerOrderDecisionTransactions.reject(sellerId, sellerOrderId, orderItemIds));
+    }
+
+    // 배송비는 판매자 주문 묶음마다 한 번 요청하므로 판매자 주문별로 나눠 환불한다
+    private void refundBySellerOrder(List<OrderCancelTransactions.RefundClaim> claims) {
+        claims.stream()
+                .collect(Collectors.groupingBy(OrderCancelTransactions.RefundClaim::sellerOrderId, LinkedHashMap::new,
+                        Collectors.toList()))
+                .values()
+                .forEach(orderCancelRefunder::refund);
     }
 
     // 판매자 주문의 다른 상품이 남으면(배송 유지) 커밋 뒤 트랜잭션 밖에서 바로 환불하고, 결과를 모르면 복구가 이어받는다
