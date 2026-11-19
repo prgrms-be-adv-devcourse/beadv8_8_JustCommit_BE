@@ -154,7 +154,7 @@ sequenceDiagram
 | 알림 | 지표 | 대응 |
 |---|---|---|
 | 저장 실패 | `replant_kakao_unlink_receive_failures_total` | Loki에서 `event=KAKAO_UNLINK_RECEIVE_FAILED` 로그를 찾음: 검증을 통과한 회원번호(`kakaoUserId`) · 사유(`referrerType`) · 앱 수신 시각(`receivedAt`) · 검증 결과(`validation`: `PENDING` 또는 `IGNORED:<오류 코드>`). 그다음 아래 복원 판단 |
-| 처리 멈춤 | `replant_kakao_unlink_failed` | `FAILED` 기록의 `last_error` · `resume_state` 확인 후 **member 담당에게 연락**. 운영자가 부르는 관리 API는 ⬜ 후속 |
+| 처리 멈춤 | `replant_kakao_unlink_failed` | `FAILED` 기록의 `last_error` · `resume_state` 확인 후 **member 담당에게 연락**. member 담당이 [운영 절차](../infra/kakao-unlink-runbook.md)의 재개 · 종료 스크립트로 처리. 운영자가 부르는 관리 API는 ⬜ 후속 |
 
 저장 실패 로그는 **자동 복구가 아니라 복구 단서**입니다. 로그 전송도 실패할 수 있고, 커밋 응답만 유실됐다면 DB에는 이미 저장됐을 수 있습니다. 웹훅에는 고유 ID가 없어 값이 같은 기록을 찾았다고 같은 요청이라고 확정할 수 없고, 수신 시각은 조사 단서일 뿐입니다. 그래서 복원은 이렇게 판단합니다.
 

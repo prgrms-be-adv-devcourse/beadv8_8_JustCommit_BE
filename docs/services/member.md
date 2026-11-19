@@ -80,7 +80,7 @@ payload (받는 쪽은 upsert, `occurredAt`이 저장된 값보다 오래되면 
 |---|---|---|
 | 토큰 폐기 재처리 | 10초 | Redis 기록을 확인하지 못한 폐기 작업을 보관 기한까지 다시 기록 → [스케줄러](../reference/schedulers.md) |
 | 탈퇴 기록 정리 | 1시간 | 30일 지난 탈퇴 기록 삭제 → [스케줄러](../reference/schedulers.md) |
-| 카카오 연결 해제 웹훅 처리 | 10초 | 수신 기록을 단계별로 처리, 단계별 최초 포함 5회 시도 후 `FAILED` → [스케줄러](../reference/schedulers.md) |
+| 카카오 연결 해제 웹훅 처리 | 10초 | 수신 기록을 단계별로 처리, 단계별 최초 포함 5회 시도 후 `FAILED` → [스케줄러](../reference/schedulers.md). 멈춘 기록의 재개 · 종료 → [운영 절차](../infra/kakao-unlink-runbook.md) |
 
 ## 정책
 
