@@ -7,6 +7,8 @@ import com.justcommit.backend.common.exception.CommonErrorCode;
 import com.justcommit.backend.common.exception.ErrorCode;
 import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
+import com.justcommit.backend.member.auth.application.RevocationOutcomeUnknownException;
+import com.justcommit.backend.member.auth.application.TokenRevocationService;
 import com.justcommit.backend.member.auth.domain.VerificationBinding;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
@@ -26,9 +28,12 @@ import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -67,9 +72,11 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doThrow;
 
 /**
  * 직접 탈퇴 (#407)를 실제 PostgreSQL · Redis로 확인한다. market · payment · settlement · 카카오는 WireMock 하나로 대신한다.
@@ -79,6 +86,7 @@ import static org.mockito.Mockito.doCallRealMethod;
  * - 원자성: 회원 · 배송지 · 소개글 · 탈퇴 기록 · 폐기 작업 · MemberWithdrawn Outbox가 함께 커밋 · 롤백된다 (#408)
  */
 @SpringBootTest
+@ExtendWith(OutputCaptureExtension.class)
 @Testcontainers(disabledWithoutDocker = true)
 @ActiveProfiles("test")
 class WithdrawalServiceIntegrationTest {
@@ -130,6 +138,7 @@ class WithdrawalServiceIntegrationTest {
   // 경합 · 롤백을 만들 때만 동작을 바꾸고, 평소에는 실제 빈 그대로 (테스트마다 원래대로 돌아감)
   @MockitoSpyBean WithdrawalCheckService withdrawalCheckService;
   @MockitoSpyBean DatabaseClock databaseClock;
+  @MockitoSpyBean TokenRevocationService tokenRevocationService;
 
   @AfterEach
   void cleanUp() {
@@ -244,7 +253,7 @@ class WithdrawalServiceIntegrationTest {
 
   @Test
   @DisplayName("[S-B09] 연결 해제 뒤 폐기 작업 저장 직전에 실패하면 탈퇴 기록 · 배송지 삭제 · 소개글 · 개인정보 · 인증 버전이 모두 롤백된다")
-  void rollbackAfterUnlink() {
+  void rollbackAfterUnlink(CapturedOutput output) {
     Long memberId = givenSeller(Provider.KAKAO);
     Member before = memberRepository.findById(memberId).orElseThrow();
     String token = givenWithdrawalToken(before);
@@ -263,6 +272,28 @@ class WithdrawalServiceIntegrationTest {
     assertUnchanged(memberId, before);
     assertThat(recordRepository.count()).isZero();
     EXTERNAL.verify(1, postRequestedFor(urlPathEqualTo(UNLINK)));
+    // 카카오는 끊기고 회원은 그대로인 상태를 운영에서 알 수 있게 warn (내부 회원 ID와 오류 종류 · 코드만, Outbox 0건은 assertUnchanged)
+    assertThat(output.getOut().lines().filter(l -> l.contains("카카오 연결 해제 뒤 탈퇴 저장 실패")).toList())
+        .singleElement().satisfies(line -> assertThat(line)
+            .endsWith("memberId=" + memberId + ", error=DataAccessResourceFailureException, code=-"));
+  }
+
+  @Test
+  @DisplayName("[S-B09] 카카오 해제 뒤 최종 처리 결과가 불명이면 RESULT_UNKNOWN, 결과 불명 경고는 회원 ID만 남김")
+  void resultUnknownAfterUnlink(CapturedOutput output) {
+    Long memberId = givenSeller(Provider.KAKAO);
+    Member before = memberRepository.findById(memberId).orElseThrow();
+    String token = givenWithdrawalToken(before);
+    allowAll();
+    stubUnlink(aResponse().withStatus(200).withHeader("Content-Type", "application/json").withBody("{\"id\":1}"));
+    doThrow(new RevocationOutcomeUnknownException(memberId, new IllegalStateException("커밋 결과 불명 (테스트)")))
+        .when(tokenRevocationService).revoke(anyLong(), any(), any());
+
+    assertRejected(() -> withdrawalService.withdraw(memberId, null, token), MemberErrorCode.RESULT_UNKNOWN);
+
+    // DB 결과는 불명이라 회원 · Outbox는 보지 않는다 (실제 롤백은 rollbackAfterUnlink, HTTP 503은 컨트롤러 테스트)
+    assertThat(output.getOut().lines().filter(l -> l.contains("카카오 연결 해제 뒤 탈퇴 결과 불명")).toList())
+        .singleElement().satisfies(line -> assertThat(line).endsWith("memberId=" + memberId));
   }
 
   @Test
