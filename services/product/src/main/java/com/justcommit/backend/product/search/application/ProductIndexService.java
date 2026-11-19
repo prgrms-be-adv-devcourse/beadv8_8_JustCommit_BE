@@ -76,18 +76,28 @@ public class ProductIndexService {
             }
             Map<Long, List<String>> aliases = aliasesBySpecies(products);
             List<Write> writes = new ArrayList<>(products.size());
+            int batchDeleted = 0;
             for (Product product : products) {
                 if (product.getStatus() == ProductStatus.DELETED) {
                     writes.add(Write.delete(product.getId(), product.getVersion()));
-                    deleted++;
+                    batchDeleted++;
                 } else {
                     ProductDocument document = ProductDocument.of(product,
                             aliases.getOrDefault(product.getSpecies().getId(), List.of()));
                     writes.add(Write.save(document, product.getVersion()));
-                    indexed++;
                 }
             }
-            BulkResult result = searchIndex.bulk(writes);
+            BulkResult result;
+            try {
+                result = searchIndex.bulk(writes);
+            } catch (RuntimeException e) {
+                // 중간 배치에서 연결이 끊기면 그때까지 끝낸 범위를 남긴다 (멱등이라 처음부터 다시 실행하면 됨)
+                log.error("상품 전체 색인 중단: 끝낸 마지막 productId={}, 지금까지 indexed={}, deleted={}, skipped={}, failed={}",
+                        lastId, indexed, deleted, skipped, failed, e);
+                throw e;
+            }
+            indexed += writes.size() - batchDeleted;
+            deleted += batchDeleted;
             skipped += result.skipped();
             failed += result.failed();
             lastId = products.getLast().getId();
