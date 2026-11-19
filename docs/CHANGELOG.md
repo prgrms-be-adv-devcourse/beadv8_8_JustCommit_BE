@@ -1,12 +1,14 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-20 · services/payment.md · 회원 이벤트 구독 구현 표시: `member.events.v1`을 받아 `MEMBER_REPLICA`에 조건부 upsert(저장된 `occurredAt`보다 오래된 이벤트 무시, 탈퇴 표시는 되살리지 않음), `MemberCreated`면 회원 지갑을 `on conflict (member_id) do nothing`으로 생성(V5 `member_replica`, 컨슈머 그룹 `payment`) (#387)
+- 2026-11-20 · reference/external-apis.md · reference/internal-apis.md · services/member.md · services/payment.md · reference/env-vars.md · testing/scenarios.md · 인출 구현 반영: `POST wallet/cashOuts`(`Idempotency-Key` 필수, 같은 키에 다른 금액은 409)와 `GET wallet/cashOuts` 확정, 「추가 예정」의 인출 행 삭제, 계좌 조회 연동을 #387로(✅), 인출 정책에서 「실패하면 복원」 삭제(지급 실패는 `PENDING` 유지, 재시도와 복원은 #389), payment 환경변수 `MEMBER_SERVICE_URL`과 `BANK_MODE` 추가, S-G05에 미수금이 있으면 인출 불가 결과 기록 (#387)
 - 2026-11-18 · flows/cancel-refund.md · services/market.md · glossary.md · reference/schedulers.md · testing/scenarios.md · 구매자 취소를 「취소 중」(`CANCEL_PROCESSING`) 커밋으로 바꾸고 환불은 택배 취소 결과 뒤(전부 취소) 또는 커밋 뒤 트랜잭션 밖(일부 취소)으로, 환불 결과 불명은 Saga 복구가 같은 키로 재요청(5번 안 되면 주문상품 `REVIEW_REQUIRED`), 환불 4xx는 바로 `REVIEW_REQUIRED`(배송비 환불 실패는 `last_error`가 `SHIPPING_FEE_`로 시작), 택배 취소 불가면 `NORMAL` 복귀. `ORDERS_ITEM`에 `attempt_count`, `attempted_at`, `last_error`(V8), 「확인 필요」를 주문상품에도, 시나리오 S-E11 ~ S-E13 추가, S-E01, 02, 04, 07 결과 기록 (#282) (#537)
 - 2026-11-18 · glossary.md · open-questions.md · 「취소 중」 주문상품 상태 코드 이름 `CANCEL_PROCESSING`으로 확정, 미정 목록에서 삭제 (#282)
 - 2026-11-19 · decisions/0024 · services/ai.md · 로컬 임베딩 모델 「비교 예정」을 실측 결과로: `multilingual-e5-small`을 운영 이미지 · 메모리 상한으로 실측(int8 최소 2g · 최고 1.96GiB, fp32 최소 3g, 640m에서는 시작 중 OOM, 재임베딩 뒤에도 메모리 유지) → ai 파드에 상주 불가라 비교에서 제외, ADR 0024(OpenAI) 유지 (#507) (#543)

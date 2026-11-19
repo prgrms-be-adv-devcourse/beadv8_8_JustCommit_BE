@@ -1,7 +1,7 @@
 # member 서비스
 
 > 언제 읽나: member 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: Miro 5 · 6, A1, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: Miro 5 · 6, A1, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -34,7 +34,7 @@
 
 | API | 부르는 서비스 | 상태 |
 |---|---|---|
-| `GET /internal/v1/members/{memberId}/account` 계좌 조회 | payment (인출 신청 때) | ✅ member 구현 · ⬜ payment 연동(#388) |
+| `GET /internal/v1/members/{memberId}/account` 계좌 조회 | payment (인출 신청 때) | ✅ member 구현 · ✅ payment 연동(#387) |
 
 상세 → [내부 API 목록](../reference/internal-apis.md)
 
