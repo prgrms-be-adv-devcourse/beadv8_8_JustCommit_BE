@@ -1,12 +1,13 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-19 · testing/strategy.md · ② PR CI 결과를 PR 댓글 1개(모듈별 통과 · 실패 · 건너뜀 · 시간 표 + 실패 목록, 커밋마다 갱신, 빌드 대상이 없는 PR은 댓글 없음)로 남기고, CI가 실패하면 같은 레포 PR에 Claude 원인 분석 댓글(`ci-failure-ai.yml`, `workflow_run`, PR 코드 실행 없음, 커밋당 1개) (#534) (#536)
 - 2026-11-18 · flows/search-recommend.md · reference/env-vars.md · services/product.md · 상품 검색 인덱스 반영: alias `products` → `products_v1`(product 시작 시 없으면 생성, OpenSearch가 꺼져 있어도 앱은 뜸), 분석기 `ko_text` · `ko_compact`(공백 · 기호 제거 + `nori` + 소문자), 정규화는 공백 · 기호 · 대소문자까지이고 한글 ↔ 영문은 동의어(2단계)라고 명시, 환경변수 `OPENSEARCH_URL`(운영은 `make-env.sh` product 블록에서 데이터 서버 9200), 로컬 compose에 `opensearch` 추가, 시작할 때 OpenSearch가 꺼져 있으면 1분마다 다시 준비 (#484) (#533)
 - 2026-11-18 · services/member.md · flows/signup-and-replica.md · reference/external-apis.md · reference/redis-keys.md · reference/env-vars.md · reference/schedulers.md · conventions/resilience.md · open-questions.md · testing/scenarios.md · 회원 직접 탈퇴 구현 반영: 탈퇴 API(사전 확인 · 인증번호 · 탈퇴 토큰 · 최종 탈퇴) 구현 표시, 가입 재가입 제한 409 `REJOIN_RESTRICTED`, 탈퇴 기록 정리 1시간, 카카오 연결 해제 1초/3초 · HTTP 400 + `-101`만 이미 해제로 처리 · `KAKAO_ADMIN_KEY` 필수, 소개글 수정도 회원 행 잠금, 탈퇴 확인 연결 실패 · 재시도 시간 계산 약 5.2초로 정정, Gateway 탈퇴 POST 전용 20초, 확인 뒤 제3자 주문 유입 한계와 처리 책임 미정 등록, 시나리오 결과 기록 (#407) (#530)
 - 2026-11-18 · flows/search-recommend.md · glossary.md · 장바구니 추천 환경 점수에 봄 물주기 단계(0.2) · 분류(잎보기 · 꽃보기, 0.15) 일치 추가, 생육 온도 0.6 → 0.4 · 광도 0.4 → 0.25. 추천 평가 세트(정답 20쌍) Top-10 적중 2 → 5, 결과 표 · 후보 30개 밖 정답 13쌍 · 품종 문서에서 생육 조건 문구를 뺀 실험(3 / 20, 반영 안 함) 기록, 용어 「추천 평가 세트」 (#507) (#529)
