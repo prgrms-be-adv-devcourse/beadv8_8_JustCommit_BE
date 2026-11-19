@@ -79,7 +79,6 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
@@ -117,7 +116,7 @@ class OrderServiceTest {
         ReflectionTestUtils.setField(orderService, "orderPaymentTransactions", new OrderPaymentTransactions(
                 new NoOpTransactionManager(), ordersRepository, sellerOrderRepository, ordersItemRepository,
                 outboxPublisher, orderQuery,
-                sellerOrderEventPublisher, shipmentService, cartService));
+                sellerOrderEventPublisher, cartService));
         OrderCancelTransactions cancelTransactions = new OrderCancelTransactions(new NoOpTransactionManager(),
                 ordersRepository, sellerOrderRepository, ordersItemRepository, shipmentService, shipmentQuery,
                 outboxPublisher, sellerOrderEventPublisher);
@@ -433,24 +432,20 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("[S-D03] 결제 성공이면 주문 PAID와 판매 완료 이벤트(OrderPaid)를 Outbox에 남기고, 배송 생성 시점엔 이미 PAID")
+    @DisplayName("[S-D03] 결제 성공이면 주문 PAID와 판매 완료 이벤트(OrderPaid)를 Outbox에 남기고, 배송은 판매자 승인 전이라 만들지 않는다")
     void paysOrderAndMarksReservedProductsSoldOut() {
         stubLookup(List.of(selected(1L, 101L, "10000")),
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
         stubSavedOrder();
         when(paymentUseCase.pay(99L, 10L, money("13000"))).thenReturn(PaymentOutcome.paid());
         when(orderQuery.getOrder(99L)).thenReturn(orderResult);
-        doAnswer(invocation -> {
-            assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAID);
-            return null;
-        }).when(shipmentService).createShipments(orderResult);
 
         OrderCreateResponse response = orderService.create(10L, request(1L));
 
         assertThat(response.status()).isEqualTo(OrderStatus.PAID);
         assertThat(response.expiresAt()).isNull();
         verify(outboxPublisher).publish(new OrderPaid(99L));
-        verify(shipmentService).createShipments(orderResult);
+        verify(shipmentService, never()).createShipment(any(), any());
         verify(cartService).removeSelectedItems(10L, List.of(1L));
     }
 
@@ -465,7 +460,7 @@ class OrderServiceTest {
         assertThat(response.status()).isEqualTo(OrderStatus.PAID);
         assertThat(response.expiresAt()).isNull();
         verify(outboxPublisher).publish(new OrderPaid(99L));
-        verify(shipmentService).createShipments(orderResult);
+        verify(shipmentService, never()).createShipment(any(), any());
         verify(cartService, never()).removeSelectedItems(any(Long.class), any());
         verify(cartService, never()).restoreItem(anyLong(), anyLong(), any());
     }
@@ -509,7 +504,7 @@ class OrderServiceTest {
         assertThat(response.status()).isEqualTo(OrderStatus.PAYMENT_PENDING);
         assertThat(response.expiresAt()).isEqualTo(order.getCreatedAt().plusMinutes(10));
         verify(outboxPublisher, never()).publish(any(OrderPaid.class));
-        verify(shipmentService, never()).createShipments(any());
+        verify(shipmentService, never()).createShipment(any(), any());
         verify(cartService, never()).removeSelectedItems(any(Long.class), any());
     }
 
@@ -722,7 +717,7 @@ class OrderServiceTest {
         assertThat(response.status()).isEqualTo(OrderStatus.PAID);
         verify(paymentUseCase, never()).pay(any(), any(), any());
         verify(outboxPublisher, never()).publish(any(OrderPaid.class));
-        verify(shipmentService, never()).createShipments(any());
+        verify(shipmentService, never()).createShipment(any(), any());
     }
 
     @Test

@@ -1,12 +1,7 @@
 package com.justcommit.backend.market.shipment.application;
 
-import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderQuery;
-import com.justcommit.backend.market.OrderResult;
 import com.justcommit.backend.market.OrderShippingInfo;
-import com.justcommit.backend.market.OrderStatus;
-import com.justcommit.backend.market.OrdersItemResult;
-import com.justcommit.backend.market.SellerOrderResult;
 import com.justcommit.backend.market.client.member.MemberAddress;
 import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.market.config.JpaAuditingConfig;
@@ -36,6 +31,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -48,7 +45,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-// 결제 트랜잭션 안에서 배송을 만들 때 READY 행만 만들고 택배사는 부르지 않는지 실제 DB로 확인한다 (#475).
+// 판매자 승인 트랜잭션 안에서 배송을 만들 때 READY 행만 만들고 택배사는 부르지 않는지 실제 DB로 확인한다 (#475, #284).
 // 택배 예약은 예약 큐가 맡는다 → ShipmentBookingQueueIntegrationTest
 @DataJpaTest
 @ActiveProfiles("test")
@@ -78,13 +75,15 @@ class ShipmentCreateIntegrationTest {
     }
 
     @Test
-    @DisplayName("[S-F01] 결제 트랜잭션이 커밋돼도 택배사를 부르지 않고 READY 배송(택배 주문번호 · 상품 요약)만 남긴다")
+    @DisplayName("[S-F01] 승인 트랜잭션이 커밋돼도 택배사를 부르지 않고 READY 배송(택배 주문번호 · 상품 요약)만 남긴다")
     void createsReadyWithoutCallingCourier() {
-        new TransactionTemplate(transactionManager).executeWithoutResult(status -> shipmentService.createShipments(order()));
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> shipmentService.createShipment(7L, List.of("몬스테라")));
 
         assertThat(shipmentRepository.findBySellerOrderId(7L)).hasValueSatisfying(shipment -> {
             assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.READY);
-            assertThat(shipment.getCourierOrderNo()).startsWith("shipment-");
+            // 택배 주문번호의 날짜는 배송 생성일(= 수락일)
+            assertThat(shipment.getCourierOrderNo()).startsWith("shipment-"
+                    + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE) + "-");
             assertThat(shipment.getItemSummary()).isEqualTo("몬스테라");
             assertThat(shipment.getNextAttemptAt()).isNull(); // 예약 큐가 바로 집는다
         });
@@ -92,11 +91,21 @@ class ShipmentCreateIntegrationTest {
     }
 
     @Test
-    @DisplayName("[S-F01] 결제 트랜잭션이 롤백되면 배송 행도 남지 않는다")
+    @DisplayName("수락된 상품이 여러 개면 상품 요약은 「첫 상품명 외 N건」")
+    void summarizesAcceptedItems() {
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                shipmentService.createShipment(7L, List.of("몬스테라", "필로덴드론", "스킨답서스")));
+
+        assertThat(shipmentRepository.findBySellerOrderId(7L)).hasValueSatisfying(shipment ->
+                assertThat(shipment.getItemSummary()).isEqualTo("몬스테라 외 2건"));
+    }
+
+    @Test
+    @DisplayName("[S-F01] 승인 트랜잭션이 롤백되면 배송 행도 남지 않는다")
     void rollbackLeavesNothing() {
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-            shipmentService.createShipments(order());
-            status.setRollbackOnly(); // 결제 처리 중 에러로 롤백되는 상황
+            shipmentService.createShipment(7L, List.of("몬스테라"));
+            status.setRollbackOnly(); // 승인 처리 중 에러로 롤백되는 상황
         });
 
         assertThat(shipmentRepository.findBySellerOrderId(7L)).isEmpty();
@@ -104,7 +113,7 @@ class ShipmentCreateIntegrationTest {
     }
 
     @Test
-    @DisplayName("[S-F08] 택배사가 3초씩 늦어도 결제 쪽 배송 생성은 기다리지 않고, 예약은 큐가 나중에 끝낸다")
+    @DisplayName("[S-F08] 택배사가 3초씩 늦어도 승인 쪽 배송 생성은 기다리지 않고, 예약은 큐가 나중에 끝낸다")
     void paymentDoesNotWaitForSlowCourier() {
         when(orderQuery.getShippingInfo(anyLong())).thenReturn(
                 new OrderShippingInfo(9L, 10L, 20L, new BigDecimal("3000"), "구매자", "01000000000", "부산", null));
@@ -117,7 +126,7 @@ class ShipmentCreateIntegrationTest {
         });
 
         long started = System.nanoTime();
-        new TransactionTemplate(transactionManager).executeWithoutResult(status -> shipmentService.createShipments(order()));
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> shipmentService.createShipment(7L, List.of("몬스테라")));
         Duration paymentTook = Duration.ofNanos(System.nanoTime() - started);
 
         assertThat(paymentTook).isLessThan(Duration.ofSeconds(1));
@@ -127,13 +136,5 @@ class ShipmentCreateIntegrationTest {
 
         assertThat(shipmentRepository.findBySellerOrderId(7L))
                 .hasValueSatisfying(shipment -> assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.BOOKED));
-    }
-
-    private OrderResult order() {
-        SellerOrderResult sellerOrder = new SellerOrderResult(7L, 20L,
-                List.of(new OrdersItemResult(11L, 101L, "몬스테라", new BigDecimal("10000"), OrderItemStatus.NORMAL)),
-                new BigDecimal("10000"), null, new BigDecimal("3000"), null, null, null);
-        return new OrderResult(9L, 10L, List.of(sellerOrder), new BigDecimal("13000"),
-                "구매자", "01000000000", "12345", "부산", null, 1, OrderStatus.PAID);
     }
 }

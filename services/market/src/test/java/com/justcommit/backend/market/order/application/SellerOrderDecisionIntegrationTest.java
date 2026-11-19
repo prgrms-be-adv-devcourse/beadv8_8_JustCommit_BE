@@ -62,6 +62,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 // 판매자 승인, 거절과 수락 전 구매자 취소를 실제 PostgreSQL로 확인한다 (#284, ADR 0013).
 // 환불은 PaymentUseCase 목으로 결과만 흉내 낸다. 배송 생성, 취소는 ShipmentService 목으로 호출만 본다
+// (배송 행 자체는 ShipmentCreateIntegrationTest)
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -102,20 +103,21 @@ class SellerOrderDecisionIntegrationTest {
     }
 
     @Test
-    @DisplayName("[S-D08] 전체 승인: 수락 대기 상품이 모두 NORMAL, 정산 기준액 유지, 환불 없음. 다시 승인하면 409")
+    @DisplayName("[S-D08] 전체 승인: 수락 대기 상품이 모두 NORMAL, 모든 상품을 담은 배송 생성, 정산 기준액 유지, 환불 없음. 다시 승인하면 409")
     void acceptsAllItems() {
         Fixture fixture = pendingOrder(2);
 
         decisions.accept(SELLER_ID, fixture.sellerOrderId());
 
         assertThat(itemStatuses(fixture)).containsOnly("NORMAL");
+        verify(shipmentService, times(1)).createShipment(fixture.sellerOrderId(), List.of("식물0", "식물1"));
         assertThat(settlementBaseAmount(fixture.sellerOrderId())).isEqualByComparingTo("20000");
         verify(paymentUseCase, never()).refundCancelledItem(any(), any(), any(), any());
         assertNotAcceptable(() -> decisions.accept(SELLER_ID, fixture.sellerOrderId()));
     }
 
     @Test
-    @DisplayName("[S-D08] 일부 거절: 고른 상품만 SELLER 사유로 환불, 판매 재개 SELLER, 나머지는 NORMAL, 배송비 환불 없음, 판매자에게 구매자 취소 알림 없음")
+    @DisplayName("[S-D08] 일부 거절: 고른 상품만 SELLER 사유로 환불, 판매 재개 SELLER, 나머지는 NORMAL이고 그 상품만 배송, 배송비 환불 없음, 판매자에게 구매자 취소 알림 없음")
     void rejectsSomeItems() {
         Fixture fixture = pendingOrder(2);
         Long rejected = fixture.itemIds().getFirst();
@@ -125,6 +127,7 @@ class SellerOrderDecisionIntegrationTest {
 
         assertThat(item(rejected)).containsEntry("status", "CANCELLED").containsEntry("cancel_reason", "SELLER");
         assertThat(item(fixture.itemIds().get(1))).containsEntry("status", "NORMAL");
+        verify(shipmentService, times(1)).createShipment(fixture.sellerOrderId(), List.of("식물1"));
         assertThat(settlementBaseAmount(fixture.sellerOrderId())).isEqualByComparingTo("10000");
         verify(paymentUseCase, never()).refundShippingFee(any(), any(), any(), any());
         verify(outboxPublisher).publish(new OrderItemCancelled(fixture.orderId(), rejected, 101L, CancelReason.SELLER));
@@ -145,8 +148,22 @@ class SellerOrderDecisionIntegrationTest {
         verify(paymentUseCase, times(1)).refundShippingFee(eq(fixture.sellerOrderId()), eq(fixture.orderId()),
                 eq(BUYER_ID), argEquals(SHIPPING_FEE));
         verify(outboxPublisher, times(2)).publish(any(OrderItemCancelled.class));
+        verify(shipmentService, never()).createShipment(any(), any());
         verify(shipmentService, never()).cancelShipment(any());
         assertThat(orderStatus(fixture.orderId())).isEqualTo("CANCELLED");
+    }
+
+    @Test
+    @DisplayName("수락 전에 구매자가 상품 하나를 취소한 뒤 승인하면 남은 상품만 배송한다")
+    void acceptAfterBuyerItemCancelShipsRemainingOnly() {
+        Fixture fixture = pendingOrder(2);
+        mockRefunds(RefundOutcome.refunded(), RefundOutcome.refunded());
+        itemCancel(fixture.itemIds().getFirst());
+
+        decisions.accept(SELLER_ID, fixture.sellerOrderId());
+
+        assertThat(itemStatuses(fixture)).containsExactly("CANCELLED", "NORMAL");
+        verify(shipmentService, times(1)).createShipment(fixture.sellerOrderId(), List.of("식물1"));
     }
 
     @Test
@@ -214,6 +231,7 @@ class SellerOrderDecisionIntegrationTest {
         // 승인이 먼저면 둘 다 NORMAL, 거절이 먼저면 하나 CANCELLED + 하나 NORMAL
         assertThat(statuses).doesNotContain("ACCEPT_PENDING");
         assertThat(statuses.stream().filter("CANCELLED"::equals).count()).isLessThanOrEqualTo(1);
+        verify(shipmentService, times(1)).createShipment(any(), any());
     }
 
     @Test
@@ -238,6 +256,7 @@ class SellerOrderDecisionIntegrationTest {
 
         assertThat(itemStatuses(fixture)).containsOnly("CANCELLED");
         verify(shipmentService, never()).cancelShipment(any());
+        verify(shipmentService, never()).createShipment(any(), any());
         verify(paymentUseCase, times(1)).refundShippingFee(eq(fixture.sellerOrderId()), eq(fixture.orderId()),
                 eq(BUYER_ID), argEquals(SHIPPING_FEE));
         verify(outboxPublisher, times(2)).publish(any(OrderItemCancelled.class));
@@ -270,7 +289,7 @@ class SellerOrderDecisionIntegrationTest {
     void buyerCancelAfterAcceptWaitsForCourier() {
         Fixture fixture = pendingOrder(1);
         decisions.accept(SELLER_ID, fixture.sellerOrderId());
-        insertShipment(fixture.sellerOrderId(), "READY");
+        insertShipment(fixture.sellerOrderId(), "READY"); // ShipmentService가 목이라 승인이 만들 배송 행을 직접 넣는다
 
         buyerCancel(fixture.orderId());
 

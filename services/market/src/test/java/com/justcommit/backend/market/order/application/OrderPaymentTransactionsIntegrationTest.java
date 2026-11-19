@@ -108,7 +108,7 @@ class OrderPaymentTransactionsIntegrationTest {
     }
 
     @Test
-    @DisplayName("TX3: 결제 완료면 PAID로 바꾸고 판매 완료 Outbox · 배송 행 생성을 같은 트랜잭션에서 한다")
+    @DisplayName("TX3: 결제 완료면 PAID, 주문상품 수락 대기, 판매 완료 Outbox를 같은 트랜잭션에서 하고 배송은 만들지 않는다")
     void appliesPaidOutcome() {
         Long orderId = saveOrder();
         int attemptNo = transactions.startAttempt(orderId).getAsInt();
@@ -119,7 +119,8 @@ class OrderPaymentTransactionsIntegrationTest {
 
         assertThat(row(orderId).get("status")).isEqualTo("PAID");
         verify(outboxPublisher).publish(new OrderPaid(orderId));
-        verify(shipmentService).createShipments(result);
+        verify(shipmentService, never()).createShipment(any(), any());
+        assertThat(jdbcTemplate.queryForObject("select count(*) from shipment", Integer.class)).isZero();
         // [#284] 결제 완료면 주문상품은 판매자 수락 대기, 판매자 주문에 결제 완료 시각
         assertThat(jdbcTemplate.queryForList("""
                 select i.status from orders_item i join seller_order s on s.id = i.seller_order_id

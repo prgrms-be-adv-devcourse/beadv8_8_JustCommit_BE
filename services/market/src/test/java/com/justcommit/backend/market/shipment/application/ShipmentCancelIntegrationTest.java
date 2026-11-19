@@ -1,13 +1,8 @@
 package com.justcommit.backend.market.shipment.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderQuery;
-import com.justcommit.backend.market.OrderResult;
 import com.justcommit.backend.market.OrderShippingInfo;
-import com.justcommit.backend.market.OrderStatus;
-import com.justcommit.backend.market.OrdersItemResult;
-import com.justcommit.backend.market.SellerOrderResult;
 import com.justcommit.backend.market.client.member.MemberAddress;
 import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.market.config.JpaAuditingConfig;
@@ -115,7 +110,7 @@ class ShipmentCancelIntegrationTest {
     @Test
     @DisplayName("예약 전(READY) 배송을 취소해도 CANCEL_PENDING으로 기록한다 — 택배사에 예약이 있을 수 있어 큐가 확인한다")
     void cancelReadyRecordsPending() {
-        inTransaction(() -> shipmentService.createShipments(order()));
+        inTransaction(() -> shipmentService.createShipment(7L, List.of("몬스테라")));
 
         inTransaction(() -> shipmentService.cancelShipment(7L));
 
@@ -213,7 +208,7 @@ class ShipmentCancelIntegrationTest {
             }
             return bookingResponse();
         });
-        inTransaction(() -> shipmentService.createShipments(order()));
+        inTransaction(() -> shipmentService.createShipment(7L, List.of("몬스테라")));
 
         shipmentService.bookReadyShipments();
 
@@ -223,7 +218,7 @@ class ShipmentCancelIntegrationTest {
 
     private Long createBookedShipment() {
         when(courierClient.book(anyString(), any(CourierBookingRequest.class))).thenReturn(bookingResponse());
-        inTransaction(() -> shipmentService.createShipments(order()));
+        inTransaction(() -> shipmentService.createShipment(7L, List.of("몬스테라")));
         shipmentService.bookReadyShipments(); // 예약 큐
         assertThat(shipment().getStatus()).isEqualTo(ShipmentStatus.BOOKED);
         return shipment().getId();
@@ -240,13 +235,5 @@ class ShipmentCancelIntegrationTest {
     private CourierBookingResponse bookingResponse() {
         return new CourierBookingResponse(TRACKING_NO, "shipment-20261117-000001", "RESERVED",
                 OffsetDateTime.parse("2026-11-17T10:00:00+09:00"));
-    }
-
-    private OrderResult order() {
-        SellerOrderResult sellerOrder = new SellerOrderResult(7L, 20L,
-                List.of(new OrdersItemResult(11L, 101L, "몬스테라", new BigDecimal("10000"), OrderItemStatus.NORMAL)),
-                new BigDecimal("10000"), null, new BigDecimal("3000"), null, null, null);
-        return new OrderResult(9L, 10L, List.of(sellerOrder), new BigDecimal("13000"),
-                "구매자", "01000000000", "12345", "부산", null, 1, OrderStatus.PAID);
     }
 }
