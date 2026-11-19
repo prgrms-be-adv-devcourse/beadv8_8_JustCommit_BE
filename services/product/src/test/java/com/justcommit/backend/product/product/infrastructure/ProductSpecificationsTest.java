@@ -116,7 +116,8 @@ class ProductSpecificationsTest {
     private Page<Product> shop(Long sellerId, ProductStatus status) {
         entityManager.flush();
         return productRepository.findAll(ProductSpecifications.searchCondition(null, null, null,
-                null, null, null, null, null, null, sellerId, status), LATEST);
+                null, null, null, null, null, null, sellerId,
+                status == null ? null : List.of(status)), LATEST);
     }
 
     // 상품 하나 저장 (검색에 나오는 판매 중 상태로)
@@ -241,6 +242,20 @@ class ProductSpecificationsTest {
         Page<Product> soldOutPage = shop(SELLER_ID, ProductStatus.SOLD_OUT);
         assertThat(idsOf(soldOutPage)).containsExactly(soldOut.getId());
         assertThat(soldOutPage.getTotalElements()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("판매자 상점 판매 중 칸: status 여러 값(ACTIVE · PAYMENT_PENDING)이면 판매 완료 없이 둘 다 (#559)")
+    void searchConditionWithSellerAndStatuses() {
+        Product pending = save(species("필레아", null, null, null), SELLER_ID, "결제 대기");
+        ReflectionTestUtils.setField(pending, "status", ProductStatus.PAYMENT_PENDING);
+        entityManager.flush();
+
+        Page<Product> onSaleTab = productRepository.findAll(ProductSpecifications.searchCondition(null, null, null,
+                null, null, null, null, null, null, SELLER_ID,
+                List.of(ProductStatus.ACTIVE, ProductStatus.PAYMENT_PENDING)), LATEST);
+        assertThat(idsOf(onSaleTab)).containsExactlyInAnyOrder(active.getId(), pending.getId());
+        assertThat(onSaleTab.getTotalElements()).isEqualTo(2);
     }
 
     @Test
