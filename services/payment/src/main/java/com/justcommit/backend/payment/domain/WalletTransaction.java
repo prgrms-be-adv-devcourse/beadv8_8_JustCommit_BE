@@ -78,24 +78,6 @@ public class WalletTransaction extends BaseTimeEntity {
         );
     }
 
-    public static WalletTransaction settlementIn(
-            Wallet wallet,
-            Long settlementId,
-            BigDecimal amount,
-            LocalDateTime occurredAt
-    ) {
-        return new WalletTransaction(
-                wallet,
-                RefType.SETTLEMENT,
-                settlementId,
-                occurredAt,
-                TransactionStatus.IN,
-                amount,
-                wallet.getBalance(),
-                wallet.getReceivable()
-        );
-    }
-
     // HOLDING 정산금 출금
     public static WalletTransaction settlementOut(
             Wallet wallet,

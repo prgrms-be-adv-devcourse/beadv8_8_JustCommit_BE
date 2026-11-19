@@ -104,7 +104,7 @@ public class PaymentService {
      * @param sellerOrderId      판매자 주문 ID. 배송비 중복 이동 판정 기준 (배송비가 0보다 크면 필수)
      * @param payoutAmount       판매자 정산금 = 판매액 - 수수료 - 판매자 부담금 (0 · 음수 허용)
      * @param fee                수수료 (0 이상)
-     * @param shippingFee        배송비 (0 이상, null이면 0)
+     * @param shippingFee        배송비 (0 이상)
      * @param sellerBurdenAmount 판매자 부담금 (0 이상)
      * @throws com.justcommit.backend.common.exception.BusinessException 실패하면 4xx 응답으로 나간다
      *         <ul>
@@ -125,8 +125,7 @@ public class PaymentService {
             BigDecimal shippingFee,         // 배송비
             BigDecimal sellerBurdenAmount   // 판매자 부담금
     ) {
-        BigDecimal shipping = shippingFee == null ? BigDecimal.ZERO : shippingFee;
-        validateSettlementRequest(settlementId, sellerId, sellerOrderId, payoutAmount, fee, shipping, sellerBurdenAmount);
+        validateSettlementRequest(settlementId, sellerId, sellerOrderId, payoutAmount, fee, shippingFee, sellerBurdenAmount);
         BigDecimal saleAmount = payoutAmount.add(fee).add(sellerBurdenAmount);
 
         // 판매자 지갑 잠금
@@ -175,8 +174,8 @@ public class PaymentService {
         }
 
         // 배송비 HOLDING → REVENUE (이미 옮겼거나 환불됐으면 건너뜀)
-        if (shipping.signum() > 0 && !isShippingFeeHandled(holdingWallet, sellerOrderId)) {
-            moveShippingFee(holdingWallet, revenueWallet, sellerOrderId, shipping, now);
+        if (shippingFee.signum() > 0 && !isShippingFeeHandled(holdingWallet, sellerOrderId)) {
+            moveShippingFee(holdingWallet, revenueWallet, sellerOrderId, shippingFee, now);
         }
 
         // 판매자 지갑: 정산금이 0 이상이면 입금, 음수면 잔액에서 회수하고 부족분은 미수금
@@ -223,7 +222,7 @@ public class PaymentService {
             BigDecimal sellerBurdenAmount
     ) {
         if (settlementId == null || sellerId == null
-                || payoutAmount == null || fee == null || sellerBurdenAmount == null
+                || payoutAmount == null || fee == null || shippingFee == null || sellerBurdenAmount == null
                 || fee.signum() < 0
                 || sellerBurdenAmount.signum() < 0
                 || shippingFee.signum() < 0

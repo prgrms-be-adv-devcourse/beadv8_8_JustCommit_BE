@@ -270,6 +270,7 @@ class PaymentServiceSettlementTest {
             "100,  null, 9500,  500, 0,    0,    sellerId 없음",
             "100,  4,    null,  500, 0,    0,    정산금 없음",
             "100,  4,    9500,  null, 0,   0,    수수료 없음",
+            "100,  4,    9500,  500, null, 0,    배송비 없음",
             "100,  4,    9500,  500, 0,    null, 부담금 없음",
             "100,  4,    9500,  -1,  0,    0,    수수료 음수",
             "100,  4,    9500,  500, 0,    -1,   부담금 음수",
@@ -296,16 +297,6 @@ class PaymentServiceSettlementTest {
                 .hasFieldOrPropertyWithValue("errorCode", PaymentErrorCode.INVALID_AMOUNT);
 
         verifyNoInteractions(walletRepository, walletTransactionRepository);
-    }
-
-    @Test
-    @DisplayName("배송비가 null이면 0으로 보고 배송비를 옮기지 않는다")
-    void treatsNullShippingFeeAsZero() {
-        paymentService.distributeSettlement(SETTLEMENT_ID, SELLER_ID, null,
-                new BigDecimal("9500"), new BigDecimal("500"), null, BigDecimal.ZERO);
-
-        assertThat(holding.getBalance()).isEqualByComparingTo("90000");
-        assertThat(ledger).noneMatch(t -> t.getRefType() == RefType.SHIPPING_FEE);
     }
 
     private void distribute(Long sellerOrderId, String payoutAmount, String fee, String shippingFee, String burden) {
