@@ -4,9 +4,12 @@ import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.exception.CommonErrorCode;
+import com.justcommit.backend.common.messaging.EventEnvelopeMapper;
 import com.justcommit.backend.common.exception.ErrorCode;
 import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
+import com.justcommit.backend.member.auth.application.RevocationOutcomeUnknownException;
+import com.justcommit.backend.member.auth.application.TokenRevocationService;
 import com.justcommit.backend.member.auth.domain.VerificationBinding;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
@@ -26,9 +29,12 @@ import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -41,12 +47,19 @@ import org.springframework.transaction.support.TransactionTemplate;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import com.justcommit.backend.common.testcontainers.SharedRedis;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import tools.jackson.databind.JsonNode;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
@@ -61,18 +74,21 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doThrow;
 
 /**
  * 직접 탈퇴 (#407)를 실제 PostgreSQL · Redis로 확인한다. market · payment · settlement · 카카오는 WireMock 하나로 대신한다.
  * - 이 클래스에는 @Transactional이 없어, 서비스 호출 뒤의 조회는 DB에서 다시 읽은 값이다
  * - 재확인 트랜잭션이 외부 호출 전에 끝나는지는 따로 확인하지 않는다: 끝나지 않았다면 revoke()가 활성 트랜잭션을 거절해
  *   성공 테스트가 실패한다
- * - MemberWithdrawn Outbox를 포함한 원자성은 #408에서 확인한다 (지금은 회원 · 배송지 · 소개글 · 탈퇴 기록 · 폐기 작업)
+ * - 원자성: 회원 · 배송지 · 소개글 · 탈퇴 기록 · 폐기 작업 · MemberWithdrawn Outbox가 함께 커밋 · 롤백된다 (#408)
  */
 @SpringBootTest
+@ExtendWith(OutputCaptureExtension.class)
 @Testcontainers(disabledWithoutDocker = true)
 @ActiveProfiles("test")
 class WithdrawalServiceIntegrationTest {
@@ -124,6 +140,9 @@ class WithdrawalServiceIntegrationTest {
   // 경합 · 롤백을 만들 때만 동작을 바꾸고, 평소에는 실제 빈 그대로 (테스트마다 원래대로 돌아감)
   @MockitoSpyBean WithdrawalCheckService withdrawalCheckService;
   @MockitoSpyBean DatabaseClock databaseClock;
+  // Outbox에 저장된 봉투 JSON을 읽어 payload를 확인한다 (운영과 같은 공통 형식)
+  private static final EventEnvelopeMapper ENVELOPE_MAPPER = new EventEnvelopeMapper();
+  @MockitoSpyBean TokenRevocationService tokenRevocationService;
 
   @AfterEach
   void cleanUp() {
@@ -142,7 +161,7 @@ class WithdrawalServiceIntegrationTest {
   // ===== 성공 (S-B05) =====
 
   @Test
-  @DisplayName("[S-B05] 로컬 회원 탈퇴: 개인정보 · 계좌 NULL · DELETED · 인증 버전 +1, 배송지 삭제 · 소개글 NULL, 탈퇴 기록은 익명화 전 값의 HMAC, 다른 이벤트 없음")
+  @DisplayName("[S-B05] 로컬 회원 탈퇴: 개인정보 · 계좌 NULL · DELETED · 인증 버전 +1, 배송지 삭제 · 소개글 NULL, 탈퇴 기록은 익명화 전 값의 HMAC, Outbox는 MemberWithdrawn 1건만")
   void withdrawLocal() {
     Long memberId = givenSeller(Provider.LOCAL);
     Member before = memberRepository.findById(memberId).orElseThrow();
@@ -153,8 +172,8 @@ class WithdrawalServiceIntegrationTest {
 
     assertThat(result.revocationCompleted()).isTrue();
     assertWithdrawn(memberId, before);
-    // MemberUpdated · MemberAddressChanged가 나가지 않음 (#408에서 MemberWithdrawn 1건이 추가되면 이 기대값을 바꾼다)
-    assertThat(outboxCount()).isEqualTo(outboxBefore);
+    // MemberWithdrawn 1건만 (판매자여도 MemberUpdated · MemberAddressChanged는 나가지 않음)
+    assertThat(outboxCount()).isEqualTo(outboxBefore + 1);
     EXTERNAL.verify(0, postRequestedFor(urlPathEqualTo(UNLINK)));
   }
 
@@ -238,7 +257,7 @@ class WithdrawalServiceIntegrationTest {
 
   @Test
   @DisplayName("[S-B09] 연결 해제 뒤 폐기 작업 저장 직전에 실패하면 탈퇴 기록 · 배송지 삭제 · 소개글 · 개인정보 · 인증 버전이 모두 롤백된다")
-  void rollbackAfterUnlink() {
+  void rollbackAfterUnlink(CapturedOutput output) {
     Long memberId = givenSeller(Provider.KAKAO);
     Member before = memberRepository.findById(memberId).orElseThrow();
     String token = givenWithdrawalToken(before);
@@ -257,6 +276,28 @@ class WithdrawalServiceIntegrationTest {
     assertUnchanged(memberId, before);
     assertThat(recordRepository.count()).isZero();
     EXTERNAL.verify(1, postRequestedFor(urlPathEqualTo(UNLINK)));
+    // 카카오는 끊기고 회원은 그대로인 상태를 운영에서 알 수 있게 warn (내부 회원 ID와 오류 종류 · 코드만, Outbox 0건은 assertUnchanged)
+    assertThat(output.getOut().lines().filter(l -> l.contains("카카오 연결 해제 뒤 탈퇴 저장 실패")).toList())
+        .singleElement().satisfies(line -> assertThat(line)
+            .endsWith("memberId=" + memberId + ", error=DataAccessResourceFailureException, code=-"));
+  }
+
+  @Test
+  @DisplayName("[S-B09] 카카오 해제 뒤 최종 처리 결과가 불명이면 RESULT_UNKNOWN, 결과 불명 경고는 회원 ID만 남김")
+  void resultUnknownAfterUnlink(CapturedOutput output) {
+    Long memberId = givenSeller(Provider.KAKAO);
+    Member before = memberRepository.findById(memberId).orElseThrow();
+    String token = givenWithdrawalToken(before);
+    allowAll();
+    stubUnlink(aResponse().withStatus(200).withHeader("Content-Type", "application/json").withBody("{\"id\":1}"));
+    doThrow(new RevocationOutcomeUnknownException(memberId, new IllegalStateException("커밋 결과 불명 (테스트)")))
+        .when(tokenRevocationService).revoke(anyLong(), any(), any());
+
+    assertRejected(() -> withdrawalService.withdraw(memberId, null, token), MemberErrorCode.RESULT_UNKNOWN);
+
+    // DB 결과는 불명이라 회원 · Outbox는 보지 않는다 (실제 롤백은 rollbackAfterUnlink, HTTP 503은 컨트롤러 테스트)
+    assertThat(output.getOut().lines().filter(l -> l.contains("카카오 연결 해제 뒤 탈퇴 결과 불명")).toList())
+        .singleElement().satisfies(line -> assertThat(line).endsWith("memberId=" + memberId));
   }
 
   @Test
@@ -391,6 +432,55 @@ class WithdrawalServiceIntegrationTest {
     assertThat(recordRepository.count()).isEqualTo(1);
   }
 
+  @Test
+  @DisplayName("[S-B05] 같은 회원의 실제 탈퇴 요청 두 개가 겹치면 하나만 성공하고 나머지는 404, 탈퇴 기록 · MemberWithdrawn 각 1건")
+  void concurrentWithdrawals() throws Exception {
+    Long memberId = givenSeller(Provider.LOCAL);
+    allowAll();
+    CountDownLatch firstChecking = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    AtomicInteger checks = new AtomicInteger();
+    // 첫 요청만 3곳 확인에서 멈춘다 (재확인의 짧은 잠금은 이미 끝난 뒤)
+    doAnswer(invocation -> {
+      if (checks.incrementAndGet() == 1) {
+        firstChecking.countDown();
+        // 시간 초과로 풀리면 의도한 순서가 깨진 것이라 조용히 진행하지 않는다 (예외는 Future로 전달돼 아래 단언에 드러남)
+        if (!release.await(30, TimeUnit.SECONDS)) {
+          throw new IllegalStateException("두 번째 요청이 끝나기 전에 첫 요청의 대기 시간이 지남");
+        }
+      }
+      return invocation.callRealMethod();
+    }).when(withdrawalCheckService).check(anyLong());
+
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    try {
+      Future<Throwable> first = executor.submit(() -> {
+        try {
+          withdrawalService.withdraw(memberId, PASSWORD, null);
+          return null;
+        } catch (Throwable t) {
+          return t;
+        }
+      });
+      assertThat(firstChecking.await(10, TimeUnit.SECONDS)).isTrue();
+
+      // 두 번째 요청은 끝까지 커밋
+      assertThat(withdrawalService.withdraw(memberId, PASSWORD, null).revocationCompleted()).isTrue();
+
+      // 첫 요청 재개: 최종 잠금에서 이미 DELETED → 404, 이 요청의 변경 · 이벤트는 커밋되지 않음
+      release.countDown();
+      assertThat(first.get(30, TimeUnit.SECONDS)).isInstanceOfSatisfying(BusinessException.class,
+          e -> assertThat(e.getErrorCode()).isEqualTo(MemberErrorCode.MEMBER_NOT_FOUND));
+    } finally {
+      // 테스트가 중간에 실패해도 첫 요청이 풀리게
+      release.countDown();
+      executor.shutdownNow();
+    }
+
+    assertThat(recordRepository.count()).isEqualTo(1);
+    assertThat(withdrawnEvents(memberId)).hasSize(1);
+  }
+
   // ===== 사전 확인 (GET) =====
 
   @Test
@@ -520,6 +610,12 @@ class WithdrawalServiceIntegrationTest {
       assertThat(r.getEmailHash()).isEqualTo(memberHmac.emailHash(before.getEmail()));
       assertThat(r.getPhoneHash()).isEqualTo(memberHmac.phoneHash(before.getPhone()));
     });
+    // 같은 트랜잭션에서 MemberWithdrawn 1건 (토픽 member.events.v1, 키 memberId, payload { memberId })
+    assertThat(withdrawnEvents(memberId)).singleElement().satisfies(json -> {
+      JsonNode payload = ENVELOPE_MAPPER.fromJson(json).payload();
+      assertThat(payload.size()).isEqualTo(1);
+      assertThat(payload.get("memberId").asLong()).isEqualTo(memberId);
+    });
   }
 
   private void assertUnchanged(Long memberId, Member before) {
@@ -532,6 +628,8 @@ class WithdrawalServiceIntegrationTest {
     assertThat(after.getTokenVersion()).isEqualTo(before.getTokenVersion());
     assertThat(addressRepository.countByMemberId(memberId)).isEqualTo(2);
     assertThat(sellerRepository.findById(memberId)).get().satisfies(s -> assertThat(s.getIntro()).isEqualTo("식물 판매합니다"));
+    // 롤백 · 차단이면 탈퇴 이벤트도 남지 않음
+    assertThat(withdrawnEvents(memberId)).isEmpty();
   }
 
   private void allowAll() {
@@ -552,6 +650,13 @@ class WithdrawalServiceIntegrationTest {
 
   private void stubUnlink(ResponseDefinitionBuilder response) {
     EXTERNAL.stubFor(post(urlPathEqualTo(UNLINK)).willReturn(response));
+  }
+
+  // 이 회원의 MemberWithdrawn Outbox (저장된 봉투 JSON)
+  private List<String> withdrawnEvents(Long memberId) {
+    return jdbcTemplate.queryForList(
+        "select payload from outbox_event where event_type = 'MemberWithdrawn' and topic = 'member.events.v1' and aggregate_id = ?",
+        String.class, String.valueOf(memberId));
   }
 
   private long outboxCount() {
