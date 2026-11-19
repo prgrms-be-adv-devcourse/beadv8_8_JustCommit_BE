@@ -106,6 +106,10 @@ public class ImageReview extends BaseTimeEntity {
     @Column(name = "appealed_at")
     private LocalDateTime appealedAt;
 
+    // 관리자 확인 12시간 지연 알림(ImageReviewDelayed)에 넣어 보낸 시각. 채워진 건은 다시 알리지 않음 (#509)
+    @Column(name = "delay_notified_at")
+    private LocalDateTime delayNotifiedAt;
+
     private ImageReview(Long productId, int reviewVersion, Long sellerId, ReviewScope scope) {
         this.productId = productId;
         this.reviewVersion = reviewVersion;
@@ -214,6 +218,11 @@ public class ImageReview extends BaseTimeEntity {
         this.rejectReason = RejectReason.REVIEW_EXPIRED;
         this.decidedBy = DecidedBy.DEADLINE;
         this.decidedAt = now;
+    }
+
+    // 관리자 확인 12시간 지연 알림 이벤트에 넣었음 (같은 트랜잭션에서 이벤트를 Outbox에 저장)
+    public void markDelayNotified(LocalDateTime now) {
+        this.delayNotifiedAt = now;
     }
 
     // 그사이 상품이 바뀌어 이 버전은 반영하지 않음
