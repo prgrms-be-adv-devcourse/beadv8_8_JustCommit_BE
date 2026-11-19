@@ -588,7 +588,22 @@ class ProductControllerTest {
         ArgumentCaptor<ProductSearchRequest> captor = ArgumentCaptor.forClass(ProductSearchRequest.class);
         verify(productSearchService).search(captor.capture());
         assertThat(captor.getValue().sellerId()).isEqualTo(7L);
-        assertThat(captor.getValue().status()).isEqualTo(ProductStatus.SOLD_OUT);
+        assertThat(captor.getValue().status()).containsExactly(ProductStatus.SOLD_OUT);
+    }
+
+    @Test
+    @DisplayName("status를 여러 번 주면 모두 담아 전달 (판매자 상점 판매 중 칸 = ACTIVE + PAYMENT_PENDING, #559)")
+    void searchProductsWithMultipleStatuses() throws Exception {
+        given(productSearchService.search(any()))
+                .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+        mockMvc.perform(get("/api/v1/products").param("sellerId", "7")
+                        .param("status", "ACTIVE").param("status", "PAYMENT_PENDING"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ProductSearchRequest> captor = ArgumentCaptor.forClass(ProductSearchRequest.class);
+        verify(productSearchService).search(captor.capture());
+        assertThat(captor.getValue().status()).containsExactly(ProductStatus.ACTIVE, ProductStatus.PAYMENT_PENDING);
     }
 
     @Test

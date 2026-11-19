@@ -278,8 +278,8 @@ class ProductSearchIntegrationTest {
 
     private static ProductSearchRequest request(String keyword, Boolean onSale, Long sellerId, ProductStatus status,
                                                 String sort) {
-        return new ProductSearchRequest(keyword, null, null, null, null, null, null, null, onSale, sellerId, status,
-                sort, null, null);
+        return new ProductSearchRequest(keyword, null, null, null, null, null, null, null, onSale, sellerId,
+                status == null ? null : List.of(status), sort, null, null);
     }
 
     private static List<Long> ids(Page<ProductSearchResponse> page) {

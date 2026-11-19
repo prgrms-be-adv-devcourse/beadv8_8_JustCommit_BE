@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-19 · reference/external-apis.md · flows/search-recommend.md · 상품 목록 `status`가 여러 값을 받음(`status=ACTIVE&status=PAYMENT_PENDING`, 하나라도 노출 상태 밖이면 400): 판매자 상점 판매 중 칸이 결제 대기도 함께 한 번에 받음 (#559)
 - 2026-11-19 · reference/external-apis.md · 「경로 개선안」에 판매자 수락 `orders/seller/{id}/accept` → `acceptances`, 거절 `orders/seller/{id}/reject` → `rejections` 추가 (동사형 경로, 기존 `cancel`, `confirm`과 함께 바꿈) (#284) (#552)
 - 2026-11-19 · services/market.md · reference/external-apis.md · reference/internal-apis.md · flows/signup-and-replica.md · glossary.md · testing/scenarios.md · 판매자 수락, 거절 구현 반영: 결제 완료 시 주문상품 `ACCEPT_PENDING`과 `seller_order.paid_at`(Flyway V9), 수락 `orders/seller/{id}/accept`, 거절 `orders/seller/{id}/reject`(고른 상품 환불, 사유 `SELLER`, 나머지 수락, 전부 거절이면 배송비 환불), 배송은 수락 시점에 수락된 상품만 담아 생성, 수락 전 구매자 취소는 택배사 없이 바로 환불, 늦게 온 수락과 거절은 409 `SELLER_ORDER_NOT_ACCEPTABLE`, 판매자 주문 응답에 수락 마감 `acceptDeadline`, 주문상품 `cancel_reason`(Saga 복구 때 판매 재개 사유 유지), 탈퇴 확인 진행 중에 `ACCEPT_PENDING`, 용어 「수락 마감」 「취소 사유」, 시나리오 S-D17, S-D18 추가 (#284) (#552)
 - 2026-11-19 · product · 사진 업로드 경로 코드도 `upload-urls` → `uploadUrls`로 맞춤 (#553)

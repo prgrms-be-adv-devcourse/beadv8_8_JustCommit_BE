@@ -165,6 +165,28 @@ class ProductSearchServiceTest {
     }
 
     @Test
+    @DisplayName("status 여러 값: 그 상태들만 OpenSearch로 넘기고, 하나라도 노출 상태 밖이면 400 (#559)")
+    void multipleStatuses() {
+        given(keywordSearch.search(any(), any(), anyInt(), anyInt()))
+                .willReturn(new ProductKeywordSearch.Result(List.of(), 0));
+        ArgumentCaptor<ProductKeywordSearch.Condition> captor = ArgumentCaptor.forClass(ProductKeywordSearch.Condition.class);
+
+        service.search(statusRequest(List.of(ProductStatus.ACTIVE, ProductStatus.PAYMENT_PENDING)));
+
+        verify(keywordSearch).search(captor.capture(), any(), anyInt(), anyInt());
+        assertThat(captor.getValue().statuses()).containsExactly(ProductStatus.ACTIVE, ProductStatus.PAYMENT_PENDING);
+        assertThatThrownBy(() -> service.search(statusRequest(List.of(ProductStatus.ACTIVE, ProductStatus.REJECTED))))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ProductErrorCode.INVALID_SEARCH_STATUS);
+    }
+
+    private static ProductSearchRequest statusRequest(List<ProductStatus> statuses) {
+        return new ProductSearchRequest("몬스테라", null, null, null, null, null, null, null, null, null, statuses,
+                null, null, null);
+    }
+
+    @Test
     @DisplayName("정렬: 키워드가 있으면 관련도 기본, 없으면 최신 기본, priceAsc · priceDesc · latest는 그대로")
     void searchSort() {
         assertThat(request("몬스테라", null, null, null, null).searchSort()).isEqualTo(ProductSearchSort.RELEVANCE);
@@ -191,8 +213,8 @@ class ProductSearchServiceTest {
 
     private static ProductSearchRequest request(String keyword, Boolean onSale, Long sellerId, ProductStatus status,
                                                 String sort) {
-        return new ProductSearchRequest(keyword, null, null, null, null, null, null, null, onSale, sellerId, status,
-                sort, null, null);
+        return new ProductSearchRequest(keyword, null, null, null, null, null, null, null, onSale, sellerId,
+                status == null ? null : List.of(status), sort, null, null);
     }
 
     private static Product product(Long id, ProductStatus status, boolean hidden) {
