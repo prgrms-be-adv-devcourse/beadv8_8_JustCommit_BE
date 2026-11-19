@@ -30,7 +30,7 @@ public class PurchaseConfirmedEventListener {
         }
     }
 
-    // 옛 토픽 (봉투가 아닌 JSON, shippingFee 없음). market 전환이 끝나면 지운다
+    // 옛 토픽 (봉투가 아닌 JSON, shippingFee · sellerBurdenAmount 없음). market 전환이 끝나면 지운다
     @KafkaListener(
             topics = "${custom.kafka.topics.purchase-confirmed}",
             containerFactory = KafkaConfig.LEGACY_JSON_LISTENER_FACTORY
@@ -45,6 +45,7 @@ public class PurchaseConfirmedEventListener {
                 event.sellerId(),
                 event.saleAmount(),
                 event.shippingFee(),
+                event.sellerBurdenAmount(),
                 event.itemSummary()
         );
     }

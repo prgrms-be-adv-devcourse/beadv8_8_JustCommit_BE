@@ -18,7 +18,7 @@
 | payment | `POST /internal/v1/payments` | market | 잔액 차감 (`HOLDING`으로). 같은 orderId로 다시 오면 차감하지 않고 `ALREADY_PAID` | orderId | ✅ |
 | payment | `POST /internal/v1/refunds/order-items/{orderItemId}` | market | 상품 금액 환불 (취소 · 거절 · 반품). 같은 키면 `ALREADY_REFUNDED`로 처음 결과, 확정 실패는 4xx | orderItemId | ✅ |
 | payment | `POST /internal/v1/refunds/shipping-fees/{sellerOrderId}` | market | 배송비 환불. 같은 키면 `ALREADY_REFUNDED`, 확정 실패는 4xx | sellerOrderId | ✅ |
-| payment | `POST /internal/v1/settlement-payouts` | settlement | 정산 지급 (양수: 지급 · 음수: 회수 후 미수금) | settlementId | ✅ |
+| payment | `POST /internal/v1/settlementPayouts` | settlement | 정산 지급 (양수: 지급 · 음수: 회수 후 미수금). 요청: `settlementId` · `sellerId` · `sellerOrderId` (숫자), `payoutAmount` · `fee` · `shippingFee` · `sellerBurdenAmount` (금액). `payoutAmount` = 판매액 − `fee` − `sellerBurdenAmount`(0원 · 음수 가능), 배송비를 모르는 정산(옛 토픽)은 `shippingFee` 0. payment는 `sellerOrderId`로 배송비 수납 · 환불 중복을 막음 | settlementId | ✅ 기존 칸 · ⬜ 배송비 · 부담금 처리(payment #379) |
 | settlement | `GET /internal/v1/settlements/seller-orders/{sellerOrderId}` | market | 정산 완료 시각 | – | 🟨 |
 | market | `GET /internal/v1/shipments?sellerOrderIds=` | notification | 알림 문구용 배송 정보 | – | 🟨 |
 | ai | `POST /internal/v1/ai/admin/reindex?target=SPECIES` | 운영자 | 품종 재임베딩: 문서 해시가 바뀐 품종만 임베딩해 `species_vector_store`에 upsert, 프로필에 없는 벡터는 삭제. 응답 `total` · `embedded` · `skipped` · `deleted`. 다시 불러도 결과가 같음 | – | ✅ |
