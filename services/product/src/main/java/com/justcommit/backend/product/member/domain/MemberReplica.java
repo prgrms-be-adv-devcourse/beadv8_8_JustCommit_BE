@@ -17,6 +17,8 @@ public class MemberReplica {
 
     // 탈퇴한 회원은 닉네임 대신 이 이름으로 보여 준다 (docs/glossary.md 「탈퇴」)
     public static final String WITHDRAWN_NICKNAME = "탈퇴한 회원";
+    // 복제본이 아직 없는 회원(가입 이벤트가 안 옴)을 목록에 보여 줄 이름 (관리자 검수 목록)
+    public static final String UNKNOWN_NICKNAME = "알 수 없는 회원";
 
     @Id
     @Column(name = "member_id")
