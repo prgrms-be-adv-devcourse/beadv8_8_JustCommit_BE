@@ -10,11 +10,15 @@ public enum NotificationType {
     SHIPMENT_BOOKED("택배 예약이 완료됐어요. 기사님이 방문할 예정이니 상품을 준비해 주세요."),
     SELLER_ORDER_PAID("주문이 들어왔어요. 수락해 주세요."),
     SELLER_ORDER_CANCELLED("구매자가 주문을 취소했어요."),
+    SELLER_ORDER_ITEM_CANCELLED("구매자가 주문한 상품 일부를 취소했어요."),
     SELLER_ORDER_AUTO_REJECTED("24시간 안에 응답하지 않아 주문이 자동 거절됐어요."),
     PURCHASE_CONFIRMED("구매자가 구매를 확정했어요."),
     SELLER_SHIPMENT_PICKED_UP("택배 수거가 완료됐어요. 이제 구매자가 주문을 취소할 수 없어요."),
     SELLER_SHIPMENT_IN_TRANSIT("상품이 구매자에게 배송 중이에요."),
     SELLER_SHIPMENT_DELIVERED("배송이 완료됐어요. 구매 확정 후 정산이 진행되며, 3일 뒤 자동으로 확정돼요."),
+    PRODUCT_APPROVED("검수를 통과해 상품 판매가 시작됐어요."),
+    // 반려 사유는 이벤트마다 달라 알림을 만들 때 뒤에 붙인다 (NotificationService)
+    PRODUCT_REJECTED("검수에서 반려됐어요."),
 
     // 구매자
     SHIPMENT_PICKED_UP("택배 수거가 완료됐어요. 상품 확인 후 배송이 시작되며, 이제 주문을 취소할 수 없어요."),

@@ -11,14 +11,21 @@ spring:
       ddl-auto: validate
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    admin:
+      fail-fast: false
     consumer:
+      # Consumer Group = 서비스 이름 (docs/conventions/events.md)
+      group-id: notification
+      # 그룹이 처음 붙을 때는 지금부터 받음: 켜기 전에 쌓인 지난 이벤트로 늦은 알림이 한꺼번에 생기지 않게 (#561)
+      # 한 번 붙은 뒤에는 커밋한 위치부터 이어 받으므로 재배포 중에 온 이벤트는 빠지지 않음
+      auto-offset-reset: latest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+      # 봉투(EventEnvelope)로 받음. 형식이 깨지면 재시도 없이 원래토픽.DLT
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
-        "[spring.json.trusted.packages]": "com.justcommit.backend.*"
+        spring.deserializer.value.delegate.class: com.justcommit.backend.common.messaging.consumer.EventEnvelopeDeserializer
     listener:
-      # TODO(Kafka 연결 Task): market.events.v1 구독 · EventEnvelope 매핑을 붙이면 true로 바꾼다
-      # 지금은 구독 코드만 옮겨 두고 시작하지 않는다 (market이 보내는 타입 헤더의 패키지가 notification 이벤트 record와 달라 받아도 읽지 못함)
+      # TODO(#561 ④): 운영 배포 준비가 끝나면 기본값을 true로 바꾼다
       auto-startup: ${KAFKA_LISTENER_AUTO_STARTUP:false}
 
 server:
@@ -26,13 +33,3 @@ server:
 jwt:
   public-key: ${JWT_PUBLIC_KEY}
 
-custom:
-  kafka:
-    topics:
-      purchase-confirmed: ${PURCHASE_CONFIRMED_TOPIC:market.purchase-confirmed.v1}
-      seller-order-paid: ${SELLER_ORDER_PAID_TOPIC:market.seller-order-paid.v1}
-      seller-order-accepted: ${SELLER_ORDER_ACCEPTED_TOPIC:market.seller-order-accepted.v1}
-      seller-order-cancelled: ${SELLER_ORDER_CANCELLED_TOPIC:market.seller-order-cancelled.v1}
-      seller-order-rejected: ${SELLER_ORDER_REJECTED_TOPIC:market.seller-order-rejected.v1}
-      order-item-auto-confirmed: ${ORDER_ITEM_AUTO_CONFIRMED_TOPIC:market.order-item-auto-confirmed.v1}
-      shipment-status-changed: ${SHIPMENT_STATUS_CHANGED_TOPIC:market.shipment-status-changed.v1}

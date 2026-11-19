@@ -75,6 +75,35 @@ class NotificationServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("검수 알림은 상품 id와 상품명을 저장하고, 반려 사유를 문구 뒤에 붙인다")
+    void createsProductNotification() {
+        notificationService.createForProduct(SELLER, NotificationType.PRODUCT_REJECTED, "사진이 흐려요.", 30L,
+                "몬스테라 알보", "PRODUCT_REJECTED:30:1");
+        notificationService.createForProduct(SELLER, NotificationType.PRODUCT_REJECTED, "사진이 흐려요.", 30L,
+                "몬스테라 알보", "PRODUCT_REJECTED:30:1");
+
+        assertThat(notificationRepository.findAll()).singleElement().satisfies(n -> {
+            assertThat(n.getMessage()).isEqualTo("검수에서 반려됐어요. 사유: 사진이 흐려요.");
+            assertThat(n.getProductId()).isEqualTo(30L);
+            assertThat(n.getItemSummary()).isEqualTo("몬스테라 알보");
+            assertThat(n.getOrderId()).isNull();
+            assertThat(n.getSellerOrderId()).isNull();
+        });
+        assertThat(notificationService.list(SELLER, null, latestFirst()).content())
+                .extracting(NotificationResponse::productId).containsExactly(30L);
+    }
+
+    @Test
+    @DisplayName("반려 사유가 길어 문구가 255자를 넘으면 잘라서 저장한다")
+    void truncatesLongRejectReason() {
+        notificationService.createForProduct(SELLER, NotificationType.PRODUCT_REJECTED, "가".repeat(300), 30L,
+                "몬스테라", "PRODUCT_REJECTED:30:2");
+
+        assertThat(notificationRepository.findAll()).singleElement()
+                .satisfies(n -> assertThat(n.getMessage()).hasSize(255).startsWith("검수에서 반려됐어요. 사유: 가"));
+    }
+
+    @Test
     @DisplayName("받는 사람이 없는 이벤트는 알림을 만들지 않는다")
     void skipsWithoutRecipient() {
         notificationService.create(null, NotificationType.SHIPMENT_PICKED_UP, 7L, "SHIPMENT:1:PICKED_UP");

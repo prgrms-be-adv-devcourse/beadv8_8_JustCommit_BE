@@ -134,7 +134,7 @@ class NotificationControllerTest {
 
     private NotificationResponse response(boolean isRead) {
         LocalDateTime createdAt = LocalDateTime.of(2026, 10, 16, 15, 0);
-        return new NotificationResponse(1L, "SHIPMENT_DELIVERED", "배송이 완료됐어요.", 9L, 7L, "몬스테라 외 1건", isRead, createdAt,
+        return new NotificationResponse(1L, "SHIPMENT_DELIVERED", "배송이 완료됐어요.", 9L, 7L, null, "몬스테라 외 1건", isRead, createdAt,
                 isRead ? createdAt.plusMinutes(1) : null);
     }
 }

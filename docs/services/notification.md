@@ -1,7 +1,7 @@
 # notification 서비스
 
 > 언제 읽나: notification 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-15 · 관련: Miro 5 · 10, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 5 · 10, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -15,7 +15,7 @@
 
 | 테이블 | 설명 |
 |---|---|
-| `NOTIFICATION` | 알림 (`event_key` UK, `(member_id, is_read, created_at)` 인덱스, 지우지 않고 보관, Flyway `V1__create_notification.sql`) |
+| `NOTIFICATION` | 알림 (`event_key` UK, `(member_id, is_read, created_at)` 인덱스, 지우지 않고 보관, 검수 알림은 `product_id`로 상품 이동, Flyway `V1__create_notification.sql` · `V2__add_notification_product_id.sql`) |
 
 ## 외부 API
 

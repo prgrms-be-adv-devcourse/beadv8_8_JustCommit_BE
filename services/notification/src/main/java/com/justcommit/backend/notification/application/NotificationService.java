@@ -30,6 +30,8 @@ public class NotificationService {
 
     // 시간이 지나면 연결을 닫고, 브라우저가 다시 연결한다
     private static final long SSE_TIMEOUT_MS = 30 * 60 * 1000L;
+    // notification.message 칸 길이 (V1 varchar(255))
+    private static final int MESSAGE_MAX_LENGTH = 255;
 
     private final NotificationRepository notificationRepository;
     private final NotificationSseRegistry sseRegistry;
@@ -54,9 +56,26 @@ public class NotificationService {
         save(memberId, type, orderId, sellerOrderId, () -> itemSummary, eventKey);
     }
 
-    // 이벤트로 알림을 만든다. 같은 이벤트가 다시 오면(Kafka 중복 전달) 새로 만들지 않는다.
+    // 검수 통과 · 반려 알림: 누르면 상품으로 이동하고, 상품명을 상품 요약 칸에 둔다.
+    // detail(반려 사유)이 있으면 문구 뒤에 붙인다. 알림 문구 칸 길이(255)를 넘으면 자른다
+    @Transactional
+    public void createForProduct(Long memberId, NotificationType type, String detail, Long productId,
+                                 String productTitle, String eventKey) {
+        String message = (detail == null || detail.isBlank())
+                ? type.getMessage()
+                : type.getMessage() + " 사유: " + detail;
+        save(memberId, type, eventKey, () -> new Notification(memberId, type, truncate(message), null, null,
+                productId, productTitle, eventKey));
+    }
+
     private void save(Long memberId, NotificationType type, Long orderId, Long sellerOrderId,
-                        Supplier<String> itemSummary, String eventKey) {
+                      Supplier<String> itemSummary, String eventKey) {
+        save(memberId, type, eventKey,
+                () -> new Notification(memberId, type, orderId, sellerOrderId, itemSummary.get(), eventKey));
+    }
+
+    // 이벤트로 알림을 만든다. 같은 이벤트가 다시 오면(Kafka 중복 전달) 새로 만들지 않는다.
+    private void save(Long memberId, NotificationType type, String eventKey, Supplier<Notification> notification) {
         if (memberId == null) {
             // 받는 사람을 모르는 이벤트 (예: 구매자 id를 저장하기 전에 만든 배송). 다시 받아도 같으므로 건너뛴다.
             log.warn("받는 사람이 없어 알림을 만들지 않음: type={}, eventKey={}", type, eventKey);
@@ -66,8 +85,12 @@ public class NotificationService {
             log.info("이미 만든 알림 (중복 이벤트): eventKey={}", eventKey);
             return;
         }
-        notificationRepository.save(new Notification(memberId, type, orderId, sellerOrderId, itemSummary.get(), eventKey));
+        notificationRepository.save(notification.get());
         pushUnreadCountAfterCommit(memberId);
+    }
+
+    private static String truncate(String message) {
+        return message.length() <= MESSAGE_MAX_LENGTH ? message : message.substring(0, MESSAGE_MAX_LENGTH);
     }
 
     @Transactional(readOnly = true)

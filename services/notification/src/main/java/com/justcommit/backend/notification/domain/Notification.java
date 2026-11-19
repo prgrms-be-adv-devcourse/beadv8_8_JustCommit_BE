@@ -30,6 +30,9 @@ public class Notification extends BaseTimeEntity {
 
     private Long sellerOrderId;
 
+    // 알림을 눌렀을 때 이동할 상품 (검수 통과 · 반려 알림). 주문 알림은 null
+    private Long productId;
+
     // 어떤 주문의 알림인지 구분하는 상품 요약 (예: "몬스테라 외 1건"). 만들 때의 값을 보존하고, 모르면 null
     private String itemSummary;
 
@@ -44,11 +47,18 @@ public class Notification extends BaseTimeEntity {
 
     public Notification(Long memberId, NotificationType type, Long orderId, Long sellerOrderId, String itemSummary,
                         String eventKey) {
+        this(memberId, type, type.getMessage(), orderId, sellerOrderId, null, itemSummary, eventKey);
+    }
+
+    // 문구가 이벤트마다 다른 알림(검수 반려 사유)이나 상품으로 이동하는 알림
+    public Notification(Long memberId, NotificationType type, String message, Long orderId, Long sellerOrderId,
+                        Long productId, String itemSummary, String eventKey) {
         this.memberId = memberId;
         this.type = type;
-        this.message = type.getMessage();
+        this.message = message;
         this.orderId = orderId;
         this.sellerOrderId = sellerOrderId;
+        this.productId = productId;
         this.itemSummary = itemSummary;
         this.eventKey = eventKey;
         this.isRead = false;

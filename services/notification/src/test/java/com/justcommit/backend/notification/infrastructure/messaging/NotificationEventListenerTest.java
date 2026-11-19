@@ -2,6 +2,9 @@ package com.justcommit.backend.notification.infrastructure.messaging;
 
 import com.justcommit.backend.notification.infrastructure.messaging.event.PurchaseConfirmedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.OrderItemAutoConfirmedEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.OrderItemCancelledEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.ProductApprovedEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.ProductRejectedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderAcceptedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderCancelledEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderPaidEvent;
@@ -154,6 +157,36 @@ class NotificationEventListenerTest {
 
         verify(notificationService).create(BUYER, NotificationType.ORDER_ITEM_AUTO_CONFIRMED,
                 ORDER_ID, SELLER_ORDER_ID, "ORDER_ITEM_AUTO_CONFIRMED:11");
+    }
+
+    @Test
+    @DisplayName("[S-I01] 구매자가 상품 일부만 취소하면 판매자에게만, 취소된 상품명을 상품 요약으로 알린다")
+    void notifiesOnlySellerOnPartialCancellation() {
+        listener.onOrderItemCancelled(new OrderItemCancelledEvent(11L, ORDER_ID, SELLER_ORDER_ID, SELLER,
+                "몬스테라", LocalDateTime.now()));
+
+        verify(notificationService).create(SELLER, NotificationType.SELLER_ORDER_ITEM_CANCELLED, null,
+                SELLER_ORDER_ID, "몬스테라", "ORDER_ITEM_CANCELLED:SELLER:11");
+        verifyNoMoreInteractions(notificationService);
+    }
+
+    @Test
+    @DisplayName("검수 통과는 판매자에게 상품으로 이동하는 알림을 만들고, 키에 검수 차수를 넣는다")
+    void notifiesSellerOnProductApproved() {
+        listener.onProductApproved(new ProductApprovedEvent(30L, SELLER, 2, "몬스테라 알보"));
+
+        verify(notificationService).createForProduct(SELLER, NotificationType.PRODUCT_APPROVED, null, 30L,
+                "몬스테라 알보", "PRODUCT_APPROVED:30:2");
+    }
+
+    @Test
+    @DisplayName("검수 반려는 판매자에게 사유를 넘겨 알림을 만든다")
+    void notifiesSellerOnProductRejected() {
+        listener.onProductRejected(new ProductRejectedEvent(30L, SELLER, 1, "몬스테라 알보", "HARMFUL_IMAGE",
+                "사진이 정책에 맞지 않아요."));
+
+        verify(notificationService).createForProduct(SELLER, NotificationType.PRODUCT_REJECTED,
+                "사진이 정책에 맞지 않아요.", 30L, "몬스테라 알보", "PRODUCT_REJECTED:30:1");
     }
 
     private SellerOrderRejectedEvent rejectedEvent(SellerOrderRejectReason reason) {
