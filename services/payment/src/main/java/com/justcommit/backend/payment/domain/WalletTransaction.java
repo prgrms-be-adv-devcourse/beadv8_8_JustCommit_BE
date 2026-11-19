@@ -255,4 +255,42 @@ public class WalletTransaction extends BaseTimeEntity {
                 wallet.getReceivable()
         );
     }
+
+    // 미수금 차감: 회원 지갑에서 나간 금액 (ref_id = 원인이 된 입금 거래 행 ID)
+    public static WalletTransaction receivableCollectionOut(
+            Wallet memberWallet,
+            Long depositTransactionId,
+            BigDecimal amount,
+            LocalDateTime occurredAt
+    ) {
+        return new WalletTransaction(
+                memberWallet,
+                RefType.RECEIVABLE_COLLECTION,
+                depositTransactionId,
+                occurredAt,
+                TransactionStatus.OUT,
+                amount,
+                memberWallet.getBalance(),
+                memberWallet.getReceivable()
+        );
+    }
+
+    // 미수금 차감: REVENUE에 들어온 금액 (ref_id = 원인이 된 입금 거래 행 ID)
+    public static WalletTransaction receivableCollectionIn(
+            Wallet revenueWallet,
+            Long depositTransactionId,
+            BigDecimal amount,
+            LocalDateTime occurredAt
+    ) {
+        return new WalletTransaction(
+                revenueWallet,
+                RefType.RECEIVABLE_COLLECTION,
+                depositTransactionId,
+                occurredAt,
+                TransactionStatus.IN,
+                amount,
+                revenueWallet.getBalance(),
+                revenueWallet.getReceivable()
+        );
+    }
 }

@@ -114,7 +114,7 @@
 | S-G02 | 배송 완료 72시간 후 자동 구매 확정 | 규칙 | 통합 | PR |  |  |
 | S-G03 | 정산 지급 때 배송비 `HOLDING` → `REVENUE`, 배송비가 환불된 판매자 주문은 건너뜀 | 정상 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |
 | S-G04 | 정산금 지급을 같은 settlementId로 두 번 → 1번만 입금 | 중복 | 통합 | PR |  | 완료 (11/19): `PaymentIdempotencyIntegrationTest`, `PaymentSettlementIntegrationTest` |
-| S-G05 | 전부 반품 → 음수 정산 → 판매자 잔액에서 회수 → 부족분 미수금 → 다음 입금에서 먼저 차감, 미수금 있으면 인출 불가 | 경계 | 통합 | PR |  | 부분 검증 (11/19): 잔액에서 회수와 부족분 미수금(`PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest`). 입금 시 먼저 차감은 #380, 인출 불가는 인출 구현 때 |
+| S-G05 | 전부 반품 → 음수 정산 → 판매자 잔액에서 회수 → 부족분 미수금 → 다음 입금에서 먼저 차감, 미수금 있으면 인출 불가 | 경계 | 통합 | PR |  | 부분 검증 (11/19): 잔액에서 회수와 부족분 미수금(`PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest`), 다음 입금(충전, 정산금, 환불)에서 먼저 차감(`MemberWalletDepositorTest`, `PaymentServiceSettlementTest`, `PaymentServiceRefundTest`, `ReceivableCollectionIntegrationTest`). 인출 불가는 인출 구현 때 |
 | S-G06 | 0원 정산 (판매자 부담금 = 판매액 − 수수료) → 판매자 잔액은 그대로, 판매자 지갑에 `SETTLEMENT` 0원 행 1건, 부담금은 `REVENUE`로 | 경계 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |
 | S-G07 | 판매액 0 (전부 반품, 수수료 0) → `HOLDING`에서 판매액을 꺼내지 않고 판매자 잔액에서만 회수, 부족분 미수금 | 경계 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |
 | S-G08 | 배송비를 이미 옮긴 판매자 주문의 정산 지급 → 배송비는 다시 옮기지 않고 정산은 지급 | 중복 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |

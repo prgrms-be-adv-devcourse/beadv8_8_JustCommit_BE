@@ -68,6 +68,9 @@ public class Wallet extends BaseTimeEntity {
         this.balance = this.balance.subtract(amount);
     }
 
+    // 미수금을 늘리는 경로는 반드시 회원 지갑을 먼저 잠근다.
+    // 입금 경로(MemberWalletDepositor)는 잠근 회원 지갑의 미수금이 0이면 REVENUE를 잠그지 않는데,
+    // 잠금 없이 미수금이 0에서 양수로 바뀌면 이 판정이 틀어진다
     public void increaseReceivable(BigDecimal amount) {
         requireMemberWallet();
         validateAmount(amount);

@@ -66,7 +66,7 @@ import static org.mockito.Mockito.*;
 })
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ClockConfig.class, ChargeRecoveryConfig.class, ChargeService.class, ChargeConfirmFacade.class, PaymentService.class, WalletService.class, PaymentKeyCipher.class})
+@Import({JpaAuditingConfig.class, ClockConfig.class, ChargeRecoveryConfig.class, ChargeService.class, ChargeConfirmFacade.class, PaymentService.class, WalletService.class, MemberWalletDepositor.class, PaymentKeyCipher.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class ChargeServiceConcurrencyIntegrationTest {

@@ -30,6 +30,7 @@ public class PaymentService {
     private final WalletRepository walletRepository;
     private final WalletTransactionRepository walletTransactionRepository;
     private final WalletService walletService;
+    private final MemberWalletDepositor memberWalletDepositor;
 
     /**
      * 주문 결제 금액만큼 구매자의 예치금을 차감한다.
@@ -97,7 +98,8 @@ public class PaymentService {
      * 이미 옮겼거나 구매자에게 환불된 배송비는 건너뛴다 (정산 지급은 계속).</p>
      *
      * <p>같은 정산은 판매자 지갑의 {@code SETTLEMENT} 행으로 한 번만 처리되며(0원 · 음수 정산도 금액 0으로 1건 기록),
-     * 다시 호출되면 아무것도 하지 않는다. 판매자 지갑이 없으면 만든다. 잠금 순서는 판매자 → HOLDING → REVENUE.</p>
+     * 다시 호출되면 아무것도 하지 않는다. 판매자 지갑이 없으면 만든다. 잠금 순서는 판매자 → HOLDING → REVENUE.
+     * 정산금이 양수이고 판매자에게 미수금이 있으면 정산금에서 먼저 차감해 REVENUE로 옮긴다 (미수금 차감).</p>
      *
      * @param settlementId       정산 ID. 중복 지급 판정 기준
      * @param sellerId           판매자 회원 ID
@@ -182,7 +184,12 @@ public class PaymentService {
         BigDecimal collected = BigDecimal.ZERO;
         BigDecimal uncollected = BigDecimal.ZERO;
         if (payoutAmount.signum() > 0) {
-            sellerWallet.credit(payoutAmount);
+            // 입금, SETTLEMENT 행, 미수금 차감(이미 잠근 REVENUE 사용)까지 한 번에
+            memberWalletDepositor.deposit(
+                    sellerWallet,
+                    payoutAmount,
+                    w -> WalletTransaction.sellerSettlement(w, settlementId, payoutAmount, now),
+                    revenueWallet);
         } else if (payoutAmount.signum() < 0) {
             BigDecimal deficit = payoutAmount.negate();
             collected = sellerWallet.getBalance().min(deficit);
@@ -195,13 +202,15 @@ public class PaymentService {
             }
         }
 
-        // 판매자 거래 행은 판매자 지갑 변경이 모두 끝난 뒤 기록 (balance_after · receivable_after = 최종 값)
-        if (collected.signum() > 0) {
+        // 0원, 음수 정산의 판매자 거래 행은 판매자 지갑 변경이 모두 끝난 뒤 기록 (balance_after, receivable_after = 최종 값)
+        if (payoutAmount.signum() <= 0) {
+            if (collected.signum() > 0) {
+                walletTransactionRepository.save(
+                        WalletTransaction.settlementCollectionOut(sellerWallet, settlementId, collected, now));
+            }
             walletTransactionRepository.save(
-                    WalletTransaction.settlementCollectionOut(sellerWallet, settlementId, collected, now));
+                    WalletTransaction.sellerSettlement(sellerWallet, settlementId, BigDecimal.ZERO, now));
         }
-        walletTransactionRepository.save(
-                WalletTransaction.sellerSettlement(sellerWallet, settlementId, payoutAmount.max(BigDecimal.ZERO), now));
 
         // REVENUE 부담금 적립: 회수하지 못한 금액(미수금)은 빼고 실제로 받은 만큼만
         BigDecimal receivedBurden = sellerBurdenAmount.subtract(uncollected);
@@ -439,14 +448,13 @@ public class PaymentService {
                 )
         );
 
-        // 구매자 지갑 환불
-        buyerWallet.credit(amount);
-        walletTransactionRepository.save(
-                WalletTransaction.refundIn(
-                        buyerWallet, refType, refId, amount, now
-                )
-        );
+        // 구매자 지갑 환불 + 미수금 차감 (미수금이 있을 때만 REVENUE 잠금, 잠금 순서 구매자 → HOLDING → REVENUE).
+        // 환불 IN 행 금액은 환불액 그대로 둔다. 위 중복 환불 판정이 이 금액과 요청 금액을 비교한다
+        memberWalletDepositor.deposit(
+                buyerWallet, amount,
+                w -> WalletTransaction.refundIn(w, refType, refId, amount, now));
 
+        // 차감 뒤 잔액
         return PaymentResult.refunded(buyerWallet.getBalance());
     }
 

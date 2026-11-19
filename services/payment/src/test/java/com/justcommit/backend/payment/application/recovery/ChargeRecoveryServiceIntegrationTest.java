@@ -1,6 +1,7 @@
 package com.justcommit.backend.payment.application.recovery;
 
 import com.justcommit.backend.payment.application.ChargeService;
+import com.justcommit.backend.payment.application.MemberWalletDepositor;
 import com.justcommit.backend.payment.application.WalletService;
 import com.justcommit.backend.payment.config.ChargeRecoveryConfig;
 import com.justcommit.backend.payment.config.JpaAuditingConfig;
@@ -73,7 +74,7 @@ import static org.mockito.Mockito.verify;
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaAuditingConfig.class, ChargeRecoveryConfig.class, ChargeRecoveryServiceIntegrationTest.MutableClockConfig.class,
-        ChargeService.class, WalletService.class, PaymentKeyCipher.class,
+        ChargeService.class, WalletService.class, MemberWalletDepositor.class, PaymentKeyCipher.class,
         ChargeRecoveryService.class, ChargeRecoveryDecision.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
