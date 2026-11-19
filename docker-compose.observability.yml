@@ -62,7 +62,10 @@ services:
     <<: *common
     image: grafana/grafana:12.0.0
     container_name: replant-grafana
-    env_file: ${HOME}/secrets/grafana.env # GF_SECURITY_ADMIN_PASSWORD
+    env_file: ${HOME}/secrets/grafana.env # GF_SECURITY_ADMIN_PASSWORD · SLACK_WEBHOOK_URL
+    # SLACK_WEBHOOK_URL이 아직 없으면 알림 설정(contact-points.yml)을 못 읽어 Grafana 전체가 멈춘다.
+    # 없을 때만 「설정 안 됨」 주소를 넣고 원래 시작 스크립트(/run.sh)를 실행한다 → 대시보드는 뜨고, 알림만 전송 실패
+    entrypoint: ["sh", "-c", ': "$${SLACK_WEBHOOK_URL:=http://127.0.0.1:9/slack-webhook-not-set}"; export SLACK_WEBHOOK_URL; exec /run.sh']
     environment:
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"

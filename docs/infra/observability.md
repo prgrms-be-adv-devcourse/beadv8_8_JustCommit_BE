@@ -1,7 +1,7 @@
 # 관측 (로그 · 지표 · 알림)
 
 > 언제 읽나: 로그 형식, 추적, 대시보드, 알림을 다룰 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: Miro 16, 노션 「정책 정리」 10.10, ADR 0008 · 0027
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 16, 노션 「정책 정리」 10.10, ADR 0008 · 0027
 
 ## 구성
 
@@ -45,8 +45,8 @@
 
 | 알림 | 기준 | 지속 |
 |---|---|---|
-| 서비스 다운 | health 응답 없음 | 1분 |
-| 5xx 급증 | 5xx 비율 5% 이상 | 5분 |
+| 서비스 다운 | `/actuator/prometheus` 응답 없음 (`up == 0`), 수집 데이터가 아예 없어도 (Alloy 멈춤) | 1분 |
+| 5xx 급증 | 5xx 비율 5% 이상 (5분 동안 요청이 30건 넘을 때만, 요청이 적을 때 1건 실패로 울리지 않게) | 5분 |
 | Outbox 대기 | 가장 오래된 PENDING이 1분 초과 · `FAILED` 발생 (`max by (service) (outbox_pending_oldest_age_seconds) > 60`, `max by (service) (outbox_failed) > 0`) | 즉시 |
 | DLT 유입 | `*.DLT` 토픽에 1건이라도 (kafka-exporter offset 증가) | 즉시 |
 | 디스크 | 80% 이상 | 5분 |
@@ -54,6 +54,8 @@
 | 배송 예약 지연 | 10분 넘게 `READY`인 배송 1건 이상 (`max(market_shipments_booking_delayed) > 0`) | 상태 기준 1번, 반복 1시간 |
 | 정산 지급 지연 | 10분 넘게 미지급(`PENDING`, `FAILED`)인 정산 1건 이상 (`max(settlement_payouts_delayed) > 0`) | 상태 기준 1번, 반복 1시간 |
 | `REVIEW_REQUIRED` | 결제 확인 필요 주문 1건 이상 (`max(market_orders_review_required) > 0`) → [처리 순서](payment-review-runbook.md) | 상태 기준 1번, 반복 1시간 |
+
+규칙 · 보내는 곳 · 반복 간격은 파일로 등록합니다: `deploy/observability/grafana/provisioning/alerting/` (`rules.yml` · `contact-points.yml` · `policies.yml`). 같은 알림 · 같은 서비스는 한 메시지로 묶고, 해소되지 않으면 1시간마다 다시 보냅니다.
 
 ## 부하 테스트
 
