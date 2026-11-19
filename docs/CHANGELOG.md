@@ -1,7 +1,7 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
@@ -11,6 +11,7 @@
 - 2026-11-18 · infra/observability.md · reference/ports.md · Kafka 수집 확정(kafka-exporter, DLT 유입 알림), 앱 서버 컨테이너 · 파드 메모리는 Alloy 내장 cAdvisor, 메모리 알림은 앱 서버 = 컨테이너 한도 90% · 데이터 서버 = 서버 메모리 90% (#301)
 - 2026-11-18 · infra/observability.md · reference/schedulers.md · conventions/common-modules.md · 알림용 지표 추가: `settlement_payouts_delayed`(10분 넘은 미지급 정산) · `outbox_pending_oldest_age_seconds` · `outbox_failed`(Outbox 재전송이 갱신), 알림 규칙 표에 조건식 표기 (#301)
 - 2026-11-18 · infra/observability.md · reference/ports.md · 앱 서버 지표는 Alloy가 긁어 Prometheus로 remote_write(Prometheus가 앱 서버를 직접 긁지 않음), 데이터 서버 보안 그룹이 앱 서버 보안 그룹에서 오는 3100 · 9090 · 4317 추가 허용, Grafana는 `127.0.0.1:3000`에만 열고 SSH 터널로 접속, 앱 서버 node-exporter는 Alloy 내장 기능으로 대신 (#301)
+- 2026-11-19 · testing/strategy.md · ② PR CI 결과를 PR 댓글 1개(모듈별 통과 · 실패 · 건너뜀 · 시간 표 + 실패 목록, 커밋마다 갱신, 빌드 대상이 없는 PR은 댓글 없음)로 남기고, CI가 실패하면 같은 레포 PR에 Claude 원인 분석 댓글(`ci-failure-ai.yml`, `workflow_run`, PR 코드 실행 없음, 커밋당 1개) (#534) (#536)
 - 2026-11-19 · reference/external-apis.md · flows/image-review.md · glossary.md · 판매자 화면용 응답 보강: `products/me`에 지금 검수 버전의 표시 상태 · 반려 사유와 문구 · 판정 주체, `products/me/counts`에 오늘 등록 · 사진 검수 횟수와 한도(20 · 30), `products/{id}/imageReviews`에 관리자 확인 기한 `expiresAt`(관리자 목록과 같은 계산), `admin/imageReviews`에 판매자 닉네임 `sellerNickname`(복제본 없으면 「알 수 없는 회원」) · 가격 `price` · 검수 요청 시각 `requestedAt`, 용어 「알 수 없는 회원」 추가 (#519) (#539)
 - 2026-11-18 · reference/kafka-topics.md · reference/internal-apis.md · services/settlement.md · 판매자 부담금 반영: `PurchaseConfirmed` payload에 `sellerBurdenAmount`(없으면 0, 정산금 = 판매액 − 수수료 − 부담금), 정산 지급 요청에 `sellerOrderId` · `shippingFee`(배송비 모르는 정산은 0) · `sellerBurdenAmount` 추가, 정산 지급 경로를 코드에 맞춰 `settlementPayouts`로 (#433) (#538)
 - 2026-11-18 · flows/search-recommend.md · reference/env-vars.md · services/product.md · 상품 검색 인덱스 반영: alias `products` → `products_v1`(product 시작 시 없으면 생성, OpenSearch가 꺼져 있어도 앱은 뜸), 분석기 `ko_text` · `ko_compact`(공백 · 기호 제거 + `nori` + 소문자), 정규화는 공백 · 기호 · 대소문자까지이고 한글 ↔ 영문은 동의어(2단계)라고 명시, 환경변수 `OPENSEARCH_URL`(운영은 `make-env.sh` product 블록에서 데이터 서버 9200), 로컬 compose에 `opensearch` 추가, 시작할 때 OpenSearch가 꺼져 있으면 1분마다 다시 준비 (#484) (#533)
