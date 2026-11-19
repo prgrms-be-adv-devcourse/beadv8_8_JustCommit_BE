@@ -25,7 +25,8 @@ import java.util.Set;
 // 판매자 수락, 거절의 짧은 트랜잭션 (#284, ADR 0013). 거절 환불 REST는 이 클래스 밖, 커밋 뒤에 한다.
 // 수락된(일반) 주문상품이 있으면 같은 트랜잭션에서 그 상품만 담은 배송(READY)을 만든다.
 // 잠금 순서는 구매자 취소와 같은 주문 → 판매자 주문이라 수락, 거절, 구매자 취소가 동시에 와도 하나씩 처리된다.
-// 먼저 처리된 쪽이 수락 대기를 없애므로 늦게 온 수락, 거절은 409다
+// 먼저 처리된 쪽이 수락 대기를 없애므로 늦게 온 수락, 거절은 409다.
+// 24시간 자동 거절(#285)도 같은 순서로 잠그되 주문 행은 SKIP LOCKED라, 늦은 쪽이면 예외 없이 건너뛴다
 @Slf4j
 @Component
 public class SellerOrderDecisionTransactions {
@@ -88,6 +89,35 @@ public class SellerOrderDecisionTransactions {
             }
             log.info("판매자 거절: sellerOrderId={}, rejected={}, accepted={}", sellerOrderId, rejectIds.size(),
                     pending.size() - rejectIds.size());
+            return claims;
+        });
+    }
+
+    // 자동 거절 (#285): 수락 마감이 지난 판매자 주문의 남은 수락 대기 주문상품을 모두 자동 거절(AUTO)로 바로 환불할 취소 중으로 바꾼다.
+    // 배송은 만들지 않는다. 판매자 주문 전부가 취소 흐름이면 배송비 환불도 함께 돌려준다 (cancelBeforeAccept).
+    // 주문 행은 SKIP LOCKED로 잡아 다른 파드나 수락, 거절, 구매자 취소가 잡고 있으면 기다리지 않고 건너뛴다.
+    // 판매자 주문은 주문을 잡은 뒤 기다려서 잠근다 (판매자 주문에 SKIP LOCKED를 걸면 잠금 순서가 깨짐).
+    // 잠근 뒤 결제 완료, 수락 대기, 마감 경과를 다시 보고 하나라도 아니면 먼저 처리된 쪽이 이긴 것이라 빈 목록이다
+    public List<RefundClaim> autoReject(Long sellerOrderId) {
+        return transactionTemplate.execute(status -> {
+            Long orderId = sellerOrderRepository.findOrderIdById(sellerOrderId).orElse(null);
+            if (orderId == null) {
+                return List.<RefundClaim>of();
+            }
+            Orders order = ordersRepository.findByIdForUpdateSkipLocked(orderId).orElse(null);
+            if (order == null || order.getStatus() != OrderStatus.PAID) {
+                return List.<RefundClaim>of();
+            }
+            SellerOrder sellerOrder = sellerOrderRepository.findLockedById(sellerOrderId).orElse(null);
+            LocalDateTime now = LocalDateTime.now();
+            if (sellerOrder == null || sellerOrder.getPaidAt() == null
+                    || sellerOrder.getPaidAt().plus(SellerOrder.ACCEPT_WINDOW).isAfter(now)
+                    || sellerOrder.getItems().stream().noneMatch(item -> item.getStatus() == OrderItemStatus.ACCEPT_PENDING)) {
+                return List.<RefundClaim>of();
+            }
+            List<RefundClaim> claims = orderCancelTransactions.cancelBeforeAccept(order, sellerOrder,
+                    item -> item.getStatus() == OrderItemStatus.ACCEPT_PENDING, OrderItemCancelled.CancelReason.AUTO, now);
+            log.info("자동 거절: sellerOrderId={}, items={}", sellerOrderId, claims.size());
             return claims;
         });
     }
