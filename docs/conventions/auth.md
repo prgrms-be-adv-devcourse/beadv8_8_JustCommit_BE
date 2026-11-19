@@ -22,7 +22,7 @@
 | 상황 | Redis 키 | 효과 | TTL |
 |---|---|---|---|
 | 로그아웃 | `auth:blacklist:{토큰 해시}` | 이 기기의 Access 토큰만 거절 (서명이 맞는 토큰만 저장) + 이 기기 Refresh 삭제 | 토큰 남은 수명 |
-| 탈퇴 · 비밀번호 변경 · 재설정 · 소셜 연결 해제(⬜ 미구현 #422) | `auth:revoked-member:{memberId}` = 끊은 시각(초) | `iat <= 끊은 시각`인 토큰 모두 거절 (같은 초에 발급된 토큰도 막음) + 인증 버전 +1로 그 전 Refresh 재발급 거절 (옛 인증 버전의 Refresh 삭제를 한 번 시도하고, 삭제에 실패해도 버전 비교로 재발급 거절) | 보관 기한까지 (끊은 시각 + Access 수명 30분 + 여유 60초) |
+| 탈퇴 · 비밀번호 변경 · 재설정 · 소셜 연결 해제(#422) | `auth:revoked-member:{memberId}` = 끊은 시각(초) | `iat <= 끊은 시각`인 토큰 모두 거절 (같은 초에 발급된 토큰도 막음) + 인증 버전 +1로 그 전 Refresh 재발급 거절 (옛 인증 버전의 Refresh 삭제를 한 번 시도하고, 삭제에 실패해도 버전 비교로 재발급 거절) | 보관 기한까지 (끊은 시각 + Access 수명 30분 + 여유 60초) |
 
 여러 기기 동시 로그인은 허용합니다. 쓰는 쪽은 member, 읽는 쪽은 Gateway입니다. 키 상세 → [Redis 키](../reference/redis-keys.md)
 
@@ -36,7 +36,7 @@
 | 결과 | `COMPLETED`(Redis 기록 확인 또는 보관 기한 경과) · `PENDING`(커밋됨, 기록 미확인) · 롤백은 예외 · 커밋 결과 불명은 `RevocationOutcomeUnknownException` (자동으로 다시 실행하지 않음) |
 | 보장 범위 | Gateway는 Redis에 폐기 시각이 기록된 뒤부터 해당 Access를 거절함. `PENDING` 동안에는 기존 Access가 통과할 수 있음 |
 
-소셜 연결 해제(폐기 사유 `SOCIAL_UNLINKED`)도 같은 폐기 · 발급 순서 · 보장 범위를 따릅니다. ⬜ 미구현(#422)
+소셜 연결 해제(폐기 사유 `SOCIAL_UNLINKED`)도 같은 폐기 · 발급 순서 · 보장 범위를 따릅니다.
 
 결정 배경 → [ADR 0010](../decisions/0010-token-revocation-keys.md) · [ADR 0022](../decisions/0022-token-revocation-and-retry.md)
 
@@ -48,7 +48,7 @@
 | 재발급 | 회원 상태가 `INACTIVE`면 401 `INVALID_REFRESH_TOKEN` (탈퇴 회원과 같은 응답) |
 | 카카오 로그인 | 정상 카카오 로그인이면 회원 행 잠금 안에서 이전 미처리 수신 기록을 **항상**(`ACTIVE`여도) 무효로 하고, `INACTIVE`면 `ACTIVE`로 복구한 뒤 발급. `UNLINK_FROM_ADMIN`으로 `INACTIVE`가 된 회원도 복구(이용 정지로 취급하지 않음). 무효화 범위 → [탈퇴 흐름](../flows/signup-and-replica.md#재로그인). 기존 폐기 시각과 같은 초에 재연결해 발급한 Access는 `iat <= 끊은 시각` 규칙 때문에 Gateway에서 거절될 수 있음 → ⬜ #546 |
 
-회원 기능 제한 · 내부 계좌 조회 유지 → [member 정책](../services/member.md#정책), 처리 흐름 → [탈퇴 흐름](../flows/signup-and-replica.md#카카오-연결-해제-웹훅). ⬜ 미구현(#422)
+회원 기능 제한 · 내부 계좌 조회 유지 → [member 정책](../services/member.md#정책), 처리 흐름 → [탈퇴 흐름](../flows/signup-and-replica.md#카카오-연결-해제-웹훅)
 
 ## 권한
 
@@ -64,7 +64,7 @@
 
 ## 공개 경로
 
-토큰 없이 통과하는 경로(상품 · 품종 조회, 로그인 · 로그아웃 · 재발급 · 가입 · 이메일 인증, 카카오 로그인, 택배 웹훅, 카카오 연결 해제 웹훅(⬜ 미구현 #422), 판매자 공개 정보)는 **Gateway와 각 서비스 양쪽에** 설정합니다. 한쪽만 바꾸면 401이 나거나 검증 없이 통과합니다. 택배 웹훅은 토큰 대신 `X-Api-Key`로, 카카오 연결 해제 웹훅은 `Authorization: KakaoAK {어드민 키}`로 확인합니다.
+토큰 없이 통과하는 경로(상품 · 품종 조회, 로그인 · 로그아웃 · 재발급 · 가입 · 이메일 인증, 카카오 로그인, 택배 웹훅, 카카오 연결 해제 웹훅, 판매자 공개 정보)는 **Gateway와 각 서비스 양쪽에** 설정합니다. 한쪽만 바꾸면 401이 나거나 검증 없이 통과합니다. 택배 웹훅은 토큰 대신 `X-Api-Key`로, 카카오 연결 해제 웹훅은 `Authorization: KakaoAK {어드민 키}`로 확인합니다.
 
 로그아웃(`POST /api/v1/auth/logout`)은 Gateway가 토큰 검사를 하지 않습니다. Access 토큰이 만료돼도 재발급 없이 로그아웃할 수 있게 하기 위해서입니다. member가 Refresh 쿠키로 이 기기의 Refresh를 지우고, 함께 온 Access 토큰이 서명이 맞고 아직 유효하면 블랙리스트에 넣습니다 (사용자 결정 2026-11-09). Access 토큰은 `Authorization: Bearer` 헤더로 받으며(쿠키 아님) 두 토큰 모두 선택입니다. 토큰이 없거나 유효하지 않으면 블랙리스트만 건너뛰고 200이며, Redis 처리 실패는 500입니다 (일부만 처리될 수 있어 클라이언트는 실패로 보고 재시도).
 

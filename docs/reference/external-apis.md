@@ -40,7 +40,7 @@
 | GET | `sellers/{sellerId}` | 판매자 공개 정보 (닉네임 · 소개글 · 등록일, 숫자 id만) | 공개 |
 | PATCH | `sellers/me/intro` | 소개글 수정 (최대 500자, 빈 문자열은 삭제) | 로그인 (판매자만) |
 | GET | `/oauth2/authorization/kakao` · `/login/oauth2/code/kakao` | 카카오 로그인 (Spring Security 처리, `/api/v1` 아님) | 공개 |
-| GET · POST | `webhooks/kakao/unlink` | 카카오 연결 해제 웹훅 (`Authorization: KakaoAK {어드민 키}`) → [카카오 연결 해제 웹훅](#카카오-연결-해제-웹훅). ⬜ 미구현(#422) | 공개 |
+| GET · POST | `webhooks/kakao/unlink` | 카카오 연결 해제 웹훅 (`Authorization: KakaoAK {어드민 키}`) → [카카오 연결 해제 웹훅](#카카오-연결-해제-웹훅) | 공개 |
 
 #### 이메일 인증 목적
 
@@ -121,7 +121,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 
 #### 카카오 연결 해제 웹훅
 
-⬜ 미구현(#422). 처리 흐름은 [탈퇴 흐름](../flows/signup-and-replica.md#카카오-연결-해제-웹훅)에 있습니다.
+(#422) 처리 흐름은 [탈퇴 흐름](../flows/signup-and-replica.md#카카오-연결-해제-웹훅)에 있습니다.
 
 | 항목 | 내용 |
 |---|---|

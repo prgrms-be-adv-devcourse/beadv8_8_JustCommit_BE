@@ -24,8 +24,8 @@
 | `PRODUCT_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` · `AI_SERVICE_URL` | market | 내부 API 그룹 주소. 없으면 로컬 포트(8082 · 8084 · 8085 · 8087) |
 | `CORS_ALLOWED_ORIGINS` | Gateway | CORS 허용 출처 (쉼표로 여러 개, `*` 금지). 없으면 `http://localhost:5173` |
 | `KAKAO_CLIENT_ID` · `KAKAO_CLIENT_SECRET` | member | 카카오 로그인 (연결 해제는 어드민 키를 씀 → `KAKAO_ADMIN_KEY`) |
-| `KAKAO_ADMIN_KEY` | member | 카카오 대표 어드민 키. 연결 해제 · 연결 상태 조회 호출(`Authorization: KakaoAK`)과 연결 해제 웹훅 인증 헤더 확인에 같은 값을 씀. 서버에만 두고 프론트 · 로그에 남기지 않음. 기본값 없음(없거나 비어 있으면 member가 시작하지 않음). 연결 해제는 구현(#407), 상태 조회 · 웹훅 확인은 ⬜ 미구현(#422). 운영은 인프라 담당이 주입 |
-| `KAKAO_APP_ID` | member | 카카오 앱 ID. 연결 해제 웹훅 요청의 `app_id`가 우리 앱인지 확인할 때 씀. 공개돼도 되는 값이지만 환경마다 다를 수 있어 설정으로 둠. ⬜ 미구현(#422). 운영은 인프라 담당이 주입 |
+| `KAKAO_ADMIN_KEY` | member | 카카오 대표 어드민 키. 연결 해제 · 연결 상태 조회 호출(`Authorization: KakaoAK`)과 연결 해제 웹훅 인증 헤더 확인에 같은 값을 씀. 서버에만 두고 프론트 · 로그에 남기지 않음. 기본값 없음(없거나 비어 있으면 member가 시작하지 않음). 연결 해제(#407) · 상태 조회 · 웹훅 확인(#422). 운영은 인프라 담당이 주입 |
+| `KAKAO_APP_ID` | member | 카카오 앱 ID. 연결 해제 웹훅 요청의 `app_id`가 우리 앱인지 확인할 때 씀. 공개돼도 되는 값이지만 환경마다 다를 수 있어 설정으로 둠. 로컬은 비어 있어도 시작(경고 로그, 웹훅은 기록만 남김), 운영은 배포 스크립트(`make-env.sh`)가 값이 없으면 멈춤. 운영은 인프라 담당이 주입 (#422) |
 | `MAIL_USERNAME` · `MAIL_PASSWORD` | member | Gmail SMTP |
 | `FRONTEND_BASE_URL` · `COOKIE_SECURE` | member | 리다이렉트 · 쿠키 Secure |
 | `ACCOUNT_ENCRYPTION_KEY` · `MEMBER_HMAC_KEY` | member | 계좌 암호화(AES) · 회원 정보 HMAC(계좌 중복 확인, 탈퇴 기록의 이메일 · 휴대폰 HMAC. 입력 앞 용도 접두사 `account:` · `email:` · `phone:`로 구분). 둘 다 32바이트 Base64 · 서로 다른 값 · 기본값 없음(없으면 시작 실패). 운영은 배포 전에 인프라 담당이 주입 |
