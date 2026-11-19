@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-19 · reference/schedulers.md · market `@Scheduled` 스레드를 1개에서 4개로(`spring.task.scheduling.pool.size`): 자동 거절 환불이 길어져도 결제 대기 만료, Saga 복구, 택배 예약이 밀리지 않게 (#285)
 - 2026-11-19 · services/market.md · reference/schedulers.md · open-questions.md · testing/scenarios.md · 24시간 자동 거절 구현 반영: 수락 마감이 지난 판매자 주문을 10분마다 최대 100건 읽어 주문 행 SKIP LOCKED → 판매자 주문 잠금 → 다시 확인 후 남은 상품을 자동 거절(`AUTO`)하고 커밋 뒤 환불, 결제 완료 시각이 없는 판매자 주문은 제외. 수락과 자동 거절이 겹치면 먼저 주문을 잠근 쪽이 처리(늦은 수락, 거절은 409, 자동 거절은 건너뜀)로 확정하고 미정 항목에서 삭제, S-D09 결과 기록 (#285) (#564)
 - 2026-11-19 · infra/deploy.md · CD 기동 대기(compose 헬스체크 `start_period` 60→120초) · 실패 로그(compose 상태 · 헬스 기록 · 로그, K3s 파드 상태 · 이벤트 · 로그, 비밀값 가림) 규칙 추가 (#555)
 - 2026-11-19 · reference/external-apis.md · 「경로 개선안」에 판매자 수락 `orders/seller/{id}/accept` → `acceptances`, 거절 `orders/seller/{id}/reject` → `rejections` 추가 (동사형 경로, 기존 `cancel`, `confirm`과 함께 바꿈) (#284) (#552)

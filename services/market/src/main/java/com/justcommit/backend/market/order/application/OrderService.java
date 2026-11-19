@@ -226,7 +226,8 @@ public class OrderService {
     }
 
     // 수락 자동 거절 (#285, ADR 0013): 후보는 잠그지 않고 읽고, 판매자 주문마다 짧은 트랜잭션으로 거절한 뒤
-    // 커밋 뒤 트랜잭션 밖에서 환불한다. 한 건이 실패해도 다음 건은 계속하고, 결과를 모르는 환불은 Saga 복구가 이어받는다
+    // 커밋 뒤 트랜잭션 밖에서 환불한다. 한 건이 실패해도 다음 건은 계속하고, 결과를 모르는 환불은 Saga 복구가 이어받는다.
+    // shortcut: 같은 판매자 주문이 매번 실패하거나(DB 오류 등) 계속 잠겨 건너뛰면 그 건이 늘 앞자리를 차지해, 100건이 쌓이면 뒤 판매자 주문이 밀린다. 필요해지면 실패 횟수 제외 장치를 넣는다.
     public void autoRejectExpiredSellerOrders() {
         LocalDateTime paidBefore = LocalDateTime.now().minus(SellerOrder.ACCEPT_WINDOW);
         for (Long sellerOrderId : sellerOrderRepository.findAutoRejectCandidateIds(
