@@ -9,7 +9,8 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum SettlementErrorCode implements ErrorCode {
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "정산 요청 정보가 올바르지 않습니다."),
-    INVALID_AMOUNT(HttpStatus.BAD_REQUEST, "판매액은 0보다 커야 합니다.");
+    INVALID_AMOUNT(HttpStatus.BAD_REQUEST, "판매액은 0보다 커야 합니다."),
+    INVALID_SELLER_BURDEN_AMOUNT(HttpStatus.BAD_REQUEST, "판매자 부담금은 0 이상이어야 합니다.");
 
     private final HttpStatus status;
     private final String message;
