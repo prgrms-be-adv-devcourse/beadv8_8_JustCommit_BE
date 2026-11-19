@@ -1,0 +1,11 @@
+# 대시보드 파일 등록 (#301). JSON은 deploy/observability/grafana/dashboards/
+# 화면에서 고친 내용은 컨테이너를 다시 만들면 사라진다 → 고치려면 JSON을 내보내 이 폴더 파일을 바꾼다
+apiVersion: 1
+
+providers:
+  - name: replant
+    folder: replant
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/dashboards

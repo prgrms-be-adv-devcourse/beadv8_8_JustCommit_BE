@@ -67,3 +67,6 @@ custom:
     deadline:
       enabled: true
       interval: PT10M
+    # 관리자 확인 12시간 지연 알림 (한국 시간 09~21시 매 정각, 새로 지연된 건을 묶어 ImageReviewDelayed 1개). 켜고 끄기는 deadline.enabled
+    delay-alert:
+      cron: "0 0 9-21 * * *"

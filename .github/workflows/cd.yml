@@ -149,6 +149,9 @@ jobs:
         run: |
           set -u
           COMPOSE="docker compose -f $HOME/replant/docker-compose.app.yml"
+          # 러너는 서비스로 돌아 ~/.bashrc를 읽지 않는다. KUBECONFIG가 없으면 K3s kubectl이
+          # root 전용 /etc/rancher/k3s/k3s.yaml을 읽으려다 실패하므로 ubuntu용 사본을 지정한다 (#301)
+          export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
           failed=""
 
           for s in $SERVICES; do
@@ -157,8 +160,14 @@ jobs:
             case "$s" in
               gateway|market|ai)
                 # K3s: 파드를 하나씩 새 이미지로 바꾼다 (롤링). 처음 올리기는 deploy/k3s/README.md대로 수동
-                if ! kubectl -n replant get deploy "$s" >/dev/null 2>&1; then
-                  echo "::warning::K3s에 deploy/$s가 아직 없어 건너뜀 (처음 올리기는 수동)"
+                # 진짜로 없을 때(NotFound)만 건너뛰고, 접속 · 권한 오류는 실패로 알린다
+                if ! out=$(kubectl -n replant get deploy "$s" 2>&1); then
+                  if echo "$out" | grep -q NotFound; then
+                    echo "::warning::K3s에 deploy/$s가 아직 없어 건너뜀 (처음 올리기는 수동)"
+                  else
+                    echo "::error::$s K3s 접속 실패 — $out"
+                    failed="$failed $s"
+                  fi
                 elif kubectl -n replant set image "deploy/$s" "$s=$image" \
                   && kubectl -n replant rollout status "deploy/$s" --timeout=5m; then
                   echo "$s 배포 완료"
