@@ -1,7 +1,7 @@
 # 사진 검수
 
 > 언제 읽나: 상품 사진 검수 코드를 고칠 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-16 · 관련: Miro 13-1, 노션 「정책 정리」 3.3 · 3.4 · 3.16
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 13-1, 노션 「정책 정리」 3.3 · 3.4 · 3.16
 
 ## 흐름
 
@@ -99,8 +99,10 @@ sequenceDiagram
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| GET | `products/{id}/imageReviews` | 판매자 본인 검수 기록, 최신 검수 버전부터. 표시 상태(`IN_REVIEW` 검수 중 · `ADMIN_CHECK` 관리자 확인 중 · `ADMIN_CHECK_DELAYED` 확인 지연 · `APPROVED` · `REJECTED` · `REPLACED` 그사이 수정됨) · 반려 사유와 문구 · 판정 주체(`ENGINE` · `ADMIN` · `DEADLINE`) · 시각, 남은 재검수 횟수 · 이의 신청 가능 여부 · 기한 초과 재요청 가능 여부 (두 가능 여부는 상품 · 검수 상태만 봄. 검수 중 동시 5개는 신청할 때 확인해 넘으면 409 `REVIEW_PENDING_LIMIT_EXCEEDED`) |
+| GET | `products/{id}/imageReviews` | 판매자 본인 검수 기록, 최신 검수 버전부터. 표시 상태(`IN_REVIEW` 검수 중 · `ADMIN_CHECK` 관리자 확인 중 · `ADMIN_CHECK_DELAYED` 확인 지연 · `APPROVED` · `REJECTED` · `REPLACED` 그사이 수정됨) · 반려 사유와 문구 · 판정 주체(`ENGINE` · `ADMIN` · `DEADLINE`) · 시각 · 관리자 확인 기한 `expiresAt`(관리자 확인 중 · 지연일 때만, 관리자 목록과 같은 값 = 관리자 확인으로 간 시각 + 24시간, 이의 신청은 신청 시각부터), 남은 재검수 횟수 · 이의 신청 가능 여부 · 기한 초과 재요청 가능 여부 (두 가능 여부는 상품 · 검수 상태만 봄. 검수 중 동시 5개는 신청할 때 확인해 넘으면 409 `REVIEW_PENDING_LIMIT_EXCEEDED`) |
 | POST | `products/{id}/appeals` | 자동 반려 이의 신청 (`memo` 필수, 200자). 409 `APPEAL_NOT_ALLOWED` · `APPEAL_ALREADY_USED` |
+| GET | `products/me` | 내 상품 목록에 지금 검수 버전의 표시 상태 · 반려 사유와 문구 · 판정 주체 (값은 검수 기록과 같음). 한 페이지의 검수 기록을 쿼리 한 번으로 조회 |
+| GET | `products/me/counts` | 오늘 등록 수 · 오늘 사진 검수 수와 한도(20 · 30). 등록 제한 · 하루 사진 검수 제한과 같은 기준 (한국 시간 자정, 삭제 포함, 글 검사 · 기한 초과 다음 검수 제외) |
 | POST | `products/{id}/imageReviews` | 기한 초과(`REVIEW_EXPIRED`) 상품을 같은 내용으로 다시 검수 요청. 재검수 · 등록 제한에 세지 않음. 다른 상태면 409 `RESUBMIT_NOT_ALLOWED` |
 
 모두 SELLER, 본인 상품만 (남의 상품은 404 `PRODUCT_NOT_FOUND`).

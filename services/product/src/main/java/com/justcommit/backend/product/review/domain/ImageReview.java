@@ -18,6 +18,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 
 // 사진 검수 기록. 검수 버전마다 한 행 (상품 ID + 검수 버전 UNIQUE → 같은 검수 요청이 두 번 와도 한 번만 처리)
@@ -158,6 +159,12 @@ public class ImageReview extends BaseTimeEntity {
     // 관리자 확인을 기다리는 중인지 (관리자 처리 · 24시간 기한 대상)
     public boolean isAwaitingAdmin() {
         return status == ReviewStatus.DONE && decision == ReviewDecision.MANUAL;
+    }
+
+    // 관리자 확인 기한: 관리자 확인으로 간 시각(이의 신청이면 신청 시각, appeal에서 reviewedAt을 바꿈)부터 셈
+    // 관리자 목록 · 판매자 검수 기록이 같은 계산을 쓰도록 여기 한 곳에 둠
+    public LocalDateTime adminCheckExpiresAt(Duration expireAfter) {
+        return reviewedAt.plus(expireAfter);
     }
 
     // 관리자가 통과(reason null) 또는 반려. 엔진이 관리자 확인으로 보낸 사유(manualReason · detail)는 그대로 둠

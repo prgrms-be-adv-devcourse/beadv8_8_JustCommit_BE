@@ -460,7 +460,8 @@ class ProductControllerTest {
     private MyProductResponse myProductResponse(boolean hidden)
     {
         return new MyProductResponse(10L, "몬스테라 분양합니다", new BigDecimal("30000"),
-                "https://example.com/a.jpg", 1L, "몬스테라", "ACTIVE", hidden, LocalDateTime.now());
+                "https://example.com/a.jpg", 1L, "몬스테라", "REJECTED", hidden, LocalDateTime.now(),
+                "REJECTED", "NOT_PLANT", "식물 사진이 아니에요", "ENGINE");
     }
 
     @Test
@@ -474,6 +475,10 @@ class ProductControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content[0].productId").value(10))
                 .andExpect(jsonPath("$.data.content[0].hidden").value(true))
+                .andExpect(jsonPath("$.data.content[0].reviewStatus").value("REJECTED"))
+                .andExpect(jsonPath("$.data.content[0].rejectReason").value("NOT_PLANT"))
+                .andExpect(jsonPath("$.data.content[0].rejectMessage").value("식물 사진이 아니에요"))
+                .andExpect(jsonPath("$.data.content[0].decidedBy").value("ENGINE"))
                 .andExpect(jsonPath("$.data.totalElements").value(1));
     }
 
@@ -570,9 +575,9 @@ class ProductControllerTest {
     @DisplayName("탭 개수를 조회하면 로그인 회원 ID와 숨김 필터로 조회해 상태별 개수를 반환")
     void getMyProductCounts() throws Exception {
         loginAs(SELLER_ID, SELLER);
-        // total, reviewPending, rejected, active, paymentPending, soldOut
+        // total, reviewPending, rejected, active, paymentPending, soldOut, 오늘 등록 · 한도, 오늘 사진 검수 · 한도
         given(productService.getMyProductCounts(SELLER_ID, true))
-                .willReturn(new MyProductCountResponse(4, 2, 1, 1, 0, 0));
+                .willReturn(new MyProductCountResponse(4, 2, 1, 1, 0, 0, 3, 20, 5, 30));
 
         mockMvc.perform(get("/api/v1/products/me/counts").param("hidden", "true"))
                 .andExpect(status().isOk())
@@ -581,6 +586,10 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.data.rejected").value(1))
                 .andExpect(jsonPath("$.data.active").value(1))
                 .andExpect(jsonPath("$.data.paymentPending").value(0))
-                .andExpect(jsonPath("$.data.soldOut").value(0));
+                .andExpect(jsonPath("$.data.soldOut").value(0))
+                .andExpect(jsonPath("$.data.todayRegistered").value(3))
+                .andExpect(jsonPath("$.data.dailyRegisterLimit").value(20))
+                .andExpect(jsonPath("$.data.todayPhotoReviews").value(5))
+                .andExpect(jsonPath("$.data.dailyPhotoReviewLimit").value(30));
     }
 }

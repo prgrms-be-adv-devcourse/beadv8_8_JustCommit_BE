@@ -78,6 +78,7 @@ class ProductVersionIntegrationTest {
     @MockitoBean MemberQuery memberQuery;
     @MockitoBean ProductImageUrlValidator imageUrlValidator;
     @MockitoBean ProductImageCleaner imageCleaner;
+    @MockitoBean ReviewStatusReader reviewStatusReader;
     @MockitoBean ReviewRequester reviewRequester;
     @MockitoBean OutboxPublisher outboxPublisher;
 
