@@ -20,6 +20,9 @@ public class SecurityConfig {
             .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/courier").permitAll()
             // Prometheus 지표 수집. Gateway가 /actuator를 넘기지 않아 내부망(Prometheus)에서만 닿는다
             .requestMatchers(HttpMethod.GET, "/actuator/prometheus").permitAll()
+            // 판매자 수락, 거절은 SELLER 토큰만 (#284). 본인 판매자 주문인지는 서비스가 다시 확인한다
+            .requestMatchers(HttpMethod.POST, "/api/v1/orders/seller/*/accept", "/api/v1/orders/seller/*/reject")
+                .hasRole("SELLER")
             .anyRequest().authenticated())
         .build();
   }
