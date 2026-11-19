@@ -17,8 +17,12 @@ import com.justcommit.backend.product.search.application.ProductDocument;
 import com.justcommit.backend.product.search.application.ProductIndexService;
 import com.justcommit.backend.product.search.application.ProductIndexService.ReindexResult;
 import com.justcommit.backend.product.search.application.ProductSearchIndex;
+import com.justcommit.backend.product.search.application.ProductSearchService;
+import com.justcommit.backend.product.product.presentation.dto.ProductSearchRequest;
+import com.justcommit.backend.product.product.presentation.dto.ProductSearchResponse;
 import com.justcommit.backend.product.search.infrastructure.OpenSearchConfig;
 import com.justcommit.backend.product.search.infrastructure.OpenSearchProductIndex;
+import com.justcommit.backend.product.search.infrastructure.OpenSearchProductSearch;
 import com.justcommit.backend.product.search.infrastructure.ProductIndexInitializer;
 import com.justcommit.backend.product.species.domain.Species;
 import com.justcommit.backend.product.species.infrastructure.SpeciesRepository;
@@ -31,7 +35,6 @@ import java.util.List;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.opensearch.client.opensearch.OpenSearchClient;
@@ -69,7 +72,8 @@ import tools.jackson.databind.json.JsonMapper;
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaAuditingConfig.class, ClockConfig.class, ProductEventPublisher.class, ProductIndexService.class,
-        OpenSearchProductIndex.class, ProductSearchIndexListener.class, ProductSearchIndexScenarioTest.Config.class})
+        OpenSearchProductIndex.class, ProductSearchIndexListener.class, OpenSearchProductSearch.class,
+        ProductSearchService.class, ProductSearchIndexScenarioTest.Config.class})
 @ImportAutoConfiguration({KafkaAutoConfiguration.class, MessagingConsumerAutoConfiguration.class,
         OutboxAutoConfiguration.class})
 @Testcontainers(disabledWithoutDocker = true)
@@ -127,6 +131,7 @@ class ProductSearchIndexScenarioTest {
     @Autowired OpenSearchClient client;
     @Autowired ProductIndexService productIndexService;
     @Autowired ProductSearchIndex productSearchIndex;
+    @Autowired ProductSearchService productSearchService;
     @Autowired ProductEventPublisher productEventPublisher;
     @Autowired ProductRepository productRepository;
     @Autowired SpeciesRepository speciesRepository;
@@ -278,9 +283,34 @@ class ProductSearchIndexScenarioTest {
     }
 
     @Test
-    @Disabled("검색 API의 노출 규칙(숨김 · 상태 거르기)은 #486")
-    @DisplayName("[S-C02] 숨긴 상품은 OpenSearch 검색에서 빠짐")
-    void hiddenProductIsExcludedFromSearch() {
+    @DisplayName("[S-C02] 숨긴 상품은 이벤트로 문서가 hidden이 되어 OpenSearch 검색에서 빠지고, 숨김을 풀면 다시 나온다")
+    void hiddenProductIsExcludedFromSearch() throws Exception {
+        Long productId = tx.execute(status -> {
+            Product saved = productRepository.save(newProduct("몬스테라 숨김 시험"));
+            ReflectionTestUtils.setField(saved, "status", ProductStatus.ACTIVE);
+            productEventPublisher.registered(saved.getId());
+            return saved.getId();
+        });
+        waitForDocument(productId, doc -> "ACTIVE".equals(doc.status()));
+        assertThat(searchIds("몬스테라")).containsExactly(productId);
+
+        // 숨김 → ProductStatusChanged → 리스너가 문서를 hidden = true로
+        changeAndPublish(productId, product -> product.changeHidden(true));
+        waitForDocument(productId, ProductDocument::hidden);
+        assertThat(searchIds("몬스테라")).isEmpty();
+
+        // 숨김 해제 → 다시 검색됨 (문서를 새로 만들지 않고 같은 문서를 덮어씀)
+        changeAndPublish(productId, product -> product.changeHidden(false));
+        waitForDocument(productId, doc -> !doc.hidden());
+        assertThat(searchIds("몬스테라")).containsExactly(productId);
+    }
+
+    // 검색 API와 같은 서비스로 (색인 직후 바로 보이게 refresh)
+    private List<Long> searchIds(String keyword) throws IOException {
+        client.indices().refresh(request -> request.index(ProductIndexInitializer.ALIAS));
+        return productSearchService.search(new ProductSearchRequest(keyword, null, null, null, null, null, null, null,
+                        null, null, null, null, null, null))
+                .getContent().stream().map(ProductSearchResponse::productId).toList();
     }
 
     private Product newProduct(String title) {

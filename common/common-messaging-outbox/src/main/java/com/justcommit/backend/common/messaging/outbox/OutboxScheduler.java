@@ -30,13 +30,16 @@ public class OutboxScheduler {
   private final OutboxRelay relay;
   private final TransactionTemplate transaction;
   private final Clock clock;
+  // 알림 지표. MeterRegistry가 없는 환경(지표를 안 쓰는 테스트)이면 null
+  private final OutboxMetrics metrics;
 
   OutboxScheduler(OutboxEventRepository repository, OutboxRelay relay,
-                  PlatformTransactionManager transactionManager, Clock clock) {
+                  PlatformTransactionManager transactionManager, Clock clock, OutboxMetrics metrics) {
     this.repository = repository;
     this.relay = relay;
     this.transaction = new TransactionTemplate(transactionManager);
     this.clock = clock;
+    this.metrics = metrics;
   }
 
   // 10초마다: 앞 실행이 끝난 뒤 10초 쉬고 다시 (한 파드 안에서 겹쳐 돌지 않음)
@@ -51,6 +54,10 @@ public class OutboxScheduler {
         // DB 오류 등으로 이 행을 기록하지 못해도 다음 행은 계속 (이 행은 다음 주기에 다시)
         log.warn("Outbox 재전송 처리 실패: eventId={}, error={}", id, OutboxRelay.describe(e));
       }
+    }
+    // 이번 주기 처리 결과까지 반영한 값으로 갱신
+    if (metrics != null) {
+      metrics.refresh();
     }
   }
 

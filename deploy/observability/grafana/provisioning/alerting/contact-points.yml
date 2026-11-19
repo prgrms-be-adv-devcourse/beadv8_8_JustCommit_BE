@@ -1,0 +1,17 @@
+# 알림을 보내는 곳 (#301): 팀 Slack 채널 웹훅
+# 웹훅 주소는 비밀값 → 데이터 서버 ~/secrets/grafana.env 의 SLACK_WEBHOOK_URL (레포 · 채팅에 올리지 않음)
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: slack
+    receivers:
+      - uid: replant-slack
+        type: slack
+        settings:
+          url: ${SLACK_WEBHOOK_URL}
+          title: '{{ if eq .Status "firing" }}🚨{{ else }}✅{{ end }} [replant] {{ .CommonLabels.alertname }}'
+          text: |-
+            {{ range .Alerts }}{{ if eq .Status "firing" }}발생{{ else }}해소{{ end }} · {{ .Annotations.summary }}
+            {{ end }}
+        disableResolveMessage: false

@@ -18,14 +18,14 @@ public final class ProductSpecifications {
     private ProductSpecifications() {
     }
 
-    // 검색에 나오는 상태: 검수 중 · 반려 · 삭제는 제외 (정책 상태 표)
-    private static final List<ProductStatus> SEARCHABLE_STATUSES =
+    // 검색에 나오는 상태: 검수 중 · 반려 · 삭제는 제외 (정책 상태 표). OpenSearch 검색도 같은 목록을 씀
+    public static final List<ProductStatus> SEARCHABLE_STATUSES =
             List.of(ProductStatus.ACTIVE, ProductStatus.PAYMENT_PENDING, ProductStatus.SOLD_OUT);
 
     public static Specification<Product> searchCondition(
             String keyword, Long speciesId, SpeciesCategory category,
             Light light, Watering watering, Difficulty difficulty,
-            BigDecimal minPrice, BigDecimal maxPrice, Boolean onSale)  {
+            BigDecimal minPrice, BigDecimal maxPrice, Boolean onSale, Long sellerId, ProductStatus status)  {
         List<Specification<Product>> specs = new ArrayList<>();
 
         // 항상 적용: 검색 노출 상태만, 숨김 제외
@@ -64,6 +64,13 @@ public final class ProductSpecifications {
 
         if (Boolean.TRUE.equals(onSale)) {
             specs.add((root, query, cb) -> cb.equal(root.get("status"), ProductStatus.ACTIVE));
+        }
+        // 판매자 상점 (#486). status가 노출 상태 밖인지는 서비스에서 먼저 400으로 막음
+        if (sellerId != null) {
+            specs.add((root, query, cb) -> cb.equal(root.get("sellerId"), sellerId));
+        }
+        if (status != null) {
+            specs.add((root, query, cb) -> cb.equal(root.get("status"), status));
         }
 
         return Specification.allOf(specs);

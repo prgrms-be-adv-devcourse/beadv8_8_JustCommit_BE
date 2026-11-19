@@ -109,7 +109,14 @@ class ProductSpecificationsTest {
         entityManager.flush();
         return idsOf(productRepository.findAll(
                 ProductSpecifications.searchCondition(keyword, null, null,
-                        light, watering, difficulty, null, null, onSale), LATEST));
+                        light, watering, difficulty, null, null, onSale, null, null), LATEST));
+    }
+
+    // 판매자 상점 목록 (공개 목록 + sellerId · status 조건, #486)
+    private Page<Product> shop(Long sellerId, ProductStatus status) {
+        entityManager.flush();
+        return productRepository.findAll(ProductSpecifications.searchCondition(null, null, null,
+                null, null, null, null, null, null, sellerId, status), LATEST);
     }
 
     // 상품 하나 저장 (검색에 나오는 판매 중 상태로)
@@ -223,6 +230,17 @@ class ProductSpecificationsTest {
                 .containsExactlyInAnyOrder(active.getId(), others.getId(), soldOut.getId(), pending.getId());
         assertThat(search(null, null, null, null, null))
                 .containsExactlyInAnyOrder(active.getId(), others.getId(), soldOut.getId(), pending.getId());
+    }
+
+    @Test
+    @DisplayName("판매자 상점: sellerId면 그 판매자의 공개 상품만, status=SOLD_OUT이면 판매 완료만 (전체 개수 = 판매 완료 개수)")
+    void searchConditionWithSellerAndStatus() {
+        // 숨김 · 삭제 상품은 상점에도 나오지 않음, 남의 상품도 빠짐
+        assertThat(idsOf(shop(SELLER_ID, null))).containsExactly(active.getId(), soldOut.getId());
+
+        Page<Product> soldOutPage = shop(SELLER_ID, ProductStatus.SOLD_OUT);
+        assertThat(idsOf(soldOutPage)).containsExactly(soldOut.getId());
+        assertThat(soldOutPage.getTotalElements()).isEqualTo(1);
     }
 
     @Test

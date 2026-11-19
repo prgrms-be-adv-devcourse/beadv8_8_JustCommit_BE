@@ -20,6 +20,13 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> 
       + "and e.createdAt < :before order by e.createdAt")
   List<UUID> findRetryIds(@Param("before") Instant before, Limit limit);
 
+  // 알림 지표 (OutboxMetrics): 가장 오래된 PENDING 행의 생성 시각 · FAILED 행 수
+  @Query("select min(e.createdAt) from OutboxEvent e "
+      + "where e.status = com.justcommit.backend.common.messaging.outbox.OutboxStatus.PENDING")
+  Optional<Instant> findOldestPendingCreatedAt();
+
+  long countByStatus(OutboxStatus status);
+
   // 다른 파드가 잡고 있거나 그사이 처리된 행은 기다리지 않고 빈 값 (정책 1.4-1)
   @Query(value = "select * from outbox_event where id = :id and status = 'PENDING' for update skip locked",
       nativeQuery = true)

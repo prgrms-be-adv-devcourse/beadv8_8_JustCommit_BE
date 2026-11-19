@@ -47,7 +47,8 @@ public class CommonSecurityConfigurer {
             // SSE 응답을 보내는 비동기 디스패치는 처음 요청에서 이미 인증을 거쳤으므로 통과
             // (JWT 필터는 비동기 디스패치에서 다시 돌지 않아 막으면 알림 전송 때 401 · 403이 남)
             .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
-            .requestMatchers("/actuator/health/**").permitAll())
+            // 상태 확인 · 지표 수집 (#301). 서비스 8080은 인터넷에 열려 있지 않고 Nginx는 /api · /oauth2만 넘긴다
+            .requestMatchers("/actuator/health/**", "/actuator/prometheus").permitAll())
 
         // 아이디 · 비밀번호 필터보다 먼저 JWT 필터 실행
         .addFilterBefore(new JwtAuthenticationFilter(jwtVerifier),

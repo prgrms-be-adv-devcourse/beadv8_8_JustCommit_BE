@@ -9,6 +9,7 @@ import com.justcommit.backend.product.image.application.ProductImageService;
 import com.justcommit.backend.product.image.presentation.dto.ImageUploadUrlResponse;
 import com.justcommit.backend.product.product.application.ProductService;
 import com.justcommit.backend.product.product.presentation.dto.*;
+import com.justcommit.backend.product.search.application.ProductSearchService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -79,12 +80,15 @@ class ProductControllerTest {
     @Mock
     ProductImageService productImageService;
 
+    @Mock
+    private ProductSearchService productSearchService;
+
     private MockMvc mockMvc;  // HTTP 요청을 흉내 내서 Controller 호출
 
     // 테스트마다 새로운 MockMvc 생성
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new ProductController(productImageService, productService))   // Controller 하나만 등록
+        mockMvc = MockMvcBuilders.standaloneSetup(new ProductController(productImageService, productService, productSearchService))   // Controller 하나만 등록
                 .setControllerAdvice(new GlobalExceptionHandler())
                 // @AuthenticationPrincipal AuthMember를 SecurityContext에서 꺼내 주는 처리기
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
@@ -229,15 +233,16 @@ class ProductControllerTest {
     @DisplayName("상품 목록을 조회하면 공통 응답 형식과 페이지 정보를 반환")
     void searchProducts() throws Exception {
         ProductSearchResponse item = new ProductSearchResponse(
-                10L, "몬스테라 분양합니다", new BigDecimal("30000"), "https://example.com/a.jpg",
+                10L, SELLER_ID, "몬스테라 분양합니다", new BigDecimal("30000"), "https://example.com/a.jpg",
                 1L, "몬스테라", "FOLIAGE", "MEDIUM", "WHEN_SURFACE_DRY", "EASY", "ACTIVE", LocalDateTime.now());
-        given(productService.searchProducts(any()))
+        given(productSearchService.search(any()))
                 .willReturn(new PageImpl<>(List.of(item), PageRequest.of(0, 20), 1));
 
         mockMvc.perform(get("/api/v1/products").param("light", "LOW").param("sort", "priceAsc"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").doesNotExist())
                 .andExpect(jsonPath("$.data.content[0].productId").value(10))
+                .andExpect(jsonPath("$.data.content[0].sellerId").value(SELLER_ID))
                 .andExpect(jsonPath("$.data.content[0].speciesName").value("몬스테라"))
                 .andExpect(jsonPath("$.data.content[0].light").value("MEDIUM"))
                 .andExpect(jsonPath("$.data.totalElements").value(1));
@@ -560,15 +565,41 @@ class ProductControllerTest {
     @Test
     @DisplayName("onSale=true를 보내면 요청 객체에 담겨 서비스로 전달")
     void searchProductsWithOnSale() throws Exception {
-        given(productService.searchProducts(any()))
+        given(productSearchService.search(any()))
                 .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
 
         mockMvc.perform(get("/api/v1/products").param("onSale", "true"))
                 .andExpect(status().isOk());
 
         ArgumentCaptor<ProductSearchRequest> captor = ArgumentCaptor.forClass(ProductSearchRequest.class);
-        verify(productService).searchProducts(captor.capture());
+        verify(productSearchService).search(captor.capture());
         assertThat(captor.getValue().onSale()).isTrue();
+    }
+
+    @Test
+    @DisplayName("판매자 상점 조건 sellerId · status를 요청 객체에 담아 서비스로 전달")
+    void searchProductsWithSellerAndStatus() throws Exception {
+        given(productSearchService.search(any()))
+                .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+        mockMvc.perform(get("/api/v1/products").param("sellerId", "7").param("status", "SOLD_OUT"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ProductSearchRequest> captor = ArgumentCaptor.forClass(ProductSearchRequest.class);
+        verify(productSearchService).search(captor.capture());
+        assertThat(captor.getValue().sellerId()).isEqualTo(7L);
+        assertThat(captor.getValue().status()).isEqualTo(ProductStatus.SOLD_OUT);
+    }
+
+    @Test
+    @DisplayName("검색 노출 상태 밖의 status(REVIEW_PENDING)면 400 INVALID_SEARCH_STATUS")
+    void searchProductsWithNonSearchableStatus() throws Exception {
+        given(productSearchService.search(any()))
+                .willThrow(new BusinessException(ProductErrorCode.INVALID_SEARCH_STATUS));
+
+        mockMvc.perform(get("/api/v1/products").param("status", "REVIEW_PENDING"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_SEARCH_STATUS"));
     }
 
     @Test
