@@ -1,7 +1,7 @@
 # member 서비스
 
 > 언제 읽나: member 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: Miro 5 · 6, A1, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 5 · 6, A1, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -22,7 +22,7 @@
 | `ADDRESS` | 배송지 (최대 4개, 기본 1개) |
 | `SELLER` | 판매자 등록 정보 · 소개글 · 상품 검수 동의 버전 · 시각 |
 | `MEMBER_WITHDRAWAL_RECORD` | 탈퇴 기록: 이메일 · 휴대폰 HMAC + 탈퇴 시각 (30일 보관, `member_id` 없음) |
-| ⬜ 카카오 연결 해제 웹훅 수신 기록 (이름 · 구조 미정) | 수신 사실 · 처리 상태 ⬜ 미구현(#422) |
+| `MEMBER_KAKAO_UNLINK_RECEIPT` | 카카오 연결 해제 웹훅 수신 기록. 받은 값(`provider_id`는 NULL 허용 · `referrer_type` · `received_at`, 입력 길이 제한) · 단계(`status`: `PENDING` · `INACTIVATED` · `NOTICE_PENDING` · `DONE` · `IGNORED` · `INVALIDATED` · `DUPLICATE` · `FAILED`) · 재개 단계(`resume_state`) · 연결 해제 상태(`member_id` · `unlink_version`) · 자동 탈퇴 처리 기록 표시(`handles_withdrawal`, NOT NULL 기본 false) · 처리권(`attempt_no` · `lease_until`) · 재시도(`failure_count` · `next_attempt_at`) · `last_error`(정해진 오류 코드만). 제약: 부분 UNIQUE `(member_id, unlink_version) WHERE handles_withdrawal`, CHECK `NOT handles_withdrawal OR (member_id IS NOT NULL AND unlink_version IS NOT NULL)`, 재로그인 무효화용 `(provider_id, status)` 인덱스 → [처리 흐름](../flows/signup-and-replica.md#카카오-연결-해제-웹훅). ⬜ 미구현(#422) |
 | `OUTBOX_EVENT` | 발행 대기 이벤트 (`common-messaging-outbox`, Flyway V2) |
 | `MEMBER_TOKEN_REVOCATION` | 탈퇴 · 비밀번호 변경 · 재설정 토큰 폐기 작업 (끊은 시각 · 보관 기한 · Redis 기록 상태, Flyway V4, 재설정 사유 V5, 소셜 연결 해제 사유 ⬜ 미구현 #422) |
 
@@ -80,7 +80,7 @@ payload (받는 쪽은 upsert, `occurredAt`이 저장된 값보다 오래되면 
 |---|---|---|
 | 토큰 폐기 재처리 | 10초 | Redis 기록을 확인하지 못한 폐기 작업을 보관 기한까지 다시 기록 → [스케줄러](../reference/schedulers.md) |
 | 탈퇴 기록 정리 | 1시간 | 30일 지난 탈퇴 기록 삭제 → [스케줄러](../reference/schedulers.md) |
-| 카카오 연결 해제 웹훅 처리 ⬜ 미구현(#422) | ⬜ 미정 | 수신 기록을 비동기로 처리 · 확인 실패 재시도(🟨) → [스케줄러](../reference/schedulers.md) |
+| 카카오 연결 해제 웹훅 처리 ⬜ 미구현(#422) | 10초 | 수신 기록을 단계별로 처리, 단계별 최초 포함 5회 시도 후 `FAILED` → [스케줄러](../reference/schedulers.md) |
 
 ## 정책
 
@@ -105,11 +105,11 @@ payload (받는 쪽은 upsert, `occurredAt`이 저장된 값보다 오래되면 
 | 계좌 표시 | 화면은 뒤 4자리만, 로그에 원문 금지, 복호화는 member 안에서만. payment에는 member가 복호화해 응답 (⬜ 운영 전송 보호 방식(서비스 간 HTTPS 또는 응답 암호화)은 payment · 인프라 담당과 정함) |
 | 배송지 | 회원당 최대 4개 · 기본 1개(회원 행 잠금). 수정은 보낸 항목만 바꾸는 부분 수정(상세 주소 · 배송지 이름은 빈 문자열로 지움, 우편번호 · 주소는 함께, 우편번호나 기본 주소가 바뀌면 상세 주소도 함께 보냄(비우려면 `""`, 없으면 400 `ADDRESS_DETAIL_REQUIRED`), 기본 여부는 기본 변경 API로만). 기본 배송지는 삭제할 수 없음(409 `DEFAULT_ADDRESS_NOT_DELETABLE`, 다른 배송지를 기본으로 바꾼 뒤 삭제). 남의 배송지는 404. 배송지를 바꾸는 모든 경로(추가 · 기본 변경 · 수정 · 삭제 · 판매자 등록)가 회원 행을 먼저 잠근다 |
 | 판매자 상점 | 판매자 정보(닉네임 · 소개글 · 등록일)는 누구나 봄(공개 경로는 Gateway · member 양쪽에 등록). 판매자가 아니거나 없는 회원 · 탈퇴한 판매자는 404 `SELLER_NOT_FOUND` (탈퇴한 판매자 표시는 탈퇴 Feature에서 다시 정할 수 있음). 소개글 500자는 판매자 본인만 수정(판매자 행이 없으면 403 `NOT_SELLER`), 빈 문자열은 삭제 |
-| 회원 상태 | `ACTIVE` · `INACTIVE`(카카오 연결 해제 후 아직 탈퇴하지 않은 상태) · `DELETED`(탈퇴). `INACTIVE`는 기존 Refresh 재발급과 일반 회원 기능을 제한하며, 기존 Access는 회원 단위 폐기 규칙에 따라 차단함(폐기 기록이 `PENDING`인 동안은 통과할 수 있음). 재연결이 허용된 카카오 로그인은 복구 경로로 사용. 정산 · 환급용 내부 계좌 조회는 유지 → [인증 규칙](../conventions/auth.md#토큰-폐기) · [탈퇴 흐름](../flows/signup-and-replica.md#카카오-연결-해제-웹훅). ⬜ 미구현(#422) |
+| 회원 상태 | `ACTIVE` · `INACTIVE`(카카오 연결 해제 후 아직 탈퇴하지 않은 상태) · `DELETED`(탈퇴). `INACTIVE`는 기존 Refresh 재발급과 일반 회원 기능을 제한하며, 기존 Access는 회원 단위 폐기 규칙에 따라 차단함(폐기 기록이 `PENDING`인 동안은 통과할 수 있음). 정상 카카오 로그인은 복구 경로로 사용(`UNLINK_FROM_ADMIN`으로 `INACTIVE`가 된 회원 포함). 정산 · 환급용 내부 계좌 조회는 유지 → [인증 규칙](../conventions/auth.md#토큰-폐기) · [탈퇴 흐름](../flows/signup-and-replica.md#카카오-연결-해제-웹훅). ⬜ 미구현(#422) |
 | 탈퇴 재확인 | 로컬은 현재 비밀번호(비밀번호 변경과 실패 횟수 공유), 카카오는 이메일 재인증 → 일회용 탈퇴 토큰(10분, 발송 당시 인증 버전에 묶임). 최종 탈퇴 요청에서 탈퇴 가능 여부 확인보다 먼저 함 → [탈퇴 흐름](../flows/signup-and-replica.md#직접-탈퇴) |
 | 탈퇴 | → [가입 · 탈퇴 흐름](../flows/signup-and-replica.md#탈퇴) |
 
-⬜ 미정: 요청 수 제한 허용 횟수, 관리자 연결 해제 회원의 재로그인 복구, 카카오 연결 해제 웹훅 수신 기록 → [미정 항목](../open-questions.md)
+⬜ 미정: 요청 수 제한 허용 횟수 → [미정 항목](../open-questions.md)
 
 ## 테스트 시나리오
 
