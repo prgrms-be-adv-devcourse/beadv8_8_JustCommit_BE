@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-19 · decisions/0024 · services/ai.md · 로컬 임베딩 모델 「비교 예정」을 실측 결과로: `multilingual-e5-small`을 운영 이미지 · 메모리 상한으로 실측(int8 최소 2g · 최고 1.96GiB, fp32 최소 3g, 640m에서는 시작 중 OOM, 재임베딩 뒤에도 메모리 유지) → ai 파드에 상주 불가라 비교에서 제외, ADR 0024(OpenAI) 유지 (#507)
 - 2026-11-19 · testing/strategy.md · ② PR CI 결과를 PR 댓글 1개(모듈별 통과 · 실패 · 건너뜀 · 시간 표 + 실패 목록, 커밋마다 갱신, 빌드 대상이 없는 PR은 댓글 없음)로 남기고, CI가 실패하면 같은 레포 PR에 Claude 원인 분석 댓글(`ci-failure-ai.yml`, `workflow_run`, PR 코드 실행 없음, 커밋당 1개) (#534) (#536)
 - 2026-11-19 · reference/external-apis.md · flows/image-review.md · glossary.md · 판매자 화면용 응답 보강: `products/me`에 지금 검수 버전의 표시 상태 · 반려 사유와 문구 · 판정 주체, `products/me/counts`에 오늘 등록 · 사진 검수 횟수와 한도(20 · 30), `products/{id}/imageReviews`에 관리자 확인 기한 `expiresAt`(관리자 목록과 같은 계산), `admin/imageReviews`에 판매자 닉네임 `sellerNickname`(복제본 없으면 「알 수 없는 회원」) · 가격 `price` · 검수 요청 시각 `requestedAt`, 용어 「알 수 없는 회원」 추가 (#519) (#539)
 - 2026-11-18 · reference/kafka-topics.md · reference/internal-apis.md · services/settlement.md · 판매자 부담금 반영: `PurchaseConfirmed` payload에 `sellerBurdenAmount`(없으면 0, 정산금 = 판매액 − 수수료 − 부담금), 정산 지급 요청에 `sellerOrderId` · `shippingFee`(배송비 모르는 정산은 0) · `sellerBurdenAmount` 추가, 정산 지급 경로를 코드에 맞춰 `settlementPayouts`로 (#433) (#538)

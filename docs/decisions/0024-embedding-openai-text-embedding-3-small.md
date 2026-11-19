@@ -27,10 +27,10 @@ ai의 품종 임베딩은 OpenAI `text-embedding-3-small`, 1536차원(이 모델
 |---|---|
 | OpenAI `text-embedding-3-large` (3072차원) | 6.5배 비쌈, 기본 차원이 HNSW 한도(2,000)를 넘어 차원을 줄이거나 `halfvec`을 써야 함 |
 | Voyage AI 등 다른 회사 | 계정 · 키 · 결제가 하나 더 늘어남 |
-| 로컬 임베딩 모델 (예: multilingual-e5-small · bge-m3) | 메모리 부족으로 뺐음 ([ADR 0005](0005-opensearch-pgvector-external-embedding.md)). 다만 추천할 때는 모델을 부르지 않고 재임베딩(배치) 때만 쓰므로 다시 볼 여지가 있음 → 비교 예정 (아래 「영향」) |
+| 로컬 임베딩 모델 (예: multilingual-e5-small · bge-m3) | 메모리 부족으로 뺐음 ([ADR 0005](0005-opensearch-pgvector-external-embedding.md)). 2026-11-18 #507에서 `multilingual-e5-small`을 서버 메모리로 실측한 결과 상주 불가라 비교에서 제외 (아래 「영향」) |
 
 ## 영향
 
 [ai](../services/ai.md) 「정책」 임베딩 모델, [장애 대응](../conventions/resilience.md) 호출별 값. 모델 · 차원을 바꾸면 `species_vector_store`의 `vector(1536)` 칸과 저장된 벡터를 모두 다시 만들어야 합니다.
 
-로컬 임베딩 모델 비교 예정: 추천 기능(#293 → #294 → #296)을 먼저 완성하고, #294에서 만드는 평가 세트(같이 키우기 좋은 조합 30~50쌍, Top-5 적중률)로 OpenAI와 로컬 모델을 오프라인에서 비교합니다(운영 코드는 건드리지 않음, 근거: 핀 문서 「상품 정책·플로우 정리」 추천 절). 이 결정은 확정이지만, 비교에서 로컬 모델이 더 좋으면 교체하고 이 ADR을 새 ADR로 대체합니다.
+로컬 임베딩 모델은 비교하지 않기로 했습니다. #507에서 `multilingual-e5-small`(384차원, Spring AI ONNX)을 운영과 같은 ai 이미지 · Docker 메모리 상한으로 품종 215개 재임베딩 1회 실측했습니다([#507 코멘트](https://github.com/prgrms-be-adv-devcourse/beadv8_8_JustCommit_BE/issues/507#issuecomment-6971659177)). 지금 ai 파드 상한 640m에서는 int8(118MB)이 시작 중 OOM, 1536m에서는 재임베딩 중 OOM이었고 2g 이상에서야 성공하며 최고 1.96GiB를 썼습니다(fp32는 3g 이상에서만 성공, 2.6~3.3GiB). 재임베딩이 끝난 뒤에도 메모리가 약 2GiB로 유지되어 ai 파드에 상주시킬 수 없고, OpenAI 비용은 품종 전체 재임베딩에 1센트 미만이라 바꿀 이유가 없습니다. 결정은 그대로 OpenAI `text-embedding-3-small`을 유지하며 새 ADR로 대체하지 않습니다.
