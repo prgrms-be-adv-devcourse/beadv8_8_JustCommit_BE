@@ -41,8 +41,9 @@ public class ProductIndexService {
     private final ProductRepository productRepository;
     private final SpeciesRepository speciesRepository;
     private final ProductSearchIndex searchIndex;
-    // 무중단 재색인은 한 번에 하나만 (같은 서버 안에서)
-    private final AtomicBoolean rebuilding = new AtomicBoolean(false);
+    // 전체 색인 · 무중단 재색인은 한 번에 하나만 (같은 서버 안에서). 둘이 겹치면 alias가 바뀌는 순간 일부 쓰기가 옛 인덱스로 감.
+    // 서버가 여럿이면 재색인끼리는 같은 새 인덱스 이름이 충돌해 뒤에 온 쪽이 실패하고, 전체 색인과 겹치는 것은 막지 못함
+    private final AtomicBoolean indexing = new AtomicBoolean(false);
 
     // 이벤트 한 건: 이 상품의 문서를 DB 최신 값으로 맞춤. OpenSearch 오류는 그대로 던져 공통 재시도 · DLT로 보냄
     public void sync(Long productId) {
@@ -70,7 +71,12 @@ public class ProductIndexService {
      * 삭제 상품은 문서를 지우고(남아 있던 문서 정리), 나머지는 덮어쓴다. 여러 번 돌려도 결과가 같다.
      */
     public ReindexResult reindexAll() {
-        return reindex(searchIndex::bulk);
+        lock();
+        try {
+            return reindex(searchIndex::bulk);
+        } finally {
+            indexing.set(false);
+        }
     }
 
     /**
@@ -83,13 +89,12 @@ public class ProductIndexService {
      *       (refresh 전에 옮기면 최대 1초 동안 일부만 검색됨).</li>
      *   <li>채우는 동안 옛 인덱스로 간 변경을 맞추려고 alias(이제 새 인덱스)에 전체 색인을 한 번 더 한다.
      *       외부 버전이라 이미 같은 버전인 문서는 건너뛰고, 그사이 바뀐 상품만 반영된다.</li>
-     *   <li>옛 인덱스를 지운다. 실패해도 검색에는 영향이 없어 경고만 남긴다.</li>
+     *   <li>옛 인덱스를 지운다. 따라잡기 색인에 실패한 건이 있으면 그 상품의 최신 값이 옛 인덱스에만 있을 수 있어 지우지 않는다
+     *       (전체 색인을 다시 돌려 맞춘 뒤 직접 지움). 삭제가 실패해도 검색에는 영향이 없어 경고만 남긴다.</li>
      * </ol>
      */
     public RebuildResult rebuild() {
-        if (!rebuilding.compareAndSet(false, true)) {
-            throw new BusinessException(ProductErrorCode.SEARCH_REBUILD_IN_PROGRESS);
-        }
+        lock();
         try {
             String previous = searchIndex.currentIndex();
             String next = searchIndex.createNextIndex(previous);
@@ -111,20 +116,31 @@ public class ProductIndexService {
             searchIndex.refresh(next);
             searchIndex.switchAlias(previous, next);
             log.info("상품 검색 alias를 {}에서 {}로 옮김", previous, next);
-            ReindexResult caughtUp = reindexAll();
+            ReindexResult caughtUp = reindex(searchIndex::bulk);
 
-            boolean previousDeleted = true;
-            try {
-                searchIndex.deleteIndex(previous);
-            } catch (RuntimeException e) {
-                previousDeleted = false;
-                log.warn("옛 상품 검색 인덱스 {}를 지우지 못함 (검색에는 영향 없음, 직접 지워야 함)", previous, e);
+            boolean previousDeleted = false;
+            if (caughtUp.failed() > 0) {
+                log.warn("따라잡기 색인 중 {}건이 실패해 옛 인덱스 {}를 남겨 둠 (전체 색인을 다시 실행해 맞춘 뒤 직접 지움)",
+                        caughtUp.failed(), previous);
+            } else {
+                try {
+                    searchIndex.deleteIndex(previous);
+                    previousDeleted = true;
+                } catch (RuntimeException e) {
+                    log.warn("옛 상품 검색 인덱스 {}를 지우지 못함 (검색에는 영향 없음, 직접 지워야 함)", previous, e);
+                }
             }
             RebuildResult result = new RebuildResult(previous, next, filled, caughtUp, previousDeleted);
             log.info("상품 검색 무중단 재색인 끝: {}", result);
             return result;
         } finally {
-            rebuilding.set(false);
+            indexing.set(false);
+        }
+    }
+
+    private void lock() {
+        if (!indexing.compareAndSet(false, true)) {
+            throw new BusinessException(ProductErrorCode.SEARCH_INDEXING_IN_PROGRESS);
         }
     }
 

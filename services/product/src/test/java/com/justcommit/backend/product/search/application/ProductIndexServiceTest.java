@@ -127,7 +127,7 @@ class ProductIndexServiceTest {
     }
 
     @Test
-    @DisplayName("이미 재색인 중이면 409 SEARCH_REBUILD_IN_PROGRESS")
+    @DisplayName("이미 재색인 중이면 409 SEARCH_INDEXING_IN_PROGRESS")
     void rejectsConcurrentRebuild() throws Exception {
         CountDownLatch filling = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -151,11 +151,51 @@ class ProductIndexServiceTest {
         assertThatThrownBy(() -> service.rebuild())
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(ProductErrorCode.SEARCH_REBUILD_IN_PROGRESS);
+                .isEqualTo(ProductErrorCode.SEARCH_INDEXING_IN_PROGRESS);
 
         release.countDown();
         first.join();
         assertThat(firstError.get()).isNull();
+    }
+
+    @Test
+    @DisplayName("alias를 옮긴 뒤 따라잡기 색인에 실패한 건이 있으면 옛 인덱스를 지우지 않음 (그 상품의 최신 값이 옛 인덱스에만 있을 수 있음)")
+    void failedCatchUpKeepsPreviousIndex() {
+        given(searchIndex.bulkInto(eq("products_v2"), anyList())).willReturn(new BulkResult(1, 0, 0));
+        given(searchIndex.bulk(anyList())).willReturn(new BulkResult(0, 0, 1));
+
+        RebuildResult result = service.rebuild();
+
+        verify(searchIndex).switchAlias("products_v1", "products_v2");
+        verify(searchIndex, never()).deleteIndex("products_v1");
+        assertThat(result.caughtUp().failed()).isEqualTo(1);
+        assertThat(result.previousDeleted()).isFalse();
+    }
+
+    @Test
+    @DisplayName("재색인 중에 전체 색인을 부르면 409 (alias가 바뀌는 순간 쓰기가 옛 인덱스로 가지 않게)")
+    void rejectsReindexAllDuringRebuild() throws Exception {
+        CountDownLatch filling = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        given(searchIndex.bulkInto(eq("products_v2"), anyList())).willAnswer(invocation -> {
+            filling.countDown();
+            release.await();
+            return new BulkResult(1, 0, 0);
+        });
+        given(searchIndex.bulk(anyList())).willReturn(new BulkResult(0, 1, 0));
+        Thread rebuild = new Thread(() -> service.rebuild());
+        rebuild.start();
+        filling.await();
+
+        assertThatThrownBy(() -> service.reindexAll())
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ProductErrorCode.SEARCH_INDEXING_IN_PROGRESS);
+
+        release.countDown();
+        rebuild.join();
+        // 재색인이 끝나면 다시 전체 색인 가능
+        assertThat(service.reindexAll().failed()).isZero();
     }
 
     private static Product product(Long id) {
