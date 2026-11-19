@@ -23,6 +23,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
@@ -113,7 +114,7 @@ class CartAndOrderPersistenceIntegrationTest {
         OrdersItem confirmedItem = new OrdersItem(now, 1001L, "확정", new BigDecimal("10000"));
         OrdersItem cancelledItem = new OrdersItem(now, 1002L, "취소", new BigDecimal("10000"));
         now.addItems(List.of(confirmedItem, cancelledItem));
-        cancelledItem.cancel();
+        ReflectionTestUtils.setField(cancelledItem, "status", OrderItemStatus.CANCELLED);
         confirmedItem.confirm();
         now.confirmed();
         SellerOrder yesterday = confirmedSellerOrder(order, 202L, 1004L);

@@ -1,0 +1,16 @@
+# Grafana 데이터 소스 (#301). 컨테이너가 뜰 때 자동 등록되고 화면에서는 고칠 수 없다
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100

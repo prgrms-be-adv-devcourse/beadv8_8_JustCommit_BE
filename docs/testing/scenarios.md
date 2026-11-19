@@ -42,7 +42,7 @@
 | ID | 시나리오 | 종류 | 수준 | 자동화 | 남길 실측값 | 결과 |
 |---|---|---|---|---|---|---|
 | S-C01 | 상품 등록(Presigned 업로드 사진) → 조회 · OpenSearch 검색 노출 (`product.events.v1` → 색인 리스너) | 정상 | 통합 | PR |  |  |
-| S-C02 | 상품 숨김 → 검색 · 목록 제외, 진행 중 결제는 유지 | 규칙 | 통합 | PR |  |  |
+| S-C02 | 상품 숨김 → 검색 · 목록 제외, 진행 중 결제는 유지 | 규칙 | 통합 | PR |  | 검색 · 목록 제외 확인 (11/19): 숨김 이벤트 → 문서 `hidden` → OpenSearch 검색 제외 · 해제 시 다시 노출(`ProductSearchIndexScenarioTest`), 키워드 검색 · LIKE 대체 · 목록 제외(`ProductSearchIntegrationTest` · `ProductSpecificationsTest`). 진행 중 결제 유지는 이 PR에서 확인 안 함 |
 | S-C03 | 판매 완료 이벤트(`market.order-paid.v1`)를 두 번 받음 → 1번만 반영, 이미 해제돼 바뀐 상품이 0건이어도 정상 | 중복 | 통합 | PR |  |  |
 | S-C04 | 같은 상품을 두 명이 동시 주문 → 한 명만 예약 성공 | 경계 | 통합 | PR |  |  |
 | S-C05 | 사진 검수: 유해 → `HARMFUL_IMAGE` / 씨앗 · 삽수 → `PROHIBITED_FORM` / 금지 품종 0.7 이상 → `BANNED_SPECIES` / 확신도 낮음 · 기타 품종 → 관리자 확인 / 통과 → `ACTIVE` · `ProductApproved` → 판매자 통과 알림 | 규칙 | 통합 | PR |  |  |
@@ -78,16 +78,19 @@
 
 | ID | 시나리오 | 종류 | 수준 | 자동화 | 남길 실측값 | 결과 |
 |---|---|---|---|---|---|---|
-| S-E01 | 수거 전 전체 취소 → 환불 · 택배 예약 취소 · 판매자 알림, 구매자 알림 없음 | 정상 | E2E | 야간 |  |  |
-| S-E02 | 상품 3개 중 1개 취소 → 부분 환불, 판매자 알림 | 경계 | 통합 | PR |  |  |
+| S-E01 | 수거 전 전체 취소 → 환불 · 택배 예약 취소 · 판매자 알림, 구매자 알림 없음 | 정상 | E2E | 야간 |  | 부분 검증 (11/18): 택배 취소됨 뒤 상품 금액과 배송비 환불, 판매자 전부 취소 알림(`OrderCancelRefundIntegrationTest`). 구매자 화면까지 E2E는 미검증 |
+| S-E02 | 상품 3개 중 1개 취소 → 부분 환불, 판매자 알림 | 경계 | 통합 | PR |  | 완료 (11/18): `OrderCancelRefundIntegrationTest` |
 | S-E03 | 수거 후 취소 → 거부 | 규칙 | 단위 | PR |  |  |
-| S-E04 | 취소 두 번 → 환불 1번, 택배 취소 호출 1번 | 중복 | 통합 | PR |  |  |
+| S-E04 | 취소 두 번 → 환불 1번, 택배 취소 호출 1번 | 중복 | 통합 | PR |  | 완료 (11/18): `OrderCancelRefundIntegrationTest`(같은 취소 두 번, 복구 두 번) |
 | S-E05 | 택배사 취소 실패 → 재시도(10초 → 30초 → 1분)로 취소 완료 | 장애 | 통합 | PR |  |  |
 | S-E06 | 반품 신청(배송 완료 72시간 안, 판매자 귀책) → 판매자 알림 · 자동 구매 확정 제외 → 승인 → 반품 배송 → 도착 → 환불 → 구매자 알림 | 정상 | 통합 | PR |  |  |
-| S-E07 | `BOOKED` 취소 → 택배사 취소 먼저, 응답 없음 → `CANCEL_PENDING` · 환불 안 함 → 취소 큐로 확정 | 결과 불명 | 통합 | PR |  |  |
+| S-E07 | `BOOKED` 취소 → 택배사 취소 먼저, 응답 없음 → `CANCEL_PENDING` · 환불 안 함 → 취소 큐로 확정 | 결과 불명 | 통합 | PR |  | 부분 검증 (11/18): 택배 결과 전에는 환불 안 함(`OrderCancelRefundIntegrationTest`). 취소 큐 재시도는 `ShipmentCancelQueueIntegrationTest` |
 | S-E08 | 택배사 「이미 수거」 → 수거가 요청보다 늦으면 취소 인정 + 반품 자동 접수, 빠르면 거절 · `PICKED_UP` | 경계 | 통합 | PR |  |  |
 | S-E09 | 반품 신청 48시간 무응답 → 자동 승인 → 반품 도착 → 환불 · 상품 `ACTIVE` + 숨김 | 규칙 | 통합 | PR |  |  |
 | S-E10 | 반품 거절 → 그 상품 바로 구매 확정 | 규칙 | 통합 | PR |  |  |
+| S-E11 | 환불 응답 타임아웃 → 주문상품 「취소 중」 유지, 판매 재개 안 함 → 10초 뒤 Saga 복구가 같은 키로 다시 요청 → 환불되면 취소 완료와 판매 재개 1건 | 결과 불명 | 통합 | PR |  | 완료 (11/18): `OrderCancelRefundIntegrationTest` |
+| S-E12 | 환불 복구 5번까지 결과 불명 → 주문상품 `REVIEW_REQUIRED`와 ERROR 로그 / 환불 확정 실패(4xx) → 재시도 없이 `REVIEW_REQUIRED`. 둘 다 판매 재개 안 함 | 결과 불명 | 통합 | PR |  | 완료 (11/18): `OrderCancelRefundIntegrationTest` |
+| S-E13 | 택배 취소 불가(`CANCEL_LOCKED`) → 환불 없이 주문상품을 정상으로 되돌리고 정산 기준액 재계산 | 규칙 | 통합 | PR |  | 완료 (11/18): `OrderCancelRefundIntegrationTest` |
 
 ## F. 배송
 

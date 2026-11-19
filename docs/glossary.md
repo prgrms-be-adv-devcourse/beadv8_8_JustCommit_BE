@@ -31,7 +31,7 @@
 | 배송비 요금표 | ⬜ 테이블 이름 미정 | 운임표 | 지역 구분(기본 + 제주 · 도서산간) 배송비 표. market이 버전과 함께 보관 | [market 정책](services/market.md#정책) |
 | 구매 확정 | `PurchaseConfirmed` · `OrderItemAutoConfirmed` | 구매 완료, 거래 완료 | 구매자가 받았다고 확정 (직접 또는 자동). 정산의 시작점 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 취소 | `OrderItemCancelled` · `SellerOrderCancelled` | 주문 취소 | 수거 전에 구매자가 주문상품을 취소하는 것 | [취소 · 환불](flows/cancel-refund.md) |
-| 취소 중 | ⬜ 상태 이름 미정 (주문상품) | 환불 확인 중 | 환불 결과를 모르는 주문상품. 환불이 확정되면 취소 완료 | [취소 · 환불](flows/cancel-refund.md#실패와-재시도) |
+| 취소 중 | `CANCEL_PROCESSING` (주문상품) | 환불 확인 중 | 환불 결과를 모르는 주문상품. 환불이 확정되면 취소 완료 | [취소 · 환불](flows/cancel-refund.md#실패와-재시도) |
 | 환불 | `refunds/*` (payment) | 돈 돌려주기, 결제 취소 | **돈**이 주체. 결제한 돈을 구매자에게 돌려주는 것. 원인은 수거 전 취소 · 판매자 거절 · 자동 거절 · 반품 완료 | [payment](services/payment.md#정책) |
 | 반품 | `Return*` · `OrderItemReturned` | 환불 요청, 반품 요청, 교환 | **물건(택배)**이 주체. 받은 상품을 판매자에게 택배로 돌려보내는 절차. 끝나면 그 결과로 환불 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 반품 신청 | `ReturnRequested` | 환불 요청 | 배송 완료 후 판매자 귀책으로 상품을 돌려보내겠다는 요청 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
@@ -54,7 +54,7 @@
 | 미수금 | – | 빚, 미납금 | 음수 정산을 회수하지 못한 금액. 남아 있으면 인출 · 탈퇴 불가 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 미수금 차감 | `RECEIVABLE_COLLECTION` | 미수금 상환, 미수금 납부, 빚 갚기 | 회원 지갑에 입금(충전, 정산금, 환불)되면 입금액 안에서 미수금을 먼저 빼 `REVENUE`로 옮기는 것. 입금 1건당 한 번 | [payment 정책](services/payment.md#정책) |
 | 결과 불명 | `InternalApiResultUnknownException` | 타임아웃, 알 수 없음 | 응답이 없어 상대가 처리했는지 모르는 상태. 바로 되돌리지 않고 같은 멱등 키로 확인 | [장애 처리](conventions/resilience.md#결과-불명-처리) |
-| 확인 필요 | `REVIEW_REQUIRED` | 수동 처리, 사람 확인 (돈 · 주문) | 자동 복구를 포기하고 사람이 확인해야 하는 상태 | [스케줄러](reference/schedulers.md) |
+| 확인 필요 | `REVIEW_REQUIRED` | 수동 처리, 사람 확인 (돈 · 주문) | 자동 복구를 포기하고 사람이 확인해야 하는 상태. 주문(결제 결과 불명)과 주문상품(환불 거절, 환불 결과 불명) 모두 | [스케줄러](reference/schedulers.md) |
 
 ## 상품 · 검수
 

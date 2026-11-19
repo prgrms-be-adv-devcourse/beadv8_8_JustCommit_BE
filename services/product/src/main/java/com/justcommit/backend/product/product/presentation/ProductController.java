@@ -9,6 +9,7 @@ import com.justcommit.backend.product.image.presentation.dto.ImageUploadUrlReque
 import com.justcommit.backend.product.image.presentation.dto.ImageUploadUrlResponse;
 import com.justcommit.backend.product.product.application.ProductService;
 import com.justcommit.backend.product.product.presentation.dto.*;
+import com.justcommit.backend.product.search.application.ProductSearchService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -27,6 +28,7 @@ public class ProductController {
 
     private final ProductImageService productImageService;
     private final ProductService productService;
+    private final ProductSearchService productSearchService;
 
     @Operation(summary = "상품 등록", description = "로그인한 회원을 판매자로 상품을 등록합니다. 금지 품종은 등록할 수 없습니다. "
             + "사진(pictureUrls)은 1장 이상 10장 이하로 보내야 합니다.")
@@ -40,14 +42,19 @@ public class ProductController {
                 productService.createProduct(authMember.memberId(), request));
     }
 
-    @Operation(summary = "상품 목록 조회", description = "키워드(제목·품종명), 품종, 카테고리, 광량·물주기·난이도(품종 기준), 가격 범위로 검색합니다. "
-            + "onSale=true면 판매 중인 상품만 조회합니다. 삭제·숨김 상품은 항상 제외됩니다.")
+    @Operation(summary = "상품 목록 조회", description = "검수 중 · 반려 · 삭제 · 숨김 상품은 항상 제외하고 판매 중 · 결제 대기 · 판매 완료 상품을 보여 줍니다. "
+            + "keyword가 있으면 OpenSearch로 제목 > 품종명 · 별칭 · 학명 순 가중치로 찾고(띄어쓰기 · 기호 · 대소문자 무시, 설명은 찾지 않음), 기본 정렬은 관련도순(relevance)입니다. "
+            + "keyword가 없으면 DB에서 조회하고 기본 정렬은 최신순(latest)입니다. sort: relevance · latest · priceAsc · priceDesc. "
+            + "필터: 품종, 카테고리, 광량 · 물주기 · 난이도(품종 기준), 가격 범위, onSale=true(판매 중만). "
+            + "판매자 상점: sellerId(그 판매자 상품만), status(ACTIVE · PAYMENT_PENDING · SOLD_OUT 중 하나, 그 밖이면 400 INVALID_SEARCH_STATUS). "
+            + "판매 완료 개수는 sellerId + status=SOLD_OUT 응답의 totalElements입니다. "
+            + "OpenSearch 장애 때는 DB 검색(제목 · 품종명 포함 여부, 최신순)으로 대신 응답합니다. 페이지 크기 기본 20, 최대 50.")
     @GetMapping
     public ApiResponse<PagingResponse<ProductSearchResponse>> searchProducts (
             @ModelAttribute ProductSearchRequest request) {
 
         return ApiResponse.ok("상품 목록을 조회했습니다.",
-                PagingResponse.from(productService.searchProducts(request)));
+                PagingResponse.from(productSearchService.search(request)));
     }
 
     @Operation(summary = "상품 상세 조회", description = "품종 정보와 사진 목록을 포함합니다. 숨긴 상품은 판매자 본인만 조회할 수 있고, 다른 사람이 조회하면 403 PRODUCT_HIDDEN입니다. "

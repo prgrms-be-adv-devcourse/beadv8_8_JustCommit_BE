@@ -8,6 +8,7 @@ import com.justcommit.backend.market.client.payment.PaymentApi.PaymentRequest;
 import java.math.BigDecimal;
 import java.net.SocketTimeoutException;
 import java.net.http.HttpTimeoutException;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -82,13 +83,40 @@ class PaymentClient implements PaymentUseCase {
         return false;
     }
 
+    // 환불 결과를 분류만 한다. 예외를 밖으로 던지지 않는다 (#282)
     @Override
-    public PaymentResult refundCancelledItem(Long orderItemId, Long orderId, Long buyerId, BigDecimal amount) {
-        return paymentApi.refundOrderItem(orderItemId, orderItemId, new PaymentRequest(orderId, buyerId, amount)).data();
+    public RefundOutcome refundCancelledItem(Long orderItemId, Long orderId, Long buyerId, BigDecimal amount) {
+        return refund("orderItemId=" + orderItemId, () ->
+                paymentApi.refundOrderItem(orderItemId, orderItemId, new PaymentRequest(orderId, buyerId, amount)));
     }
 
     @Override
-    public PaymentResult refundShippingFee(Long sellerOrderId, Long orderId, Long buyerId, BigDecimal amount) {
-        return paymentApi.refundShippingFee(sellerOrderId, sellerOrderId, new PaymentRequest(orderId, buyerId, amount)).data();
+    public RefundOutcome refundShippingFee(Long sellerOrderId, Long orderId, Long buyerId, BigDecimal amount) {
+        return refund("sellerOrderId=" + sellerOrderId, () ->
+                paymentApi.refundShippingFee(sellerOrderId, sellerOrderId, new PaymentRequest(orderId, buyerId, amount)));
+    }
+
+    // 환불은 되돌리는 동작이라 연결 실패도 결과 불명으로 보고 같은 키로 다시 요청한다
+    private RefundOutcome refund(String target, Supplier<ApiResponse<PaymentResult>> call) {
+        ApiResponse<PaymentResult> response;
+        try {
+            response = call.get();
+        } catch (InternalApiErrorException e) {
+            String reason = "HTTP_" + e.status() + (e.code() == null ? "" : "_" + e.code());
+            return (e.status() >= 400 && e.status() < 500) ? RefundOutcome.rejected(reason) : RefundOutcome.unknown(reason);
+        } catch (InternalApiUnavailableException e) {
+            return RefundOutcome.unknown("CONNECTION_FAILED");
+        } catch (InternalApiResultUnknownException e) {
+            return RefundOutcome.unknown(isTimeout(e) ? "TIMEOUT" : "RESPONSE_INTERRUPTED");
+        } catch (RuntimeException e) {
+            log.warn("환불 응답을 해석하지 못함, 결과 불명: {}", target, e);
+            return RefundOutcome.unknown("RESPONSE_UNREADABLE");
+        }
+        PaymentStatus status = (response == null || response.data() == null) ? null : response.data().status();
+        if (status == PaymentStatus.REFUNDED || status == PaymentStatus.ALREADY_REFUNDED) {
+            return RefundOutcome.refunded();
+        }
+        log.warn("환불 응답에 모르는 상태 값, 결과 불명: {}, status={}", target, status);
+        return RefundOutcome.unknown(status == null ? "RESPONSE_UNREADABLE" : "UNEXPECTED_STATUS_" + status);
     }
 }

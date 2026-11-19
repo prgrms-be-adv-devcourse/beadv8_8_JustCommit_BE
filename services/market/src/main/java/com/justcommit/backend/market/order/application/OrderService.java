@@ -3,7 +3,6 @@ package com.justcommit.backend.market.order.application;
 import com.justcommit.backend.common.client.exception.InternalApiResultUnknownException;
 import com.justcommit.backend.common.client.exception.InternalApiUnavailableException;
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.common.exception.CommonErrorCode;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.*;
 import com.justcommit.backend.market.cart.application.CartService;
@@ -11,8 +10,6 @@ import com.justcommit.backend.market.cart.domain.CartItem;
 import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.market.client.payment.PaymentOutcome;
 import com.justcommit.backend.market.order.application.OrderPaymentTransactions.AttemptSource;
-import com.justcommit.backend.market.client.payment.PaymentResult;
-import com.justcommit.backend.market.client.payment.PaymentStatus;
 import com.justcommit.backend.market.client.payment.PaymentUseCase;
 import com.justcommit.backend.market.client.product.ProductQuery;
 import com.justcommit.backend.market.client.product.ProductResult;
@@ -23,13 +20,11 @@ import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
 import com.justcommit.backend.market.order.event.OrderFailed;
-import com.justcommit.backend.market.order.event.OrderItemCancelled;
 import com.justcommit.backend.market.order.event.OrderPaid;
 import com.justcommit.backend.market.order.infrastructure.AutoConfirmTarget;
 import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
-import com.justcommit.backend.market.order.infrastructure.kafka.SellerOrderEventPublisher;
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
 import com.justcommit.backend.market.shipment.application.ShipmentService;
@@ -37,7 +32,6 @@ import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
@@ -68,9 +62,9 @@ public class OrderService {
     private final ShipmentService shipmentService;
     private final OrderItemConfirmationService orderItemConfirmationService;
     private final OrderExpirationService orderExpirationService;
-    private final ShipmentQuery shipmentQuery;
-    private final SellerOrderEventPublisher sellerOrderEventPublisher;
     private final OrderPaymentTransactions orderPaymentTransactions;
+    private final OrderCancelTransactions orderCancelTransactions;
+    private final OrderCancelRefunder orderCancelRefunder;
 
     public OrderCreateResponse create(Long memberId, CartOrderCreateRequest request) {
         // 탈퇴한 회원의 주문을 막는 2차 방어 (1차는 Gateway의 토큰 폐기)
@@ -248,175 +242,16 @@ public class OrderService {
         orderItemConfirmationService.confirm(memberId, orderItemId);
     }
 
-    @Transactional
+    // 구매자 취소 (#282, ADR 0026): 주문상품을 취소 중으로 커밋하고, 판매자 주문이 전부 취소면 택배 취소 결과를 기다린다.
+    // 환불, 취소 완료, 판매 재개는 Saga 복구가 택배 취소 결과를 읽은 뒤에 한다. API 응답은 요청 접수까지
     public void cancel(Long memberId, Long orderId) {
-        Orders order = ordersRepository.findLockedById(orderId).orElseThrow(()
-                -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
-
-        if (!order.getBuyerId().equals(memberId)) {
-            throw new BusinessException(OrderErrorCode.ORDER_NOT_FOUND);
-        }
-
-        if (order.getStatus() == OrderStatus.CANCELLED) {
-            return;
-        }
-        if (order.getStatus() != OrderStatus.PAID) {
-            throw new BusinessException(OrderErrorCode.ORDER_NOT_PAID);
-        }
-
-        List<SellerOrder> lockedSellerOrders = sellerOrderRepository.findAllLockedByOrderId(orderId);
-        List<SellerOrder> activeSellerOrders = new ArrayList<>();
-        for (SellerOrder sellerOrder : lockedSellerOrders) {
-            boolean hasNormalItem = false;
-            for (OrdersItem item : sellerOrder.getItems()) {
-                if (item.getStatus() == OrderItemStatus.NORMAL) {
-                    hasNormalItem = true;
-                } else if (item.getStatus() != OrderItemStatus.CANCELLED) {
-                    throw new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_CANCELABLE);
-                }
-            }
-            if (hasNormalItem) {
-                activeSellerOrders.add(sellerOrder);
-            }
-        }
-
-        Map<Long, ShipmentResult> shipments = shipmentQuery.findBySellerOrderIds(
-                activeSellerOrders.stream().map(SellerOrder::getId).toList());
-        for (SellerOrder sellerOrder : activeSellerOrders) {
-            ShipmentResult shipment = shipments.get(sellerOrder.getId());
-            if (shipment == null) {
-                throw new BusinessException(OrderErrorCode.SHIPMENT_NOT_FOUND);
-            }
-            if (!Objects.equals(shipment.status(), "BOOKED") && !Objects.equals(shipment.status(), "READY")) {
-                throw new BusinessException(OrderErrorCode.SHIPMENT_NOT_CANCELABLE);
-            }
-        }
-
-        List<CancelItem> cancelledItems = new ArrayList<>();
-        Map<Long, BigDecimal> shippingFeesToRefund = new LinkedHashMap<>();
-        for (SellerOrder sellerOrder : activeSellerOrders) {
-            for (OrdersItem item : sellerOrder.getItems()) {
-                if (item.getStatus() == OrderItemStatus.NORMAL) {
-                    item.cancel();
-                    cancelledItems.add(new CancelItem(item.getId(), item.getProductId(), item.getPrice()));
-                }
-            }
-            sellerOrder.calculateSettlementBaseAmount();
-            if (sellerOrder.getItems().stream().allMatch(item -> item.getStatus() == OrderItemStatus.CANCELLED)
-                    && sellerOrder.getShippingFee().compareTo(BigDecimal.ZERO) > 0) {
-                shippingFeesToRefund.put(sellerOrder.getId(), sellerOrder.getShippingFee());
-            }
-        }
-
-        order.cancel();
-
-        for (CancelItem item : cancelledItems) {
-            PaymentResult result = paymentUseCase.refundCancelledItem(item.itemId(), orderId, memberId, item.price());
-            if (result.status() != PaymentStatus.REFUNDED && result.status() != PaymentStatus.ALREADY_REFUNDED) {
-                throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
-            }
-        }
-        for (Map.Entry<Long, BigDecimal> shippingFee : shippingFeesToRefund.entrySet()) {
-            shipmentService.cancelShipment(shippingFee.getKey());
-            PaymentResult result = paymentUseCase.refundShippingFee(shippingFee.getKey(), orderId, memberId, shippingFee.getValue());
-            if (result.status() != PaymentStatus.REFUNDED && result.status() != PaymentStatus.ALREADY_REFUNDED) {
-                throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
-            }
-        }
-        // 판매 재개는 상품 · 배송비 환불이 모두 성공한 뒤 주문상품마다 product에 알린다 (ADR 0016)
-        for (CancelItem item : cancelledItems) {
-            outboxPublisher.publish(new OrderItemCancelled(orderId, item.itemId(), item.productId(),
-                    OrderItemCancelled.CancelReason.BUYER));
-        }
-        LocalDateTime cancelledAt = LocalDateTime.now();
-        for (SellerOrder sellerOrder : activeSellerOrders) {
-            sellerOrderEventPublisher.publishAfterCommit(new SellerOrderCancelledEvent(
-                    orderId, sellerOrder.getId(), sellerOrder.getSellerId(), memberId, cancelledAt));
-        }
+        orderCancelTransactions.requestCancel(memberId, orderId);
     }
 
-    @Transactional
+    // 판매자 주문의 다른 상품이 남으면(배송 유지) 커밋 뒤 트랜잭션 밖에서 바로 환불하고, 결과를 모르면 복구가 이어받는다
     public void itemCancel(Long memberId, Long orderItemId) {
-        Long orderId = ordersItemRepository.findOrderIdByItemId(orderItemId).orElseThrow(()
-                -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
-        // 같은 주문의 서로 다른 판매자 주문도 직렬화하기 위해 부모 주문을 먼저 잠근다.
-        Orders order = ordersRepository.findLockedById(orderId).orElseThrow(()
-                -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
-        Long sellerOrderId = ordersItemRepository.findSellerOrderIdByItemId(orderItemId).orElseThrow(()
-                -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
-        // 잠금 순서는 항상 주문 → 판매자 주문으로 유지한다.
-        SellerOrder sellerOrder = sellerOrderRepository.findLockedById(sellerOrderId).orElseThrow(()
-                -> new BusinessException(OrderErrorCode.SELLER_ORDER_NOT_FOUND));
-        OrdersItem item = ordersItemRepository.findById(orderItemId).orElseThrow(()
-                -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
-
-        if (!order.getBuyerId().equals(memberId)) {
-            throw new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND);
-        }
-
-        if (item.getStatus().equals(OrderItemStatus.CANCELLED)) {
-            return;
-        }
-
-        if (item.getStatus() != OrderItemStatus.NORMAL) {
-            throw new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_CANCELABLE);
-        }
-
-        if (order.getStatus() != OrderStatus.PAID) {
-            throw new BusinessException(OrderErrorCode.ORDER_NOT_PAID);
-        }
-
-        //배송상태 체크
-        ShipmentResult shipmentResult = shipmentQuery.findBySellerOrderId(sellerOrderId);
-
-        if (shipmentResult == null) {
-            throw new BusinessException(OrderErrorCode.SHIPMENT_NOT_FOUND);
-        }
-
-        if (!(Objects.equals(shipmentResult.status(), "BOOKED") || Objects.equals(shipmentResult.status(), "READY"))) {
-            throw new BusinessException(OrderErrorCode.SHIPMENT_NOT_CANCELABLE);
-        }
-
-        item.cancel();
-        PaymentResult result = paymentUseCase.refundCancelledItem(item.getId(), orderId, memberId, item.getPrice());
-        if (!(result.status().equals(PaymentStatus.REFUNDED) || result.status().equals(PaymentStatus.ALREADY_REFUNDED))) {
-            throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
-        }
-        sellerOrder.calculateSettlementBaseAmount();
-        boolean sellerOrderCancelled = finishCancellation(sellerOrder, order);
-        // 판매 재개는 환불이 성공한 뒤 product에 알린다 (ADR 0016)
-        outboxPublisher.publish(new OrderItemCancelled(orderId, item.getId(), item.getProductId(),
-                OrderItemCancelled.CancelReason.BUYER));
-
-        // 판매자 주문이 전부 취소되면 SellerOrderCancelled/ 일부만이면 OrderItemCancelled로 판매자에게 알린다 (market.events.v1)
-        if (sellerOrderCancelled) {
-            sellerOrderEventPublisher.publishAfterCommit(new SellerOrderCancelledEvent(
-                    orderId, sellerOrderId, sellerOrder.getSellerId(), memberId, LocalDateTime.now()));
-        } else {
-            sellerOrderEventPublisher.publishAfterCommit(new OrderItemCancelledEvent(
-                    item.getId(), orderId, sellerOrderId, sellerOrder.getSellerId(), item.getProductName(),
-                    LocalDateTime.now()));
-        }
-    }
-
-    private boolean finishCancellation(SellerOrder sellerOrder, Orders order) {
-        boolean sellerOrderCancelled = sellerOrder.getItems().stream()
-                .allMatch(item -> item.getStatus() == OrderItemStatus.CANCELLED);
-        if (sellerOrderCancelled) {
-            if (sellerOrder.getShippingFee().compareTo(BigDecimal.ZERO) > 0) {
-                shipmentService.cancelShipment(sellerOrder.getId());
-                PaymentResult result = paymentUseCase.refundShippingFee(sellerOrder.getId(), order.getId(), order.getBuyerId(), sellerOrder.getShippingFee());
-                if (!(result.status().equals(PaymentStatus.REFUNDED) || result.status().equals(PaymentStatus.ALREADY_REFUNDED))) {
-                    throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
-                }
-            }
-        }
-        if (order.getSellerOrders().stream()
-                .flatMap(remainingSellerOrder -> remainingSellerOrder.getItems().stream())
-                .allMatch(remainingItem -> remainingItem.getStatus() == OrderItemStatus.CANCELLED)) {
-            order.cancel();
-        }
-        return sellerOrderCancelled;
+        orderCancelTransactions.requestItemCancel(memberId, orderItemId)
+                .ifPresent(claim -> orderCancelRefunder.refund(List.of(claim)));
     }
 
     // 결제 대기일 때만 결제 기한을 알려 준다
@@ -425,9 +260,6 @@ public class OrderService {
                 ? order.getCreatedAt().plus(PAYMENT_WINDOW) : null;
         return new OrderCreateResponse(order.getId(), order.getOrderNo(), order.getTotalAmount(),
                 order.getItemCount(), order.getCreatedAt(), order.getStatus(), expiresAt);
-    }
-
-    private record CancelItem(Long itemId, Long productId, BigDecimal price) {
     }
 
     private static String generateOrderNo() {
