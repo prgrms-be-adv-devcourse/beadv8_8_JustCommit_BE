@@ -54,7 +54,7 @@ Outbox(`common-messaging-outbox`)로 발행합니다. Key는 `memberId`입니다
 |---|---|---|---|
 | `member.events.v1` | `MemberCreated` | 로컬 · 소셜 가입 | ✅ |
 | `member.events.v1` | `MemberUpdated` | 판매자 등록 · 닉네임 변경 (바뀐 경우만) | ✅ |
-| `member.events.v1` | `MemberWithdrawn` | 탈퇴 (직접 탈퇴 · 웹훅 자동 탈퇴) | ⬜ record만 (탈퇴 기능과 함께) |
+| `member.events.v1` | `MemberWithdrawn` | 탈퇴 (직접 탈퇴 · 웹훅 자동 탈퇴) | ✅ 직접 탈퇴 (웹훅 자동 탈퇴는 ⬜ 미구현 #422) |
 | `member.address.events.v1` | `MemberAddressChanged` (판매자 배송지 목록, 암호화) | 판매자 등록 · 배송지 추가 · 기본 배송지 변경 · 수정 · 삭제 (판매자만, 바뀐 뒤 전체 목록. 수정은 실제로 바뀐 경우만) | ✅ |
 
 payload (받는 쪽은 upsert, `occurredAt`이 저장된 값보다 오래되면 무시):
