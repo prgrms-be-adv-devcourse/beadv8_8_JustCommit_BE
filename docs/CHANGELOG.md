@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-19 · services/member.md · flows/signup-and-replica.md · open-questions.md · testing/scenarios.md · 회원 탈퇴 이벤트 `MemberWithdrawn`을 탈퇴 최종 처리와 같은 트랜잭션에서 발행(직접 탈퇴 ✅, 웹훅 자동 탈퇴는 #422), 탈퇴 뒤 주문 유입 구간을 이벤트 반영까지로 정정하고 판매자 수락 처리는 ⬜ 미구현(#284)으로 표시, 미정 항목 「탈퇴 확인 뒤 생긴 진행 중 주문의 처리」 삭제(판매자 수락 정책으로 정해져 있음), S-B05 완료 (#408) (#544)
 - 2026-11-18 · reference/env-vars.md · product `OPENSEARCH_URL` 추가(운영은 `make-env.sh`가 데이터 서버 `http://{데이터 서버 IP}:9200`, 로컬은 `docker-compose.yml`에 추가한 `opensearch` — 운영과 같은 `docker/opensearch` 이미지 · nori · 보안 플러그인 끔 · 힙 512MB) (#532)
 - 2026-11-19 · flows/search-recommend.md · reference/external-apis.md · 상품 검색 색인 구현 반영: 색인 리스너가 `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged`만 받아 DB를 다시 읽어 문서를 덮어씀(삭제 상품은 문서 삭제, 상태 · 숨김은 저장 후 검색할 때 거름), 외부 버전(상품 `version`)으로 옛 값이 새 값을 덮지 않게, `require_alias`, 실패는 1 · 2 · 4초 재시도 후 `product.events.v1.DLT`, 관리자 전체 색인 API `POST admin/products/searchIndex` 추가, 상품 DB를 비우면 인덱스도 지워야 함. reference/kafka-topics.md `ProductApproved` 구독에서 product(색인)를 빼고 notification만 (#485)
 - 2026-11-19 · testing/strategy.md · ② PR CI 결과를 PR 댓글 1개(모듈별 통과 · 실패 · 건너뜀 · 시간 표 + 실패 목록, 커밋마다 갱신, 빌드 대상이 없는 PR은 댓글 없음)로 남기고, CI가 실패하면 같은 레포 PR에 Claude 원인 분석 댓글(`ci-failure-ai.yml`, `workflow_run`, PR 코드 실행 없음, 커밋당 1개) (#534) (#536)
