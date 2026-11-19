@@ -7,6 +7,7 @@ import com.justcommit.backend.common.testcontainers.SharedKafka;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import com.justcommit.backend.notification.domain.Notification;
 import com.justcommit.backend.notification.domain.NotificationType;
+import com.justcommit.backend.notification.domain.RecipientRole;
 import com.justcommit.backend.notification.infrastructure.repository.NotificationRepository;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -108,6 +109,30 @@ class NotificationKafkaIntegrationTest {
         assertThat(notification.getProductId()).isEqualTo(5301L);
         assertThat(notification.getItemSummary()).isEqualTo("몬스테라 알보");
         assertThat(notification.getMessage()).isEqualTo("검수에서 반려됐어요. 사유: 사진이 정책에 맞지 않아요.");
+    }
+
+    @Test
+    @DisplayName("[S-H02] ImageReviewDelayed는 같은 eventId로 두 번 와도 관리자 역할 알림 1건이다")
+    void createsAdminReviewDelayedOnce() {
+        String eventId = UUID.randomUUID().toString();
+        String event = ENVELOPE_MAPPER.toJson(new EventEnvelope(eventId, "ImageReviewDelayed", 1, OffsetDateTime.now(),
+                "image-review-delayed", JSON.valueToTree(Map.of("delayedCount", 4, "checkedAt", "2026-11-19T14:00:00"))));
+        kafkaTemplate.send(KafkaTopics.PRODUCT_EVENTS, "image-review-delayed", event);
+        kafkaTemplate.send(KafkaTopics.PRODUCT_EVENTS, "image-review-delayed", event);
+        // 같은 Key라 차례로 처리: 뒤의 표시 이벤트가 보이면 앞의 두 번도 처리된 것
+        kafkaTemplate.send(KafkaTopics.PRODUCT_EVENTS, "image-review-delayed", envelope("ProductApproved",
+                "image-review-delayed", Map.of("productId", 5601L, "sellerId", SELLER, "reviewVersion", 1,
+                        "productTitle", "표시")));
+
+        await("PRODUCT_APPROVED:5601:1");
+        assertThat(notificationRepository.findAll())
+                .filteredOn(n -> n.getEventKey().equals("ADMIN_REVIEW_DELAYED:" + eventId))
+                .singleElement()
+                .satisfies(n -> {
+                    assertThat(n.getRecipientRole()).isEqualTo(RecipientRole.ADMIN);
+                    assertThat(n.getMemberId()).isNull();
+                    assertThat(n.getMessage()).isEqualTo("검수 확인이 늦어진 상품이 4건 있어요. 24시간이 지나면 자동 반려돼요.");
+                });
     }
 
     @Test

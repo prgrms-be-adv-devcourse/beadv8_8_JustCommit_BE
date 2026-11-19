@@ -2,6 +2,8 @@ package com.justcommit.backend.notification.application;
 
 import com.justcommit.backend.notification.config.JpaAuditingConfig;
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.common.security.AuthMember;
+import com.justcommit.backend.notification.domain.RecipientRole;
 import com.justcommit.backend.notification.client.market.ShipmentQuery;
 import com.justcommit.backend.notification.client.market.ShipmentResult;
 import com.justcommit.backend.notification.domain.NotificationType;
@@ -35,6 +37,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import java.util.Set;
 
 @DataJpaTest // 테이블은 Flyway V1이 만들고 ddl-auto validate로 검사한다 (운영과 같은 스키마)
 @ActiveProfiles("test")
@@ -47,6 +50,8 @@ class NotificationServiceIntegrationTest {
     private static final Long BUYER = 10L;
     private static final Long OTHER = 99L;
     private static final Long SELLER = 20L;
+    private static final Long ADMIN_A = 1L;
+    private static final Long ADMIN_B = 2L;
 
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
@@ -89,7 +94,7 @@ class NotificationServiceIntegrationTest {
             assertThat(n.getOrderId()).isNull();
             assertThat(n.getSellerOrderId()).isNull();
         });
-        assertThat(notificationService.list(SELLER, null, latestFirst()).content())
+        assertThat(notificationService.list(member(SELLER), null, latestFirst()).content())
                 .extracting(NotificationResponse::productId).containsExactly(30L);
     }
 
@@ -101,6 +106,57 @@ class NotificationServiceIntegrationTest {
 
         assertThat(notificationRepository.findAll()).singleElement()
                 .satisfies(n -> assertThat(n.getMessage()).hasSize(255).startsWith("검수에서 반려됐어요. 사유: 가"));
+    }
+
+    @Test
+    @DisplayName("관리자 역할 알림은 member_id 없이 1건 저장되고, 관리자 누구나 보지만 일반 회원은 못 본다")
+    void roleNotificationIsVisibleOnlyToAdmins() {
+        notificationService.createForRole(RecipientRole.ADMIN, NotificationType.ADMIN_REVIEW_DELAYED,
+                "검수 확인이 늦어진 상품이 3건 있어요. 24시간이 지나면 자동 반려돼요.", "ADMIN_REVIEW_DELAYED:e1");
+        notificationService.createForRole(RecipientRole.ADMIN, NotificationType.ADMIN_REVIEW_DELAYED,
+                "검수 확인이 늦어진 상품이 3건 있어요. 24시간이 지나면 자동 반려돼요.", "ADMIN_REVIEW_DELAYED:e1");
+        notificationService.create(BUYER, NotificationType.SHIPMENT_PICKED_UP, 7L, "SHIPMENT:1:PICKED_UP");
+
+        assertThat(notificationRepository.findAll())
+                .filteredOn(n -> n.getRecipientRole() == RecipientRole.ADMIN)
+                .singleElement()
+                .satisfies(n -> assertThat(n.getMemberId()).isNull());
+        assertThat(notificationService.list(admin(ADMIN_A), null, latestFirst()).content())
+                .extracting(NotificationResponse::type).containsExactly("ADMIN_REVIEW_DELAYED");
+        assertThat(notificationService.unreadCount(admin(ADMIN_B))).isEqualTo(1);
+        // 일반 회원은 자기 알림만 (역할 알림이 섞이지 않음)
+        assertThat(notificationService.list(member(BUYER), null, latestFirst()).content())
+                .extracting(NotificationResponse::type).containsExactly("SHIPMENT_PICKED_UP");
+        assertThat(notificationService.unreadCount(member(OTHER))).isZero();
+    }
+
+    @Test
+    @DisplayName("관리자 한 명이 역할 알림을 읽으면 다른 관리자에게도 읽음이고, 일반 회원은 읽을 수 없다")
+    void roleNotificationReadIsShared() {
+        notificationService.createForRole(RecipientRole.ADMIN, NotificationType.ADMIN_REVIEW_DELAYED, "지연 2건",
+                "ADMIN_REVIEW_DELAYED:e2");
+        Long id = notificationRepository.findAll().getFirst().getId();
+
+        assertThatThrownBy(() -> notificationService.read(member(BUYER), id)).isInstanceOf(BusinessException.class);
+        notificationService.read(admin(ADMIN_A), id);
+
+        assertThat(notificationService.unreadCount(admin(ADMIN_B))).isZero();
+    }
+
+    @Test
+    @DisplayName("역할 알림이 저장되면 연결 중인 관리자 모두에게 각자의 안 읽은 수를 보낸다")
+    void pushesRoleNotificationToConnectedAdmins() {
+        when(sseRegistry.membersWithRole(RecipientRole.ADMIN)).thenReturn(Set.of(ADMIN_A, ADMIN_B));
+        when(sseRegistry.hasConnection(ADMIN_A)).thenReturn(true);
+        when(sseRegistry.hasConnection(ADMIN_B)).thenReturn(true);
+        when(sseRegistry.roleOf(ADMIN_A)).thenReturn(RecipientRole.ADMIN);
+        when(sseRegistry.roleOf(ADMIN_B)).thenReturn(RecipientRole.ADMIN);
+
+        notificationService.createForRole(RecipientRole.ADMIN, NotificationType.ADMIN_REVIEW_DELAYED, "지연 1건",
+                "ADMIN_REVIEW_DELAYED:e3");
+
+        verify(sseRegistry).sendUnreadCount(ADMIN_A, 1);
+        verify(sseRegistry).sendUnreadCount(ADMIN_B, 1);
     }
 
     @Test
@@ -119,15 +175,15 @@ class NotificationServiceIntegrationTest {
         notificationService.create(OTHER, NotificationType.SHIPMENT_BOOKED, 8L, "SHIPMENT:2:BOOKED");
         Long pickedUpId = notificationRepository.findAll().stream()
                 .filter(n -> n.getType() == NotificationType.SHIPMENT_PICKED_UP).findFirst().orElseThrow().getId();
-        notificationService.read(BUYER, pickedUpId);
+        notificationService.read(member(BUYER), pickedUpId);
 
-        var all = notificationService.list(BUYER, null, latestFirst());
-        var unread = notificationService.list(BUYER, false, latestFirst());
+        var all = notificationService.list(member(BUYER), null, latestFirst());
+        var unread = notificationService.list(member(BUYER), false, latestFirst());
 
         assertThat(all.content()).extracting(NotificationResponse::type)
                 .containsExactly("SHIPMENT_DELIVERED", "SHIPMENT_PICKED_UP");
         assertThat(unread.content()).extracting(NotificationResponse::type).containsExactly("SHIPMENT_DELIVERED");
-        var read = notificationService.list(BUYER, true, latestFirst());
+        var read = notificationService.list(member(BUYER), true, latestFirst());
         assertThat(read.content()).extracting(NotificationResponse::type).containsExactly("SHIPMENT_PICKED_UP");
     }
 
@@ -138,7 +194,7 @@ class NotificationServiceIntegrationTest {
         notificationService.create(BUYER, NotificationType.SHIPMENT_DELIVERED, 7L, "SHIPMENT:1:DELIVERED");
         notificationService.create(OTHER, NotificationType.SHIPMENT_BOOKED, 8L, "SHIPMENT:2:BOOKED");
 
-        assertThat(notificationService.unreadCount(BUYER)).isEqualTo(2);
+        assertThat(notificationService.unreadCount(member(BUYER))).isEqualTo(2);
     }
 
     @Test
@@ -151,11 +207,11 @@ class NotificationServiceIntegrationTest {
         Long mineId = notificationRepository.findAll().stream()
                 .filter(n -> n.getMemberId().equals(BUYER)).findFirst().orElseThrow().getId();
 
-        NotificationResponse read = notificationService.read(BUYER, mineId);
+        NotificationResponse read = notificationService.read(member(BUYER), mineId);
 
         assertThat(read.isRead()).isTrue();
         assertThat(read.readAt()).isNotNull();
-        assertThatThrownBy(() -> notificationService.read(BUYER, othersId)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> notificationService.read(member(BUYER), othersId)).isInstanceOf(BusinessException.class);
         assertThat(notificationRepository.findById(othersId).orElseThrow().isRead()).isFalse();
     }
 
@@ -166,10 +222,10 @@ class NotificationServiceIntegrationTest {
         notificationService.create(BUYER, NotificationType.SHIPMENT_DELIVERED, 7L, "SHIPMENT:1:DELIVERED");
         notificationService.create(OTHER, NotificationType.SHIPMENT_BOOKED, 8L, "SHIPMENT:2:BOOKED");
 
-        notificationService.readAll(BUYER);
+        notificationService.readAll(member(BUYER));
 
-        assertThat(notificationService.unreadCount(BUYER)).isZero();
-        assertThat(notificationService.unreadCount(OTHER)).isEqualTo(1);
+        assertThat(notificationService.unreadCount(member(BUYER))).isZero();
+        assertThat(notificationService.unreadCount(member(OTHER))).isEqualTo(1);
     }
 
     @Test
@@ -204,7 +260,7 @@ class NotificationServiceIntegrationTest {
         notificationService.create(BUYER, NotificationType.SHIPMENT_PICKED_UP, 7L, "SHIPMENT:1:PICKED_UP");
         when(sseRegistry.hasConnection(BUYER)).thenReturn(true);
 
-        notificationService.readAll(BUYER);
+        notificationService.readAll(member(BUYER));
 
         verify(sseRegistry).sendUnreadCount(BUYER, 0);
     }
@@ -222,7 +278,7 @@ class NotificationServiceIntegrationTest {
     void returnsOrderId() {
         notificationService.create(BUYER, NotificationType.SHIPMENT_DELIVERED, 9L, 7L, "SHIPMENT:1:DELIVERED");
 
-        var list = notificationService.list(BUYER, null, latestFirst());
+        var list = notificationService.list(member(BUYER), null, latestFirst());
 
         assertThat(list.content().getFirst().orderId()).isEqualTo(9L);
         assertThat(list.content().getFirst().sellerOrderId()).isEqualTo(7L);
@@ -234,7 +290,7 @@ class NotificationServiceIntegrationTest {
         notificationService.create(BUYER, NotificationType.SHIPMENT_DELIVERED, 9L, 7L, "몬스테라 외 1건",
                 "SHIPMENT:1:DELIVERED");
 
-        assertThat(notificationService.list(BUYER, null, latestFirst()).content().getFirst().itemSummary())
+        assertThat(notificationService.list(member(BUYER), null, latestFirst()).content().getFirst().itemSummary())
                 .isEqualTo("몬스테라 외 1건");
         verify(shipmentQuery, never()).findBySellerOrderId(anyLong());
     }
@@ -247,7 +303,7 @@ class NotificationServiceIntegrationTest {
 
         notificationService.create(SELLER, NotificationType.SELLER_ORDER_PAID, 7L, "SELLER_ORDER_PAID:7");
 
-        assertThat(notificationService.list(SELLER, null, latestFirst()).content().getFirst().itemSummary())
+        assertThat(notificationService.list(member(SELLER), null, latestFirst()).content().getFirst().itemSummary())
                 .isEqualTo("해바라기 외 1건");
     }
 
@@ -258,7 +314,7 @@ class NotificationServiceIntegrationTest {
 
         notificationService.create(SELLER, NotificationType.SELLER_ORDER_PAID, 7L, "SELLER_ORDER_PAID:7");
 
-        assertThat(notificationService.list(SELLER, null, latestFirst()).content())
+        assertThat(notificationService.list(member(SELLER), null, latestFirst()).content())
                 .singleElement().satisfies(n -> assertThat(n.itemSummary()).isNull());
     }
 
@@ -269,6 +325,14 @@ class NotificationServiceIntegrationTest {
         notificationService.create(SELLER, NotificationType.SELLER_ORDER_PAID, 7L, "SELLER_ORDER_PAID:7");
 
         verify(shipmentQuery, times(1)).findBySellerOrderId(7L);
+    }
+
+    private static AuthMember member(Long memberId) {
+        return new AuthMember(memberId, "BUYER");
+    }
+
+    private static AuthMember admin(Long memberId) {
+        return new AuthMember(memberId, "ADMIN");
     }
 
     private PageRequest latestFirst() {

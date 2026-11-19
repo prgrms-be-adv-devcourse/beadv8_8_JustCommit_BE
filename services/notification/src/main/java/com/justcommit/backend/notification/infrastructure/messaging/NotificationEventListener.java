@@ -4,6 +4,7 @@ import com.justcommit.backend.common.messaging.EventEnvelope;
 import com.justcommit.backend.common.messaging.EventEnvelopeMapper;
 import com.justcommit.backend.common.messaging.KafkaTopics;
 import com.justcommit.backend.notification.infrastructure.messaging.event.OrderItemAutoConfirmedEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.ImageReviewDelayedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.OrderItemCancelledEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.ProductApprovedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.ProductRejectedEvent;
@@ -16,6 +17,7 @@ import com.justcommit.backend.notification.infrastructure.messaging.event.Seller
 import com.justcommit.backend.notification.infrastructure.messaging.event.ShipmentStatusChangedEvent;
 import com.justcommit.backend.notification.application.NotificationService;
 import com.justcommit.backend.notification.domain.NotificationType;
+import com.justcommit.backend.notification.domain.RecipientRole;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -55,6 +57,8 @@ public class NotificationEventListener {
         switch (envelope.eventType()) {
             case "ProductApproved" -> onProductApproved(read(envelope, ProductApprovedEvent.class));
             case "ProductRejected" -> onProductRejected(read(envelope, ProductRejectedEvent.class));
+            case "ImageReviewDelayed" ->
+                    onImageReviewDelayed(read(envelope, ImageReviewDelayedEvent.class), envelope.eventId());
             // 상품 등록 · 수정 · 상태 동기화(색인용)는 알림과 상관없어 건너뜀
             default -> skip(envelope);
         }
@@ -162,5 +166,13 @@ public class NotificationEventListener {
         notificationService.createForProduct(event.sellerId(), NotificationType.PRODUCT_REJECTED,
                 event.reasonMessage(), event.productId(), event.productTitle(),
                 "PRODUCT_REJECTED:" + event.productId() + ":" + event.reviewVersion());
+    }
+
+    // 관리자 검수 지연: 관리자 목록을 묻지 않고 ADMIN 역할 알림 1건 (#561, #509). 반복 알림 없음
+    // product가 매번 새로 늦어진 건만 묶어 보내므로 이벤트마다 새 알림. Outbox 재전송으로 같은 eventId가 다시 오면 1건만
+    public void onImageReviewDelayed(ImageReviewDelayedEvent event, String eventId) {
+        notificationService.createForRole(RecipientRole.ADMIN, NotificationType.ADMIN_REVIEW_DELAYED,
+                NotificationType.ADMIN_REVIEW_DELAYED.getMessage().formatted(event.delayedCount()),
+                "ADMIN_REVIEW_DELAYED:" + eventId);
     }
 }

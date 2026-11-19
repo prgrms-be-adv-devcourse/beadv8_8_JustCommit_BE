@@ -2,6 +2,7 @@ package com.justcommit.backend.notification.infrastructure.messaging;
 
 import com.justcommit.backend.notification.infrastructure.messaging.event.PurchaseConfirmedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.OrderItemAutoConfirmedEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.ImageReviewDelayedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.OrderItemCancelledEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.ProductApprovedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.ProductRejectedEvent;
@@ -13,6 +14,7 @@ import com.justcommit.backend.notification.infrastructure.messaging.event.Seller
 import com.justcommit.backend.notification.infrastructure.messaging.event.ShipmentStatusChangedEvent;
 import com.justcommit.backend.notification.application.NotificationService;
 import com.justcommit.backend.notification.domain.NotificationType;
+import com.justcommit.backend.notification.domain.RecipientRole;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -187,6 +189,16 @@ class NotificationEventListenerTest {
 
         verify(notificationService).createForProduct(SELLER, NotificationType.PRODUCT_REJECTED,
                 "사진이 정책에 맞지 않아요.", 30L, "몬스테라 알보", "PRODUCT_REJECTED:30:1");
+    }
+
+    @Test
+    @DisplayName("관리자 검수 지연은 건수를 넣은 문구로 ADMIN 역할 알림 1건, 키는 eventId")
+    void notifiesAdminsOnImageReviewDelayed() {
+        listener.onImageReviewDelayed(new ImageReviewDelayedEvent(3, LocalDateTime.of(2026, 11, 19, 14, 0)), "e-1");
+
+        verify(notificationService).createForRole(RecipientRole.ADMIN, NotificationType.ADMIN_REVIEW_DELAYED,
+                "검수 확인이 늦어진 상품이 3건 있어요. 24시간이 지나면 자동 반려돼요.", "ADMIN_REVIEW_DELAYED:e-1");
+        verifyNoMoreInteractions(notificationService);
     }
 
     private SellerOrderRejectedEvent rejectedEvent(SellerOrderRejectReason reason) {

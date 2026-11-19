@@ -43,6 +43,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class NotificationControllerTest {
 
     private static final Long MEMBER_ID = 10L;
+    private static final AuthMember AUTH = new AuthMember(MEMBER_ID, "BUYER");
 
     @Mock NotificationService notificationService;
     private MockMvc mockMvc;
@@ -54,7 +55,7 @@ class NotificationControllerTest {
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(new AuthMember(MEMBER_ID, "BUYER"), null, List.of()));
+                new UsernamePasswordAuthenticationToken(AUTH, null, List.of()));
     }
 
     @AfterEach
@@ -64,7 +65,7 @@ class NotificationControllerTest {
 
     @Test
     void listsNotificationsWithReadFilter() throws Exception {
-        when(notificationService.list(eq(MEMBER_ID), eq(false), any(Pageable.class)))
+        when(notificationService.list(eq(AUTH), eq(false), any(Pageable.class)))
                 .thenReturn(new PagingResponse<>(List.of(response(false)), 0, 20, 1, 1));
 
         mockMvc.perform(get("/api/v1/notifications").param("isRead", "false"))
@@ -80,7 +81,7 @@ class NotificationControllerTest {
     void subscribesWithEventStream() throws Exception {
         SseEmitter emitter = new SseEmitter();
         emitter.send(SseEmitter.event().name("unread").data(3));
-        when(notificationService.subscribe(MEMBER_ID)).thenReturn(emitter);
+        when(notificationService.subscribe(AUTH)).thenReturn(emitter);
 
         mockMvc.perform(get("/api/v1/notifications/subscribe").accept("text/event-stream"))
                 .andExpect(request().asyncStarted())
@@ -90,7 +91,7 @@ class NotificationControllerTest {
 
     @Test
     void returnsUnreadCount() throws Exception {
-        when(notificationService.unreadCount(MEMBER_ID)).thenReturn(3L);
+        when(notificationService.unreadCount(AUTH)).thenReturn(3L);
 
         mockMvc.perform(get("/api/v1/notifications/unreadCount"))
                 .andExpect(status().isOk())
@@ -99,7 +100,7 @@ class NotificationControllerTest {
 
     @Test
     void readsNotification() throws Exception {
-        when(notificationService.read(MEMBER_ID, 1L)).thenReturn(response(true));
+        when(notificationService.read(AUTH, 1L)).thenReturn(response(true));
 
         mockMvc.perform(patch("/api/v1/notifications/1").contentType("application/json").content("{\"isRead\":true}"))
                 .andExpect(status().isOk())
@@ -109,7 +110,7 @@ class NotificationControllerTest {
     @Test
     @DisplayName("[S-A07] 남의 알림을 읽음 처리하면 404")
     void returnsNotFoundForOthersNotification() throws Exception {
-        when(notificationService.read(MEMBER_ID, 2L))
+        when(notificationService.read(AUTH, 2L))
                 .thenThrow(new BusinessException(NotificationErrorCode.NOTIFICATION_NOT_FOUND));
 
         mockMvc.perform(patch("/api/v1/notifications/2").contentType("application/json").content("{\"isRead\":true}"))
@@ -121,7 +122,7 @@ class NotificationControllerTest {
         mockMvc.perform(patch("/api/v1/notifications").contentType("application/json").content("{\"isRead\":true}"))
                 .andExpect(status().isNoContent());
 
-        verify(notificationService).readAll(MEMBER_ID);
+        verify(notificationService).readAll(AUTH);
     }
 
     @Test
@@ -129,7 +130,7 @@ class NotificationControllerTest {
         mockMvc.perform(patch("/api/v1/notifications").contentType("application/json").content("{\"isRead\":false}"))
                 .andExpect(status().isBadRequest());
 
-        verify(notificationService, never()).readAll(MEMBER_ID);
+        verify(notificationService, never()).readAll(AUTH);
     }
 
     private NotificationResponse response(boolean isRead) {

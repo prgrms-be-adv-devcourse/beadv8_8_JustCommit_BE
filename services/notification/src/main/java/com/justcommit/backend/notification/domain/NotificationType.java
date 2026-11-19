@@ -28,7 +28,10 @@ public enum NotificationType {
     SELLER_ORDER_PARTLY_ACCEPTED("판매자가 주문을 수락했어요. 일부 상품은 판매가 거절돼 환불돼요."),
     SELLER_ORDER_REJECTED("판매자가 상품 판매를 거절했어요."),
     SELLER_ORDER_AUTO_CANCELLED("판매자가 24시간 안에 응답하지 않아 주문이 자동 취소됐어요."),
-    ORDER_ITEM_AUTO_CONFIRMED("배송 완료 후 3일이 지나 구매가 자동 확정됐어요.");
+    ORDER_ITEM_AUTO_CONFIRMED("배송 완료 후 3일이 지나 구매가 자동 확정됐어요."),
+
+    // 관리자 (역할 알림, member_id 없이 recipient_role = ADMIN 1건). %d = 이번에 새로 12시간을 넘긴 검수 건수
+    ADMIN_REVIEW_DELAYED("검수 확인이 늦어진 상품이 %d건 있어요. 24시간이 지나면 자동 반려돼요.");
 
     private final String message;
 }
