@@ -1,6 +1,7 @@
 package com.justcommit.backend.member.unlink.application;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
+import com.justcommit.backend.common.security.JwtVerifier;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import com.justcommit.backend.common.testcontainers.SharedRedis;
 import com.justcommit.backend.member.auth.application.SocialLoginCommand;
@@ -10,6 +11,7 @@ import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReceipt;
 import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -23,6 +25,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.security.KeyPair;
@@ -38,6 +41,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doReturn;
 
 /**
  * [S-B11] 카카오 재로그인 (#422). 정상 카카오 로그인은 회원 잠금 안에서
@@ -66,6 +70,10 @@ class KakaoReloginIntegrationTest {
   }
 
   @Autowired SocialLoginService socialLoginService;
+  // Gateway와 같은 검증기로 iat(초)를 꺼냄
+  @Autowired JwtVerifier jwtVerifier;
+  // 같은 초를 확실하게 만들 때만 발급 시각을 고정하고, 평소에는 실제 DB 시계
+  @MockitoSpyBean DatabaseClock databaseClock;
   @Autowired KakaoUnlinkProcessor processor;
   @Autowired KakaoUnlinkReceiptRepository receiptRepository;
   @Autowired MemberRepository memberRepository;
@@ -130,6 +138,32 @@ class KakaoReloginIntegrationTest {
     assertThat(jdbcTemplate.queryForObject("select count(*) from member_token_revocation where member_id = ?",
         Long.class, member.getId())).isZero();
     assertThat(status(claim.id())).isEqualTo("INVALIDATED");
+  }
+
+  @Test
+  @DisplayName("[S-B11 재현 · #546] 웹훅 폐기와 같은 초에 재연결해 받은 Access는 iat = 끊은 시각이라 Gateway 규칙(iat <= 끊은 시각)상 거절 대상 — 현재 동작 기록")
+  void sameSecondReconnectAccessIsRejectable() {
+    Member member = kakaoMember("9300000004");
+    receiptRepository.save(KakaoUnlinkReceipt.received("9300000004", "UNLINK_FROM_APPS", Instant.now().minusSeconds(60)));
+    KAKAO.stubFor(get(urlPathEqualTo("/v2/user/me")).willReturn(aResponse().withStatus(400)
+        .withHeader("Content-Type", "application/json")
+        .withBody("{\"msg\":\"NotRegisteredUserException\",\"code\":-101}")));
+    // 실제 웹훅 처리로 INACTIVE + SOCIAL_UNLINKED 폐기 → Redis에 끊은 시각(초) 기록
+    processor.process(processor.claimNext().orElseThrow());
+    // Gateway TokenRevocationChecker와 같은 방식으로 값을 읽음
+    long cutoff = Long.parseLong(redisTemplate.opsForValue().get("auth:revoked-member:" + member.getId()));
+
+    // 시각에 따라 들쭉날쭉하지 않도록, 재연결 Access의 발급 시각을 끊은 시각과 같은 초(0.5초 뒤)로 고정
+    doReturn(Instant.ofEpochSecond(cutoff).plusMillis(500)).when(databaseClock).now();
+    SocialLoginResult result = socialLoginService.login(new SocialLoginCommand(Provider.KAKAO, "9300000004", "d@kakao.com"));
+
+    // 재연결 자체는 성공 (ACTIVE 복구 · 토큰 발급)
+    assertThat(memberRepository.findById(member.getId()).orElseThrow().getStatus()).isEqualTo(MemberStatus.ACTIVE);
+    String accessToken = ((SocialLoginResult.ExistingMember) result).loginResult().accessToken();
+    // 그러나 iat가 끊은 시각과 같은 초라 Gateway는 이 Access를 거절한다 (#546에서 해결하면 이 기대를 뒤집는다)
+    long iat = jwtVerifier.verifyAccessToken(accessToken).issuedAt();
+    assertThat(iat).isEqualTo(cutoff);
+    assertThat(iat).isLessThanOrEqualTo(cutoff);
   }
 
   @Test
