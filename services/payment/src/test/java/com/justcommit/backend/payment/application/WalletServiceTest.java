@@ -51,7 +51,7 @@ class WalletServiceTest {
         when(walletRepository.findByMemberId(MEMBER_ID)).thenReturn(Optional.of(wallet));
         List<WalletTransaction> transactions = List.of(
                 WalletTransaction.paymentOut(wallet, 100L, new BigDecimal("3000"), LocalDateTime.now()),
-                WalletTransaction.settlementIn(wallet, 200L, new BigDecimal("9000"), LocalDateTime.now()));
+                WalletTransaction.sellerSettlement(wallet, 200L, new BigDecimal("9000"), LocalDateTime.now()));
         when(walletTransactionRepository.findByWallet_Id(WALLET_ID, pageable))
                 .thenReturn(new PageImpl<>(transactions, pageable, 2));
 

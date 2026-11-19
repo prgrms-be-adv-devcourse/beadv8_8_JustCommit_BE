@@ -24,6 +24,10 @@ public class Wallet extends BaseTimeEntity {
     @Column(name = "balance", nullable = false, precision = 19)
     private BigDecimal balance = BigDecimal.ZERO;
 
+    // 미수금: 마이너스 정산을 잔액에서 회수하지 못한 금액 (회원 지갑만)
+    @Column(name = "receivable", nullable = false, precision = 19)
+    private BigDecimal receivable = BigDecimal.ZERO;
+
     @Version
     @Column(name = "version")
     private Long version;
@@ -62,6 +66,30 @@ public class Wallet extends BaseTimeEntity {
         }
 
         this.balance = this.balance.subtract(amount);
+    }
+
+    public void increaseReceivable(BigDecimal amount) {
+        requireMemberWallet();
+        validateAmount(amount);
+        receivable = receivable.add(amount);
+    }
+
+    public void decreaseReceivable(BigDecimal amount) {
+        requireMemberWallet();
+        validateAmount(amount);
+
+        if (receivable.compareTo(amount) < 0) {
+            throw new BusinessException(PaymentErrorCode.INVALID_AMOUNT, "미수금보다 많이 차감할 수 없습니다.");
+        }
+
+        receivable = receivable.subtract(amount);
+    }
+
+    // 미수금은 회원 지갑에만 둔다
+    private void requireMemberWallet() {
+        if (walletType != WalletType.MEMBER) {
+            throw new IllegalStateException("시스템 지갑에는 미수금을 둘 수 없습니다: " + walletType);
+        }
     }
 
     private void validateAmount(BigDecimal amount) {

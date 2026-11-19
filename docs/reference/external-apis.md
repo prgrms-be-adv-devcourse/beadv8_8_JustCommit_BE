@@ -192,7 +192,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | market | 판매자 수락 · 거절 (판매자 주문 › 상품 트리 체크) | 판매 기록 화면 |
 | market | 반품 신청 (사유) · 판매자 승인 · 거절 | 노션 7절 |
 | market | 리뷰 작성 · 삭제 · 판매자 리뷰 목록 (태그 집계) | 노션 6절 |
-| payment | 충전 취소 · 인출 · 탈퇴 잔액 정리 | 노션 4.3 · 4.6 · 4.7 |
+| payment | 인출 | 노션 4.6 |
 | notification | `GET notifications?read=` (커서 페이지네이션) | 삭제 API 없음 |
 | ai | 챗봇 | ⬜ 범위 보류 |
 

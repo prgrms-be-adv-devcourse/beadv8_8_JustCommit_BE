@@ -5,7 +5,7 @@ import com.justcommit.backend.common.messaging.KafkaTopics;
 
 /**
  * 회원 탈퇴 (member.events.v1). 받는 쪽은 복제본을 지우지 않고 탈퇴 상태로 둔다.
- * TODO: 탈퇴 기능을 만들 때 발행
+ * 탈퇴 최종 처리(WithdrawalService)와 같은 트랜잭션에서 Outbox로 발행 (#408)
  */
 public record MemberWithdrawn(Long memberId) implements IntegrationEvent {
 
