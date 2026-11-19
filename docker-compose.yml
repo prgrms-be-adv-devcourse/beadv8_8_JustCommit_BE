@@ -63,6 +63,32 @@ services:
       retries: 10
       start_period: 20s
 
+  # 상품 검색 (#484). 운영 데이터 서버(docker-compose.data.yml)와 같은 이미지 · 설정 (공식 이미지 + nori, #532)
+  opensearch:
+    build: ./docker/opensearch
+    image: replant-opensearch:2.19.2
+    container_name: justcommit-opensearch
+    environment:
+      discovery.type: single-node
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+      # 보안 플러그인(TLS · 계정)을 끔: http://localhost:9200 으로 바로 붙는다
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      bootstrap.memory_lock: "false"
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    ports:
+      - "9200:9200"
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    mem_limit: 1200m # 힙 512MB + 힙 밖 몫 (운영과 같음)
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
   # 로컬용 S3 호환 저장소. 운영 S3 대신 써서 AWS 키 없이 이미지 업로드를 개발한다.
   rustfs:
     image: rustfs/rustfs:1.0.1
@@ -97,34 +123,10 @@ services:
       - ./docker/s3:/init:ro
     restart: "no"
 
-  # 상품 검색 (#484). 운영 데이터 서버와 같은 이미지(공식 이미지 + nori)를 docker/opensearch/Dockerfile로 만든다
-  opensearch:
-    build: ./docker/opensearch
-    image: replant-opensearch:2.19.2
-    container_name: justcommit-opensearch
-    environment:
-      discovery.type: single-node
-      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
-      # 로컬은 TLS · 계정 없이 http로 붙는다 (운영도 보안 그룹으로 막고 보안 플러그인은 끔)
-      DISABLE_SECURITY_PLUGIN: "true"
-      DISABLE_INSTALL_DEMO_CONFIG: "true"
-    ulimits:
-      nofile: { soft: 65536, hard: 65536 }
-    ports:
-      - "9200:9200"
-    volumes:
-      - opensearch-data:/usr/share/opensearch/data
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health >/dev/null || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 60s
-
 volumes:
   postgres-data:
   redis-data:
   kafka-data:
-  rustfs-data:
   opensearch-data:
+  rustfs-data:
 
