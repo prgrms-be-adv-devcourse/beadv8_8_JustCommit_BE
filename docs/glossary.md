@@ -45,16 +45,14 @@
 
 | 표준 용어 | 코드 이름 | 별칭 (검색용) | 뜻 | 원본 |
 |---|---|---|---|---|
-| 예치금 | `WALLET` (회원) | 잔고, 잔액, 포인트, 지갑 | 회원 지갑의 돈 = 충전금 + 인출 가능 금액 | [payment](services/payment.md) |
-| 충전금 | `charge_balance` | 충전 잔액 | 토스로 충전한 금액. 계좌로 인출하지 않음 (탈퇴 정리 때만) | [payment 정책](services/payment.md#정책) |
-| 인출 가능 금액 | `withdrawable_balance` | 정산금, 출금 가능액 | 판매로 받은 정산금. 계좌로 인출 가능 | [payment 정책](services/payment.md#정책) |
-| 충전 취소 | `CHARGE` · `CANCEL_PENDING` (충전) | 충전 환불, 결제 취소 | 충전한 돈을 원래 결제수단으로 돌려받는 것 | [payment 정책](services/payment.md#정책) |
-| 인출 | `CASH_OUT` | 출금, 환급 | 인출 가능 금액을 계좌로 보내는 것 | [payment 정책](services/payment.md#정책) |
+| 예치금 | `WALLET` (회원) | 잔고, 잔액, 포인트, 지갑 | 회원 지갑 잔액 | [payment](services/payment.md) |
+| 인출 | `CASH_OUT` | 출금, 환급 | 잔액을 계좌로 보내는 것 | [payment 정책](services/payment.md#정책) |
 | 홀딩 지갑 | `HOLDING` | 보관 계좌, 에스크로 | 결제된 돈을 정산 전까지 맡아 두는 시스템 지갑 | [payment](services/payment.md) |
 | 매출 지갑 | `REVENUE` | 수익 계좌, 플랫폼 계좌 | 수수료 · 배송비 · 판매자 부담금이 쌓이는 시스템 지갑 | [payment](services/payment.md) |
 | 정산 | `SETTLEMENT` | 정산금 지급 | 판매자 주문이 끝나면 판매액에서 수수료 · 부담금을 빼 판매자에게 줄 돈 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 음수 정산 | – | 조정 정산, 마이너스 정산 | 부담금이 판매액보다 커서 0보다 작은 정산 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 미수금 | – | 빚, 미납금 | 음수 정산을 회수하지 못한 금액. 남아 있으면 인출 · 탈퇴 불가 | [구매 확정 → 정산](flows/confirm-settlement.md) |
+| 미수금 차감 | `RECEIVABLE_COLLECTION` | 미수금 상환, 미수금 납부, 빚 갚기 | 회원 지갑에 입금(충전, 정산금, 환불)되면 입금액 안에서 미수금을 먼저 빼 `REVENUE`로 옮기는 것. 입금 1건당 한 번 | [payment 정책](services/payment.md#정책) |
 | 결과 불명 | `InternalApiResultUnknownException` | 타임아웃, 알 수 없음 | 응답이 없어 상대가 처리했는지 모르는 상태. 바로 되돌리지 않고 같은 멱등 키로 확인 | [장애 처리](conventions/resilience.md#결과-불명-처리) |
 | 확인 필요 | `REVIEW_REQUIRED` | 수동 처리, 사람 확인 (돈 · 주문) | 자동 복구를 포기하고 사람이 확인해야 하는 상태 | [스케줄러](reference/schedulers.md) |
 
