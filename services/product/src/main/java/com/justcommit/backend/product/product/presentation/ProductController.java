@@ -118,7 +118,8 @@ public class ProductController {
     }
 
     @Operation(summary = "내 판매 물품 상태별 개수", description = "내 판매 목록 탭에 표시할 상태별 개수를 조회합니다. 삭제된 상품은 제외합니다. "
-            + "hidden 규칙은 내 판매 물품 조회와 같습니다.")
+            + "hidden 규칙은 내 판매 물품 조회와 같습니다. 오늘(한국 시간 자정부터) 등록 수 · 사진 검수 수와 하루 한도도 함께 줍니다 "
+            + "(hidden과 상관없이 셈).")
     @GetMapping("/me/counts")
     public ApiResponse<MyProductCountResponse> getMyProductCounts(
             @AuthenticationPrincipal AuthMember authMember,

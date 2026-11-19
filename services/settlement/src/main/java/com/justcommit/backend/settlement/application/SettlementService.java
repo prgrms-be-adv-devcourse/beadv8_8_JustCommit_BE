@@ -29,12 +29,13 @@ public class SettlementService {
         return settlementRepository.findBySellerOrderId(sellerOrderId).map(Settlement::getCompletedAt);
     }
 
+    // sellerBurdenAmount: 판매자 부담금. 없으면 호출하는 쪽이 0으로 넘긴다
     @Transactional
     public SettlementResult settle(Long sellerOrderId, Long sellerId, BigDecimal saleAmount, BigDecimal shippingFee,
-                                   String itemSummary) {
+                                   BigDecimal sellerBurdenAmount, String itemSummary) {
         validateRequest(sellerOrderId, sellerId);
 
-        // 이미 있는 판매자 주문이면 비어 있는 배송비만 채우고 기존 결과 반환. 상태 · 지급 시도 칸은 건드리지 않는다
+        // 이미 있는 판매자 주문이면 비어 있는 배송비만 채우고 기존 결과 반환. 부담금 · 상태 · 지급 시도 칸은 건드리지 않는다
         Optional<Settlement> existing = settlementRepository.findBySellerOrderId(sellerOrderId);
         if (existing.isPresent()) {
             existing.get().updateShippingFeeIfAbsent(shippingFee);
@@ -48,6 +49,7 @@ public class SettlementService {
                         sellerId,
                         saleAmount,
                         shippingFee,
+                        sellerBurdenAmount,
                         now(),
                         itemSummary
                 )

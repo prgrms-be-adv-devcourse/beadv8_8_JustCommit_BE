@@ -2,7 +2,9 @@ package com.justcommit.backend.product.review.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.product.ProductStatus;
+import com.justcommit.backend.product.client.member.MemberQuery;
 import com.justcommit.backend.product.exception.ProductErrorCode;
+import com.justcommit.backend.product.member.domain.MemberReplica;
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import com.justcommit.backend.product.review.domain.ImageReview;
@@ -46,6 +48,7 @@ public class AdminImageReviewService {
 
     private final ImageReviewRepository imageReviewRepository;
     private final ProductRepository productRepository;
+    private final MemberQuery memberQuery;
     private final ReviewResultPublisher reviewResultPublisher;
     private final TransactionTemplate transactionTemplate;
     private final JsonMapper jsonMapper;
@@ -61,11 +64,15 @@ public class AdminImageReviewService {
         // 품종은 함께 조회, 사진은 Product의 @BatchSize로 한 번에
         Map<Long, Product> products = productRepository.findWithSpeciesByIdIn(productIds).stream()
                 .collect(Collectors.toMap(Product::getId, Function.identity()));
+        // 판매자 닉네임은 회원 복제본에서 한 번에. 복제본이 없으면 「알 수 없는 회원」
+        Map<Long, String> nicknames = memberQuery.getNicknames(
+                page.getContent().stream().map(ImageReview::getSellerId).distinct().toList());
         LocalDateTime now = LocalDateTime.now(clock);
         return page.map(review -> {
             LocalDateTime reviewedAt = review.getReviewedAt();
-            return AdminImageReviewResponse.of(review, products.get(review.getProductId()), engineResult(review),
-                    reviewedAt.plus(EXPIRE_AFTER), !reviewedAt.plus(DELAY_AFTER).isAfter(now));
+            return AdminImageReviewResponse.of(review, products.get(review.getProductId()),
+                    nicknames.getOrDefault(review.getSellerId(), MemberReplica.UNKNOWN_NICKNAME), engineResult(review),
+                    review.adminCheckExpiresAt(EXPIRE_AFTER), !reviewedAt.plus(DELAY_AFTER).isAfter(now));
         });
     }
 

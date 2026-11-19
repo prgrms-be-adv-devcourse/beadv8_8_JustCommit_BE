@@ -1,7 +1,7 @@
 # 용어집 (유비쿼터스 언어)
 
 > 언제 읽나: 같은 대상을 부르는 표준 이름을 찾을 때, 별칭(다른 이름 · 일상어 · 영문)으로 검색할 때, 코드 이름과 문서 이름을 맞출 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: 노션 「유비쿼터스 언어 정리」, 전체
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: 노션 「유비쿼터스 언어 정리」, 전체
 
 문서 · 코드 · PR · 회의에서는 「표준 용어」만 씁니다. 「별칭」은 검색용이며 본문에 쓰지 않습니다. 시간 · 금액 · 횟수 같은 값은 여기 적지 않고 「원본」 문서를 봅니다.
 
@@ -45,16 +45,14 @@
 
 | 표준 용어 | 코드 이름 | 별칭 (검색용) | 뜻 | 원본 |
 |---|---|---|---|---|
-| 예치금 | `WALLET` (회원) | 잔고, 잔액, 포인트, 지갑 | 회원 지갑의 돈 = 충전금 + 인출 가능 금액 | [payment](services/payment.md) |
-| 충전금 | `charge_balance` | 충전 잔액 | 토스로 충전한 금액. 계좌로 인출하지 않음 (탈퇴 정리 때만) | [payment 정책](services/payment.md#정책) |
-| 인출 가능 금액 | `withdrawable_balance` | 정산금, 출금 가능액 | 판매로 받은 정산금. 계좌로 인출 가능 | [payment 정책](services/payment.md#정책) |
-| 충전 취소 | `CHARGE` · `CANCEL_PENDING` (충전) | 충전 환불, 결제 취소 | 충전한 돈을 원래 결제수단으로 돌려받는 것 | [payment 정책](services/payment.md#정책) |
-| 인출 | `CASH_OUT` | 출금, 환급 | 인출 가능 금액을 계좌로 보내는 것 | [payment 정책](services/payment.md#정책) |
+| 예치금 | `WALLET` (회원) | 잔고, 잔액, 포인트, 지갑 | 회원 지갑 잔액 | [payment](services/payment.md) |
+| 인출 | `CASH_OUT` | 출금, 환급 | 잔액을 계좌로 보내는 것 | [payment 정책](services/payment.md#정책) |
 | 홀딩 지갑 | `HOLDING` | 보관 계좌, 에스크로 | 결제된 돈을 정산 전까지 맡아 두는 시스템 지갑 | [payment](services/payment.md) |
 | 매출 지갑 | `REVENUE` | 수익 계좌, 플랫폼 계좌 | 수수료 · 배송비 · 판매자 부담금이 쌓이는 시스템 지갑 | [payment](services/payment.md) |
 | 정산 | `SETTLEMENT` | 정산금 지급 | 판매자 주문이 끝나면 판매액에서 수수료 · 부담금을 빼 판매자에게 줄 돈 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 음수 정산 | – | 조정 정산, 마이너스 정산 | 부담금이 판매액보다 커서 0보다 작은 정산 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 미수금 | – | 빚, 미납금 | 음수 정산을 회수하지 못한 금액. 남아 있으면 인출 · 탈퇴 불가 | [구매 확정 → 정산](flows/confirm-settlement.md) |
+| 미수금 차감 | `RECEIVABLE_COLLECTION` | 미수금 상환, 미수금 납부, 빚 갚기 | 회원 지갑에 입금(충전, 정산금, 환불)되면 입금액 안에서 미수금을 먼저 빼 `REVENUE`로 옮기는 것. 입금 1건당 한 번 | [payment 정책](services/payment.md#정책) |
 | 결과 불명 | `InternalApiResultUnknownException` | 타임아웃, 알 수 없음 | 응답이 없어 상대가 처리했는지 모르는 상태. 바로 되돌리지 않고 같은 멱등 키로 확인 | [장애 처리](conventions/resilience.md#결과-불명-처리) |
 | 확인 필요 | `REVIEW_REQUIRED` | 수동 처리, 사람 확인 (돈 · 주문) | 자동 복구를 포기하고 사람이 확인해야 하는 상태. 주문(결제 결과 불명)과 주문상품(환불 거절, 환불 결과 불명) 모두 | [스케줄러](reference/schedulers.md) |
 
@@ -90,6 +88,7 @@
 | 회원 | `MEMBER` | 사용자, 유저 | 가입한 사람. URL 경로는 `users`, 코드 · 필드는 `member` | [member](services/member.md) |
 | 판매자 | `SELLER` | 셀러 | 판매자로 등록한 회원 | [member](services/member.md) |
 | 회원 복제본 | `MEMBER_REPLICA` | 레플리카, 회원 사본 | 다른 서비스가 회원 이벤트로 채우는 회원 정보 사본 (계좌는 없음) | [가입과 회원 복제본](flows/signup-and-replica.md) |
+| 알 수 없는 회원 | `MemberReplica.UNKNOWN_NICKNAME` | 닉네임 없음, 미확인 회원 | 회원 복제본에 아직 없는 회원(가입 이벤트 반영 전 등)의 닉네임 대신 보여 주는 이름. 「탈퇴한 회원」과 다름 | [외부 API 목록](reference/external-apis.md) |
 | 블랙리스트 | `auth:blacklist` | 로그아웃 토큰, 토큰 차단 | 로그아웃한 Access 토큰을 거절하는 목록 | [인증 규칙](conventions/auth.md#토큰-폐기) |
 | 회원 단위 폐기 | `auth:revoked-member` | 전체 로그아웃, 모든 기기 로그아웃 | 탈퇴 · 비밀번호 변경 · 재설정 · 소셜 연결 해제로 그 전의 인증을 무효화하는 것. 인증 버전으로 이전 Refresh 재발급을 막고, Redis에 폐기 시각이 기록된 뒤부터 이전 Access도 거절 | [인증 규칙](conventions/auth.md#토큰-폐기) |
 | 이중 검증 | – | – | Gateway와 각 서비스가 모두 토큰을 검증하는 것 | [인증 규칙](conventions/auth.md) |

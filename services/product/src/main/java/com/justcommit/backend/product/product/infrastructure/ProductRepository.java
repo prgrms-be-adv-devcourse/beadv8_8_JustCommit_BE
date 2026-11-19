@@ -4,6 +4,7 @@ import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.product.event.ProductEventSource;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -165,6 +166,14 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     // 다른 모듈용 다건 조회: 품종을 함께 조회해 N+1 방지
     @EntityGraph(attributePaths = "species")
     List<Product> findWithSpeciesByIdIn(List<Long> ids);
+
+    // 검색 색인: 상품 하나를 품종과 함께 (#485)
+    @EntityGraph(attributePaths = "species")
+    Optional<Product> findWithSpeciesById(Long id);
+
+    // 전체 색인: id 순서로 limit개씩 (키셋 페이지, 삭제 상품 포함). OFFSET과 달리 뒤로 갈수록 느려지지 않음
+    @EntityGraph(attributePaths = "species")
+    List<Product> findByIdGreaterThanOrderByIdAsc(Long id, Limit limit);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE) // 커밋 전까지 이 상품 행을 잠가 주문 예약(reserve)과 동시에 실행돼도 덮어쓰지 않게 함
     Optional<Product> findWithLockById(@Param("id") Long id);

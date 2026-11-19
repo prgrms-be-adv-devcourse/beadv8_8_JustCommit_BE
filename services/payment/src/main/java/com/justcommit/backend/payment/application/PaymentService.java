@@ -30,6 +30,7 @@ public class PaymentService {
     private final WalletRepository walletRepository;
     private final WalletTransactionRepository walletTransactionRepository;
     private final WalletService walletService;
+    private final MemberWalletDepositor memberWalletDepositor;
 
     /**
      * 주문 결제 금액만큼 구매자의 예치금을 차감한다.
@@ -89,18 +90,29 @@ public class PaymentService {
     }
 
     /**
-     * 정산금을 HOLDING에서 판매자 지갑으로, 수수료를 REVENUE로 옮긴다.
+     * 정산을 지급한다. 판매액을 HOLDING에서 꺼내 판매자 정산금 · 수수료 · 판매자 부담금 · 배송비로 나눈다.
      *
-     * <p>같은 정산은 한 번만 지급되며, 다시 호출되면 아무것도 하지 않는다.
-     * 판매자 지갑이 없으면 만든다.</p>
+     * <p>판매액 S = payoutAmount + fee + sellerBurdenAmount. 정산금이 0 이상이면 판매자 지갑에 입금하고,
+     * 음수면 판매자 잔액에서 회수할 수 있는 만큼 회수하고 나머지는 미수금으로 남긴다.
+     * 수수료와 실제로 받은 부담금, 배송비는 REVENUE로 간다. 배송비는 sellerOrderId 기준으로 한 번만 옮기고,
+     * 이미 옮겼거나 구매자에게 환불된 배송비는 건너뛴다 (정산 지급은 계속).</p>
      *
-     * @param settlementId 정산 ID. 중복 지급 판정 기준
-     * @param sellerId     판매자 회원 ID
-     * @param payoutAmount 판매자 정산금 (0보다 커야 함)
-     * @param fee          수수료 (0 이상)
-     * @throws com.justcommit.backend.common.exception.BusinessException 실패하면 4xx 응답으로 나가고, 호출 측은 같은 키로 다시 호출한다
+     * <p>같은 정산은 판매자 지갑의 {@code SETTLEMENT} 행으로 한 번만 처리되며(0원 · 음수 정산도 금액 0으로 1건 기록),
+     * 다시 호출되면 아무것도 하지 않는다. 판매자 지갑이 없으면 만든다. 잠금 순서는 판매자 → HOLDING → REVENUE.
+     * 정산금이 양수이고 판매자에게 미수금이 있으면 정산금에서 먼저 차감해 REVENUE로 옮긴다 (미수금 차감).</p>
+     *
+     * @param settlementId       정산 ID. 중복 지급 판정 기준
+     * @param sellerId           판매자 회원 ID
+     * @param sellerOrderId      판매자 주문 ID. 배송비 중복 이동 판정 기준 (배송비가 0보다 크면 필수)
+     * @param payoutAmount       판매자 정산금 = 판매액 - 수수료 - 판매자 부담금 (0 · 음수 허용)
+     * @param fee                수수료 (0 이상)
+     * @param shippingFee        배송비 (0 이상)
+     * @param sellerBurdenAmount 판매자 부담금 (0 이상)
+     * @throws com.justcommit.backend.common.exception.BusinessException 실패하면 4xx 응답으로 나간다
      *         <ul>
-     *           <li>INVALID_AMOUNT: 인자가 null이거나 정산금이 0 이하, 수수료가 0 미만</li>
+     *           <li>INVALID_AMOUNT: 필수 인자가 null, 수수료 · 부담금 · 배송비 · 판매액이 음수,
+     *               수수료가 판매액을 넘음(payoutAmount + sellerBurdenAmount &lt; 0), 배송비가 있는데 sellerOrderId 없음.
+     *               다시 보내도 통과하지 못한다</li>
      *           <li>WALLET_NOT_FOUND: HOLDING 또는 REVENUE 지갑 없음</li>
      *           <li>INSUFFICIENT_BALANCE: HOLDING 잔액 부족</li>
      *         </ul>
@@ -109,17 +121,14 @@ public class PaymentService {
     public void distributeSettlement(
             Long settlementId,
             Long sellerId,
-            BigDecimal payoutAmount,    // 판매자 정산금
-            BigDecimal fee              // 수수료
+            Long sellerOrderId,
+            BigDecimal payoutAmount,        // 판매자 정산금 (0 · 음수 가능)
+            BigDecimal fee,                 // 수수료
+            BigDecimal shippingFee,         // 배송비
+            BigDecimal sellerBurdenAmount   // 판매자 부담금
     ) {
-        // 요청값 검증
-        if (settlementId == null || sellerId == null
-                || payoutAmount == null || fee == null
-                || payoutAmount.compareTo(BigDecimal.ZERO) <= 0
-                || fee.compareTo(BigDecimal.ZERO) < 0
-        ) {
-            throw new BusinessException(PaymentErrorCode.INVALID_AMOUNT);
-        }
+        validateSettlementRequest(settlementId, sellerId, sellerOrderId, payoutAmount, fee, shippingFee, sellerBurdenAmount);
+        BigDecimal saleAmount = payoutAmount.add(fee).add(sellerBurdenAmount);
 
         // 판매자 지갑 잠금
         Wallet sellerWallet = walletRepository
@@ -150,32 +159,92 @@ public class PaymentService {
                         PaymentErrorCode.WALLET_NOT_FOUND
                 ));
 
-        BigDecimal totalAmount = payoutAmount.add(fee);
         LocalDateTime now = LocalDateTime.now();
 
-        // HOLDING 출금
-        holdingWallet.debit(totalAmount);
-        walletTransactionRepository.save(
-                WalletTransaction.settlementOut(
-                        holdingWallet, settlementId, totalAmount, now
-                )
-        );
-
-        // 판매자 지갑 적립
-        sellerWallet.credit(payoutAmount);
-        walletTransactionRepository.save(
-                WalletTransaction.settlementIn(
-                        sellerWallet, settlementId, payoutAmount, now
-                )
-        );
+        // HOLDING 판매액 출금 (전부 반품이면 0원이라 건너뜀)
+        if (saleAmount.signum() > 0) {
+            holdingWallet.debit(saleAmount);
+            walletTransactionRepository.save(
+                    WalletTransaction.settlementOut(holdingWallet, settlementId, saleAmount, now));
+        }
 
         // REVENUE 수수료 적립
-        if (fee.compareTo(BigDecimal.ZERO) > 0) {
+        if (fee.signum() > 0) {
             revenueWallet.credit(fee);
             walletTransactionRepository.save(
-                    WalletTransaction.settlementFeeIn(
-                            revenueWallet, settlementId, fee, now
-                    )
+                    WalletTransaction.settlementFeeIn(revenueWallet, settlementId, fee, now));
+        }
+
+        // 배송비 HOLDING → REVENUE (이미 옮겼거나 환불됐으면 건너뜀)
+        if (shippingFee.signum() > 0 && !isShippingFeeHandled(holdingWallet, sellerOrderId)) {
+            moveShippingFee(holdingWallet, revenueWallet, sellerOrderId, shippingFee, now);
+        }
+
+        // 판매자 지갑: 정산금이 0 이상이면 입금, 음수면 잔액에서 회수하고 부족분은 미수금
+        BigDecimal collected = BigDecimal.ZERO;
+        BigDecimal uncollected = BigDecimal.ZERO;
+        if (payoutAmount.signum() > 0) {
+            // 입금, SETTLEMENT 행, 미수금 차감(이미 잠근 REVENUE 사용)까지 한 번에
+            memberWalletDepositor.deposit(
+                    sellerWallet,
+                    payoutAmount,
+                    w -> WalletTransaction.sellerSettlement(w, settlementId, payoutAmount, now),
+                    revenueWallet);
+        } else if (payoutAmount.signum() < 0) {
+            BigDecimal deficit = payoutAmount.negate();
+            collected = sellerWallet.getBalance().min(deficit);
+            uncollected = deficit.subtract(collected);
+            if (collected.signum() > 0) {
+                sellerWallet.debit(collected);
+            }
+            if (uncollected.signum() > 0) {
+                sellerWallet.increaseReceivable(uncollected);
+            }
+        }
+
+        // 0원, 음수 정산의 판매자 거래 행은 판매자 지갑 변경이 모두 끝난 뒤 기록 (balance_after, receivable_after = 최종 값)
+        if (payoutAmount.signum() <= 0) {
+            if (collected.signum() > 0) {
+                walletTransactionRepository.save(
+                        WalletTransaction.settlementCollectionOut(sellerWallet, settlementId, collected, now));
+            }
+            walletTransactionRepository.save(
+                    WalletTransaction.sellerSettlement(sellerWallet, settlementId, BigDecimal.ZERO, now));
+        }
+
+        // REVENUE 부담금 적립: 회수하지 못한 금액(미수금)은 빼고 실제로 받은 만큼만
+        BigDecimal receivedBurden = sellerBurdenAmount.subtract(uncollected);
+        if (receivedBurden.signum() > 0) {
+            revenueWallet.credit(receivedBurden);
+            walletTransactionRepository.save(
+                    WalletTransaction.sellerBurdenIn(revenueWallet, settlementId, receivedBurden, now));
+        }
+    }
+
+    private void validateSettlementRequest(
+            Long settlementId,
+            Long sellerId,
+            Long sellerOrderId,
+            BigDecimal payoutAmount,
+            BigDecimal fee,
+            BigDecimal shippingFee,
+            BigDecimal sellerBurdenAmount
+    ) {
+        if (settlementId == null || sellerId == null
+                || payoutAmount == null || fee == null || shippingFee == null || sellerBurdenAmount == null
+                || fee.signum() < 0
+                || sellerBurdenAmount.signum() < 0
+                || shippingFee.signum() < 0
+                || payoutAmount.add(fee).add(sellerBurdenAmount).signum() < 0   // 판매액 0 이상
+                || payoutAmount.add(sellerBurdenAmount).signum() < 0            // 수수료가 판매액을 넘지 않음
+                || (shippingFee.signum() > 0 && sellerOrderId == null)
+        ) {
+            throw new BusinessException(
+                    PaymentErrorCode.INVALID_AMOUNT,
+                    "정산 지급 요청 값이 올바르지 않습니다. settlementId=" + settlementId
+                            + ", sellerOrderId=" + sellerOrderId + ", payoutAmount=" + payoutAmount
+                            + ", fee=" + fee + ", shippingFee=" + shippingFee
+                            + ", sellerBurdenAmount=" + sellerBurdenAmount
             );
         }
     }
@@ -213,16 +282,7 @@ public class PaymentService {
                 .findByWalletTypeForUpdate(WalletType.HOLDING)
                 .orElseThrow(() -> new BusinessException(PaymentErrorCode.WALLET_NOT_FOUND));
 
-        // 중복 수신 방지
-        if (walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(
-                holdingWallet.getId(), RefType.SHIPPING_FEE, sellerOrderId)) {
-            return;
-        }
-
-        // 수거 전 취소로 이미 구매자에게 환불된 배송비면 HOLDING에 남은 몫이 없다
-        if (walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(
-                holdingWallet.getId(), RefType.SHIPPING_FEE_REFUND, sellerOrderId)) {
-            log.warn("이미 환불된 배송비라 수납하지 않음: sellerOrderId={}", sellerOrderId);
+        if (isShippingFeeHandled(holdingWallet, sellerOrderId)) {
             return;
         }
 
@@ -231,8 +291,35 @@ public class PaymentService {
                 .findByWalletTypeForUpdate(WalletType.REVENUE)
                 .orElseThrow(() -> new BusinessException(PaymentErrorCode.WALLET_NOT_FOUND));
 
-        LocalDateTime now = LocalDateTime.now(); // HOLDING 출금·REVENUE 입금을 같은 시각으로 기록
+        // HOLDING 출금·REVENUE 입금을 같은 시각으로 기록
+        moveShippingFee(holdingWallet, revenueWallet, sellerOrderId, shippingFee, LocalDateTime.now());
+    }
 
+    /** 이미 옮겼거나 구매자에게 환불된 배송비인지. 잠긴 HOLDING 지갑으로 판정한다 */
+    private boolean isShippingFeeHandled(Wallet holdingWallet, Long sellerOrderId) {
+        // 중복 수신 방지
+        if (walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(
+                holdingWallet.getId(), RefType.SHIPPING_FEE, sellerOrderId)) {
+            return true;
+        }
+
+        // 수거 전 취소로 이미 구매자에게 환불된 배송비면 HOLDING에 남은 몫이 없다
+        if (walletTransactionRepository.existsByWallet_IdAndRefTypeAndRefId(
+                holdingWallet.getId(), RefType.SHIPPING_FEE_REFUND, sellerOrderId)) {
+            log.warn("이미 환불된 배송비라 수납하지 않음: sellerOrderId={}", sellerOrderId);
+            return true;
+        }
+        return false;
+    }
+
+    /** 잠긴 HOLDING · REVENUE 지갑 사이에서 배송비를 옮긴다 */
+    private void moveShippingFee(
+            Wallet holdingWallet,
+            Wallet revenueWallet,
+            Long sellerOrderId,
+            BigDecimal shippingFee,
+            LocalDateTime now
+    ) {
         // HOLDING 출금 (잔액 부족 시 INSUFFICIENT_BALANCE 예외)
         holdingWallet.debit(shippingFee);
         walletTransactionRepository.save(
@@ -361,14 +448,13 @@ public class PaymentService {
                 )
         );
 
-        // 구매자 지갑 환불
-        buyerWallet.credit(amount);
-        walletTransactionRepository.save(
-                WalletTransaction.refundIn(
-                        buyerWallet, refType, refId, amount, now
-                )
-        );
+        // 구매자 지갑 환불 + 미수금 차감 (미수금이 있을 때만 REVENUE 잠금, 잠금 순서 구매자 → HOLDING → REVENUE).
+        // 환불 IN 행 금액은 환불액 그대로 둔다. 위 중복 환불 판정이 이 금액과 요청 금액을 비교한다
+        memberWalletDepositor.deposit(
+                buyerWallet, amount,
+                w -> WalletTransaction.refundIn(w, refType, refId, amount, now));
 
+        // 차감 뒤 잔액
         return PaymentResult.refunded(buyerWallet.getBalance());
     }
 

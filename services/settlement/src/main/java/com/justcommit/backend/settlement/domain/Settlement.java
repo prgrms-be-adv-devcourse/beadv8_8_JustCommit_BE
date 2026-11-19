@@ -43,6 +43,11 @@ public class Settlement extends BaseTimeEntity {
     @Column(name = "shipping_fee", precision = 19)
     private BigDecimal shippingFee;
 
+    // 판매자 부담금 (반품 배송비 등): 수수료 계산에 넣지 않고 정산금에서 뺀다. 부담금이 없으면 0
+    @Column(name = "seller_burden_amount", nullable = false, precision = 19)
+    private BigDecimal sellerBurdenAmount;
+
+    // 정산금 = 판매액 - 수수료 - 판매자 부담금. 반품이 있으면 0원 · 음수일 수 있다
     @Column(name = "payout_amount", nullable = false, precision = 19)
     private BigDecimal payoutAmount;
 
@@ -75,13 +80,14 @@ public class Settlement extends BaseTimeEntity {
 
     private Settlement(Long sellerOrderId, Long sellerId,
                        BigDecimal saleAmount, BigDecimal fee, BigDecimal shippingFee,
-                       LocalDateTime requestedAt, String itemSummary) {
+                       BigDecimal sellerBurdenAmount, LocalDateTime requestedAt, String itemSummary) {
         this.sellerOrderId = sellerOrderId;
         this.sellerId = sellerId;
         this.saleAmount = saleAmount;
         this.fee = fee;
         this.shippingFee = shippingFee;
-        this.payoutAmount = saleAmount.subtract(fee);
+        this.sellerBurdenAmount = sellerBurdenAmount;
+        this.payoutAmount = saleAmount.subtract(fee).subtract(sellerBurdenAmount);
         this.status = SettlementStatus.PENDING;
         this.attemptCount = 0;
         this.nextAttemptAt = requestedAt;
@@ -94,10 +100,12 @@ public class Settlement extends BaseTimeEntity {
             Long sellerId,
             BigDecimal saleAmount,
             BigDecimal shippingFee,
+            BigDecimal sellerBurdenAmount,
             LocalDateTime requestedAt,
             String itemSummary
     ) {
         validateAmount(saleAmount);
+        validateSellerBurdenAmount(sellerBurdenAmount);
 
         BigDecimal fee = SettlementPolicy.calculateFee(saleAmount);
 
@@ -107,6 +115,7 @@ public class Settlement extends BaseTimeEntity {
                 saleAmount,
                 fee,
                 shippingFee,
+                sellerBurdenAmount,
                 requestedAt,
                 itemSummary
         );
@@ -169,6 +178,13 @@ public class Settlement extends BaseTimeEntity {
     private static void validateAmount(BigDecimal saleAmount) {
         if (saleAmount == null || saleAmount.signum() <= 0) {
             throw new BusinessException(SettlementErrorCode.INVALID_AMOUNT);
+        }
+    }
+
+    // 부담금이 없으면 호출하는 쪽이 0으로 넘긴다 (null은 받지 않음)
+    private static void validateSellerBurdenAmount(BigDecimal sellerBurdenAmount) {
+        if (sellerBurdenAmount == null || sellerBurdenAmount.signum() < 0) {
+            throw new BusinessException(SettlementErrorCode.INVALID_SELLER_BURDEN_AMOUNT);
         }
     }
 }
