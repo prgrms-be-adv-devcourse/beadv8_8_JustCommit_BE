@@ -52,6 +52,7 @@
 | 정산 | `SETTLEMENT` | 정산금 지급 | 판매자 주문이 끝나면 판매액에서 수수료 · 부담금을 빼 판매자에게 줄 돈 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 음수 정산 | – | 조정 정산, 마이너스 정산 | 부담금이 판매액보다 커서 0보다 작은 정산 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 미수금 | – | 빚, 미납금 | 음수 정산을 회수하지 못한 금액. 남아 있으면 인출 · 탈퇴 불가 | [구매 확정 → 정산](flows/confirm-settlement.md) |
+| 미수금 차감 | `RECEIVABLE_COLLECTION` | 미수금 상환, 미수금 납부, 빚 갚기 | 회원 지갑에 입금(충전, 정산금, 환불)되면 입금액 안에서 미수금을 먼저 빼 `REVENUE`로 옮기는 것. 입금 1건당 한 번 | [payment 정책](services/payment.md#정책) |
 | 결과 불명 | `InternalApiResultUnknownException` | 타임아웃, 알 수 없음 | 응답이 없어 상대가 처리했는지 모르는 상태. 바로 되돌리지 않고 같은 멱등 키로 확인 | [장애 처리](conventions/resilience.md#결과-불명-처리) |
 | 확인 필요 | `REVIEW_REQUIRED` | 수동 처리, 사람 확인 (돈 · 주문) | 자동 복구를 포기하고 사람이 확인해야 하는 상태 | [스케줄러](reference/schedulers.md) |
 

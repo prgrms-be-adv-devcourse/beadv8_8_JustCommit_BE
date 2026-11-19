@@ -44,7 +44,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, PaymentService.class, WalletService.class})
+@Import({JpaAuditingConfig.class, PaymentService.class, WalletService.class, MemberWalletDepositor.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class PaymentSettlementIntegrationTest {
