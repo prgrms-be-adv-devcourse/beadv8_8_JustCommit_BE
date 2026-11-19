@@ -10,7 +10,9 @@ import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import com.justcommit.backend.product.review.domain.ImageReview;
 import com.justcommit.backend.product.review.domain.enums.RejectReason;
 import com.justcommit.backend.product.review.infrastructure.ImageReviewRepository;
+import com.justcommit.backend.product.product.application.ReviewStatusReader;
 import com.justcommit.backend.product.review.presentation.dto.SellerImageReviewHistoryResponse;
+import com.justcommit.backend.product.review.presentation.dto.SellerImageReviewHistoryResponse.Item;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -19,13 +21,16 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 // 판매자 검수 API: 검수 기록 조회 · 이의 신청 · 기한 초과 재요청 (docs/flows/image-review.md 「판매자 API」)
 // 모두 본인 상품만, 남의 상품 · 삭제된 상품은 404 PRODUCT_NOT_FOUND
+// 내 상품 목록 · 개수에 붙는 검수 정보(ReviewStatusReader)도 여기서 같은 규칙으로 만든다
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class SellerImageReviewService {
+public class SellerImageReviewService implements ReviewStatusReader {
 
     // 검수 중 동시 5개 (이의 신청 포함, ProductService 등록 제한과 같은 값)
     static final int REVIEW_PENDING_LIMIT = 5;
@@ -53,7 +58,31 @@ public class SellerImageReviewService {
         boolean resubmittable = product.getStatus() == ProductStatus.REJECTED
                 && current != null && current.getRejectReason() == RejectReason.REVIEW_EXPIRED;
         return SellerImageReviewHistoryResponse.of(product, reviews, appealable, resubmittable, LocalDateTime.now(clock),
-                AdminImageReviewService.DELAY_AFTER);
+                AdminImageReviewService.DELAY_AFTER, AdminImageReviewService.EXPIRE_AFTER);
+    }
+
+    // ── 내 상품 목록 · 개수 (ReviewStatusReader) ───────────────────────────────
+
+    @Override
+    @Transactional(readOnly = true)
+    public DailyUsage todayPhotoReviews(Long sellerId) {
+        return new DailyUsage(imageReviewService.countTodayPhotoReviews(sellerId), ImageReviewService.DAILY_REVIEW_LIMIT);
+    }
+
+    // 페이지의 상품 ID를 모아 지금 검수 버전의 기록을 쿼리 한 번으로. 표시 상태 · 반려 문구는 검수 기록 응답과 같은 규칙
+    @Override
+    @Transactional(readOnly = true)
+    public Map<Long, LatestReview> latestReviews(List<Product> products) {
+        if (products.isEmpty()) {
+            return Map.of();
+        }
+        LocalDateTime now = LocalDateTime.now(clock);
+        return imageReviewRepository.findCurrentByProductIdIn(products.stream().map(Product::getId).toList()).stream()
+                .collect(Collectors.toMap(ImageReview::getProductId, review -> {
+                    Item item = SellerImageReviewHistoryResponse.item(review, now,
+                            AdminImageReviewService.DELAY_AFTER, AdminImageReviewService.EXPIRE_AFTER);
+                    return new LatestReview(item.status().name(), item.rejectReason(), item.rejectMessage(), item.decidedBy());
+                }));
     }
 
     // ── 이의 신청 ───────────────────────────────

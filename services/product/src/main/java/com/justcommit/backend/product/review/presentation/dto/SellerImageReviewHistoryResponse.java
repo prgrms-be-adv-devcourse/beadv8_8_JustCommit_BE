@@ -30,7 +30,8 @@ public record SellerImageReviewHistoryResponse(
             String decidedBy,           // ENGINE(자동) · ADMIN(관리자) · DEADLINE(기한 초과), 아직 판정 전이면 null
             String appealMemo,
             LocalDateTime requestedAt,
-            LocalDateTime decidedAt
+            LocalDateTime decidedAt,
+            LocalDateTime expiresAt     // 관리자 확인 기한 (관리자 확인 중 · 지연일 때만, 관리자 목록과 같은 값). 지나면 REVIEW_EXPIRED로 자동 반려
     ) {
     }
 
@@ -46,24 +47,28 @@ public record SellerImageReviewHistoryResponse(
 
     public static SellerImageReviewHistoryResponse of(Product product, List<ImageReview> reviews,
                                                       boolean appealable, boolean resubmittable,
-                                                      LocalDateTime now, Duration delayAfter) {
+                                                      LocalDateTime now, Duration delayAfter, Duration expireAfter) {
         return new SellerImageReviewHistoryResponse(
                 product.getId(), product.getStatus().name(), product.remainingResubmits(), appealable, resubmittable,
-                reviews.stream().map(review -> item(review, now, delayAfter)).toList());
+                reviews.stream().map(review -> item(review, now, delayAfter, expireAfter)).toList());
     }
 
-    private static Item item(ImageReview review, LocalDateTime now, Duration delayAfter) {
+    // 검수 기록 한 줄. 내 상품 목록(GET products/me)의 검수 배지도 같은 규칙으로 만듦 (SellerImageReviewService.latestReviews)
+    public static Item item(ImageReview review, LocalDateTime now, Duration delayAfter, Duration expireAfter) {
+        DisplayStatus status = displayStatus(review, now, delayAfter);
+        boolean awaitingAdmin = status == DisplayStatus.ADMIN_CHECK || status == DisplayStatus.ADMIN_CHECK_DELAYED;
         RejectReason reason = review.getDecision() == ReviewDecision.REJECTED ? review.getRejectReason() : null;
         return new Item(
                 review.getReviewVersion(),
                 review.getScope().name(),
-                displayStatus(review, now, delayAfter),
+                status,
                 reason == null ? null : reason.name(),
                 reason == null ? null : (reason == RejectReason.OTHER ? review.getAdminMemo() : reason.getMessage()),
                 review.getDecidedBy() == null ? null : review.getDecidedBy().name(),
                 review.getAppealMemo(),
                 review.getCreatedAt(),
-                review.getDecidedAt());
+                review.getDecidedAt(),
+                awaitingAdmin ? review.adminCheckExpiresAt(expireAfter) : null);
     }
 
     private static DisplayStatus displayStatus(ImageReview review, LocalDateTime now, Duration delayAfter) {

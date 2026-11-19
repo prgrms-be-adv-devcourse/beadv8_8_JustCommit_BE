@@ -49,12 +49,15 @@ import org.springframework.transaction.support.TransactionTemplate;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.json.JsonMapper;
+import com.justcommit.backend.product.client.member.MemberQuery;
+import com.justcommit.backend.product.member.domain.MemberReplica;
 
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -64,6 +67,7 @@ import java.util.concurrent.Future;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -112,6 +116,8 @@ class AdminImageReviewServiceIntegrationTest {
     @Autowired JdbcTemplate jdbc;
 
     @MockitoBean OutboxPublisher outboxPublisher;
+    // 회원 복제본 조회 (실제 조회는 MemberReplicaIntegrationTest). 기본은 빈 Map = 복제본 없음
+    @MockitoBean MemberQuery memberQuery;
 
     private Species species;
 
@@ -176,6 +182,7 @@ class AdminImageReviewServiceIntegrationTest {
     void listOldestFirst() {
         Product fresh = awaitingAdmin("새 건", 1);
         Product old = awaitingAdmin("오래된 건", 13);
+        given(memberQuery.getNicknames(List.of(SELLER_ID))).willReturn(Map.of(SELLER_ID, "식물집사"));
 
         List<AdminImageReviewResponse> list = adminService.findAwaiting(PageRequest.of(0, 20)).getContent();
 
@@ -190,6 +197,22 @@ class AdminImageReviewServiceIntegrationTest {
         assertThat(first.otherSpecies()).isFalse();
         assertThat(first.imageUrls()).containsExactly("http://localhost:9000/bucket/products/7/a.jpg");
         assertThat(first.engineResult().get("plant").get("plant").asBoolean()).isTrue();
+        // #519: 판매자 닉네임 · 가격 · 검수 요청 시각
+        assertThat(first.sellerNickname()).isEqualTo("식물집사");
+        assertThat(first.price()).isEqualByComparingTo("10000");
+        assertThat(first.requestedAt()).isEqualTo(reviewOf(old).getCreatedAt());
+        // 판매자가 같으면 닉네임은 한 번에 한 명분만 조회
+        verify(memberQuery, times(1)).getNicknames(List.of(SELLER_ID));
+    }
+
+    @Test
+    @DisplayName("목록: 회원 복제본이 아직 없는 판매자는 「알 수 없는 회원」")
+    void listUnknownSeller() {
+        awaitingAdmin("복제본 없음", 1);
+
+        AdminImageReviewResponse item = adminService.findAwaiting(PageRequest.of(0, 20)).getContent().get(0);
+
+        assertThat(item.sellerNickname()).isEqualTo(MemberReplica.UNKNOWN_NICKNAME);
     }
 
     @Test
