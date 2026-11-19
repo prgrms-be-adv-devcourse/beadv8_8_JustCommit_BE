@@ -40,7 +40,7 @@
 | GET | `sellers/{sellerId}` | 판매자 공개 정보 (닉네임 · 소개글 · 등록일, 숫자 id만) | 공개 |
 | PATCH | `sellers/me/intro` | 소개글 수정 (최대 500자, 빈 문자열은 삭제) | 로그인 (판매자만) |
 | GET | `/oauth2/authorization/kakao` · `/login/oauth2/code/kakao` | 카카오 로그인 (Spring Security 처리, `/api/v1` 아님) | 공개 |
-| GET · POST | `webhooks/kakao/unlink` | 카카오 연결 해제 웹훅 (`Authorization: KakaoAK {어드민 키}`) → [카카오 연결 해제 웹훅](#카카오-연결-해제-웹훅). ⬜ 미구현(#422) | 공개 |
+| GET · POST | `webhooks/kakao/unlink` | 카카오 연결 해제 웹훅 (`Authorization: KakaoAK {어드민 키}`) → [카카오 연결 해제 웹훅](#카카오-연결-해제-웹훅) | 공개 |
 
 #### 이메일 인증 목적
 
@@ -121,16 +121,15 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 
 #### 카카오 연결 해제 웹훅
 
-⬜ 미구현(#422). 처리 흐름은 [탈퇴 흐름](../flows/signup-and-replica.md#카카오-연결-해제-웹훅)에 있습니다.
+(#422) 처리 흐름은 [탈퇴 흐름](../flows/signup-and-replica.md#카카오-연결-해제-웹훅)에 있습니다.
 
 | 항목 | 내용 |
 |---|---|
 | 요청 | `GET` 쿼리 또는 `POST` 폼으로 `app_id` · `user_id`(카카오 회원번호) · `referrer_type` (카카오 공식 문서 「연결 해제 웹훅」) |
-| 인증 | `Authorization: KakaoAK {어드민 키}`가 틀리면 401로 끝냄(수신 기록 없음) |
-| 응답 | 인증에 성공하면 수신 기록을 저장한 뒤 3초 안에 200. 회원이 없거나 처리 대상이 아닌 사유여도 200 |
-| 경로 | Gateway에서 market 라우트(`/api/v1/webhooks/**`)보다 앞에 member 라우트 · 공개 경로 추가 필요 (#422) |
+| 인증 | `Authorization: KakaoAK {어드민 키}`가 없거나 틀리면 401(수신 기록 없음). 상수 시간 비교, 헤더 값 · 어드민 키는 로그에 남기지 않음 |
+| 응답 | 키가 맞으면 항상 200. `app_id` 누락 · 우리 앱 ID와 다름, `user_id` 누락 · 숫자가 아님은 회원 처리 없이 기록만(`IGNORED`), 알 수 없거나 누락된 `referrer_type`도 기록만, 기록 저장 실패도 200(오류 로그 + 운영 알림). 카카오는 3초 안 응답을 요구하지만 DB 장애 시에는 보장하지 못함 |
+| 경로 | Gateway에서 market 라우트(`/api/v1/webhooks/**`)보다 앞에 member 전용 라우트(응답 타임아웃 5초) · 공개 경로 (#422) |
 
-⬜ 미정: 수신 기록 저장 실패 시 응답 → [미정 항목](../open-questions.md)
 
 ### product
 
