@@ -385,3 +385,71 @@ groups:
     labels:
       team: replant
     isPaused: false
+  - uid: replant-kakao-unlink-receive-failed
+    title: 카카오 연결 해제 웹훅 저장 실패
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: sum by (service) (increase(replant_kakao_unlink_receive_failures_total[5m]))
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    annotations:
+      summary: '{{ $labels.service }}: 카카오 연결 해제 웹훅 {{ $values.A.Value }}건을 저장하지 못함(5분) — 카카오는 다시 보내지 않음. Loki에서 event=KAKAO_UNLINK_RECEIVE_FAILED 로그 확인 후 흐름 문서 「운영 알림과 대응」 절차로 판단'
+    labels:
+      team: replant
+    isPaused: false
+  - uid: replant-kakao-unlink-failed
+    title: 카카오 연결 해제 웹훅 처리 멈춤
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: max by (service) (replant_kakao_unlink_failed)
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    for: 0s
+    noDataState: KeepLast
+    execErrState: Error
+    annotations:
+      summary: '{{ $labels.service }}: 재시도를 다 써서 멈춘 카카오 연결 해제 웹훅 {{ $values.A.Value }}건 — member_kakao_unlink_receipt의 FAILED 기록(last_error · resume_state) 확인, member 담당에게 연락'
+    labels:
+      team: replant
+    isPaused: false

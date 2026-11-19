@@ -1,6 +1,7 @@
 package com.justcommit.backend.member.unlink.infrastructure.repository;
 
 import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReceipt;
+import com.justcommit.backend.member.unlink.domain.KakaoUnlinkStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -42,6 +43,9 @@ public interface KakaoUnlinkReceiptRepository extends JpaRepository<KakaoUnlinkR
          AND status IN ('PENDING', 'INACTIVATED', 'NOTICE_PENDING', 'FAILED')
       """, nativeQuery = true)
   int invalidatePending(@Param("providerId") String providerId, @Param("updatedAt") LocalDateTime updatedAt);
+
+  // 운영 지표: 재시도를 다 써서 멈춘(FAILED) 기록 수 (KakaoUnlinkMetrics)
+  long countByStatus(KakaoUnlinkStatus status);
 
   // 결과 반영 전에 기록 행을 잠근다 (처리권 · 단계 확인 → 변경을 한 트랜잭션에서)
   @Lock(LockModeType.PESSIMISTIC_WRITE)

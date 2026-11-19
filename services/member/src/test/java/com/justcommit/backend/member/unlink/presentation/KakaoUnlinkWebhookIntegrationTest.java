@@ -2,10 +2,20 @@ package com.justcommit.backend.member.unlink.presentation;
 
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import com.justcommit.backend.common.testcontainers.SharedRedis;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
+import com.justcommit.backend.member.unlink.application.KakaoUnlinkReceiver;
 import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
+import org.slf4j.event.KeyValuePair;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -27,6 +37,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -42,7 +53,8 @@ import static org.mockito.Mockito.doThrow;
 
 /**
  * [S-B10] 카카오 연결 해제 웹훅 수신 (#422). 실제 HTTP로 받아 수신 기록만 남는지 확인한다.
- * 키가 틀리면 401(기록 없음), 맞으면 값과 관계없이 200. 저장 실패 · 지연에도 200을 3초 안에 돌려준다
+ * 키가 틀리면 401(기록 없음), 맞으면 값과 관계없이 200. 저장 실패 · 지연에도 200을 3초 안에 돌려준다.
+ * 저장 실패는 운영 알림 지표가 오르고, 검증된 값만 담은 복구 로그가 남는다 (헤더 · 키 · 원문 없음)
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers(disabledWithoutDocker = true)
@@ -70,11 +82,24 @@ class KakaoUnlinkWebhookIntegrationTest {
 
   // 저장 실패를 만들 때만 동작을 바꾸고, 평소에는 실제 빈 그대로
   @MockitoSpyBean KakaoUnlinkReceiptRepository receiptRepository;
+  // DB 장애를 만들 때만 동작을 바꾸고, 평소에는 실제 빈 그대로
+  @MockitoSpyBean DatabaseClock databaseClock;
+  @Autowired MeterRegistry meterRegistry;
+
+  // 수신 서비스의 로그를 붙잡아 키 · 값을 직접 확인 (출력 형식과 관계없이)
+  private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
 
   private final HttpClient httpClient = HttpClient.newHttpClient();
 
+  @BeforeEach
+  void captureLogs() {
+    logs.start();
+    ((Logger) LoggerFactory.getLogger(KakaoUnlinkReceiver.class)).addAppender(logs);
+  }
+
   @AfterEach
   void cleanUp() {
+    ((Logger) LoggerFactory.getLogger(KakaoUnlinkReceiver.class)).detachAppender(logs);
     jdbcTemplate.update("delete from member_kakao_unlink_receipt");
   }
 
@@ -134,9 +159,62 @@ class KakaoUnlinkWebhookIntegrationTest {
   @DisplayName("[S-B10] 수신 기록 저장이 실패해도 200 (카카오 문서: 오류에도 200)")
   void saveFailureStillOk() throws Exception {
     doThrow(new DataAccessResourceFailureException("DB 실패 (테스트)")).when(receiptRepository).save(any());
+    double before = receiveFailures();
 
     assertThat(get(AUTHORIZATION, params(APP_ID, "9100000007", "UNLINK_FROM_APPS")).statusCode()).isEqualTo(200);
     assertThat(count()).isZero();
+    // 200이라 5xx 알림에 안 잡히므로 운영 알림 지표가 올라가야 함
+    assertThat(receiveFailures()).isEqualTo(before + 1);
+    // 복구 단서: 검증된 회원번호 · 사유 · 앱 수신 시각 · 정상 처리 대상이었는지
+    Map<String, Object> kv = lastErrorKeyValues();
+    assertThat(kv).containsEntry("event", "KAKAO_UNLINK_RECEIVE_FAILED")
+        .containsEntry("kakaoUserId", "9100000007")
+        .containsEntry("referrerType", "UNLINK_FROM_APPS")
+        .containsEntry("validation", "PENDING")
+        .containsEntry("errorCode", "RECEIPT_SAVE_FAILED")
+        .containsEntry("errorType", "DataAccessResourceFailureException");
+    assertThat(Instant.parse((String) kv.get("receivedAt"))).isBefore(Instant.now().plusSeconds(1));
+    assertNoSecrets();
+  }
+
+  @Test
+  @DisplayName("[S-B10] 처리 제외 대상이던 요청의 저장 실패는 검증 결과를 IGNORED로 남기고, 검증을 통과하지 못한 값은 invalid로 바꾼다")
+  void saveFailureOfIgnoredRequestIsMarked() throws Exception {
+    doThrow(new DataAccessResourceFailureException("DB 실패 (테스트)")).when(receiptRepository).save(any());
+
+    assertThat(get(AUTHORIZATION, params(APP_ID, "abc", "X".repeat(41))).statusCode()).isEqualTo(200);
+
+    assertThat(lastErrorKeyValues()).containsEntry("kakaoUserId", "invalid")
+        .containsEntry("referrerType", "invalid")
+        .containsEntry("validation", "IGNORED:INVALID_USER_ID");
+    assertNoSecrets();
+  }
+
+  @Test
+  @DisplayName("[S-B10] DB 시각을 못 읽는 장애에도 200, 지표가 오르고 복구 로그의 수신 시각은 앱 시계로 남는다")
+  void dbClockFailureStillLogs() throws Exception {
+    doThrow(new DataAccessResourceFailureException("DB 실패 (테스트)")).when(databaseClock).now();
+    double before = receiveFailures();
+
+    assertThat(get(AUTHORIZATION, params(APP_ID, "9100000009", "ACCOUNT_DELETE")).statusCode()).isEqualTo(200);
+
+    assertThat(count()).isZero();
+    assertThat(receiveFailures()).isEqualTo(before + 1);
+    Map<String, Object> kv = lastErrorKeyValues();
+    assertThat(kv).containsEntry("kakaoUserId", "9100000009").containsEntry("validation", "PENDING");
+    assertThat(Instant.parse((String) kv.get("receivedAt"))).isNotNull();
+  }
+
+  @Test
+  @DisplayName("[S-B10] 저장에 성공하거나 키가 틀리면 저장 실패 지표는 그대로")
+  void successAndUnauthorizedDoNotCount() throws Exception {
+    double before = receiveFailures();
+
+    assertThat(get(AUTHORIZATION, params(APP_ID, "9100000010", "UNLINK_FROM_APPS")).statusCode()).isEqualTo(200);
+    assertThat(get("KakaoAK wrong-key", params(APP_ID, "9100000011", "UNLINK_FROM_APPS")).statusCode()).isEqualTo(401);
+
+    assertThat(receiveFailures()).isEqualTo(before);
+    assertThat(logs.list).noneMatch(e -> e.getLevel() == Level.ERROR);
   }
 
   @Test
@@ -203,6 +281,24 @@ class KakaoUnlinkWebhookIntegrationTest {
     return params.entrySet().stream()
         .map(e -> e.getKey() + "=" + URLEncoder.encode(e.getValue(), StandardCharsets.UTF_8))
         .collect(Collectors.joining("&"));
+  }
+
+  private double receiveFailures() {
+    return meterRegistry.get("replant.kakao.unlink.receive.failures").counter().count();
+  }
+
+  private Map<String, Object> lastErrorKeyValues() {
+    ILoggingEvent event = logs.list.stream().filter(e -> e.getLevel() == Level.ERROR).reduce((a, b) -> b).orElseThrow();
+    return event.getKeyValuePairs().stream().collect(Collectors.toMap(p -> p.key, p -> p.value));
+  }
+
+  // 어드민 키 · Authorization 헤더 · 요청 원문은 어떤 로그에도 남지 않는다
+  private void assertNoSecrets() {
+    for (ILoggingEvent e : logs.list) {
+      String all = e.getFormattedMessage() + " "
+          + (e.getKeyValuePairs() == null ? "" : e.getKeyValuePairs().stream().map(KeyValuePair::toString).collect(Collectors.joining(" ")));
+      assertThat(all).doesNotContain("test-kakao-admin-key").doesNotContain("KakaoAK").doesNotContain("app_id=");
+    }
   }
 
   private long count() {
