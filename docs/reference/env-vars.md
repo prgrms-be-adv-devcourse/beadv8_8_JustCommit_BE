@@ -18,6 +18,7 @@
 | `INTERNAL_API_KEY` | 모든 서비스 (같은 값) | `/internal/**` 확인. 내부 호출 그룹(`internal-api.groups`)이 있는 서비스는 키가 없으면 시작하지 않음 |
 | `MEMBER_ADDRESS_EVENT_KEY` | member · market (같은 값) | 주소 이벤트 전송 키 (판매자 배송지 목록 암호화, `EventFieldCipher` 키 버전 `k1`). `openssl rand -base64 32`로 생성, 서버 설정은 인프라 담당. member · market 적용 완료(#233 · #275), `.env.example` 추가 완료(#233) |
 | `REDIS_HOST` · `REDIS_PORT` · `REDIS_PASSWORD` | member · Gateway | – |
+| `OPENSEARCH_URL` | product | 상품 검색 OpenSearch 주소 (예: `http://{호스트}:9200`, 보안 플러그인을 꺼서 계정 없음). 없으면 로컬 `http://localhost:9200`(`docker-compose.yml`의 `opensearch`). 운영은 `deploy/scripts/make-env.sh`가 데이터 서버 사설 IP의 9200으로 넣음 |
 | `MEMBER_SERVICE_URL` · `PRODUCT_SERVICE_URL` · `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` · `NOTIFICATION_SERVICE_URL` | Gateway | 라우팅할 서비스 주소. 없으면 로컬 포트(8081 ~ 8086) |
 | `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` | member | 탈퇴 확인 내부 API 그룹 주소. 없으면 로컬 포트(8083 · 8084 · 8085) |
 | `PRODUCT_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` · `AI_SERVICE_URL` | market | 내부 API 그룹 주소. 없으면 로컬 포트(8082 · 8084 · 8085 · 8087) |
@@ -32,7 +33,6 @@
 | `AWS_REGION` · S3 버킷 | product | 사진 업로드 (자격 증명은 EC2 IAM 역할) |
 | `OPENAI_API_KEY` | product | OpenAI Moderation (사진 · 글 유해 검사). 없으면 검수가 관리자 확인으로 |
 | `ANTHROPIC_API_KEY` | product | Claude Haiku 식물 식별. 없으면 검수가 관리자 확인으로 |
-| `OPENSEARCH_URL` | product | 상품 검색 OpenSearch 주소(`http://{호스트}:9200`, 보안 플러그인을 꺼서 계정 없음). 운영은 `make-env.sh`가 데이터 서버 주소로 넣음, 로컬은 `docker-compose.yml`의 `opensearch`(`http://localhost:9200`). 앱 설정 · 기본값은 #484 |
 | `OPENAI_API_KEY` | ai-service | 외부 임베딩 (OpenAI). 없어도 앱은 뜨고 임베딩 호출만 실패 |
 | `EMBEDDING_MODEL` · `EMBEDDING_DIMENSIONS` | ai-service | 임베딩 모델 이름 · 차원 (`custom.embedding.*`, Spring AI 설정도 이 값을 씀). 없으면 `text-embedding-3-small` · `1536`. 차원은 `species_vector_store`의 `vector(1536)` 칸과 같아야 하고, 다르면 앱 시작이 실패함 (#508) |
 

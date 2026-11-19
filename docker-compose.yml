@@ -63,7 +63,7 @@ services:
       retries: 10
       start_period: 20s
 
-  # 상품 검색. 운영 데이터 서버(docker-compose.data.yml)와 같은 이미지 · 설정 (nori, #532)
+  # 상품 검색 (#484). 운영 데이터 서버(docker-compose.data.yml)와 같은 이미지 · 설정 (공식 이미지 + nori, #532)
   opensearch:
     build: ./docker/opensearch
     image: replant-opensearch:2.19.2
