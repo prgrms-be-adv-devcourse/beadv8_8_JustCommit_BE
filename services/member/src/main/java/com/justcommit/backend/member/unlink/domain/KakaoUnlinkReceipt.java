@@ -10,6 +10,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 
@@ -27,6 +28,10 @@ public class KakaoUnlinkReceipt extends BaseTimeEntity {
   public static final int PROVIDER_ID_MAX_LENGTH = 20;
   public static final int REFERRER_TYPE_MAX_LENGTH = 40;
   public static final int ERROR_MAX_LENGTH = 50;
+  // 단계별 최초 포함 총 5회. 1 ~ 4번째 실패 뒤 기다리는 시간, 5번째 실패에 FAILED
+  public static final int MAX_FAILURES = 5;
+  private static final Duration[] RETRY_DELAYS = {
+      Duration.ofSeconds(10), Duration.ofSeconds(30), Duration.ofSeconds(60), Duration.ofSeconds(120)};
 
   @Column(name = "provider_id", length = PROVIDER_ID_MAX_LENGTH)
   private String providerId;
@@ -83,6 +88,60 @@ public class KakaoUnlinkReceipt extends BaseTimeEntity {
     receipt.status = KakaoUnlinkStatus.IGNORED;
     receipt.lastError = checkLength(errorCode, ERROR_MAX_LENGTH, "errorCode");
     return receipt;
+  }
+
+  // ===== 처리 (#422). 모든 변경은 기록 행을 잠근 트랜잭션에서, 처리권과 단계를 확인한 뒤에만 부른다 =====
+
+  // 확보: 처리권을 올려 이전 작업자의 결과 반영을 막고, 임대 시각까지 다른 실행이 집지 않게 한다
+  public void claim(Instant leaseUntil) {
+    this.attemptNo++;
+    this.leaseUntil = leaseUntil;
+  }
+
+  // 확보한 처리권과 단계가 그대로인지 (임대 시각은 보지 않음: 다른 작업자가 가져갔다면 처리권이 바뀌어 있음)
+  public boolean isClaimedBy(int attemptNo, KakaoUnlinkStatus expected) {
+    return this.attemptNo == attemptNo && this.status == expected;
+  }
+
+  public void ignore(String errorCode) {
+    finish(KakaoUnlinkStatus.IGNORED);
+    this.lastError = checkLength(errorCode, ERROR_MAX_LENGTH, "errorCode");
+  }
+
+  public void invalidate() {
+    finish(KakaoUnlinkStatus.INVALIDATED);
+  }
+
+  // INACTIVE + 토큰 폐기가 반영된 연결 해제 상태에 연결하고 다음 단계로 (단계가 넘어가면 실패 횟수 0)
+  public void markInactivated(Long memberId, int unlinkVersion, Instant now) {
+    this.status = KakaoUnlinkStatus.INACTIVATED;
+    this.memberId = Objects.requireNonNull(memberId, "memberId");
+    this.unlinkVersion = unlinkVersion;
+    this.failureCount = 0;
+    this.lastError = null;
+    this.leaseUntil = null;
+    this.nextAttemptAt = now;
+  }
+
+  // 현재 단계 실패: 다음 시도를 미루고, 5번째 실패면 재개할 단계를 남기고 FAILED (운영자 재개)
+  public void recordFailure(String errorCode, Instant now) {
+    this.failureCount++;
+    this.lastError = checkLength(errorCode, ERROR_MAX_LENGTH, "errorCode");
+    this.leaseUntil = null;
+    if (this.failureCount >= MAX_FAILURES) {
+      this.resumeState = this.status;
+      this.status = KakaoUnlinkStatus.FAILED;
+      this.nextAttemptAt = null;
+    } else {
+      this.nextAttemptAt = now.plus(RETRY_DELAYS[this.failureCount - 1]);
+    }
+  }
+
+  private void finish(KakaoUnlinkStatus finalStatus) {
+    this.status = finalStatus;
+    this.resumeState = null;
+    this.leaseUntil = null;
+    this.nextAttemptAt = null;
   }
 
   private static KakaoUnlinkReceipt base(String providerId, String referrerType, Instant now) {

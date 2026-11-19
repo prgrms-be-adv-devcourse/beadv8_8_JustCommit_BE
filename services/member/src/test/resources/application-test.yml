@@ -39,3 +39,7 @@ member:
   kakao:
     admin-key: test-kakao-admin-key
     app-id: "1234567"
+  # 카카오 연결 해제 웹훅 처리 스케줄러도 끈다. 테스트는 처리 서비스를 직접 부름
+  kakao-unlink:
+    processing:
+      enabled: false
