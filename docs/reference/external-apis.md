@@ -166,7 +166,9 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | POST | `orders/items/{id}/cancel` | 상품 취소 | 로그인 |
 | POST | `orders/items/{id}/confirm` | 구매 확정 | 로그인 |
 | GET | `orders` · `orders/{id}` | 구매 내역 · 상세 | 로그인 |
-| GET | `orders/seller` · `orders/seller/{id}` | 판매 내역 · 상세 | SELLER |
+| GET | `orders/seller` · `orders/seller/{id}` | 판매 내역 · 상세 (목록 `acceptPending`, 목록과 상세 `acceptDeadline` 수락 마감: 수락 대기가 남았을 때만, 상세 상품별 `status`) | SELLER |
+| POST | `orders/seller/{id}/accept` | 판매자 수락: 남은 수락 대기 주문상품을 모두 수락, 배송 생성. 수락 대기가 없으면 409 `SELLER_ORDER_NOT_ACCEPTABLE`, 남의 판매자 주문은 404 | SELLER |
+| POST | `orders/seller/{id}/reject` | 판매자 거절 (`orderItemIds` 필수, 사유 없음): 고른 주문상품은 환불, 나머지는 수락. 이 판매자 주문에 없는 상품은 400 `INVALID_REJECT_ITEMS`, 고른 상품이 수락 대기가 아니면 409 `SELLER_ORDER_NOT_ACCEPTABLE` | SELLER |
 | POST | `webhooks/courier` | 택배사 웹훅 (`X-Api-Key`) | 공개 |
 
 ### payment · settlement · notification
@@ -189,7 +191,6 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 
 | 서비스 | 기능 | 설명 |
 |---|---|---|
-| market | 판매자 수락 · 거절 (판매자 주문 › 상품 트리 체크) | 판매 기록 화면 |
 | market | 반품 신청 (사유) · 판매자 승인 · 거절 | 노션 7절 |
 | market | 리뷰 작성 · 삭제 · 판매자 리뷰 목록 (태그 집계) | 노션 6절 |
 | payment | 인출 | 노션 4.6 |

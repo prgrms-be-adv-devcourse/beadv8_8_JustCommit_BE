@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-19 · services/market.md · reference/external-apis.md · reference/internal-apis.md · flows/signup-and-replica.md · glossary.md · testing/scenarios.md · 판매자 수락, 거절 구현 반영: 결제 완료 시 주문상품 `ACCEPT_PENDING`과 `seller_order.paid_at`(Flyway V9), 수락 `orders/seller/{id}/accept`, 거절 `orders/seller/{id}/reject`(고른 상품 환불, 사유 `SELLER`, 나머지 수락, 전부 거절이면 배송비 환불), 배송은 수락 시점에 수락된 상품만 담아 생성, 수락 전 구매자 취소는 택배사 없이 바로 환불, 늦게 온 수락과 거절은 409 `SELLER_ORDER_NOT_ACCEPTABLE`, 판매자 주문 응답에 수락 마감 `acceptDeadline`, 주문상품 `cancel_reason`(Saga 복구 때 판매 재개 사유 유지), 탈퇴 확인 진행 중에 `ACCEPT_PENDING`, 용어 「수락 마감」 「취소 사유」, 시나리오 S-D17, S-D18 추가 (#284)
 - 2026-11-18 · flows/cancel-refund.md · services/market.md · glossary.md · reference/schedulers.md · testing/scenarios.md · 구매자 취소를 「취소 중」(`CANCEL_PROCESSING`) 커밋으로 바꾸고 환불은 택배 취소 결과 뒤(전부 취소) 또는 커밋 뒤 트랜잭션 밖(일부 취소)으로, 환불 결과 불명은 Saga 복구가 같은 키로 재요청(5번 안 되면 주문상품 `REVIEW_REQUIRED`), 환불 4xx는 바로 `REVIEW_REQUIRED`(배송비 환불 실패는 `last_error`가 `SHIPPING_FEE_`로 시작), 택배 취소 불가면 `NORMAL` 복귀. `ORDERS_ITEM`에 `attempt_count`, `attempted_at`, `last_error`(V8), 「확인 필요」를 주문상품에도, 시나리오 S-E11 ~ S-E13 추가, S-E01, 02, 04, 07 결과 기록 (#282) (#537)
 - 2026-11-18 · glossary.md · open-questions.md · 「취소 중」 주문상품 상태 코드 이름 `CANCEL_PROCESSING`으로 확정, 미정 목록에서 삭제 (#282)
 - 2026-11-19 · decisions/0024 · services/ai.md · 로컬 임베딩 모델 「비교 예정」을 실측 결과로: `multilingual-e5-small`을 운영 이미지 · 메모리 상한으로 실측(int8 최소 2g · 최고 1.96GiB, fp32 최소 3g, 640m에서는 시작 중 OOM, 재임베딩 뒤에도 메모리 유지) → ai 파드에 상주 불가라 비교에서 제외, ADR 0024(OpenAI) 유지 (#507) (#543)
