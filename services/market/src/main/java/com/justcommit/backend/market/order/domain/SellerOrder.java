@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -43,6 +44,11 @@ public class SellerOrder extends BaseTimeEntity {
     @Column(precision = 19, nullable = false)
     private BigDecimal shippingFee;
 
+    // 결제 완료 시각 (재결제면 재결제 완료 시각). 수락 마감 = paidAt + ACCEPT_WINDOW (#284)
+    private LocalDateTime paidAt;
+
+    public static final Duration ACCEPT_WINDOW = Duration.ofHours(24);
+
     public SellerOrder(Orders order, Long sellerId) {
         this.order = order;
         this.sellerId = sellerId;
@@ -65,10 +71,14 @@ public class SellerOrder extends BaseTimeEntity {
         this.calculateSettlementBaseAmount();
     }
 
+    // 정산 기준액 = 취소되지 않은 주문상품 금액. 수락 대기도 결제된 유효 상품이라 포함한다 (#284).
+    // 빼면 결제 직후 판매자 주문이 0원(미정산 대상, 전부 취소와 같은 값)으로 보이고 수락할 때마다 다시 계산해야 한다.
+    // 구매 확정은 배송 완료 뒤라 그 시점에 수락 대기 상품은 남아 있지 않다
     public void calculateSettlementBaseAmount() {
         this.settlementBaseAmount = this.items.stream()
                 .filter(i->
-                        i.getStatus().equals(OrderItemStatus.NORMAL)
+                        i.getStatus().equals(OrderItemStatus.ACCEPT_PENDING)
+                                || i.getStatus().equals(OrderItemStatus.NORMAL)
                                 || i.getStatus().equals(OrderItemStatus.REFUND_REQUESTED)
                                 || i.getStatus().equals(OrderItemStatus.CONFIRMED))
                 .map(OrdersItem::getPrice).reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -76,6 +86,14 @@ public class SellerOrder extends BaseTimeEntity {
 
     public void confirmed() {
         this.confirmedAt = LocalDateTime.now();
+    }
+
+    // 수락 마감 시각. 수락 대기 주문상품이 남아 있을 때만 값이 있다
+    public LocalDateTime acceptDeadline() {
+        if (paidAt == null || items.stream().noneMatch(i -> i.getStatus() == OrderItemStatus.ACCEPT_PENDING)) {
+            return null;
+        }
+        return paidAt.plus(ACCEPT_WINDOW);
     }
 
 }

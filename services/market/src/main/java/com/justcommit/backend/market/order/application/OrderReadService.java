@@ -38,9 +38,11 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -99,12 +101,16 @@ public class OrderReadService implements OrderQuery {
         List<Long> sellerOrderIds = page.getContent().stream().map(SellerOrder::getId).toList();
         Map<Long, OrdersItem> firstItems = new HashMap<>();
         Map<Long, Integer> itemCounts = new HashMap<>();
+        Set<Long> acceptPending = new HashSet<>();
         Map<Long, ShipmentResult> shipments = shipmentsBySellerOrder(sellerOrderIds);
         if (!sellerOrderIds.isEmpty()) {
             for (OrdersItem item : ordersItemRepository.findBySellerOrderIds(sellerOrderIds)) {
                 Long id = item.getSellerOrder().getId();
                 firstItems.putIfAbsent(id, item);
                 itemCounts.merge(id, 1, Integer::sum);
+                if (item.getStatus() == OrderItemStatus.ACCEPT_PENDING) {
+                    acceptPending.add(id);
+                }
             }
         }
         Map<Long, String> thumbnails = thumbnailsByProduct(
@@ -113,13 +119,16 @@ public class OrderReadService implements OrderQuery {
             Orders order = sellerOrder.getOrder();
             ShipmentResult shipment = shipments.get(sellerOrder.getId());
             OrdersItem firstItem = firstItems.get(sellerOrder.getId());
+            // 판매자 주문마다 items를 다시 읽지 않도록 위에서 읽은 주문상품으로 수락 마감을 정한다
+            LocalDateTime acceptDeadline = acceptPending.contains(sellerOrder.getId()) && sellerOrder.getPaidAt() != null
+                    ? sellerOrder.getPaidAt().plus(SellerOrder.ACCEPT_WINDOW) : null;
             return new SellerOrderResponse(sellerOrder.getId(), order.getId(), order.getOrderNo(),
                     sellerOrder.getTotalAmount(), sellerOrder.getConfirmedAt(),
                     itemCounts.getOrDefault(sellerOrder.getId(), 0), order.getStatus(),
                     shipment == null ? null : shipment.status(),
                     firstItem == null ? null : firstItem.getProductName(),
                     firstItem == null ? null : thumbnails.get(firstItem.getProductId()),
-                    sellerOrder.getCreatedAt());
+                    sellerOrder.getCreatedAt(), acceptDeadline != null, acceptDeadline);
         }));
     }
 
@@ -145,7 +154,8 @@ public class OrderReadService implements OrderQuery {
                 shipment == null ? null : shipment.deliveredAt(),
                 settlement.status(), settlement.settledAt(), sellerOrder.getCreatedAt(),
                 order.getRecipientName(), order.getRecipientPhone(),
-                order.getZipcode(), order.getShipAddress1(), order.getShipAddress2(), items);
+                order.getZipcode(), order.getShipAddress1(), order.getShipAddress2(), items,
+                sellerOrder.acceptDeadline());
     }
 
     @Override

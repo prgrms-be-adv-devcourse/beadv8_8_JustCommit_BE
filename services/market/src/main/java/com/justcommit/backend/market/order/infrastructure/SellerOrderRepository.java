@@ -9,10 +9,12 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -29,6 +31,11 @@ public interface SellerOrderRepository extends JpaRepository<SellerOrder, Long> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from SellerOrder s where s.order.id = :orderId order by s.id")
     List<SellerOrder> findAllLockedByOrderId(@Param("orderId") Long orderId);
+
+    // 결제 완료 시각 기록 (#284). 재결제 · 복구로 결제가 확정돼도 확정된 그 시각
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update SellerOrder s set s.paidAt = :paidAt, s.updatedAt = :paidAt where s.order.id = :orderId")
+    int markPaid(@Param("orderId") Long orderId, @Param("paidAt") LocalDateTime paidAt);
 
     @EntityGraph(attributePaths = "order")
     Page<SellerOrder> findBySellerId(Long sellerId, Pageable pageable);

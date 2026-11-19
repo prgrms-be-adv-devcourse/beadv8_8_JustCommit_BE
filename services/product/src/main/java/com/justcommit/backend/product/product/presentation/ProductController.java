@@ -115,7 +115,7 @@ public class ProductController {
     @Operation(summary = "상품 이미지 업로드 링크 발급",
             description = "판매자만 발급받을 수 있습니다. 응답의 uploadUrl로 파일을 PUT 업로드하고, "
                     + "imageUrl을 상품 등록·수정의 pictureUrls에 넣어 주세요. 링크는 10분간 유효합니다.")
-    @PostMapping("/images/upload-urls")
+    @PostMapping("/images/uploadUrls")
     public ApiResponse<List<ImageUploadUrlResponse>> issueImageUploadUrls(
             @AuthenticationPrincipal AuthMember authMember,
             @RequestBody @Valid ImageUploadUrlRequest request) {
