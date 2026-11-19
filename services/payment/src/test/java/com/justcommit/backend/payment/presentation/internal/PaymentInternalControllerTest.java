@@ -40,6 +40,10 @@ class PaymentInternalControllerTest {
     private static final String PAYOUT_BODY = """
             {"settlementId": 9, "sellerId": 4, "payoutAmount": 9500, "fee": 500}
             """;
+    private static final String FULL_PAYOUT_BODY = """
+            {"settlementId": 9, "sellerId": 4, "sellerOrderId": 12, "payoutAmount": -2500, "fee": 500,
+             "shippingFee": 3000, "sellerBurdenAmount": 12000}
+            """;
 
     @Mock
     private PaymentService paymentService;
@@ -107,13 +111,48 @@ class PaymentInternalControllerTest {
     }
 
     @Test
-    @DisplayName("정산 지급은 본문 값 그대로 지급하고 데이터 없이 성공 응답한다")
+    @DisplayName("정산 지급은 본문 값 그대로(판매자 주문 · 배송비 · 부담금 포함) 지급하고 데이터 없이 성공 응답한다")
     void payoutSettlement() throws Exception {
-        mockMvc.perform(internalPost("/internal/v1/settlementPayouts", "9", PAYOUT_BODY))
+        mockMvc.perform(internalPost("/internal/v1/settlementPayouts", "9", FULL_PAYOUT_BODY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").doesNotExist());
 
-        verify(paymentService).distributeSettlement(9L, 4L, new BigDecimal("9500"), new BigDecimal("500"));
+        verify(paymentService).distributeSettlement(9L, 4L, 12L, new BigDecimal("-2500"), new BigDecimal("500"),
+                new BigDecimal("3000"), new BigDecimal("12000"));
+    }
+
+    @Test
+    @DisplayName("배송비 · 부담금이 없는 요청(#433 배포 전)은 0으로 넘긴다")
+    void payoutSettlementWithoutShippingFeeAndBurden() throws Exception {
+        mockMvc.perform(internalPost("/internal/v1/settlementPayouts", "9", PAYOUT_BODY))
+                .andExpect(status().isOk());
+
+        verify(paymentService).distributeSettlement(9L, 4L, null, new BigDecimal("9500"), new BigDecimal("500"),
+                BigDecimal.ZERO, BigDecimal.ZERO);
+    }
+
+    @Test
+    @DisplayName("배송비 · 부담금이 null이면 0으로 넘긴다")
+    void payoutSettlementWithNullShippingFeeAndBurden() throws Exception {
+        mockMvc.perform(internalPost("/internal/v1/settlementPayouts", "9", """
+                        {"settlementId": 9, "sellerId": 4, "sellerOrderId": 12, "payoutAmount": 9500, "fee": 500,
+                         "shippingFee": null, "sellerBurdenAmount": null}
+                        """))
+                .andExpect(status().isOk());
+
+        verify(paymentService).distributeSettlement(9L, 4L, 12L, new BigDecimal("9500"), new BigDecimal("500"),
+                BigDecimal.ZERO, BigDecimal.ZERO);
+    }
+
+    @Test
+    @DisplayName("정산 지급 검증 실패는 400 INVALID_AMOUNT로 나간다")
+    void payoutValidationFailureIs400() throws Exception {
+        willThrow(new BusinessException(PaymentErrorCode.INVALID_AMOUNT))
+                .given(paymentService).distributeSettlement(anyLong(), anyLong(), any(), any(), any(), any(), any());
+
+        mockMvc.perform(internalPost("/internal/v1/settlementPayouts", "9", FULL_PAYOUT_BODY))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_AMOUNT"));
     }
 
     @Test

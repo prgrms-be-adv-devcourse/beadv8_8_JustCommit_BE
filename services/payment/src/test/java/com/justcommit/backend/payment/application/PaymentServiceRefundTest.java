@@ -9,11 +9,11 @@ import com.justcommit.backend.payment.domain.WalletTransaction;
 import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
 import com.justcommit.backend.payment.infrastructure.repository.WalletRepository;
 import com.justcommit.backend.payment.infrastructure.repository.WalletTransactionRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -43,10 +43,19 @@ class PaymentServiceRefundTest {
     private static final Long BUYER_WALLET_ID = 1L;
 
     private static final Long HOLDING_WALLET_ID = 2L;
+    private static final Long REVENUE_WALLET_ID = 3L;
+    private static final Long DEPOSIT_TRANSACTION_ID = 900L;
 
     @Mock WalletRepository walletRepository;
     @Mock WalletTransactionRepository walletTransactionRepository;
-    @InjectMocks PaymentService paymentService;
+    PaymentService paymentService;
+
+    // 입금은 진짜 MemberWalletDepositor로 (목 저장소 사용) 해야 잔액, 원장을 확인할 수 있다
+    @BeforeEach
+    void createPaymentService() {
+        paymentService = new PaymentService(walletRepository, walletTransactionRepository, null,
+                new MemberWalletDepositor(walletRepository, walletTransactionRepository));
+    }
 
     // ===== refundCancelledItem =====
 
@@ -304,6 +313,74 @@ class PaymentServiceRefundTest {
         assertThatThrownBy(call)
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", PaymentErrorCode.INVALID_AMOUNT);
+    }
+
+    // ===== 미수금 차감 (#380) =====
+
+    @Test
+    @DisplayName("미수금이 없으면 환불 때 REVENUE를 조회하지도 잠그지도 않는다")
+    void refundWithoutReceivableDoesNotLockRevenue() {
+        stubBuyerWallet(buyerWallet("0"), RefType.ORDER_ITEM_CANCEL_REFUND, ORDER_ITEM_ID);
+        stubHoldingWallet(holdingWallet("10000"));
+        stubHoldingRefundExists(RefType.ORDER_ITEM_CANCEL_REFUND, ORDER_ITEM_ID, false);
+
+        paymentService.refundCancelledItem(ORDER_ITEM_ID, BUYER_ID, new BigDecimal("3000"));
+
+        verify(walletRepository, never()).findByWalletTypeForUpdate(WalletType.REVENUE);
+        assertThat(capturedTransactions(2)).extracting(WalletTransaction::getRefType)
+                .containsOnly(RefType.ORDER_ITEM_CANCEL_REFUND);
+    }
+
+    @Test
+    @DisplayName("미수금이 있으면 환불액에서 먼저 빼 REVENUE로 옮기고, 환불 IN 행은 환불액 그대로 남긴다")
+    void refundCollectsReceivableFirst() {
+        Wallet buyer = buyerWallet("0");
+        buyer.increaseReceivable(new BigDecimal("1000"));
+        Wallet holding = holdingWallet("10000");
+        Wallet revenue = wallet(Wallet.system(WalletType.REVENUE), REVENUE_WALLET_ID, "0");
+        stubBuyerWallet(buyer, RefType.SHIPPING_FEE_REFUND, SELLER_ORDER_ID);
+        stubHoldingWallet(holding);
+        stubShippingFeeCollected(SELLER_ORDER_ID, false);
+        stubHoldingRefundExists(RefType.SHIPPING_FEE_REFUND, SELLER_ORDER_ID, false);
+        when(walletRepository.findByWalletTypeForUpdate(WalletType.REVENUE)).thenReturn(Optional.of(revenue));
+        when(walletTransactionRepository.save(any())).thenAnswer(invocation -> {
+            WalletTransaction transaction = invocation.getArgument(0);
+            ReflectionTestUtils.setField(transaction, "id", DEPOSIT_TRANSACTION_ID);
+            return transaction;
+        });
+
+        PaymentResult result = paymentService.refundShippingFee(SELLER_ORDER_ID, BUYER_ID, new BigDecimal("3000"));
+
+        // 응답 잔액은 차감 뒤 잔액
+        assertThat(result.status()).isEqualTo(PaymentStatus.REFUNDED);
+        assertThat(result.balanceAfter()).isEqualByComparingTo("2000");
+        assertThat(buyer.getReceivable()).isEqualByComparingTo("0");
+        assertThat(holding.getBalance()).isEqualByComparingTo("7000");
+        assertThat(revenue.getBalance()).isEqualByComparingTo("1000");
+        assertThat(capturedTransactions(4))
+                .extracting(t -> t.getWallet().getId(), WalletTransaction::getRefType, WalletTransaction::getStatus,
+                        t -> t.getAmount().toPlainString(), t -> t.getBalanceAfter().toPlainString(),
+                        t -> t.getReceivableAfter().toPlainString())
+                .containsExactly(
+                        tuple(HOLDING_WALLET_ID, RefType.SHIPPING_FEE_REFUND, TransactionStatus.OUT, "3000", "7000", "0"),
+                        tuple(BUYER_WALLET_ID, RefType.SHIPPING_FEE_REFUND, TransactionStatus.IN, "3000", "3000", "1000"),
+                        tuple(BUYER_WALLET_ID, RefType.RECEIVABLE_COLLECTION, TransactionStatus.OUT, "1000", "2000", "0"),
+                        tuple(REVENUE_WALLET_ID, RefType.RECEIVABLE_COLLECTION, TransactionStatus.IN, "1000", "1000", "0"));
+    }
+
+    @Test
+    @DisplayName("이미 환불된 건을 다시 요청하면 미수금 차감 없이 ALREADY_REFUNDED와 현재(차감 뒤) 잔액을 돌려준다")
+    void alreadyRefundedDoesNotCollectAgain() {
+        // 첫 환불 3000에서 미수금 1000을 차감한 뒤의 상태
+        Wallet buyer = buyerWallet("2000");
+        stubBuyerWalletAlreadyRefunded(buyer, RefType.ORDER_ITEM_CANCEL_REFUND, ORDER_ITEM_ID, "3000");
+
+        PaymentResult result = paymentService.refundCancelledItem(ORDER_ITEM_ID, BUYER_ID, new BigDecimal("3000"));
+
+        assertThat(result.status()).isEqualTo(PaymentStatus.ALREADY_REFUNDED);
+        assertThat(result.balanceAfter()).isEqualByComparingTo("2000");
+        verify(walletRepository, never()).findByWalletTypeForUpdate(any());
+        verify(walletTransactionRepository, never()).save(any());
     }
 
     // 구매자 지갑 조회 + 기존 환불 내역 없음

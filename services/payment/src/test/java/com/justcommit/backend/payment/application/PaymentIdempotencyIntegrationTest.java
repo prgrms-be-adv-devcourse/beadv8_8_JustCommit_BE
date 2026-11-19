@@ -42,7 +42,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 })
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, PaymentService.class, WalletService.class})
+@Import({JpaAuditingConfig.class, PaymentService.class, WalletService.class, MemberWalletDepositor.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class PaymentIdempotencyIntegrationTest {
@@ -79,14 +79,14 @@ class PaymentIdempotencyIntegrationTest {
         walletRepository.save(Wallet.forMember(sellerId));
 
         runConcurrently(i -> () -> {
-            paymentService.distributeSettlement(1L, sellerId, new BigDecimal("9500"), new BigDecimal("500"));
+            paymentService.distributeSettlement(1L, sellerId, null, new BigDecimal("9500"), new BigDecimal("500"), BigDecimal.ZERO, BigDecimal.ZERO);
             return null;
         });
 
         assertThat(balanceOf(sellerId)).isEqualByComparingTo("9500");
         assertThat(systemBalance(WalletType.REVENUE)).isEqualByComparingTo("500");
         assertThat(systemBalance(WalletType.HOLDING)).isEqualByComparingTo("90000");
-        // HOLDING 출금 + 판매자 입금 + REVENUE 수수료 입금
+        // HOLDING 출금 + 판매자 SETTLEMENT 행 + REVENUE 수수료 입금
         assertThat(walletTransactionRepository.count()).isEqualTo(3);
     }
 
@@ -95,8 +95,8 @@ class PaymentIdempotencyIntegrationTest {
     void doesNothingWhenSameSettlementIsPaidAgain() {
         Long sellerId = 41L;
 
-        paymentService.distributeSettlement(2L, sellerId, new BigDecimal("9500"), new BigDecimal("500"));
-        paymentService.distributeSettlement(2L, sellerId, new BigDecimal("9500"), new BigDecimal("500"));
+        paymentService.distributeSettlement(2L, sellerId, null, new BigDecimal("9500"), new BigDecimal("500"), BigDecimal.ZERO, BigDecimal.ZERO);
+        paymentService.distributeSettlement(2L, sellerId, null, new BigDecimal("9500"), new BigDecimal("500"), BigDecimal.ZERO, BigDecimal.ZERO);
 
         assertThat(balanceOf(sellerId)).isEqualByComparingTo("9500");
         assertThat(systemBalance(WalletType.REVENUE)).isEqualByComparingTo("500");
