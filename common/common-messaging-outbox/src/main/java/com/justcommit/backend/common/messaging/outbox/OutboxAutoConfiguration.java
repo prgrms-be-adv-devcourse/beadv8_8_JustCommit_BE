@@ -2,6 +2,7 @@ package com.justcommit.backend.common.messaging.outbox;
 
 import com.justcommit.backend.common.messaging.EventEnvelopeMapper;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.tracing.Tracer;
 import jakarta.persistence.EntityManager;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -19,6 +20,7 @@ import java.time.Clock;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import java.util.function.Supplier;
 
 /**
  * common-messaging-outbox를 의존한 서비스에 Outbox 발행 빈을 등록한다.
@@ -36,8 +38,12 @@ public class OutboxAutoConfiguration {
   }
 
   @Bean
-  OutboxPublisher outboxPublisher(EntityManager entityManager, EventEnvelopeMapper mapper, OutboxRelay relay) {
-    return new OutboxPublisher(entityManager, mapper, relay, Clock.systemUTC());
+  OutboxPublisher outboxPublisher(EntityManager entityManager, EventEnvelopeMapper mapper, OutboxRelay relay,
+                                  ObjectProvider<Tracer> tracer) {
+    // 추적(Tracer)은 서비스의 common-logging이 만든다. 없으면(추적 없는 테스트) traceparent를 비워 둔다
+    Tracer current = tracer.getIfAvailable();
+    Supplier<String> traceparent = current == null ? () -> null : new CurrentTraceparent(current);
+    return new OutboxPublisher(entityManager, mapper, relay, Clock.systemUTC(), traceparent);
   }
   // outbox.scheduler.enabled = false면 재전송, 정리x (기본은 켜짐, 테스트에서 끔)
   @Bean

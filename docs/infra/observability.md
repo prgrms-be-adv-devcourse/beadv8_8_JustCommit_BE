@@ -33,7 +33,7 @@
 | 항목 | 내용 |
 |---|---|
 | 형식 | 운영 JSON(ECS, Spring Boot 내장 structured logging), 로컬 텍스트 |
-| 추적 | Micrometer Tracing(OTel 브리지) traceId를 REST · Kafka 헤더 `traceparent`로 전파해 로그에 기록, span은 OTLP로 Alloy → Tempo |
+| 추적 | Micrometer Tracing(OTel 브리지) traceId를 REST · Kafka 헤더 `traceparent`로 전파해 로그에 `[traceId-spanId]`로 기록, span은 OTLP HTTP로 앱 서버 Alloy(`10.0.7.76:4318`) → Tempo. Kafka는 Outbox가 저장 때 traceparent를 남기고 받는 쪽 리스너 관측(`spring.kafka.listener.observation-enabled`)이 이어받음. Grafana에서 로그의 traceId → Tempo, 추적 → 같은 traceId 로그로 이동 |
 | MDC | 인증 필터(`UserIdMdcFilter`)가 memberId를 넣고, `common-logging`은 형식 · 키 이름만 정함 |
 | 메시지 | 한국어 한 문장 + 값은 key-value (`log.atInfo().addKeyValue(...)`), 객체 통째 출력 금지 |
 | 금지 | 이름 · 전화 · 주소 · 이메일 · 계좌 · 비밀번호 · 토큰 · 결제 키 · 쿼리스트링을 로그에 남기지 않음 |

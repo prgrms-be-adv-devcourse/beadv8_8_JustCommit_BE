@@ -1,4 +1,4 @@
-# 서비스 주소 (비밀값 아님). Gateway · market이 같이 읽는다.
+# 서비스 주소 · 추적 보낼 곳 (비밀값 아님). Gateway · market · ai가 읽는다.
 # 포트 원본: docs/reference/ports.md
 #   - compose 서비스: 앱 서버 사설 IP의 호스트 포트 (10.0.7.76:8081 ~ 8086)
 #   - market: 같은 K3s 안이라 Service 이름으로 부른다
@@ -18,3 +18,6 @@ data:
   AI_SERVICE_URL: "http://ai:8080"
   REDIS_HOST: "10.0.7.76"
   REDIS_PORT: "6379"
+  # 분산 추적: 파드가 추적(span)을 앱 서버 Alloy(OTLP HTTP 4318)로 보낸다 → 데이터 서버 Tempo (ADR 0027)
+  TRACING_EXPORT_ENABLED: "true"
+  OTLP_TRACING_ENDPOINT: "http://10.0.7.76:4318/v1/traces"

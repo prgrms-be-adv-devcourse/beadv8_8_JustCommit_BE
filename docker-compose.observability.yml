@@ -7,6 +7,7 @@
 # 흐름
 #   앱 서버 Alloy ──로그──▶ Loki(3100)
 #   앱 서버 Alloy ──지표(remote_write)──▶ Prometheus(9090)   ← 앱 서버 서비스 · node-exporter는 Alloy가 긁어서 밀어 넣는다
+#   앱 서버 Alloy ──추적(OTLP)──▶ Tempo(4317)
 #   Prometheus ──직접 수집──▶ 이 서버의 node-exporter · postgres-exporter · kafka-exporter
 #   Grafana(127.0.0.1:3000) ◀── SSH 터널로만 접속
 #
@@ -16,10 +17,10 @@
 #     계정 만들기 (처음 한 번):
 #     docker exec -it replant-postgres psql -U postgres -c "CREATE ROLE monitoring LOGIN PASSWORD '<비밀번호>' IN ROLE pg_monitor;"
 #
-# 포트: Loki · Prometheus는 이 서버 사설 IP에만 열고, 보안 그룹이 앱 서버 보안 그룹에서 오는 3100 · 9090만 허용한다.
+# 포트: Loki · Prometheus · Tempo는 이 서버 사설 IP에만 열고, 보안 그룹이 앱 서버 보안 그룹에서 오는 3100 · 9090 · 4317만 허용한다.
 #   Grafana는 127.0.0.1에만 연다 → 인터넷 · 앱 서버 어디서도 안 보이고 SSH 터널로만 들어간다 (docs/reference/ports.md)
 #
-# 메모리 한도 합 약 0.95GB (Tempo 256m는 ⑤ 단계에서 추가). 보관: Loki 14일 · Prometheus 7일
+# 메모리 한도 합 약 1.2GB. 보관: Loki 14일 · Prometheus 7일 · Tempo 3일
 name: replant-obs
 
 x-common: &common
@@ -58,6 +59,20 @@ services:
       - prometheus-data:/prometheus
     mem_limit: 384m
 
+  # 분산 추적 (ADR 0027). 앱 서버 Alloy → 4317(OTLP gRPC). 조회(3200)는 같은 compose의 Grafana만 → 포트를 열지 않음
+  tempo:
+    <<: *common
+    image: grafana/tempo:2.8.1
+    container_name: replant-tempo
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    user: "0" # 새 볼륨(/var/tempo)이 root 소유라 기본 사용자(10001)로는 쓰지 못함
+    ports:
+      - "${DATA_IP}:4317:4317"
+    volumes:
+      - ./deploy/observability/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo-data:/var/tempo
+    mem_limit: 256m
+
   grafana:
     <<: *common
     image: grafana/grafana:12.0.0
@@ -78,7 +93,7 @@ services:
       - ./deploy/observability/grafana/dashboards:/etc/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     mem_limit: 192m
-    depends_on: [loki, prometheus]
+    depends_on: [loki, prometheus, tempo]
 
   # 이 서버(데이터 서버)의 CPU · 메모리 · 디스크 · CPU steal. 포트를 열지 않고 Prometheus만 compose 네트워크로 읽는다
   node-exporter:
@@ -111,6 +126,7 @@ services:
     mem_limit: 48m
 
 volumes:
+  tempo-data:
   loki-data:
   prometheus-data:
   grafana-data:
