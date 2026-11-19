@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.OrderResult;
+import com.justcommit.backend.market.ShipmentQuery;
 import com.justcommit.backend.market.cart.application.CartService;
 import com.justcommit.backend.market.client.payment.PaymentOutcome;
 import com.justcommit.backend.market.client.payment.PaymentUseCase;
@@ -82,6 +83,10 @@ class OrderRecoveryIntegrationTest {
     @MockitoBean SellerOrderEventPublisher sellerOrderEventPublisher;
     @MockitoBean ShipmentService shipmentService;
     @MockitoBean CartService cartService;
+    // 취소, 환불 복구는 OrderCancelRefundIntegrationTest에서 본다
+    @MockitoBean ShipmentQuery shipmentQuery;
+    @MockitoBean OrderCancelTransactions orderCancelTransactions;
+    @MockitoBean OrderCancelRefunder orderCancelRefunder;
 
     @Autowired OrderRecoveryService recoveryService;
     @Autowired OrderPaymentTransactions transactions;

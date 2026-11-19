@@ -120,8 +120,7 @@ public class OrderItemConfirmationService {
             return;
         }
 
-        if (!sellerOrder.getItems().stream().anyMatch(i ->
-                i.getStatus().equals(OrderItemStatus.NORMAL) || i.getStatus().equals(OrderItemStatus.REFUND_REQUESTED))) {
+        if (!sellerOrder.getItems().stream().anyMatch(OrderItemConfirmationService::isUnfinished)) {
             sellerOrder.confirmed();
             purchaseConfirmedEventPublisher.publishAfterCommit(new PurchaseConfirmedEvent(
                     sellerOrder.getId(), sellerOrder.getSellerId(), sellerOrder.getSettlementBaseAmount(), sellerOrder.getShippingFee(),
@@ -138,7 +137,19 @@ public class OrderItemConfirmationService {
         return names.size() == 1 ? names.get(0) : names.get(0) + " 외 " + (names.size() - 1) + "건";
     }
 
+    // 아직 끝나지 않은 주문상품: 일반, 반품 요청, 환불 결과를 기다리는 취소 중, 확인 필요 (#282).
+    // 취소 중은 택배 취소가 거절되면 일반으로 돌아오므로 판매자 주문, 주문을 끝내지 않는다
+    private static boolean isUnfinished(OrdersItem item) {
+        return item.getStatus() == OrderItemStatus.NORMAL || item.getStatus() == OrderItemStatus.REFUND_REQUESTED
+                || item.getStatus() == OrderItemStatus.CANCEL_PROCESSING || item.getStatus() == OrderItemStatus.REVIEW_REQUIRED;
+    }
+
     private void updateOrderStatus(Orders orders) {
+        if (orders.getSellerOrders().stream().flatMap(s -> s.getItems().stream())
+                .anyMatch(i -> i.getStatus() == OrderItemStatus.CANCEL_PROCESSING
+                        || i.getStatus() == OrderItemStatus.REVIEW_REQUIRED)) {
+            return;
+        }
         if (orders.getSellerOrders().stream().anyMatch(s -> s.getConfirmedAt() == null && s.getSettlementBaseAmount().compareTo(BigDecimal.ZERO) > 0)) {
             return;
         }

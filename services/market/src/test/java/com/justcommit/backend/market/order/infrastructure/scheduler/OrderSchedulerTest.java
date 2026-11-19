@@ -9,7 +9,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
@@ -39,10 +38,24 @@ class OrderSchedulerTest {
     }
 
     @Test
-    void refreshesReviewMetricEvenWhenRecoveryFails() {
+    void runsCancelRecoveryStepsAfterPaymentRecovery() {
+        orderScheduler.recoverProcessingPayments();
+
+        var order = inOrder(orderRecoveryService, reviewRequiredOrderMetrics);
+        order.verify(orderRecoveryService).recoverProcessingPayments();
+        order.verify(orderRecoveryService).recoverCancelResults();
+        order.verify(orderRecoveryService).recoverProcessingRefunds();
+        order.verify(reviewRequiredOrderMetrics).refresh();
+    }
+
+    @Test
+    void runsNextStepsAndRefreshesReviewMetricEvenWhenRecoveryFails() {
         doThrow(new IllegalStateException("db down")).when(orderRecoveryService).recoverProcessingPayments();
 
-        assertThatThrownBy(orderScheduler::recoverProcessingPayments).isInstanceOf(IllegalStateException.class);
+        orderScheduler.recoverProcessingPayments();
+
+        verify(orderRecoveryService).recoverCancelResults();
+        verify(orderRecoveryService).recoverProcessingRefunds();
         verify(reviewRequiredOrderMetrics).refresh();
     }
 
