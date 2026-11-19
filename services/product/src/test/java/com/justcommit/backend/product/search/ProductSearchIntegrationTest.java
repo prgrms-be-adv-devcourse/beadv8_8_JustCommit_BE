@@ -233,6 +233,20 @@ class ProductSearchIntegrationTest {
         assertThat(ids(searchService.search(request))).containsExactly(middle.getId(), cheap.getId());
     }
 
+    @Test
+    @DisplayName("OpenSearch 결과 창(10,000건)을 넘는 깊은 페이지는 LIKE로 넘어가지 않고 빈 페이지 · 전체 개수")
+    void pageBeyondResultWindow() throws IOException {
+        save(MONSTERA_ID, SELLER_ID, "몬스테라 소형", "설명", ProductStatus.ACTIVE);
+        save(MONSTERA_ID, SELLER_ID, "몬스테라 중형", "설명", ProductStatus.ACTIVE);
+        index();
+
+        ProductSearchRequest deep = new ProductSearchRequest("몬스테라", null, null, null, null, null,
+                null, null, null, null, null, null, 600, 20);
+        Page<ProductSearchResponse> page = searchService.search(deep);
+        assertThat(page.getContent()).isEmpty();
+        assertThat(page.getTotalElements()).isEqualTo(2);
+    }
+
     private Product save(Long speciesId, Long sellerId, String title, String description, ProductStatus status) {
         return save(speciesId, sellerId, title, description, status, "25000");
     }

@@ -62,8 +62,9 @@ public class ProductSearchService {
         try {
             return searchOpenSearch(request, statuses, pageable);
         } catch (ProductSearchUnavailableException e) {
-            log.warn("OpenSearch 검색 실패, DB LIKE 검색으로 대신함: keyword={}, cause={}",
-                    request.keyword(), e.getCause() == null ? e.toString() : e.getCause().toString());
+            // 검색어 원문은 남기지 않고 길이만 (로그 노출 · 길이 줄이기, #547 리뷰)
+            log.warn("OpenSearch 검색 실패, DB LIKE 검색으로 대신함: keywordLength={}, cause={}",
+                    request.keyword().length(), e.getCause() == null ? e.toString() : e.getCause().toString());
             return searchDb(request, pageable);
         }
     }

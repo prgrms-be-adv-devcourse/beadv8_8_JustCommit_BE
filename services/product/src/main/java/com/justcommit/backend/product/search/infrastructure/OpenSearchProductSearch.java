@@ -42,17 +42,22 @@ public class OpenSearchProductSearch implements ProductKeywordSearch {
     // 품종명 · 별칭 · 학명은 모두 「어떤 품종인가」를 가리키므로 같은 가중치
     static final float SPECIES_BOOST = 2f;
     private static final int MAX_ATTEMPTS = 2;
+    // OpenSearch index.max_result_window 기본값. from + size가 이보다 크면 OpenSearch가 오류로 답한다
+    static final int MAX_RESULT_WINDOW = 10_000;
 
     private final OpenSearchClient client;
 
     @Override
     public Result search(Condition condition, ProductSearchSort sort, int page, int size) {
+        // 너무 깊은 페이지(페이지 크기 50이면 약 200페이지부터)는 오류 → LIKE 대체로 넘어가 정렬이 바뀌므로,
+        // 장애로 보지 않고 전체 개수만 세어 빈 페이지로 답한다 (#547 리뷰)
+        boolean beyondWindow = (long) page * size + size > MAX_RESULT_WINDOW;
         SearchRequest request = SearchRequest.of(search -> search
                 .index(ProductIndexInitializer.ALIAS)
                 .query(query(condition))
                 .sort(sortOptions(sort))
-                .from(page * size)
-                .size(size)
+                .from(beyondWindow ? 0 : page * size)
+                .size(beyondWindow ? 0 : size)
                 // 기본은 10,000건까지만 세므로, 화면의 전체 개수(판매 완료 개수 등)가 정확하도록 끝까지 셈
                 .trackTotalHits(total -> total.enabled(true))
                 // id만 쓰고 화면 값은 DB에서 읽으므로 문서 본문은 받지 않음
