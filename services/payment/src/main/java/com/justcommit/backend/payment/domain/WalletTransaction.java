@@ -49,6 +49,9 @@ public class WalletTransaction extends BaseTimeEntity {
     @Column(name = "balance_after", nullable = false, precision = 19)
     private BigDecimal balanceAfter;
 
+    @Column(name = "receivable_after", nullable = false, precision = 19)
+    private BigDecimal receivableAfter;
+
     public static WalletTransaction chargeIn(Wallet wallet, Charge charge) {
         return new WalletTransaction(
                 wallet,
@@ -57,7 +60,8 @@ public class WalletTransaction extends BaseTimeEntity {
                 charge.getApprovedAt(),
                 TransactionStatus.IN,
                 charge.getAmount(),
-                wallet.getBalance()
+                wallet.getBalance(),
+                wallet.getReceivable()
         );
     }
 
@@ -69,7 +73,8 @@ public class WalletTransaction extends BaseTimeEntity {
                 occurredAt,
                 TransactionStatus.OUT,
                 amount,
-                wallet.getBalance()
+                wallet.getBalance(),
+                wallet.getReceivable()
         );
     }
 
@@ -86,7 +91,8 @@ public class WalletTransaction extends BaseTimeEntity {
                 occurredAt,
                 TransactionStatus.IN,
                 amount,
-                wallet.getBalance()
+                wallet.getBalance(),
+                wallet.getReceivable()
         );
     }
 
@@ -104,7 +110,8 @@ public class WalletTransaction extends BaseTimeEntity {
                 occurredAt,
                 TransactionStatus.OUT,
                 amount,
-                wallet.getBalance()
+                wallet.getBalance(),
+                wallet.getReceivable()
         );
     }
 
@@ -121,7 +128,8 @@ public class WalletTransaction extends BaseTimeEntity {
                 occurredAt,
                 TransactionStatus.IN,
                 amount,
-                wallet.getBalance()
+                wallet.getBalance(),
+                wallet.getReceivable()
         );
     }
 
@@ -139,7 +147,8 @@ public class WalletTransaction extends BaseTimeEntity {
                 occurredAt,
                 TransactionStatus.IN,
                 amount,
-                wallet.getBalance()
+                wallet.getBalance(),
+                wallet.getReceivable()
         );
     }
 
@@ -157,7 +166,8 @@ public class WalletTransaction extends BaseTimeEntity {
                 occurredAt,
                 TransactionStatus.OUT,
                 amount,
-                wallet.getBalance()
+                wallet.getBalance(),
+                wallet.getReceivable()
         );
     }
 
@@ -175,7 +185,8 @@ public class WalletTransaction extends BaseTimeEntity {
                 occurredAt,
                 TransactionStatus.IN,
                 amount,
-                wallet.getBalance()
+                wallet.getBalance(),
+                wallet.getReceivable()
         );
     }
 
@@ -188,7 +199,7 @@ public class WalletTransaction extends BaseTimeEntity {
     ) {
         return new WalletTransaction(
                 wallet, refType, refId, occurredAt,
-                TransactionStatus.IN, amount, wallet.getBalance());
+                TransactionStatus.IN, amount, wallet.getBalance(), wallet.getReceivable());
     }
 
     public static WalletTransaction refundOut(
@@ -200,6 +211,66 @@ public class WalletTransaction extends BaseTimeEntity {
     ) {
         return new WalletTransaction(
                 wallet, refType, refId, occurredAt,
-                TransactionStatus.OUT, amount, wallet.getBalance());
+                TransactionStatus.OUT, amount, wallet.getBalance(), wallet.getReceivable());
+    }
+
+    // 판매자 정산 행. 정산마다 1건(중복 지급 판정 기준). 0원 · 마이너스 정산이면 금액 0으로 잔액 변경 없이 기록한다
+    public static WalletTransaction sellerSettlement(
+            Wallet wallet,
+            Long settlementId,
+            BigDecimal amount,
+            LocalDateTime occurredAt
+    ) {
+        if (amount == null || amount.signum() < 0) {
+            throw new IllegalArgumentException("판매자 정산 행 금액은 0 이상이어야 합니다: " + amount);
+        }
+        return new WalletTransaction(
+                wallet,
+                RefType.SETTLEMENT,
+                settlementId,
+                occurredAt,
+                TransactionStatus.IN,
+                amount,
+                wallet.getBalance(),
+                wallet.getReceivable()
+        );
+    }
+
+    // 마이너스 정산을 판매자 잔액에서 회수한 출금
+    public static WalletTransaction settlementCollectionOut(
+            Wallet wallet,
+            Long settlementId,
+            BigDecimal amount,
+            LocalDateTime occurredAt
+    ) {
+        return new WalletTransaction(
+                wallet,
+                RefType.SETTLEMENT_COLLECTION,
+                settlementId,
+                occurredAt,
+                TransactionStatus.OUT,
+                amount,
+                wallet.getBalance(),
+                wallet.getReceivable()
+        );
+    }
+
+    // REVENUE 판매자 부담금 적립 (실제로 받은 금액만)
+    public static WalletTransaction sellerBurdenIn(
+            Wallet wallet,
+            Long settlementId,
+            BigDecimal amount,
+            LocalDateTime occurredAt
+    ) {
+        return new WalletTransaction(
+                wallet,
+                RefType.SELLER_BURDEN,
+                settlementId,
+                occurredAt,
+                TransactionStatus.IN,
+                amount,
+                wallet.getBalance(),
+                wallet.getReceivable()
+        );
     }
 }
