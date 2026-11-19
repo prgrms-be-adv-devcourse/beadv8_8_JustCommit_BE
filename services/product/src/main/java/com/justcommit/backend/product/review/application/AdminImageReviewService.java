@@ -1,11 +1,13 @@
 package com.justcommit.backend.product.review.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.product.ProductStatus;
 import com.justcommit.backend.product.client.member.MemberQuery;
 import com.justcommit.backend.product.exception.ProductErrorCode;
 import com.justcommit.backend.product.member.domain.MemberReplica;
 import com.justcommit.backend.product.product.domain.Product;
+import com.justcommit.backend.product.product.event.ImageReviewDelayed;
 import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import com.justcommit.backend.product.review.domain.ImageReview;
 import com.justcommit.backend.product.review.domain.enums.RejectReason;
@@ -39,7 +41,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AdminImageReviewService {
 
-    // 관리자 확인으로 간 지 이만큼 지나면 목록에 「지연」 표시 (관리자 알림은 notification 연동 때 → 핀 문서 11/16)
+    // 관리자 확인으로 간 지 이만큼 지나면 목록에 「지연」 표시 + 관리자 알림 이벤트(ImageReviewDelayed, 1시간마다 묶어서) 1번
     static final Duration DELAY_AFTER = Duration.ofHours(12);
     // 이만큼 지나면 자동 반려 (자동 승인은 하지 않음)
     static final Duration EXPIRE_AFTER = Duration.ofHours(24);
@@ -50,6 +52,7 @@ public class AdminImageReviewService {
     private final ProductRepository productRepository;
     private final MemberQuery memberQuery;
     private final ReviewResultPublisher reviewResultPublisher;
+    private final OutboxPublisher outboxPublisher;
     private final TransactionTemplate transactionTemplate;
     private final JsonMapper jsonMapper;
     private final Clock clock;
@@ -132,6 +135,24 @@ public class AdminImageReviewService {
         if (!valid) {
             throw new BusinessException(ProductErrorCode.INVALID_REJECT_REASON);
         }
+    }
+
+    // ── 12시간 지연 알림 ───────────────────────────────
+
+    // 12시간은 지났고 24시간은 아직 안 지났으며 아직 알리지 않은 관리자 확인 건을 묶어 ImageReviewDelayed 1개를 Outbox에 저장하고, 그 건들에 알림 시각을 채움
+    // 저장과 표시가 한 트랜잭션이라 둘 중 하나만 남지 않음 (롤백되면 둘 다 없음 → 다음 실행에서 다시 모음). 0건이면 보내지 않음
+    // 이번에 묶은 건수를 돌려줌
+    @Transactional
+    public int notifyDelayed() {
+        LocalDateTime now = LocalDateTime.now(clock);
+        List<ImageReview> delayed = imageReviewRepository.lockDelayedUnnotified(now.minus(DELAY_AFTER), now.minus(EXPIRE_AFTER));
+        if (delayed.isEmpty()) {
+            return 0;
+        }
+        delayed.forEach(review -> review.markDelayNotified(now));
+        outboxPublisher.publish(new ImageReviewDelayed(delayed.size(), now));
+        log.info("관리자 확인 지연({}) 알림 이벤트: {}건", DELAY_AFTER, delayed.size());
+        return delayed.size();
     }
 
     // ── 24시간 기한 ───────────────────────────────
