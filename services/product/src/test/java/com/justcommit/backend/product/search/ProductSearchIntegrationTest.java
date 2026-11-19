@@ -131,19 +131,21 @@ class ProductSearchIntegrationTest {
     }
 
     @Test
-    @DisplayName("[완료 기준 1] \"몬 스테라\"로 찾으면 몬스테라 상품이 관련도순 (제목 > 품종명 > 설명)")
+    @DisplayName("[완료 기준 1] \"몬 스테라\"로 찾으면 몬스테라 상품이 관련도순 (제목 > 품종명 · 별칭 · 학명, 설명은 찾지 않음)")
     void spacedKeywordFindsByRelevance() throws IOException {
         Product inTitleAndSpecies = save(MONSTERA_ID, SELLER_ID, "몬스테라 알보 팝니다", "잘 키웠어요", ProductStatus.ACTIVE);
         Product inSpeciesOnly = save(MONSTERA_ID, SELLER_ID, "거실 대형 화분", "잘 키웠어요", ProductStatus.ACTIVE);
-        Product inDescriptionOnly = save(SCINDAPSUS_ID, SELLER_ID, "덩굴 식물", "몬스테라 옆에서 키웠어요", ProductStatus.ACTIVE);
+        Product scindapsus = save(SCINDAPSUS_ID, SELLER_ID, "덩굴 식물", "몬스테라 옆에서 키웠어요", ProductStatus.ACTIVE);
         save(SANSEVIERIA_ID, SELLER_ID, "산세베리아 분양", "잘 키웠어요", ProductStatus.ACTIVE);
         index();
 
-        // 띄어쓰기를 무시해 찾고, 제목 · 품종명 둘 다 맞는 상품이 맨 앞
-        assertThat(ids(search("몬 스테라"))).startsWith(inTitleAndSpecies.getId(), inSpeciesOnly.getId());
-        // 설명에만 있는 상품은 품종명에 있는 상품보다 뒤
-        assertThat(ids(search("몬스테라")))
-                .containsExactly(inTitleAndSpecies.getId(), inSpeciesOnly.getId(), inDescriptionOnly.getId());
+        // 띄어쓰기를 무시해 찾고, 제목 · 품종명 둘 다 맞는 상품이 맨 앞. 설명에만 있는 상품은 나오지 않음 (설명은 2단계)
+        assertThat(ids(search("몬 스테라"))).containsExactly(inTitleAndSpecies.getId(), inSpeciesOnly.getId());
+        assertThat(ids(search("몬스테라"))).containsExactly(inTitleAndSpecies.getId(), inSpeciesOnly.getId());
+        // 별칭 (V4 시드: 스킨답서스 → 신답서스) · 학명(대소문자 무시)으로도 찾음
+        assertThat(ids(search("신답서스"))).containsExactly(scindapsus.getId());
+        assertThat(ids(search("monstera Deliciosa")))
+                .containsExactlyInAnyOrder(inTitleAndSpecies.getId(), inSpeciesOnly.getId());
     }
 
     @Test

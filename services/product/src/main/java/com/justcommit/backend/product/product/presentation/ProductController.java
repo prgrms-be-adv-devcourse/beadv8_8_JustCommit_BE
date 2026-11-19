@@ -43,7 +43,7 @@ public class ProductController {
     }
 
     @Operation(summary = "상품 목록 조회", description = "검수 중 · 반려 · 삭제 · 숨김 상품은 항상 제외하고 판매 중 · 결제 대기 · 판매 완료 상품을 보여 줍니다. "
-            + "keyword가 있으면 OpenSearch로 제목 > 품종명 > 설명 순 가중치로 찾고(띄어쓰기 · 기호 · 대소문자 무시), 기본 정렬은 관련도순(relevance)입니다. "
+            + "keyword가 있으면 OpenSearch로 제목 > 품종명 · 별칭 · 학명 순 가중치로 찾고(띄어쓰기 · 기호 · 대소문자 무시, 설명은 찾지 않음), 기본 정렬은 관련도순(relevance)입니다. "
             + "keyword가 없으면 DB에서 조회하고 기본 정렬은 최신순(latest)입니다. sort: relevance · latest · priceAsc · priceDesc. "
             + "필터: 품종, 카테고리, 광량 · 물주기 · 난이도(품종 기준), 가격 범위, onSale=true(판매 중만). "
             + "판매자 상점: sellerId(그 판매자 상품만), status(ACTIVE · PAYMENT_PENDING · SOLD_OUT 중 하나, 그 밖이면 400 INVALID_SEARCH_STATUS). "
