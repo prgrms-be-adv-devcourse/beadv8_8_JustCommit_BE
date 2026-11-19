@@ -65,7 +65,9 @@
 | `OrderItemAutoConfirmed` | `orderItemId` · `orderId` · `sellerOrderId` · `buyerId` (숫자), `confirmedAt` (시각) | |
 | `PurchaseConfirmed` | `sellerOrderId` · `sellerId` (숫자), `saleAmount` · `shippingFee` · `sellerBurdenAmount` (금액), `confirmedAt` (시각), `itemSummary` (문자열) | 정산은 `saleAmount`에만 수수료, `shippingFee`는 `REVENUE`로. `sellerBurdenAmount`(판매자 부담금)는 없으면 0, 정산금 = 판매액 − 수수료 − 판매자 부담금 |
 | `ShipmentStatusChanged` | `shipmentId` · `orderId` · `sellerOrderId` · `buyerId` · `sellerId` (숫자), `status` (`BOOKED` · `PICKED_UP` · `IN_TRANSIT` · `DELIVERED`), `occurredAt` (시각), `itemSummary` (문자열) | `occurredAt`은 배송 단계가 일어난 시각 |
-| `SellerOrderAccepted` · `SellerOrderRejected` · `Return*` · `OrderItemReturned` | ⬜ | 판매자 수락 · 거절(#283), 반품 때 |
+| `SellerOrderAccepted` | `orderId` · `sellerOrderId` · `sellerId` · `buyerId` (숫자), `rejectedItemCount` (숫자), `acceptedAt` (시각) | 판매자 수락 (#288). 판매자 주문당 1건, 수락 또는 거절 뒤 수락된 주문상품이 하나라도 남으면 발행 (남지 않으면 `SellerOrderRejected`). 전체 수락이면 `rejectedItemCount` 0, 일부 거절(수락된 상품이 남음)이면 이번에 거절한 주문상품 수 (구매자가 먼저 취소한 상품은 세지 않음) |
+| `SellerOrderRejected` | `orderId` · `sellerOrderId` · `sellerId` · `buyerId` (숫자), `reason` (`SELLER` · `AUTO`), `rejectedAt` (시각) | 판매자 주문의 남은 상품 전부 거절 (#288). 판매자 거절이면 `SELLER`, 24시간 자동 거절이면 `AUTO`. 결정 시점에 발행하므로 환불이 나중에 `REVIEW_REQUIRED`가 되어도 이미 나간 상태. 판매자 거절, 자동 거절은 `SellerOrderCancelled`를 보내지 않음 |
+| `Return*` · `OrderItemReturned` | ⬜ | 반품 때 |
 
 시각 칸은 market 서버 시간(서울)의 `LocalDateTime`입니다.
 

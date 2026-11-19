@@ -3,6 +3,9 @@ package com.justcommit.backend.market.order.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderStatus;
+import com.justcommit.backend.market.SellerOrderAcceptedEvent;
+import com.justcommit.backend.market.SellerOrderRejectReason;
+import com.justcommit.backend.market.SellerOrderRejectedEvent;
 import com.justcommit.backend.market.order.application.OrderCancelTransactions.RefundClaim;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.domain.Orders;
@@ -11,6 +14,7 @@ import com.justcommit.backend.market.order.domain.SellerOrder;
 import com.justcommit.backend.market.order.event.OrderItemCancelled;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
+import com.justcommit.backend.market.order.infrastructure.kafka.SellerOrderEventPublisher;
 import com.justcommit.backend.market.shipment.application.ShipmentService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -26,7 +30,9 @@ import java.util.Set;
 // 수락된(일반) 주문상품이 있으면 같은 트랜잭션에서 그 상품만 담은 배송(READY)을 만든다.
 // 잠금 순서는 구매자 취소와 같은 주문 → 판매자 주문이라 수락, 거절, 구매자 취소가 동시에 와도 하나씩 처리된다.
 // 먼저 처리된 쪽이 수락 대기를 없애므로 늦게 온 수락, 거절은 409다.
-// 24시간 자동 거절(#285)도 같은 순서로 잠그되 주문 행은 SKIP LOCKED라, 늦은 쪽이면 예외 없이 건너뛴다
+// 24시간 자동 거절(#285)도 같은 순서로 잠그되 주문 행은 SKIP LOCKED라, 늦은 쪽이면 예외 없이 건너뛴다.
+// 결정 결과는 같은 트랜잭션 마지막에 판매자 주문당 한 번 수락(SellerOrderAccepted) 또는 거절(SellerOrderRejected)로 발행한다 (#288).
+// 409나 건너뛰기로 끝나면 발행하지 않고, 409는 롤백이라 Outbox 행도 남지 않는다
 @Slf4j
 @Component
 public class SellerOrderDecisionTransactions {
@@ -36,17 +42,20 @@ public class SellerOrderDecisionTransactions {
     private final SellerOrderRepository sellerOrderRepository;
     private final OrderCancelTransactions orderCancelTransactions;
     private final ShipmentService shipmentService;
+    private final SellerOrderEventPublisher sellerOrderEventPublisher;
 
     public SellerOrderDecisionTransactions(PlatformTransactionManager transactionManager,
                                            OrdersRepository ordersRepository,
                                            SellerOrderRepository sellerOrderRepository,
                                            OrderCancelTransactions orderCancelTransactions,
-                                           ShipmentService shipmentService) {
+                                           ShipmentService shipmentService,
+                                           SellerOrderEventPublisher sellerOrderEventPublisher) {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.ordersRepository = ordersRepository;
         this.sellerOrderRepository = sellerOrderRepository;
         this.orderCancelTransactions = orderCancelTransactions;
         this.shipmentService = shipmentService;
+        this.sellerOrderEventPublisher = sellerOrderEventPublisher;
     }
 
     // 수락: 남은 수락 대기 주문상품을 모두 일반으로 바꾸고 배송을 만든다
@@ -57,6 +66,7 @@ public class SellerOrderDecisionTransactions {
             pending.forEach(OrdersItem::accept);
             createShipment(locked.sellerOrder());
             log.info("판매자 수락: sellerOrderId={}, items={}", sellerOrderId, pending.size());
+            publishAccepted(locked, 0, LocalDateTime.now());
         });
     }
 
@@ -78,17 +88,25 @@ public class SellerOrderDecisionTransactions {
                 throw new BusinessException(OrderErrorCode.SELLER_ORDER_NOT_ACCEPTABLE);
             }
 
+            LocalDateTime now = LocalDateTime.now();
             List<RefundClaim> claims = orderCancelTransactions.cancelBeforeAccept(locked.order(), sellerOrder,
-                    item -> rejectIds.contains(item.getId()), OrderItemCancelled.CancelReason.SELLER,
-                    LocalDateTime.now());
+                    item -> rejectIds.contains(item.getId()), OrderItemCancelled.CancelReason.SELLER, now);
             sellerOrder.getItems().stream()
                     .filter(item -> item.getStatus() == OrderItemStatus.ACCEPT_PENDING)
                     .forEach(OrdersItem::accept);
-            if (sellerOrder.getItems().stream().anyMatch(item -> item.getStatus() == OrderItemStatus.NORMAL)) {
+            boolean anyAccepted = sellerOrder.getItems().stream()
+                    .anyMatch(item -> item.getStatus() == OrderItemStatus.NORMAL);
+            if (anyAccepted) {
                 createShipment(sellerOrder);
             }
             log.info("판매자 거절: sellerOrderId={}, rejected={}, accepted={}", sellerOrderId, rejectIds.size(),
                     pending.size() - rejectIds.size());
+            // 수락된 상품이 남으면 일부 거절(수락 알림에 이번에 거절한 수), 남지 않으면 판매자 주문 전부 거절
+            if (anyAccepted) {
+                publishAccepted(locked, rejectIds.size(), now);
+            } else {
+                publishRejected(locked.order(), sellerOrder, SellerOrderRejectReason.SELLER, now);
+            }
             return claims;
         });
     }
@@ -118,8 +136,24 @@ public class SellerOrderDecisionTransactions {
             List<RefundClaim> claims = orderCancelTransactions.cancelBeforeAccept(order, sellerOrder,
                     item -> item.getStatus() == OrderItemStatus.ACCEPT_PENDING, OrderItemCancelled.CancelReason.AUTO, now);
             log.info("자동 거절: sellerOrderId={}, items={}", sellerOrderId, claims.size());
+            if (!claims.isEmpty()) {
+                publishRejected(order, sellerOrder, SellerOrderRejectReason.AUTO, now);
+            }
             return claims;
         });
+    }
+
+    private void publishAccepted(Locked locked, int rejectedItemCount, LocalDateTime acceptedAt) {
+        SellerOrder sellerOrder = locked.sellerOrder();
+        sellerOrderEventPublisher.publishAfterCommit(new SellerOrderAcceptedEvent(locked.order().getId(),
+                sellerOrder.getId(), sellerOrder.getSellerId(), locked.order().getBuyerId(), rejectedItemCount,
+                acceptedAt));
+    }
+
+    private void publishRejected(Orders order, SellerOrder sellerOrder, SellerOrderRejectReason reason,
+                                 LocalDateTime rejectedAt) {
+        sellerOrderEventPublisher.publishAfterCommit(new SellerOrderRejectedEvent(order.getId(), sellerOrder.getId(),
+                sellerOrder.getSellerId(), order.getBuyerId(), reason, rejectedAt));
     }
 
     // 수락된(일반) 주문상품만 담는다. 구매자가 수락 전에 취소한 상품, 거절한 상품은 빠진다
