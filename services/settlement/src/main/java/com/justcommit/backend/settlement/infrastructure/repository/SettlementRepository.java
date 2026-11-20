@@ -39,6 +39,9 @@ public interface SettlementRepository extends JpaRepository<Settlement, Long> {
     // 지급 지연 감시: createdBefore 전에 만들어졌는데 아직 미지급인 정산 수
     long countByStatusInAndCreatedAtBefore(Collection<SettlementStatus> statuses, LocalDateTime createdBefore);
 
+    // 탈퇴 확인: 판매자의 정산 중 statuses 상태인 것의 수 (idx_settlement_seller_id_created_at의 seller_id로 좁힘)
+    long countBySellerIdAndStatusIn(Long sellerId, Collection<SettlementStatus> statuses);
+
     // 지급 지연 감시: 가장 오래된 미지급 정산
     Optional<Settlement> findFirstByStatusInOrderByCreatedAtAsc(Collection<SettlementStatus> statuses);
 }
