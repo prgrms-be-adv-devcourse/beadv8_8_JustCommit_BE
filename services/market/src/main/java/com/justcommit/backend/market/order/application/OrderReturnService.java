@@ -23,6 +23,7 @@ import com.justcommit.backend.market.order.infrastructure.kafka.SellerOrderEvent
 import com.justcommit.backend.market.shipment.application.ShipmentService;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +35,7 @@ import java.time.LocalDateTime;
 // 자동 구매 확정도 같은 주문 행을 잠그고 일반 상태를 다시 확인하므로, 둘이 겹치면 먼저 잠근 쪽만 반영된다.
 // 승인, 거절, 자동 승인도 같은 순서로 잠그고 반품 신청 상태를 다시 보므로 먼저 잠근 쪽만 반영된다.
 // 늦은 승인, 거절은 409 RETURN_NOT_DECIDABLE, 늦은 자동 승인은 주문 행을 SKIP LOCKED로 잡아 예외 없이 건너뛴다
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderReturnService {
@@ -126,21 +128,39 @@ public class OrderReturnService {
             return false;
         }
         Long orderId = ordersItemRepository.findOrderIdByItemId(orderItemId).orElse(null);
-        Orders order = orderId == null ? null : ordersRepository.findByIdForUpdateSkipLocked(orderId).orElse(null);
-        if (order == null) {
+        if (orderId == null) {
+            warnStuck(returnRequestId, "주문상품의 주문을 찾을 수 없음");
             return false;
+        }
+        Orders order = ordersRepository.findByIdForUpdateSkipLocked(orderId).orElse(null);
+        if (order == null) {
+            return false; // 다른 쪽이 주문을 잡고 있음. 다음 주기에 다시 본다
         }
         Long sellerOrderId = ordersItemRepository.findSellerOrderIdByItemId(orderItemId).orElse(null);
         SellerOrder sellerOrder = sellerOrderId == null ? null : sellerOrderRepository.findLockedById(sellerOrderId).orElse(null);
         OrdersItem item = ordersItemRepository.findById(orderItemId).orElse(null);
         ReturnRequest returnRequest = returnRequestRepository.findByOrderItemId(orderItemId).orElse(null);
+        if (returnRequest == null || !returnRequest.isRequested()) {
+            return false; // 그사이 판매자가 응답함 (먼저 잠근 쪽이 이김)
+        }
         LocalDateTime now = LocalDateTime.now();
-        if (sellerOrder == null || item == null || returnRequest == null || !isDecidable(order, item, returnRequest)
-                || !returnRequest.isResponsePeriodOver(now)) {
+        // 응답 전 반품 신청인데 승인할 수 없으면 데이터가 어긋난 것이다. 이 행은 후보 앞자리에 계속 남아
+        // 다음 주기에도 다시 읽히므로(뒤 후보가 밀릴 수 있음) 사람이 확인하도록 경고를 남긴다
+        if (sellerOrder == null || item == null || !isDecidable(order, item, returnRequest)) {
+            warnStuck(returnRequestId, "주문 " + order.getStatus() + ", 주문상품 "
+                    + (item == null ? "없음" : item.getStatus()) + (sellerOrder == null ? ", 판매자 주문 없음" : ""));
+            return false;
+        }
+        if (!returnRequest.isResponsePeriodOver(now)) {
             return false;
         }
         approveLocked(new Locked(order, sellerOrder, item, returnRequest), ReturnDecidedBy.AUTO, now);
         return true;
+    }
+
+    private static void warnStuck(Long returnRequestId, String reason) {
+        log.warn("응답 전 반품 신청을 자동 승인할 수 없어 건너뜀, 확인 필요: returnRequestId={}, 이유={}",
+                returnRequestId, reason);
     }
 
     // 반품 배송은 그 주문상품 하나만 담는다 (반품은 주문상품마다 새 배송). 반품 배송비는 배송비와 같은 값

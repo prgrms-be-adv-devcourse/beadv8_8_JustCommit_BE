@@ -32,8 +32,11 @@ import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatu
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
@@ -249,6 +252,35 @@ class OrderReturnDecisionIntegrationTest {
 
         assertThat(returnShipmentCount()).isZero();
         assertThat(outboxCount("ReturnApproved")).isZero();
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    @DisplayName("응답 전 반품 신청인데 주문상품이 반품 신청이 아니면(데이터 어긋남) 자동 승인하지 않고 경고 로그를 남긴다")
+    void autoApproveWarnsWhenDataMismatch(CapturedOutput output) {
+        Fixture fixture = fixture(LocalDateTime.now().minusHours(49), OrderItemStatus.CONFIRMED);
+        jdbcTemplate.update("update orders_item set status = 'CONFIRMED' where id = ?", fixture.returnItemId());
+
+        assertThat(orderReturnService.autoApprove(fixture.returnRequestId())).isFalse();
+
+        assertThat(returnRequest(fixture).getStatus()).isEqualTo(ReturnRequestStatus.REQUESTED);
+        assertThat(returnShipmentCount()).isZero();
+        assertThat(output).contains("자동 승인할 수 없어 건너뜀")
+                .contains("returnRequestId=" + fixture.returnRequestId());
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    @DisplayName("판매자가 이미 응답한 반품이나 아직 48시간이 안 된 반품은 경고 없이 건너뛴다")
+    void autoApproveSkipsWithoutWarning(CapturedOutput output) {
+        Fixture decided = fixture(LocalDateTime.now().minusHours(49), OrderItemStatus.CONFIRMED);
+        orderReturnService.reject(SELLER_ID, decided.returnItemId());
+        Fixture notDue = fixture(LocalDateTime.now().minusHours(47), OrderItemStatus.CONFIRMED);
+
+        assertThat(orderReturnService.autoApprove(decided.returnRequestId())).isFalse();
+        assertThat(orderReturnService.autoApprove(notDue.returnRequestId())).isFalse();
+
+        assertThat(output).doesNotContain("자동 승인할 수 없어 건너뜀");
     }
 
     @Test
