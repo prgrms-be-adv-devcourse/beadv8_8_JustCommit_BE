@@ -22,7 +22,16 @@ for rps in ${steps//,/ }; do
   echo "== $label ${rps} rps 시작: $(date +%H:%M:%S)"
   (cd "$dir" && k6 run -q -e BASE_URL="${BASE_URL:-http://localhost:18082}" -e RPS="$rps" \
     -e DURATION="${DURATION:-1m}" --summary-export "$out" search.js >/dev/null 2>&1) || true
-  files+=("$out")
+  # 임계값 초과 종료 코드는 무시하되, 요약 파일이 없으면(앱 미기동 · setup 실패) 표에서 빼고 알린다 (#596 리뷰)
+  if [ -f "$out" ]; then
+    files+=("$out")
+  else
+    echo "!! ${rps} rps 결과 파일이 없음 (k6 실패: 앱 · BASE_URL · 품종 데이터 확인)" >&2
+  fi
   sleep "${REST:-10}"
 done
+if [ ${#files[@]} -eq 0 ]; then
+  echo "!! 결과 파일이 하나도 없어 표를 만들지 않음" >&2
+  exit 1
+fi
 python3 -I "$dir/../analysis/search_table.py" "${files[@]}"

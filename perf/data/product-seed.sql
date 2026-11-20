@@ -1,12 +1,30 @@
--- 상품 검색 측정용 판매 중 상품 (#571). MSA product DB(product_db) 전용, 세미 seed.sql의 상품 부분과 같은 모양
+-- 상품 검색 측정용 판매 중 상품 (#571). 측정용 product DB(product_perf_db 등 이름이 _perf_db로 끝나는 DB) 전용, 세미 seed.sql의 상품 부분과 같은 모양
 --
--- 넣기: psql ... -v products=10000 -v sellers=200 < perf/data/product-seed.sql
+-- 넣기: psql -d product_perf_db ... -v products=10000 -v sellers=200 < perf/data/product-seed.sql
 --   여러 번 실행하면 그만큼 더 쌓인다 (1만 → 3만: products=20000으로 한 번 더)
 -- 넣기 전에: product 앱이 한 번 떠서 테이블 · 품종(Flyway V4 · V11)이 있어야 한다
 -- 판매자는 회원 복제본 없이 id만 둔다 (목록 · 검색 응답은 sellerId만 씀). 900001부터라 실제 회원 id와 겹치지 않는다
 -- 넣은 뒤: OpenSearch 색인은 관리자 전체 색인 API로 (SQL로 넣으면 색인 이벤트가 없음)
 
 \set ON_ERROR_STOP on
+
+-- 실수 방지 (#596 리뷰): 개수를 안 주거나, 측정용 DB(_perf_db)가 아니면 아무것도 넣지 않고 끝낸다
+\if :{?products}
+\else
+  \echo '-v products=<넣을 상품 수>를 주세요 (예: -v products=10000 -v sellers=200)'
+  \quit
+\endif
+\if :{?sellers}
+\else
+  \echo '-v sellers=<판매자 수>를 주세요 (예: -v products=10000 -v sellers=200)'
+  \quit
+\endif
+SELECT current_database() LIKE '%\_perf\_db' AS is_perf_db \gset
+\if :is_perf_db
+\else
+  \echo '측정용 DB(이름이 _perf_db로 끝남)에서만 실행합니다. 지금 DB:' :DBNAME
+  \quit
+\endif
 BEGIN;
 
 CREATE TEMP TABLE perf_species ON COMMIT DROP AS
