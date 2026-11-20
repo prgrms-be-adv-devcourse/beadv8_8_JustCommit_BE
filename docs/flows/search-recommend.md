@@ -1,7 +1,7 @@
 # 검색 · 추천
 
 > 언제 읽나: OpenSearch 색인, 임베딩, 추천 코드를 고칠 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 17, 노션 기획안 「AI 추천 기능 설명」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: Miro 17, 노션 기획안 「AI 추천 기능 설명」
 
 ## 검색 색인
 
@@ -101,3 +101,31 @@ sequenceDiagram
 ## 의미 검색
 
 상품 의미 검색은 **범위 밖**입니다. 문장으로 식물을 찾는 기능은 챗봇이 맡습니다 (⬜ 챗봇 범위 보류). product → ai 호출은 없습니다.
+
+**품종 의미 검색** (#570): 사용자가 쓴 문장으로 품종을 찾습니다. 상품 문서가 아니라 품종 문서(위 「품종 임베딩」)를 찾고, 챗봇과 별개입니다 → [ADR 0030](../decisions/0030-species-semantic-search-pgvector.md)
+
+```mermaid
+sequenceDiagram
+    participant U as 사용자
+    participant G as Gateway
+    participant AI as ai-service
+    participant O as OpenAI
+    participant V as pgvector
+    U->>G: GET /api/v1/speciesSearches?query=햇빛 적은 방에서 키우기 쉬운 식물
+    G->>AI: IP 기준 요청 수 제한 통과 시
+    AI->>O: 문장 임베딩 (text-embedding-3-small)
+    AI->>V: species_vector_store에서 코사인 거리가 가까운 품종
+    AI->>AI: 상품 스냅샷에서 그 품종의 판매 중 상품
+    AI-->>U: 품종 이름 · 유사도 · 판매 중 상품 ID
+    Note over AI,O: 실패 · 시간 초과면 503 (다른 기능은 영향 없음)
+```
+
+| 항목 | 내용 |
+|---|---|
+| 입력 | `query` 앞뒤 공백을 지우고 2 ~ 100자(밖이면 400 `INVALID_SEARCH_QUERY`, OpenAI를 부르지 않음). `size` 1 ~ 10, 기본 5(밖이면 400 `INVALID_SEARCH_SIZE`) |
+| 질의 벡터 | 품종 임베딩과 같은 모델 · 차원([ADR 0024](../decisions/0024-embedding-openai-text-embedding-3-small.md)). 문장은 저장 · 로그하지 않음 |
+| 품종 | `species_vector_store`에서 코사인 거리 순(HNSW) `size`개, 유사도(1 - 코사인 거리)가 최소 유사도 🟨 0.28(`custom.species-search.min-similarity`) 미만이면 뺌. 2026-11-20 로컬 실측: 식물 질문의 결과는 0.30 ~ 0.48, 식물과 상관없는 질문(「오늘 점심 뭐 먹지」 · 「주식 투자 방법」)은 0.20 ~ 0.24라 그 사이로 정함. 이름은 품종 프로필. 판매 중 상품이 없는 품종도 보여 줌 |
+| 상품 | 품종마다 상품 스냅샷의 판매 중(`ACTIVE` · 숨김 아님) 상품을 `product_id` 내림차순 3개까지. 카드 정보(제목 · 가격 · 사진)는 화면이 `GET products/{id}`로 조회 |
+| 결과 없음 | 빈 목록 (200) |
+| 장애 | OpenAI 실패 · 시간 초과는 재시도 없이 503 `SEMANTIC_SEARCH_UNAVAILABLE` → [장애 대응](../conventions/resilience.md). 추천 · 재임베딩 · 이벤트 구독은 영향 없음 |
+| 비용 보호 | 공개 API라 Gateway가 IP 기준 요청 수 제한 → [Gateway](../services/gateway.md) |

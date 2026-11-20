@@ -2,7 +2,7 @@
 
 > 언제 읽나: 외부 호출이나 서비스 간 호출의 실패 처리를 정할 때
 
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: Miro 14, 노션 기획안 「장애 처리」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: Miro 14, 노션 기획안 「장애 처리」
 
 ## 공통값
 
@@ -36,6 +36,7 @@
 | market → ai 추천 | 1초 / 2초 | 연결 실패만 1회 (common-web 공통, 최악 약 4.2초) | 빈 목록 (장바구니 조회는 영향 없음, 화면은 최신 상품으로 대신 → [ADR 0029](../decisions/0029-cart-recommendation-latest-fallback-on-screen.md)) |
 | product → OpenSearch | 1초 / 2초 | 1회 | DB LIKE 검색으로 대신 (관련도 · 오타 허용 · 한국어 분석 없음) |
 | product → OpenAI Moderation · Claude Haiku (사진 검수) | 🟨 3초 / 20초 | 비동기 최대 3회 | 자동 통과 · 자동 반려 없이 관리자 확인 |
+| ai → OpenAI 임베딩 (품종 의미 검색) | 3초(연결 포함 전체, `custom.species-search.timeout`) | 없음 (Spring AI 기본 3회를 끔) | 503 `SEMANTIC_SEARCH_UNAVAILABLE`. 검색용 모델을 따로 만들어 추천 · 재임베딩과 설정을 나눔 |
 | ai → OpenAI 임베딩 (재임베딩 운영 API) | ⬜ 미정 (따로 설정 안 함) | ⬜ 미정 | ⬜ 미정 |
 | payment → 토스페이먼츠 | 3초 / 60초 | 없음 | 결과 불명 → `PENDING` 유지, 결제 조회로 `APPROVED`, `FAILED`, `REVIEW_REQUIRED` 중 하나로 확정 → [스케줄러 표](../reference/schedulers.md) |
 | market → 모의 택배사 | 3초 / 5초 | 10초 큐 + 건별 백오프 10초 → 30초 → 1분 고정, **포기 없음** | 배송 `READY` · `CANCEL_PENDING` 유지. 서킷 없음 |
