@@ -193,7 +193,7 @@ class SellerOrderCompletionTest {
             items.add(new OrdersItem(sellerOrder, 100L + i, "상품" + (i + 1), BigDecimal.valueOf(10_000L * (i + 1))));
         }
         sellerOrder.addItems(items);
-        sellerOrder.setShippingFee(SellerOrder.DEFAULT_SHIPPING_FEE);
+        sellerOrder.setShippingFee(new BigDecimal("3000"));
         for (int i = 0; i < statuses.length; i++) {
             ReflectionTestUtils.setField(items.get(i), "status", statuses[i]);
         }

@@ -163,12 +163,13 @@ public class OrderReturnService {
                 returnRequestId, reason);
     }
 
-    // 반품 배송은 그 주문상품 하나만 담는다 (반품은 주문상품마다 새 배송). 반품 배송비는 배송비와 같은 값
+    // 반품 배송은 그 주문상품 하나만 담는다 (반품은 주문상품마다 새 배송).
+    // 반품 배송비는 그 판매자 주문의 배송비(주문 때 요금표로 계산해 저장한 값)와 같다. 같은 경로를 거꾸로 오기 때문이다
     private void approveLocked(Locked locked, ReturnDecidedBy decidedBy, LocalDateTime now) {
         Long shipmentId = shipmentService.createReturnShipment(locked.sellerOrder().getId(),
                 locked.item().getProductName());
         locked.item().approveReturn();
-        locked.returnRequest().approve(decidedBy, now, SellerOrder.DEFAULT_SHIPPING_FEE, shipmentId);
+        locked.returnRequest().approve(decidedBy, now, locked.sellerOrder().getShippingFee(), shipmentId);
         sellerOrderEventPublisher.publishAfterCommit(new ReturnApprovedEvent(locked.returnRequest().getId(),
                 locked.item().getId(), locked.order().getId(), locked.sellerOrder().getId(),
                 locked.order().getBuyerId(), locked.sellerOrder().getSellerId(), locked.item().getProductName(),

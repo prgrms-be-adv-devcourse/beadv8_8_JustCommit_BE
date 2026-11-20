@@ -150,6 +150,16 @@ class OrderReturnDecisionIntegrationTest {
     }
 
     @Test
+    @DisplayName("반품 배송비는 그 판매자 주문의 배송비와 같다 (지역 할증으로 5,000원이면 5,000원)")
+    void returnShippingFeeEqualsSellerOrderShippingFee() {
+        Fixture fixture = fixture(LocalDateTime.now().minusHours(1), OrderItemStatus.CONFIRMED, new BigDecimal("5000"));
+
+        orderReturnService.approve(SELLER_ID, fixture.returnItemId());
+
+        assertThat(returnRequest(fixture).getReturnShippingFee()).isEqualByComparingTo("5000");
+    }
+
+    @Test
     @DisplayName("승인을 두 번 눌러도 반품 배송은 1개, 두 번째는 409 RETURN_NOT_DECIDABLE")
     void secondApprovalConflicts() {
         Fixture fixture = fixture(LocalDateTime.now().minusHours(1), OrderItemStatus.CONFIRMED);
@@ -477,15 +487,19 @@ class OrderReturnDecisionIntegrationTest {
                 .toList();
     }
 
-    // 결제 완료 주문 1건, 판매자 주문 1건(배송비 3,000원), 반품 신청한 주문상품(몬스테라 10,000원)과
+    // 결제 완료 주문 1건, 판매자 주문 1건(배송비 shippingFee, 기본 3,000원), 반품 신청한 주문상품(몬스테라 10,000원)과
     // 다른 주문상품(20,000원, 상태 otherStatus). 반품 신청 시각은 requestedAt
     private Fixture fixture(LocalDateTime requestedAt, OrderItemStatus otherStatus) {
+        return fixture(requestedAt, otherStatus, new BigDecimal("3000"));
+    }
+
+    private Fixture fixture(LocalDateTime requestedAt, OrderItemStatus otherStatus, BigDecimal shippingFee) {
         Orders order = new Orders("ORD-RD-" + System.nanoTime(), BUYER_ID, "구매자", "01012345678", "12345", "서울시", null, 2);
         SellerOrder sellerOrder = new SellerOrder(order, SELLER_ID);
         OrdersItem returnItem = new OrdersItem(sellerOrder, 100L, "몬스테라", new BigDecimal("10000"));
         OrdersItem otherItem = new OrdersItem(sellerOrder, 101L, "필레아", new BigDecimal("20000"));
         sellerOrder.addItems(List.of(returnItem, otherItem));
-        sellerOrder.setShippingFee(SellerOrder.DEFAULT_SHIPPING_FEE);
+        sellerOrder.setShippingFee(shippingFee);
         order.addSellerOrders(List.of(sellerOrder));
         order.paid();
         returnItem.requestReturn();
