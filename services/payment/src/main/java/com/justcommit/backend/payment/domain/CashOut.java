@@ -56,7 +56,7 @@ public class CashOut extends BaseTimeEntity {
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
-    // 지급 재시도용 칸 (#389). 이번 버전에서는 쓰지 않는다
+    // 지급 재시도용 칸. 이번 버전에서는 쓰지 않는다
     @Column(name = "attempt_count", nullable = false)
     private int attemptCount;
 

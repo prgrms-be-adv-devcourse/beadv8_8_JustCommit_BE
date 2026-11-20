@@ -17,7 +17,7 @@ import java.util.Optional;
 // 1. 같은 키 인출 건 확인 (잠금 없음) → 있으면 처음 결과, 금액이 다르면 409
 // 2. member 계좌 조회 → 실패하면 지갑을 건드리지 않고 거절
 // 3. Tx1: 지갑 잠금, 검증, 차감, 인출 건 PENDING, CASH_OUT 원장
-// 4. 은행 지급 한 번 (멱등 키 = 인출 건 ID) → 성공이면 COMPLETED, 예외면 PENDING 유지 (재시도, 복원은 #389)
+// 4. 은행 지급 한 번 (멱등 키 = 인출 건 ID) → 성공이면 COMPLETED, 예외면 PENDING 유지
 @Slf4j
 @Component
 @RequiredArgsConstructor

@@ -27,7 +27,7 @@ public class CashOutController {
     private final CashOutService cashOutService;
 
     // 인출 신청. 같은 Idempotency-Key로 다시 보내면 처음 결과 (금액이 다르면 409)
-    // 지급이 실패해도 200 + status PENDING (차감은 유지, 재시도, 복원은 #389)
+    // 지급이 실패해도 200 + status PENDING (차감은 유지)
     @PostMapping
     public ApiResponse<CashOutResponse> requestCashOut(@AuthenticationPrincipal AuthMember authMember,
                                                        @RequestHeader(IDEMPOTENCY_KEY) String idempotencyKey,

@@ -28,6 +28,12 @@ spring:
       # 계좌 조회 (인출 신청 때). 타임아웃은 common-web 내부 호출 기본값(연결 1초, 응답 3초)
       internal-member:
         base-url: ${MEMBER_SERVICE_URL:http://localhost:8081}
+      # 모의 은행 서버 지급 (custom.bank.mode=http일 때만 그룹을 만든다). 내부 API 그룹이 아니라 internal-api.groups에 넣지 않는다
+      # 응답 5초: 은행의 지연 응답(끝자리 9999, 10초)보다 짧게
+      bank:
+        base-url: ${custom.bank.base-url}
+        connect-timeout: 3s
+        read-timeout: 5s
 
 server:
   port: 8084
@@ -65,6 +71,9 @@ custom:
       auth-error-delay: 15m
       # 한 건을 확보한 뒤 다른 인스턴스가 다시 잡지 않게 미루는 시간 (토스 응답 타임아웃 60초보다 길게)
       lease: 2m
-  # 인출 지급 은행. fake: 메모리에서 항상 성공 (모의 은행 서버 연결은 #389)
+  # 인출 지급 은행. fake(기본): 메모리에서 항상 성공 / http: 모의 은행 서버
+  # http면 base-url, api-key가 비어 있을 때 앱이 시작하지 않는다
   bank:
     mode: ${BANK_MODE:fake}
+    base-url: ${BANK_BASE_URL:}
+    api-key: ${BANK_API_KEY:}
