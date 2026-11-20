@@ -44,6 +44,7 @@ add_shared() {  # 이름 · 만드는 명령
 }
 add_shared INTERNAL_API_KEY            "openssl rand -hex 32"
 add_shared COURIER_API_KEY             "openssl rand -hex 32"
+add_shared BANK_API_KEY                "openssl rand -hex 32"  # 모의 은행 서버 (#389)
 add_shared WEBHOOK_API_KEY             "openssl rand -hex 32"
 add_shared MEMBER_ADDRESS_EVENT_KEY    "openssl rand -base64 32"
 add_shared ACCOUNT_ENCRYPTION_KEY      "openssl rand -base64 32"
@@ -130,6 +131,8 @@ write() { cat > "$S/$1.env"; chmod 600 "$S/$1.env"; echo "  작성: $1.env"; }
   echo "TOSS_SECRET_KEY=$(ext TOSS_SECRET_KEY)"
   echo "PAYMENT_KEY_ENCRYPTION_KEY=$(sh_ PAYMENT_KEY_ENCRYPTION_KEY)"
   echo "CASH_OUT_ACCOUNT_ENCRYPTION_KEY=$(sh_ CASH_OUT_ACCOUNT_ENCRYPTION_KEY)"
+  echo "BANK_BASE_URL=http://$APP_IP:3001"
+  echo "BANK_API_KEY=$(sh_ BANK_API_KEY)"
 } | write payment
 
 {
@@ -154,4 +157,4 @@ for s in gateway market ai; do
   echo "  K3s Secret: $s-env"
 done
 
-echo "✅ 끝. 404-express의 .env에는 shared.env의 COURIER_API_KEY · WEBHOOK_API_KEY와 같은 값을 넣어야 해요."
+echo "✅ 끝. 404-express의 .env에는 shared.env의 COURIER_API_KEY · WEBHOOK_API_KEY와 같은 값을, bank의 .env에는 shared.env의 BANK_API_KEY와 같은 값을 넣어야 해요."
