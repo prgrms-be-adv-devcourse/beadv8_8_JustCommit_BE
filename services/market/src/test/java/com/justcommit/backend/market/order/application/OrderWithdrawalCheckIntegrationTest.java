@@ -62,11 +62,11 @@ class OrderWithdrawalCheckIntegrationTest {
     @Test
     @DisplayName("구매자로만 진행 중 주문이 있으면 ACTIVE_BUYER_ORDER, 주문상품이 여러 개여도 주문 하나로 센다")
     void buyerOnly() {
-        // 결제 대기 주문 (판매자 두 명 · 상품 세 개) + 결제 완료 · 반품 요청 주문
+        // 결제 대기 주문 (판매자 두 명 · 상품 세 개) + 결제 완료 · 반품 신청 주문
         save(MEMBER, OrderStatus.PAYMENT_PENDING,
                 seller(OTHER, OrderItemStatus.NORMAL, OrderItemStatus.NORMAL),
                 seller(OTHER + 1, OrderItemStatus.NORMAL));
-        save(MEMBER, OrderStatus.PAID, seller(OTHER, OrderItemStatus.CONFIRMED, OrderItemStatus.REFUND_REQUESTED));
+        save(MEMBER, OrderStatus.PAID, seller(OTHER, OrderItemStatus.CONFIRMED, OrderItemStatus.RETURN_REQUESTED));
 
         WithdrawalCheckResponse result = service.check(MEMBER);
 
@@ -94,7 +94,35 @@ class OrderWithdrawalCheckIntegrationTest {
     @DisplayName("구매 · 판매 둘 다 진행 중이면 사유 두 개")
     void buyerAndSeller() {
         save(MEMBER, OrderStatus.PAID, seller(OTHER, OrderItemStatus.NORMAL));
-        save(OTHER, OrderStatus.PAID, seller(MEMBER, OrderItemStatus.REFUND_REQUESTED));
+        save(OTHER, OrderStatus.PAID, seller(MEMBER, OrderItemStatus.RETURN_REQUESTED));
+
+        WithdrawalCheckResponse result = service.check(MEMBER);
+
+        assertThat(result.hasWithdrawalBlocker()).isTrue();
+        assertThat(result.blockingReasons()).containsExactly(
+                WithdrawalBlockingReason.ACTIVE_BUYER_ORDER, WithdrawalBlockingReason.ACTIVE_SELLER_ORDER);
+        assertThat(result.details()).isEqualTo(new WithdrawalCheckResponse.Details(1, 1));
+    }
+
+    @Test
+    @DisplayName("반품 배송 중, 반품 환불 중 주문상품은 구매자, 판매자 모두 진행 중으로 센다 (#382)")
+    void returnInProgressBlocks() {
+        save(MEMBER, OrderStatus.PAID, seller(OTHER, OrderItemStatus.CONFIRMED, OrderItemStatus.RETURN_IN_TRANSIT));
+        save(OTHER, OrderStatus.PAID, seller(MEMBER, OrderItemStatus.RETURN_PROCESSING, OrderItemStatus.RETURNED));
+
+        WithdrawalCheckResponse result = service.check(MEMBER);
+
+        assertThat(result.hasWithdrawalBlocker()).isTrue();
+        assertThat(result.blockingReasons()).containsExactly(
+                WithdrawalBlockingReason.ACTIVE_BUYER_ORDER, WithdrawalBlockingReason.ACTIVE_SELLER_ORDER);
+        assertThat(result.details()).isEqualTo(new WithdrawalCheckResponse.Details(1, 1));
+    }
+
+    @Test
+    @DisplayName("판매자 수락 대기(ACCEPT_PENDING) 주문상품은 구매자, 판매자 모두 진행 중으로 센다 (#284)")
+    void acceptPendingBlocks() {
+        save(MEMBER, OrderStatus.PAID, seller(OTHER, OrderItemStatus.ACCEPT_PENDING));
+        save(OTHER, OrderStatus.PAID, seller(MEMBER, OrderItemStatus.ACCEPT_PENDING, OrderItemStatus.CANCELLED));
 
         WithdrawalCheckResponse result = service.check(MEMBER);
 
@@ -120,19 +148,19 @@ class OrderWithdrawalCheckIntegrationTest {
     }
 
     @Test
-    @DisplayName("구매 확정 · 취소 · 환불 완료 · 만료 · 결제 실패 주문만 있으면 차단하지 않는다")
+    @DisplayName("구매 확정 · 취소 · 반품 완료 · 만료 · 결제 실패 주문만 있으면 차단하지 않는다")
     void finishedOrdersDoNotBlock() {
         // 구매자로
         save(MEMBER, OrderStatus.COMPLETED, seller(OTHER, OrderItemStatus.CONFIRMED));
         save(MEMBER, OrderStatus.CANCELLED, seller(OTHER, OrderItemStatus.CANCELLED));
         save(MEMBER, OrderStatus.EXPIRED, seller(OTHER, OrderItemStatus.NORMAL));
         save(MEMBER, OrderStatus.PAYMENT_FAILED, seller(OTHER, OrderItemStatus.NORMAL));
-        // 결제 완료지만 주문상품이 모두 끝남 (확정 · 취소 · 환불 완료)
+        // 결제 완료지만 주문상품이 모두 끝남 (확정 · 취소 · 반품 완료)
         save(MEMBER, OrderStatus.PAID,
-                seller(OTHER, OrderItemStatus.CONFIRMED, OrderItemStatus.CANCELLED, OrderItemStatus.REFUNDED));
+                seller(OTHER, OrderItemStatus.CONFIRMED, OrderItemStatus.CANCELLED, OrderItemStatus.RETURNED));
         // 판매자로
         save(OTHER, OrderStatus.COMPLETED, seller(MEMBER, OrderItemStatus.CONFIRMED));
-        save(OTHER, OrderStatus.PAID, seller(MEMBER, OrderItemStatus.REFUNDED, OrderItemStatus.CANCELLED),
+        save(OTHER, OrderStatus.PAID, seller(MEMBER, OrderItemStatus.RETURNED, OrderItemStatus.CANCELLED),
                 seller(OTHER + 1, OrderItemStatus.NORMAL));
         save(OTHER, OrderStatus.EXPIRED, seller(MEMBER, OrderItemStatus.NORMAL));
 

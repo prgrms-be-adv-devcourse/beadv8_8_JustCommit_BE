@@ -1,0 +1,36 @@
+# 데이터 서버 Tempo (#301, ADR 0027). 단일 프로세스 · 디스크 저장 · 보관 3일
+# 앱 서버 Alloy가 OTLP gRPC(4317)로 추적을 보내고, Grafana가 3200으로 조회한다
+server:
+  http_listen_port: 3200
+  log_level: warn
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+
+ingester:
+  max_block_duration: 5m
+
+# 단일 프로세스에서 조회 작업자가 자기 자신(query-frontend, gRPC 9095)에 붙게 한다.
+# 비워 두면 traceId 한 건 조회가 응답 없이 멈출 수 있다 (Tempo 경고 「Worker address is empty」)
+querier:
+  frontend_worker:
+    frontend_address: 127.0.0.1:9095
+
+compactor:
+  compaction:
+    block_retention: 72h # 3일
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
+
+usage_report:
+  reporting_enabled: false

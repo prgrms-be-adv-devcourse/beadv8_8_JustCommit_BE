@@ -7,10 +7,13 @@ import com.justcommit.backend.common.exception.CommonErrorCode;
 import com.justcommit.backend.common.response.ApiResponse;
 import com.justcommit.backend.payment.application.PaymentResult;
 import com.justcommit.backend.payment.application.PaymentService;
+import com.justcommit.backend.payment.application.withdrawal.WithdrawalCheckService;
 import com.justcommit.backend.payment.presentation.internal.dto.PaymentRequest;
 import com.justcommit.backend.payment.presentation.internal.dto.SettlementPayoutRequest;
+import com.justcommit.backend.payment.presentation.internal.dto.WithdrawalCheckResponse;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,13 +22,20 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 // 서비스 간 내부 API (Gateway가 라우팅하지 않음). 규칙 → docs/reference/internal-apis.md
-// Idempotency-Key는 업무 ID와 같아야 한다. 없으면 공통 처리기가 400 MISSING_HEADER
+// X-Internal-Key는 공통 필터가 확인한다. POST의 Idempotency-Key는 업무 ID와 같아야 하고, 없으면 공통 처리기가 400 MISSING_HEADER
 @RestController
 @RequestMapping("/internal/v1")
 @RequiredArgsConstructor
 public class PaymentInternalController {
 
     private final PaymentService paymentService;
+    private final WithdrawalCheckService withdrawalCheckService;
+
+    // member가 탈퇴 전에 잔액 · 진행 중 충전 · 인출 · 미수금을 확인. 지갑이 없는 회원도 200 (차단 없음)
+    @GetMapping("/payments/members/{memberId}/withdrawalCheck")
+    public ApiResponse<WithdrawalCheckResponse> withdrawalCheck(@PathVariable Long memberId) {
+        return ApiResponse.ok("탈퇴 확인 결과를 조회했습니다.", withdrawalCheckService.check(memberId));
+    }
 
     // market 결제. 잔액 부족 · 지갑 없음 · 중복 결제는 200 응답의 결과 상태로 알린다
     @PostMapping("/payments")
@@ -56,13 +66,14 @@ public class PaymentInternalController {
                 paymentService.refundShippingFee(sellerOrderId, request.buyerId(), request.amount()));
     }
 
-    // settlement 정산금 지급. 같은 settlementId로 다시 오면 지급하지 않고 성공
+    // settlement 정산금 지급 (양수: 지급, 0원 · 음수: 회수 후 미수금). 같은 settlementId로 다시 오면 지급하지 않고 성공
     @PostMapping("/settlementPayouts")
     public ApiResponse<Void> payoutSettlement(@RequestHeader(IDEMPOTENCY_KEY) Long idempotencyKey,
                                               @RequestBody SettlementPayoutRequest request) {
         requireSameKey(idempotencyKey, request.settlementId(), "settlementId");
         paymentService.distributeSettlement(
-                request.settlementId(), request.sellerId(), request.payoutAmount(), request.fee());
+                request.settlementId(), request.sellerId(), request.sellerOrderId(),
+                request.payoutAmount(), request.fee(), request.shippingFee(), request.sellerBurdenAmount());
         return ApiResponse.ok("정산금을 지급했습니다.");
     }
 

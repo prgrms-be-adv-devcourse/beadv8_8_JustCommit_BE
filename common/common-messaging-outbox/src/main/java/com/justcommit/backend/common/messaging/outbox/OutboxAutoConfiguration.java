@@ -1,9 +1,12 @@
 package com.justcommit.backend.common.messaging.outbox;
 
 import com.justcommit.backend.common.messaging.EventEnvelopeMapper;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.tracing.Tracer;
 import jakarta.persistence.EntityManager;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
 import org.springframework.context.annotation.Bean;
@@ -17,6 +20,7 @@ import java.time.Clock;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import java.util.function.Supplier;
 
 /**
  * common-messaging-outbox를 의존한 서비스에 Outbox 발행 빈을 등록한다.
@@ -34,15 +38,23 @@ public class OutboxAutoConfiguration {
   }
 
   @Bean
-  OutboxPublisher outboxPublisher(EntityManager entityManager, EventEnvelopeMapper mapper, OutboxRelay relay) {
-    return new OutboxPublisher(entityManager, mapper, relay, Clock.systemUTC());
+  OutboxPublisher outboxPublisher(EntityManager entityManager, EventEnvelopeMapper mapper, OutboxRelay relay,
+                                  ObjectProvider<Tracer> tracer) {
+    // 추적(Tracer)은 서비스의 common-logging이 만든다. 없으면(추적 없는 테스트) traceparent를 비워 둔다
+    Tracer current = tracer.getIfAvailable();
+    Supplier<String> traceparent = current == null ? () -> null : new CurrentTraceparent(current);
+    return new OutboxPublisher(entityManager, mapper, relay, Clock.systemUTC(), traceparent);
   }
   // outbox.scheduler.enabled = false면 재전송, 정리x (기본은 켜짐, 테스트에서 끔)
   @Bean
   @ConditionalOnBooleanProperty(name = "outbox.scheduler.enabled", matchIfMissing = true)
   OutboxScheduler outboxScheduler(OutboxEventRepository repository, OutboxRelay relay,
-                                  PlatformTransactionManager transactionManager) {
-    return new OutboxScheduler(repository, relay, transactionManager, Clock.systemUTC());
+                                  PlatformTransactionManager transactionManager,
+                                  ObjectProvider<MeterRegistry> meterRegistry) {
+    // 지표는 MeterRegistry가 있을 때만 (서비스는 common-logging으로 항상 있음)
+    OutboxMetrics metrics = meterRegistry.getIfAvailable() == null ? null
+        : new OutboxMetrics(repository, meterRegistry.getObject(), Clock.systemUTC());
+    return new OutboxScheduler(repository, relay, transactionManager, Clock.systemUTC(), metrics);
   }
 
   // 서비스의 Kafka 설정(주소 등)은 그대로 쓰고 직렬화만 문자열로 고정한 Outbox 전용 KafkaTemplate.

@@ -36,8 +36,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 @RequiredArgsConstructor
 public class PasswordChangeService {
 
-  static final int MAX_CURRENT_PASSWORD_FAILURES = 5;
-  static final Duration FAILURE_WINDOW = Duration.ofDays(1);
+  // 현재 비밀번호 실패 한도. 탈퇴 재확인(#407)도 같은 횟수 · 기간을 공유한다
+  public static final int MAX_CURRENT_PASSWORD_FAILURES = 5;
+  public static final Duration FAILURE_WINDOW = Duration.ofDays(1);
   private static final String RESULT_UNKNOWN_MESSAGE =
       "비밀번호 변경 결과를 확인하지 못했습니다. 새 비밀번호로 로그인해 확인해 주세요.";
 
@@ -56,7 +57,7 @@ public class PasswordChangeService {
     RevocationResult result;
     try {
       result = tokenRevocationService.revoke(memberId, RevocationReason.PASSWORD_CHANGED, member -> {
-        if (member.getStatus() == MemberStatus.DELETED) {
+        if (member.getStatus() != MemberStatus.ACTIVE) { // 탈퇴 · 카카오 연결 해제(INACTIVE, #422)
           throw new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND);
         }
         // 소셜 회원은 비밀번호가 없음

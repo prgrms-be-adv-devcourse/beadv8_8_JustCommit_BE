@@ -16,13 +16,16 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class OrderWithdrawalCheckService {
 
-    // 진행 중: 결제 대기 · 결제 처리 중 · 확인 필요 · 결제 완료 주문 중 아직 끝나지 않은 주문상품(일반 · 반품 요청)이 있는 것
+    // 진행 중: 결제 대기 · 결제 처리 중 · 확인 필요 · 결제 완료 주문 중 아직 끝나지 않은 주문상품이 있는 것
     // 결제 처리 중 · 확인 필요는 결제 결과를 모르는 주문이라 돈이 빠졌을 수 있다 (ADR 0023)
     static final Set<OrderStatus> ACTIVE_ORDER_STATUSES = Set.of(OrderStatus.PAYMENT_PENDING,
             OrderStatus.PAYMENT_PROCESSING, OrderStatus.REVIEW_REQUIRED, OrderStatus.PAID);
-    // 진행 중인 주문상품 상태
-    // #284에서 ACCEPT_PENDING 추가 시 탈퇴 제한 대상에 포함
-    static final Set<OrderItemStatus> ACTIVE_ITEM_STATUSES = Set.of(OrderItemStatus.NORMAL, OrderItemStatus.REFUND_REQUESTED);
+    // 진행 중인 주문상품 상태. 수락 대기는 판매자 응답을 기다리는 결제된 주문상품이다 (#284).
+    // 취소 중, 확인 필요는 환불 결과를 모르는 주문상품이다 (#282).
+    // 반품 신청, 반품 배송 중, 반품 환불 중은 판매자 응답, 반품 택배, 환불을 기다린다. 반품 완료는 끝난 상태다 (#382)
+    static final Set<OrderItemStatus> ACTIVE_ITEM_STATUSES = Set.of(OrderItemStatus.ACCEPT_PENDING,
+            OrderItemStatus.NORMAL, OrderItemStatus.CANCEL_PROCESSING, OrderItemStatus.REVIEW_REQUIRED,
+            OrderItemStatus.RETURN_REQUESTED, OrderItemStatus.RETURN_IN_TRANSIT, OrderItemStatus.RETURN_PROCESSING);
 
     private final OrdersRepository ordersRepository;
     private final SellerOrderRepository sellerOrderRepository;

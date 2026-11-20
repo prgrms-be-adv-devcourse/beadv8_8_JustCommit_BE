@@ -21,7 +21,7 @@ DATA_IP=10.0.7.79   # 데이터 서버 사설 IP (#295)
 APP_IP=10.0.7.76    # 앱 서버 사설 IP
 DOMAIN=replant.kro.kr
 
-EXTERNAL_KEYS="KAKAO_CLIENT_ID KAKAO_CLIENT_SECRET MAIL_USERNAME MAIL_PASSWORD TOSS_SECRET_KEY S3_BUCKET_NAME S3_PUBLIC_BASE_URL"
+EXTERNAL_KEYS="KAKAO_CLIENT_ID KAKAO_CLIENT_SECRET KAKAO_ADMIN_KEY KAKAO_APP_ID MAIL_USERNAME MAIL_PASSWORD TOSS_SECRET_KEY S3_BUCKET_NAME S3_PUBLIC_BASE_URL"
 # 없어도 앱은 뜬다 (product 검수는 관리자 확인으로, ai 임베딩 호출만 실패). 없으면 줄 자체를 쓰지 않는다
 OPTIONAL_KEYS="OPENAI_API_KEY ANTHROPIC_API_KEY"
 
@@ -44,11 +44,13 @@ add_shared() {  # 이름 · 만드는 명령
 }
 add_shared INTERNAL_API_KEY            "openssl rand -hex 32"
 add_shared COURIER_API_KEY             "openssl rand -hex 32"
+add_shared BANK_API_KEY                "openssl rand -hex 32"  # 모의 은행 서버 (#389)
 add_shared WEBHOOK_API_KEY             "openssl rand -hex 32"
 add_shared MEMBER_ADDRESS_EVENT_KEY    "openssl rand -base64 32"
 add_shared ACCOUNT_ENCRYPTION_KEY      "openssl rand -base64 32"
 add_shared MEMBER_HMAC_KEY             "openssl rand -base64 32"
 add_shared PAYMENT_KEY_ENCRYPTION_KEY  "openssl rand -base64 32"
+add_shared CASH_OUT_ACCOUNT_ENCRYPTION_KEY "openssl rand -base64 32"  # 인출 계좌번호 (결제키와 다른 키, #387)
 add_shared OAUTH2_STATE_SECRET         "openssl rand -base64 32"
 
 # 2) JWT RS256 키 한 쌍: 없을 때만 만든다. env에는 PEM 머리말을 뺀 한 줄 Base64로 넣는다
@@ -95,6 +97,8 @@ write() { cat > "$S/$1.env"; chmod 600 "$S/$1.env"; echo "  작성: $1.env"; }
   echo "OAUTH2_STATE_SECRET=$(sh_ OAUTH2_STATE_SECRET)"
   echo "KAKAO_CLIENT_ID=$(ext KAKAO_CLIENT_ID)"
   echo "KAKAO_CLIENT_SECRET=$(ext KAKAO_CLIENT_SECRET)"
+  echo "KAKAO_ADMIN_KEY=$(ext KAKAO_ADMIN_KEY)"
+  echo "KAKAO_APP_ID=$(ext KAKAO_APP_ID)"
   echo "MAIL_USERNAME=$(ext MAIL_USERNAME)"
   echo "MAIL_PASSWORD=$(ext MAIL_PASSWORD)"
   echo "FRONTEND_BASE_URL=https://$DOMAIN"
@@ -107,6 +111,7 @@ write() { cat > "$S/$1.env"; chmod 600 "$S/$1.env"; echo "  작성: $1.env"; }
   echo "AWS_REGION=ap-northeast-2"
   echo "S3_BUCKET_NAME=$(ext S3_BUCKET_NAME)"
   echo "S3_PUBLIC_BASE_URL=$(ext S3_PUBLIC_BASE_URL)"
+  echo "OPENSEARCH_URL=http://$DATA_IP:9200"   # 상품 검색 (#484) · 데이터 서버 replant-opensearch (#532)
   opt OPENAI_API_KEY
   opt ANTHROPIC_API_KEY
 } | write product
@@ -125,6 +130,9 @@ write() { cat > "$S/$1.env"; chmod 600 "$S/$1.env"; echo "  작성: $1.env"; }
   echo "INTERNAL_API_KEY=$(sh_ INTERNAL_API_KEY)"
   echo "TOSS_SECRET_KEY=$(ext TOSS_SECRET_KEY)"
   echo "PAYMENT_KEY_ENCRYPTION_KEY=$(sh_ PAYMENT_KEY_ENCRYPTION_KEY)"
+  echo "CASH_OUT_ACCOUNT_ENCRYPTION_KEY=$(sh_ CASH_OUT_ACCOUNT_ENCRYPTION_KEY)"
+  echo "BANK_BASE_URL=http://$APP_IP:3001"
+  echo "BANK_API_KEY=$(sh_ BANK_API_KEY)"
 } | write payment
 
 {
@@ -149,4 +157,4 @@ for s in gateway market ai; do
   echo "  K3s Secret: $s-env"
 done
 
-echo "✅ 끝. 404-express의 .env에는 shared.env의 COURIER_API_KEY · WEBHOOK_API_KEY와 같은 값을 넣어야 해요."
+echo "✅ 끝. 404-express의 .env에는 shared.env의 COURIER_API_KEY · WEBHOOK_API_KEY와 같은 값을, bank의 .env에는 shared.env의 BANK_API_KEY와 같은 값을 넣어야 해요."

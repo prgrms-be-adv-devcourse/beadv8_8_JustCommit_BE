@@ -1,0 +1,325 @@
+// 앱 서버(10.0.7.76) Alloy 설정 (#301). docs/infra/observability.md
+// 앱 서버의 로그 · 지표 · 추적을 모아 데이터 서버(10.0.7.79)로 보낸다.
+// 바깥(인터넷 · 다른 서버)에서 들어오는 포트는 열지 않는다. 추적 받는 4318은 이 서버 사설 IP에만 열어 서비스 · 파드만 보낸다.
+//
+//   compose 컨테이너 로그 ─┐
+//   K3s 파드 로그 ─────────┴─▶ loki.write ──▶ Loki 10.0.7.79:3100
+//   서비스 /actuator/prometheus ─┐
+//   앱 서버 CPU · 메모리 · steal ─┴─▶ remote_write ──▶ Prometheus 10.0.7.79:9090
+//   서비스 추적(OTLP HTTP 4318) ──▶ otelcol ──▶ Tempo 10.0.7.79:4317
+//
+// 라벨: server(app) · service(member · market 등) · pod(K3s만)
+
+// ===================== 추적 (ADR 0027) =====================
+// 서비스(compose · K3s 파드)가 OTLP_TRACING_ENDPOINT=http://10.0.7.76:4318/v1/traces 로 보낸다
+
+otelcol.receiver.otlp "services" {
+  http {
+    endpoint = "10.0.7.76:4318"
+  }
+
+  output {
+    traces = [otelcol.processor.batch.traces.input]
+  }
+}
+
+// 하나씩 보내지 않고 모아서 보낸다
+otelcol.processor.batch "traces" {
+  output {
+    traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "10.0.7.79:4317"
+    tls {
+      insecure = true // 사설망 안 (보안 그룹이 앱 서버에서 오는 4317만 허용)
+    }
+  }
+}
+
+// ===================== 보내는 곳 =====================
+
+loki.write "data_server" {
+  endpoint {
+    url = "http://10.0.7.79:3100/loki/api/v1/push"
+  }
+}
+
+prometheus.remote_write "data_server" {
+  endpoint {
+    url = "http://10.0.7.79:9090/api/v1/write"
+  }
+  external_labels = { server = "app" }
+}
+
+// ===================== 로그: compose 컨테이너 =====================
+// Docker 소켓으로 이 서버의 컨테이너를 찾아 로그를 읽는다 (redis · member · product · payment · settlement · notification · alloy)
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "docker_logs" {
+  targets = []
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+}
+
+loki.source.docker "containers" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.containers.targets
+  relabel_rules = discovery.relabel.docker_logs.rules
+  labels        = { server = "app", source = "compose" }
+  forward_to    = [loki.write.data_server.receiver]
+}
+
+// ===================== 로그: K3s 파드 =====================
+// K3s는 파드 로그를 /var/log/pods/{네임스페이스}_{파드}_{UID}/{컨테이너}/0.log 에 쓴다.
+// 파드 이름 · app 라벨은 K3s API(kubeconfig)로 알아내고, 파일은 그 경로에서 직접 읽는다.
+
+discovery.kubernetes "pods" {
+  role            = "pod"
+  kubeconfig_file = "/etc/rancher/k3s/k3s.yaml"
+  namespaces {
+    names = ["replant"]
+  }
+}
+
+discovery.relabel "pod_logs" {
+  targets = discovery.kubernetes.pods.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app"]
+    target_label  = "service"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+    separator     = "/"
+    regex         = "(.*)"
+    replacement   = "/var/log/pods/*$1/*.log"
+    target_label  = "__path__"
+  }
+}
+
+local.file_match "pod_logs" {
+  path_targets = discovery.relabel.pod_logs.output
+}
+
+loki.source.file "pod_logs" {
+  targets    = local.file_match.pod_logs.targets
+  forward_to = [loki.process.pod_logs.receiver]
+}
+
+loki.process "pod_logs" {
+  // K3s(containerd) 로그 줄 앞의 「시각 stdout F 」를 떼어 내고 앱이 쓴 줄만 남긴다
+  stage.cri {}
+
+  stage.static_labels {
+    values = { server = "app", source = "k3s" }
+  }
+
+  forward_to = [loki.write.data_server.receiver]
+}
+
+// ===================== 지표: compose 서비스 =====================
+// compose 서비스는 사설 IP의 고정 포트로 열려 있다 (docs/reference/ports.md)
+
+prometheus.scrape "compose_services" {
+  job_name     = "spring"
+  metrics_path = "/actuator/prometheus"
+  targets = [
+    { "__address__" = "10.0.7.76:8081", "service" = "member" },
+    { "__address__" = "10.0.7.76:8082", "service" = "product" },
+    { "__address__" = "10.0.7.76:8084", "service" = "payment" },
+    { "__address__" = "10.0.7.76:8085", "service" = "settlement" },
+    { "__address__" = "10.0.7.76:8086", "service" = "notification" },
+  ]
+  forward_to = [prometheus.remote_write.data_server.receiver]
+}
+
+// ===================== 지표: K3s 파드 =====================
+// Gateway · market은 파드 2개라 NodePort로 읽으면 한쪽만 보인다 → 파드 IP로 하나씩 읽는다
+
+discovery.relabel "pod_metrics" {
+  targets = discovery.kubernetes.pods.targets
+
+  // 컨테이너 포트 이름이 http(8080)인 대상만
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_port_name"]
+    regex         = "http"
+    action        = "keep"
+  }
+  // 아직 준비 안 된 파드(시작 중 · 종료 중)는 빼서 측정 그래프에 빈 점이 생기지 않게
+  rule {
+    source_labels = ["__meta_kubernetes_pod_phase"]
+    regex         = "Running"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app"]
+    target_label  = "service"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+}
+
+prometheus.scrape "k3s_pods" {
+  job_name     = "spring"
+  metrics_path = "/actuator/prometheus"
+  targets      = discovery.relabel.pod_metrics.output
+  forward_to   = [prometheus.remote_write.data_server.receiver]
+}
+
+// ===================== 지표: 앱 서버 자체 =====================
+// node-exporter와 같은 지표(node_cpu_seconds_total 등, CPU steal 포함)를 Alloy 안에서 만든다
+
+prometheus.exporter.unix "app_server" {
+  procfs_path = "/host/proc"
+  sysfs_path  = "/host/sys"
+  rootfs_path = "/host/root"
+}
+
+// 내장 exporter는 job을 「integrations/unix」로 붙인다 → 데이터 서버 node-exporter와 같은 job="node"로 맞춰 대시보드 쿼리 하나로 두 서버를 본다
+discovery.relabel "node" {
+  targets = prometheus.exporter.unix.app_server.targets
+
+  rule {
+    target_label = "job"
+    replacement  = "node"
+  }
+}
+
+prometheus.scrape "node" {
+  targets    = discovery.relabel.node.output
+  forward_to = [prometheus.remote_write.data_server.receiver]
+}
+
+// ===================== 지표: 컨테이너 · 파드 메모리 =====================
+// 메모리 알림(컨테이너 한도의 90%)용. 사용량 · 한도 두 지표만 남긴다.
+//  - K3s 파드: K3s 내장 containerd에서 파드 · 컨테이너 이름을 알아낸다
+//  - compose 컨테이너: 이 서버 Docker는 이미지를 containerd 방식(overlayfs)으로 저장해 cAdvisor의 Docker 연동이
+//    컨테이너를 못 알아본다(「failed to identify the read-write layer ID」). 그래서 Docker 연동은 끄고(없는 소켓 지정)
+//    cgroup을 직접 읽어 컨테이너 ID로 받은 뒤, 아래 「compose 이름표」로 서비스 이름을 붙인다
+
+prometheus.exporter.cadvisor "containers" {
+  docker_host            = "unix:///var/run/docker-disabled-for-cadvisor.sock"
+  containerd_host        = "/run/k3s/containerd/containerd.sock"
+  docker_only            = false
+  store_container_labels = false
+  allowlisted_container_labels = [
+    "io.kubernetes.pod.name",
+    "io.kubernetes.container.name",
+  ]
+  enabled_metrics  = ["memory"]
+  storage_duration = "2m"
+}
+
+discovery.relabel "cadvisor" {
+  targets = prometheus.exporter.cadvisor.containers.targets
+
+  rule {
+    target_label = "job"
+    replacement  = "cadvisor"
+  }
+}
+
+prometheus.scrape "cadvisor" {
+  targets         = discovery.relabel.cadvisor.output
+  scrape_interval = "30s"
+  forward_to      = [prometheus.relabel.cadvisor.receiver]
+}
+
+prometheus.relabel "cadvisor" {
+  rule {
+    source_labels = ["__name__"]
+    regex         = "container_memory_working_set_bytes|container_spec_memory_limit_bytes"
+    action        = "keep"
+  }
+  // compose 컨테이너: cgroup 경로(/system.slice/docker-<ID>.scope 또는 /docker/<ID>)에서 ID를 꺼낸다
+  rule {
+    source_labels = ["id"]
+    regex         = ".*docker[-/]([0-9a-f]{64})(\\.scope)?"
+    target_label  = "container_id"
+  }
+  // K3s 파드: 컨테이너 이름을 service로 (gateway · market · ai)
+  rule {
+    source_labels = ["container_label_io_kubernetes_container_name"]
+    target_label  = "service"
+  }
+  rule {
+    source_labels = ["container_label_io_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+  // compose 컨테이너 · K3s 컨테이너만 남기고 나머지 cgroup(시스템 서비스 등)은 버린다
+  rule {
+    source_labels = ["container_id", "service"]
+    separator     = ""
+    regex         = ".+"
+    action        = "keep"
+  }
+  rule {
+    regex  = "id|container_label_.*"
+    action = "labeldrop"
+  }
+  forward_to = [prometheus.remote_write.data_server.receiver]
+}
+
+// compose 이름표: 컨테이너마다 「container_id ↔ service」 한 줄(up{job="docker_names"} = 1)을 만든다.
+// Alloy 자기 상태 주소를 한 번씩 읽어 up 줄만 남기는 방식. 쿼리에서 이렇게 붙인다:
+//   container_memory_working_set_bytes * on (container_id) group_left (service) up{job="docker_names"}
+discovery.relabel "docker_names" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex         = ".+"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_id"]
+    target_label  = "container_id"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+  rule {
+    target_label = "__address__"
+    replacement  = "127.0.0.1:12345"
+  }
+  rule {
+    target_label = "job"
+    replacement  = "docker_names"
+  }
+}
+
+prometheus.scrape "docker_names" {
+  targets         = discovery.relabel.docker_names.output
+  scrape_interval = "60s"
+  forward_to      = [prometheus.relabel.docker_names.receiver]
+}
+
+prometheus.relabel "docker_names" {
+  rule {
+    source_labels = ["__name__"]
+    regex         = "up"
+    action        = "keep"
+  }
+  forward_to = [prometheus.remote_write.data_server.receiver]
+}

@@ -4,6 +4,7 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.member.address.application.SellerAddressEventFactory;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.event.MemberAddressChanged;
 import com.justcommit.backend.member.event.MemberUpdated;
@@ -41,6 +42,7 @@ public class SellerRegisterService {
 
     // 대기 제한을 넘으면 409 MEMBER_BUSY, 아무것도 저장되지 않음
     Member member = memberLocker.lockById(memberId)
+        .filter(m -> m.getStatus() == MemberStatus.ACTIVE) // 탈퇴(#407) · 카카오 연결 해제(INACTIVE, #422) 회원은 판매자로 등록하지 않음
         .orElseThrow(() -> new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
 
     // 이미 판매자면 409 (잠금을 얻은 뒤에 확인해야 동시 요청의 앞선 등록이 보임)

@@ -1,6 +1,7 @@
 package com.justcommit.backend.payment.application.recovery;
 
 import com.justcommit.backend.payment.application.ChargeService;
+import com.justcommit.backend.payment.application.MemberWalletDepositor;
 import com.justcommit.backend.payment.application.WalletService;
 import com.justcommit.backend.payment.config.ChargeRecoveryConfig;
 import com.justcommit.backend.payment.config.JpaAuditingConfig;
@@ -36,8 +37,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import javax.sql.DataSource;
@@ -74,7 +74,7 @@ import static org.mockito.Mockito.verify;
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaAuditingConfig.class, ChargeRecoveryConfig.class, ChargeRecoveryServiceIntegrationTest.MutableClockConfig.class,
-        ChargeService.class, WalletService.class, PaymentKeyCipher.class,
+        ChargeService.class, WalletService.class, MemberWalletDepositor.class, PaymentKeyCipher.class,
         ChargeRecoveryService.class, ChargeRecoveryDecision.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -87,14 +87,9 @@ class ChargeRecoveryServiceIntegrationTest {
     private static final LocalDateTime FIRST_LOOKUP_AT = T0.plusMinutes(5);
     private static final OffsetDateTime APPROVED_AT = OffsetDateTime.of(2026, 11, 15, 10, 1, 0, 0, ZoneOffset.ofHours(9));
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        SharedPostgres.register(registry);
     }
 
     // 테스트가 시각을 정해 가며 스케줄러를 실행한다

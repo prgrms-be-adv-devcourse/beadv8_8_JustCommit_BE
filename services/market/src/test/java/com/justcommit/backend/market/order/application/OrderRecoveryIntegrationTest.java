@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.OrderResult;
+import com.justcommit.backend.market.ShipmentQuery;
 import com.justcommit.backend.market.cart.application.CartService;
 import com.justcommit.backend.market.client.payment.PaymentOutcome;
 import com.justcommit.backend.market.client.payment.PaymentUseCase;
@@ -56,8 +57,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 // Saga 복구 스케줄러를 실제 PostgreSQL로 확인한다 (ADR 0023). 결제는 PaymentUseCase 목으로 결과만 흉내 낸다
@@ -72,14 +72,9 @@ class OrderRecoveryIntegrationTest {
     private static final long BUYER_ID = 10L;
     private static final BigDecimal AMOUNT = new BigDecimal("13000");
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        SharedPostgres.register(registry);
     }
 
     @MockitoBean PaymentUseCase paymentUseCase;
@@ -88,6 +83,10 @@ class OrderRecoveryIntegrationTest {
     @MockitoBean SellerOrderEventPublisher sellerOrderEventPublisher;
     @MockitoBean ShipmentService shipmentService;
     @MockitoBean CartService cartService;
+    // 취소, 환불 복구는 OrderCancelRefundIntegrationTest에서 본다
+    @MockitoBean ShipmentQuery shipmentQuery;
+    @MockitoBean OrderCancelTransactions orderCancelTransactions;
+    @MockitoBean OrderCancelRefunder orderCancelRefunder;
 
     @Autowired OrderRecoveryService recoveryService;
     @Autowired OrderPaymentTransactions transactions;

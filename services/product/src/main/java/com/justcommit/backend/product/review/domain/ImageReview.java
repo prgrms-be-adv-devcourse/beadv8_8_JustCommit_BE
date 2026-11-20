@@ -18,6 +18,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 
 // 사진 검수 기록. 검수 버전마다 한 행 (상품 ID + 검수 버전 UNIQUE → 같은 검수 요청이 두 번 와도 한 번만 처리)
@@ -105,6 +106,10 @@ public class ImageReview extends BaseTimeEntity {
     @Column(name = "appealed_at")
     private LocalDateTime appealedAt;
 
+    // 관리자 확인 12시간 지연 알림(ImageReviewDelayed)에 넣어 보낸 시각. 채워진 건은 다시 알리지 않음 (#509)
+    @Column(name = "delay_notified_at")
+    private LocalDateTime delayNotifiedAt;
+
     private ImageReview(Long productId, int reviewVersion, Long sellerId, ReviewScope scope) {
         this.productId = productId;
         this.reviewVersion = reviewVersion;
@@ -160,6 +165,12 @@ public class ImageReview extends BaseTimeEntity {
         return status == ReviewStatus.DONE && decision == ReviewDecision.MANUAL;
     }
 
+    // 관리자 확인 기한: 관리자 확인으로 간 시각(이의 신청이면 신청 시각, appeal에서 reviewedAt을 바꿈)부터 셈
+    // 관리자 목록 · 판매자 검수 기록이 같은 계산을 쓰도록 여기 한 곳에 둠
+    public LocalDateTime adminCheckExpiresAt(Duration expireAfter) {
+        return reviewedAt.plus(expireAfter);
+    }
+
     // 관리자가 통과(reason null) 또는 반려. 엔진이 관리자 확인으로 보낸 사유(manualReason · detail)는 그대로 둠
     public void decideByAdmin(Long adminId, ReviewDecision decision, RejectReason reason, String memo, LocalDateTime now) {
         this.decision = decision;
@@ -207,6 +218,11 @@ public class ImageReview extends BaseTimeEntity {
         this.rejectReason = RejectReason.REVIEW_EXPIRED;
         this.decidedBy = DecidedBy.DEADLINE;
         this.decidedAt = now;
+    }
+
+    // 관리자 확인 12시간 지연 알림 이벤트에 넣었음 (같은 트랜잭션에서 이벤트를 Outbox에 저장)
+    public void markDelayNotified(LocalDateTime now) {
+        this.delayNotifiedAt = now;
     }
 
     // 그사이 상품이 바뀌어 이 버전은 반영하지 않음

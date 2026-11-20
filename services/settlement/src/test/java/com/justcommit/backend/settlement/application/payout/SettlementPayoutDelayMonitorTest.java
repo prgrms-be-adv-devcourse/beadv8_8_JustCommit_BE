@@ -2,6 +2,7 @@ package com.justcommit.backend.settlement.application.payout;
 
 import com.justcommit.backend.settlement.application.payout.SettlementPayoutDelayMonitor.Result;
 import com.justcommit.backend.settlement.infrastructure.repository.SettlementRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -27,8 +28,22 @@ class SettlementPayoutDelayMonitorTest {
 
     private final SettlementRepository repository = mock(SettlementRepository.class);
     private final MutableClock clock = new MutableClock(START);
+    private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
     private final SettlementPayoutDelayMonitor monitor =
-            new SettlementPayoutDelayMonitor(repository, SettlementPayoutPropertiesTest.defaults(), clock);
+            new SettlementPayoutDelayMonitor(repository, SettlementPayoutPropertiesTest.defaults(), clock, registry);
+
+    @Test
+    @DisplayName("지연 건수를 지표 settlement_payouts_delayed로 내보내고, 해소되면 0 (#301)")
+    void exportsDelayedCountMetric() {
+        when(repository.countByStatusInAndCreatedAtBefore(anyCollection(), any())).thenReturn(3L);
+        when(repository.findFirstByStatusInOrderByCreatedAtAsc(anyCollection())).thenReturn(Optional.empty());
+        monitor.check();
+        assertThat(registry.get(SettlementPayoutDelayMonitor.METRIC).gauge().value()).isEqualTo(3.0);
+
+        when(repository.countByStatusInAndCreatedAtBefore(anyCollection(), any())).thenReturn(0L);
+        monitor.check();
+        assertThat(registry.get(SettlementPayoutDelayMonitor.METRIC).gauge().value()).isZero();
+    }
 
     @Test
     @DisplayName("10분 넘은 미지급 정산을 셀 때 기준 시각은 지금 - 10분이다")

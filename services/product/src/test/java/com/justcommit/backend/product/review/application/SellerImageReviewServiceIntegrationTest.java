@@ -47,10 +47,11 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.json.JsonMapper;
+import com.justcommit.backend.product.client.member.MemberQuery;
+import com.justcommit.backend.product.product.application.ReviewStatusReader;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -80,14 +81,9 @@ class SellerImageReviewServiceIntegrationTest {
     private static final Long OTHER_SELLER_ID = 8L;
     private static final Long ADMIN_ID = 1L;
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        SharedPostgres.register(registry);
     }
 
     @TestConfiguration
@@ -119,6 +115,7 @@ class SellerImageReviewServiceIntegrationTest {
     @MockitoBean ModerationClient moderationClient;
     @MockitoBean PlantIdentifier plantIdentifier;
     @MockitoBean OutboxPublisher outboxPublisher;
+    @MockitoBean MemberQuery memberQuery;   // AdminImageReviewService가 씀 (관리자 목록 닉네임)
 
     private Species species;
 
@@ -422,5 +419,63 @@ class SellerImageReviewServiceIntegrationTest {
         assertThat(history.resubmittable()).isTrue();
         assertThat(history.appealable()).isFalse();
         assertThat(history.reviews().getFirst().decidedBy()).isEqualTo("DEADLINE");
+    }
+
+    // ── #519 판매자 화면 응답 ───────────────────────────────
+
+    @Test
+    @DisplayName("검수 기록 expiresAt: 관리자 확인 중일 때만, 이의 신청은 신청 시각부터 24시간이고 관리자 목록과 같은 값")
+    void historyExpiresAt() {
+        Product product = rejectedByEngine();
+        assertThat(sellerService.history(SELLER_ID, product.getId()).reviews().getFirst().expiresAt()).isNull();
+
+        sellerService.appeal(SELLER_ID, product.getId(), "직접 키운 식물입니다");
+
+        SellerImageReviewHistoryResponse.Item item = sellerService.history(SELLER_ID, product.getId()).reviews().getFirst();
+        assertThat(item.status()).isEqualTo(DisplayStatus.ADMIN_CHECK);
+        assertThat(item.expiresAt()).isEqualTo(reviewOf(product, 0).getAppealedAt().plusHours(24));
+        assertThat(adminService.findAwaiting(PageRequest.of(0, 20)).getContent().getFirst().expiresAt())
+                .isEqualTo(item.expiresAt());
+    }
+
+    @Test
+    @DisplayName("내 상품 목록 검수 정보: 지금 검수 버전의 표시 상태 · 반려 사유와 문구 · 판정 주체, 기록이 없는 상품은 빠짐")
+    void latestReviews() {
+        Product rejected = rejectedByEngine();                                          // 0: 엔진 반려
+        Product edited = rejectedByEngine();
+        edit(edited);                                                                   // 1: 검수 중 (0은 반려)
+        Product delayed = judged(ReviewVerdict.manual(ManualReason.SPECIES_MISMATCH, null));
+        jdbc.update("update image_review set reviewed_at = ? where product_id = ?", LocalDateTime.now(clock).minusHours(13), delayed.getId());
+        Product noReview = tx.execute(status -> productRepository.save(Product.create(species, SELLER_ID, "기록 없음", null,
+                new BigDecimal("10000"), null, null, null, List.of("http://localhost:9000/bucket/products/7/n.jpg"))));
+
+        var reviews = sellerService.latestReviews(List.of(reload(rejected), reload(edited), reload(delayed), noReview));
+
+        assertThat(reviews).containsOnlyKeys(rejected.getId(), edited.getId(), delayed.getId());
+        assertThat(reviews.get(rejected.getId())).isEqualTo(new ReviewStatusReader.LatestReview(
+                "REJECTED", "BANNED_SPECIES", RejectReason.BANNED_SPECIES.getMessage(), "ENGINE"));
+        // 옛 버전(반려)이 아니라 지금 버전(검수 중)
+        assertThat(reviews.get(edited.getId())).isEqualTo(new ReviewStatusReader.LatestReview("IN_REVIEW", null, null, null));
+        assertThat(reviews.get(delayed.getId()).status()).isEqualTo("ADMIN_CHECK_DELAYED");
+        assertThat(sellerService.latestReviews(List.of())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("오늘 사진 검수 횟수: 한도 확인과 같은 기준 (한국 시간 자정부터, 글 검사 · 기한 초과 다음 검수 제외), 한도 30")
+    void todayPhotoReviews() {
+        rejectedByEngine();                                                             // 사진 검수 1
+        Product expired = expired();                                                    // 사진 검수 2
+        sellerService.resubmitAfterExpiry(SELLER_ID, expired.getId());                  // 기한 초과 다음 검수: 세지 않음
+        tx.executeWithoutResult(status ->                                               // 글 검사: 세지 않음
+                imageReviewRepository.save(ImageReview.requested(2000L, 0, SELLER_ID, ReviewScope.TEXT_ONLY)));
+        tx.executeWithoutResult(status ->                                               // 어제: 세지 않음
+                imageReviewRepository.save(ImageReview.requested(2001L, 0, SELLER_ID, ReviewScope.FULL)));
+        jdbc.update("update image_review set created_at = ? where product_id = ?",
+                LocalDate.now(clock).atStartOfDay().minusSeconds(1), 2001L);
+        // 나머지는 한국 시간 "지금"으로 맞춤 (JVM 시간대가 UTC여도 같은 결과)
+        jdbc.update("update image_review set created_at = ? where product_id <> ?", LocalDateTime.now(clock), 2001L);
+
+        assertThat(sellerService.todayPhotoReviews(SELLER_ID)).isEqualTo(new ReviewStatusReader.DailyUsage(2, 30));
+        assertThat(sellerService.todayPhotoReviews(OTHER_SELLER_ID).used()).isZero();
     }
 }

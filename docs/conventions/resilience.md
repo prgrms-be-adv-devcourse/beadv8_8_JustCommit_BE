@@ -2,7 +2,7 @@
 
 > 언제 읽나: 외부 호출이나 서비스 간 호출의 실패 처리를 정할 때
 
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: Miro 14, 노션 기획안 「장애 처리」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: Miro 14, 노션 기획안 「장애 처리」
 
 ## 공통값
 
@@ -21,6 +21,7 @@
 |---|---|---|---|
 | Gateway → 각 서비스 | 1초 / 10초 | 없음 | 죽은 파드는 K3s가 분배에서 뺌, 모두 죽으면 연결 거절 → 503 |
 | Gateway → 충전 승인 | 1초 / 65초 | 없음 | – |
+| Gateway → 회원 탈퇴 (`POST users/me/withdrawal`) | 1초 / 20초 | 없음 | 504는 탈퇴 결과 불명 → 자동 재요청 안 함 (#407) |
 | Gateway → SSE | 타임아웃 끔 | 없음 | – |
 | Gateway → 택배 웹훅 | – / 5초 | 없음 | – |
 | Gateway → ai 챗봇 | 1초 / 20초 | 없음 | "잠시 후 다시" |
@@ -30,13 +31,16 @@
 | market → product 예약 | 1초 / 3초 (product 처리 상한 2초) | 연결 실패만 1회 | 주문 실패. 응답 타임아웃이면 다시 호출하지 않고 주문 실패 + `market.order-failed.v1`로 해제 |
 | market → payment 결제 | 1초 / 3초 | 연결 실패만 1회 | 4xx와 첫 호출의 연결 실패는 확정 실패라 예약 해제 후 실패. 응답 타임아웃, 5xx, Saga 복구 중 연결 실패는 결과 불명 → `PAYMENT_PROCESSING` 유지, Saga 복구가 같은 orderId로 다시 호출 → [ADR 0023](../decisions/0023-order-payment-transaction-saga.md) |
 | market → payment 환불 | 1초 / 3초 | 연결 실패만 1회 | 타임아웃이면 결과 불명 → 주문상품 「취소 중」, Saga 복구가 같은 키로 다시 요청, 5번 안 되면 `REVIEW_REQUIRED` |
-| member → market · payment · settlement (탈퇴 확인) | 1초 / 3초, **병렬** | 연결 실패만 1회 | Fail-closed: 탈퇴 막음. 최악 약 4초라 Gateway 10초 안 |
+| member → market · payment · settlement (탈퇴 확인) | 1초 / 3초, **병렬** | 연결 실패만 1회 | Fail-closed: 탈퇴 막음. 최악 약 5.2초(연결 1 + 쉼 0.2 + 재연결 1 + 응답 3). 그 뒤 카카오 연결 해제(최악 4초)까지 이어져 탈퇴 POST는 Gateway 전용 라우트 20초 |
+| member → 카카오 연결 해제 (탈퇴) | 1초 / 3초 | 없음 | 탈퇴 막음(503 `SOCIAL_UNLINK_FAILED`). 탈퇴 토큰은 이미 소모돼 재인증 후 다시 시도. 이미 해제된 회원의 `-101`은 성공으로 처리 (DB의 `provider_id`로 부른 연결 해제 응답에만) |
 | market → ai 추천 | 1초 / 2초 | 연결 실패만 1회 (common-web 공통, 최악 약 4.2초) | 빈 목록 (장바구니 조회는 영향 없음, 화면은 최신 상품으로 대신 → [ADR 0029](../decisions/0029-cart-recommendation-latest-fallback-on-screen.md)) |
 | product → OpenSearch | 1초 / 2초 | 1회 | DB LIKE 검색으로 대신 (관련도 · 오타 허용 · 한국어 분석 없음) |
 | product → OpenAI Moderation · Claude Haiku (사진 검수) | 🟨 3초 / 20초 | 비동기 최대 3회 | 자동 통과 · 자동 반려 없이 관리자 확인 |
+| ai → OpenAI 임베딩 (품종 의미 검색) | 3초(연결 포함 전체, `custom.species-search.timeout`) | 없음 (Spring AI 기본 3회를 끔) | 503 `SEMANTIC_SEARCH_UNAVAILABLE`. 검색용 모델을 따로 만들어 추천 · 재임베딩과 설정을 나눔 |
 | ai → OpenAI 임베딩 (재임베딩 운영 API) | ⬜ 미정 (따로 설정 안 함) | ⬜ 미정 | ⬜ 미정 |
 | payment → 토스페이먼츠 | 3초 / 60초 | 없음 | 결과 불명 → `PENDING` 유지, 결제 조회로 `APPROVED`, `FAILED`, `REVIEW_REQUIRED` 중 하나로 확정 → [스케줄러 표](../reference/schedulers.md) |
 | market → 모의 택배사 | 3초 / 5초 | 10초 큐 + 건별 백오프 10초 → 30초 → 1분 고정, **포기 없음** | 배송 `READY` · `CANCEL_PENDING` 유지. 서킷 없음 |
+| payment → 모의 은행 | 3초 / 5초 | 없음 | 인출 건 `PENDING` 유지 (잔액은 차감된 채로). 서킷 없음 |
 | member → Gmail SMTP | 연결 · 응답 · 쓰기 각 5초 | 없음 (사용자가 재발송) | 메일 전용 실행기에서 비동기 발송(응답은 SMTP를 기다리지 않음). SMTP 실패는 메일 스레드가 그 요청의 예약을 정리하고, 정리가 끝나면 다시 요청 가능. 메일 작업 제출 거절 시에만 가입 · 계좌 변경 `EMAIL_SEND_FAILED` → [메일 발송](../reference/external-apis.md#메일-발송) |
 
 ## 서킷 브레이커

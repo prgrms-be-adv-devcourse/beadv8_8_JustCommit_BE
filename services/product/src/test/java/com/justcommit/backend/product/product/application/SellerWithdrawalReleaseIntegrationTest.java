@@ -33,8 +33,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
@@ -70,14 +69,9 @@ class SellerWithdrawalReleaseIntegrationTest {
     // 다른 트랜잭션이 잠금을 쥔 동안 이 시간 안에 끝나면 기다리지 않은 것
     private static final long BLOCKED_CHECK_MILLIS = 500;
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        SharedPostgres.register(registry);
     }
 
     @Autowired ProductUseCase productUseCase;
@@ -96,6 +90,7 @@ class SellerWithdrawalReleaseIntegrationTest {
     // 사진 검수는 ImageReviewServiceIntegrationTest에서
     @MockitoBean ReviewRequester reviewRequester;
     @MockitoBean ProductImageCleaner imageCleaner;
+    @MockitoBean ReviewStatusReader reviewStatusReader;
 
     private Species species;
 

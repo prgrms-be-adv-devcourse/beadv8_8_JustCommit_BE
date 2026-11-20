@@ -13,33 +13,32 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest
 @Testcontainers
+// 앱 전체를 띄우면 스케줄러도 돈다. 공유 DB를 건드리지 않게 끝나면 컨텍스트를 닫는다
+@DirtiesContext
 class NotificationApplicationTests {
-
-    @Container
-    @ServiceConnection
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
 
     // 테스트할 때마다 새 RSA 키를 만들어 공개키만 넣는다 (키를 파일에 남기지 않음)
     @DynamicPropertySource
     static void jwtPublicKey(DynamicPropertyRegistry registry) {
+        SharedPostgres.register(registry);
         registry.add("jwt.public-key", NotificationApplicationTests::newPublicKey);
     }
 
     @Test
-    @DisplayName("빈 DB에서 Flyway V1이 적용되고 ddl-auto validate로 notification 서비스가 뜬다")
+    @DisplayName("빈 DB에서 Flyway V1 ~ V3가 적용되고 ddl-auto validate로 notification 서비스가 뜬다")
     void contextLoads(@Autowired Flyway flyway) {
         assertThat(flyway.info().applied())
                 .extracting(info -> info.getVersion().getVersion(), MigrationInfo::getState)
-                .contains(tuple("1", MigrationState.SUCCESS));
+                .contains(tuple("1", MigrationState.SUCCESS), tuple("2", MigrationState.SUCCESS),
+                        tuple("3", MigrationState.SUCCESS));
     }
 
     private static String newPublicKey() {

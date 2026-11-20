@@ -7,6 +7,7 @@ import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.market.client.member.SellerAddressUnavailableException;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.shipment.domain.Shipment;
+import com.justcommit.backend.market.shipment.domain.ShipmentDirection;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.market.shipment.infrastructure.courier.*;
 import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
@@ -41,15 +42,14 @@ public class ShipmentService {
     private final ShipmentStatusChangedEventPublisher statusChangedEventPublisher;
     private final OrderQuery orderQuery;
 
-    // 결제 트랜잭션 안에서 호출된다.
-    // 배송 행(READY + courierOrderNo + 상품 요약)만 만들어 결제와 함께 커밋하고 끝낸다. 택배사는 부르지 않는다.
-    // 택배사 예약은 예약 큐(bookReadyShipments)가 맡는다. 결제 응답이 택배사 지연 · 장애와 무관해진다 (#351).
-    public void createShipments(OrderResult order) {
-        for (SellerOrderResult sellerOrder : order.sellerOrders()) {
-            Shipment shipment = shipmentRepository.save(new Shipment(sellerOrder.id(), itemSummary(sellerOrder.items())));
-            shipment.assignCourierOrderNo(LocalDate.now());
-            shipmentRepository.save(shipment);
-        }
+    // 판매자 수락 트랜잭션 안에서 호출된다 (#284, ADR 0013). 수락, 일부 거절 뒤 수락된 주문상품만 담는다.
+    // 배송 행(READY + courierOrderNo + 상품 요약)만 만들어 수락과 함께 커밋하고 끝낸다. 택배사는 부르지 않는다.
+    // 택배사 예약은 예약 큐(bookReadyShipments)가 맡는다. 수락 응답이 택배사 지연 · 장애와 무관해진다 (#351).
+    // 택배 주문번호의 날짜는 배송 생성일(= 수락일)이다
+    public void createShipment(Long sellerOrderId, List<String> productNames) {
+        Shipment shipment = shipmentRepository.save(new Shipment(sellerOrderId, itemSummary(productNames)));
+        shipment.assignCourierOrderNo(LocalDate.now());
+        shipmentRepository.save(shipment);
     }
 
     // 예약 큐: 시도할 때가 된 READY 배송을 한 건씩 확보해 예약한다. 한 번 실행에 최대 BOOKING_BATCH_SIZE건.
@@ -153,7 +153,7 @@ public class ShipmentService {
     // 행을 잠그고 바꿔서 같은 취소가 동시에 와도(따닥 · 택배사 웹훅과 겹침) 한 번만 기록된다.
     @Transactional
     public void cancelShipment(Long sellerOrderId) {
-        Shipment shipment = shipmentRepository.findForUpdateBySellerOrderId(sellerOrderId)
+        Shipment shipment = shipmentRepository.findForUpdateBySellerOrderIdAndDirection(sellerOrderId, ShipmentDirection.OUTBOUND)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.SHIPMENT_NOT_FOUND));
         try {
             if (!shipment.requestCancel(LocalDateTime.now())) {
@@ -179,12 +179,12 @@ public class ShipmentService {
         );
     }
 
-    private String itemSummary(List<OrdersItemResult> items) {
-        String first = items.getFirst().productName();
-        if (items.size() == 1) {
-            return String.format("%s", first);
+    private String itemSummary(List<String> productNames) {
+        String first = productNames.getFirst();
+        if (productNames.size() == 1) {
+            return first;
         }
-        return String.format("%s 외 %d건", first, items.size() - 1);
+        return String.format("%s 외 %d건", first, productNames.size() - 1);
     }
 
     private String fullAddress(String address1, String address2) {

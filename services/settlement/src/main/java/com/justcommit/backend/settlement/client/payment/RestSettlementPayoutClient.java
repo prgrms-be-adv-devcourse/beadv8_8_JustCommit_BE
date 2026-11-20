@@ -16,15 +16,21 @@ public class RestSettlementPayoutClient implements SettlementPayoutClient {
     public void distributeSettlement(
             Long settlementId,
             Long sellerId,
+            Long sellerOrderId,
             BigDecimal payoutAmount,
-            BigDecimal fee
+            BigDecimal fee,
+            BigDecimal shippingFee,
+            BigDecimal sellerBurdenAmount
     ) {
         PaymentInternalApi.SettlementPayoutRequest request =
                 new PaymentInternalApi.SettlementPayoutRequest(
                         settlementId,
                         sellerId,
+                        sellerOrderId,
                         payoutAmount,
-                        fee
+                        fee,
+                        shippingFee,
+                        sellerBurdenAmount
                 );
 
         paymentInternalApi.distributeSettlement(

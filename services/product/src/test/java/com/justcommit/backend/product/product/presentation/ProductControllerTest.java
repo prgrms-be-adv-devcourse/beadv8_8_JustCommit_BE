@@ -9,6 +9,7 @@ import com.justcommit.backend.product.image.application.ProductImageService;
 import com.justcommit.backend.product.image.presentation.dto.ImageUploadUrlResponse;
 import com.justcommit.backend.product.product.application.ProductService;
 import com.justcommit.backend.product.product.presentation.dto.*;
+import com.justcommit.backend.product.search.application.ProductSearchService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -79,12 +80,15 @@ class ProductControllerTest {
     @Mock
     ProductImageService productImageService;
 
+    @Mock
+    private ProductSearchService productSearchService;
+
     private MockMvc mockMvc;  // HTTP 요청을 흉내 내서 Controller 호출
 
     // 테스트마다 새로운 MockMvc 생성
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new ProductController(productImageService, productService))   // Controller 하나만 등록
+        mockMvc = MockMvcBuilders.standaloneSetup(new ProductController(productImageService, productService, productSearchService))   // Controller 하나만 등록
                 .setControllerAdvice(new GlobalExceptionHandler())
                 // @AuthenticationPrincipal AuthMember를 SecurityContext에서 꺼내 주는 처리기
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
@@ -229,15 +233,16 @@ class ProductControllerTest {
     @DisplayName("상품 목록을 조회하면 공통 응답 형식과 페이지 정보를 반환")
     void searchProducts() throws Exception {
         ProductSearchResponse item = new ProductSearchResponse(
-                10L, "몬스테라 분양합니다", new BigDecimal("30000"), "https://example.com/a.jpg",
+                10L, SELLER_ID, "몬스테라 분양합니다", new BigDecimal("30000"), "https://example.com/a.jpg",
                 1L, "몬스테라", "FOLIAGE", "MEDIUM", "WHEN_SURFACE_DRY", "EASY", "ACTIVE", LocalDateTime.now());
-        given(productService.searchProducts(any()))
+        given(productSearchService.search(any()))
                 .willReturn(new PageImpl<>(List.of(item), PageRequest.of(0, 20), 1));
 
         mockMvc.perform(get("/api/v1/products").param("light", "LOW").param("sort", "priceAsc"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").doesNotExist())
                 .andExpect(jsonPath("$.data.content[0].productId").value(10))
+                .andExpect(jsonPath("$.data.content[0].sellerId").value(SELLER_ID))
                 .andExpect(jsonPath("$.data.content[0].speciesName").value("몬스테라"))
                 .andExpect(jsonPath("$.data.content[0].light").value("MEDIUM"))
                 .andExpect(jsonPath("$.data.totalElements").value(1));
@@ -460,7 +465,8 @@ class ProductControllerTest {
     private MyProductResponse myProductResponse(boolean hidden)
     {
         return new MyProductResponse(10L, "몬스테라 분양합니다", new BigDecimal("30000"),
-                "https://example.com/a.jpg", 1L, "몬스테라", "ACTIVE", hidden, LocalDateTime.now());
+                "https://example.com/a.jpg", 1L, "몬스테라", "REJECTED", hidden, LocalDateTime.now(),
+                "REJECTED", "NOT_PLANT", "식물 사진이 아니에요", "ENGINE");
     }
 
     @Test
@@ -474,6 +480,10 @@ class ProductControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content[0].productId").value(10))
                 .andExpect(jsonPath("$.data.content[0].hidden").value(true))
+                .andExpect(jsonPath("$.data.content[0].reviewStatus").value("REJECTED"))
+                .andExpect(jsonPath("$.data.content[0].rejectReason").value("NOT_PLANT"))
+                .andExpect(jsonPath("$.data.content[0].rejectMessage").value("식물 사진이 아니에요"))
+                .andExpect(jsonPath("$.data.content[0].decidedBy").value("ENGINE"))
                 .andExpect(jsonPath("$.data.totalElements").value(1));
     }
 
@@ -514,7 +524,7 @@ class ProductControllerTest {
         given(productImageService.issueUploadUrls(eq(SELLER_ID), any()))
                 .willReturn(List.of(new ImageUploadUrlResponse("https://signed-url", "https://bucket/products/1/a.jpg")));
 
-        mockMvc.perform(post("/api/v1/products/images/upload-urls")
+        mockMvc.perform(post("/api/v1/products/images/uploadUrls")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                             { "files": [ { "contentType": "image/jpeg", "size": 1000 } ] }
@@ -529,7 +539,7 @@ class ProductControllerTest {
     void issueImageUploadUrlsWithEmptyFiles() throws Exception {
         loginAs(SELLER_ID, SELLER);
 
-        mockMvc.perform(post("/api/v1/products/images/upload-urls")
+        mockMvc.perform(post("/api/v1/products/images/uploadUrls")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                             { "files": [] }
@@ -543,7 +553,7 @@ class ProductControllerTest {
     void issueImageUploadUrlsWithZeroSize() throws Exception {
         loginAs(SELLER_ID, SELLER);
 
-        mockMvc.perform(post("/api/v1/products/images/upload-urls")
+        mockMvc.perform(post("/api/v1/products/images/uploadUrls")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                             { "files": [ { "contentType": "image/jpeg", "size": 0 } ] }
@@ -555,24 +565,79 @@ class ProductControllerTest {
     @Test
     @DisplayName("onSale=true를 보내면 요청 객체에 담겨 서비스로 전달")
     void searchProductsWithOnSale() throws Exception {
-        given(productService.searchProducts(any()))
+        given(productSearchService.search(any()))
                 .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
 
         mockMvc.perform(get("/api/v1/products").param("onSale", "true"))
                 .andExpect(status().isOk());
 
         ArgumentCaptor<ProductSearchRequest> captor = ArgumentCaptor.forClass(ProductSearchRequest.class);
-        verify(productService).searchProducts(captor.capture());
+        verify(productSearchService).search(captor.capture());
         assertThat(captor.getValue().onSale()).isTrue();
+    }
+
+    @Test
+    @DisplayName("판매자 상점 조건 sellerId · status를 요청 객체에 담아 서비스로 전달")
+    void searchProductsWithSellerAndStatus() throws Exception {
+        given(productSearchService.search(any()))
+                .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+        mockMvc.perform(get("/api/v1/products").param("sellerId", "7").param("status", "SOLD_OUT"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ProductSearchRequest> captor = ArgumentCaptor.forClass(ProductSearchRequest.class);
+        verify(productSearchService).search(captor.capture());
+        assertThat(captor.getValue().sellerId()).isEqualTo(7L);
+        assertThat(captor.getValue().status()).containsExactly(ProductStatus.SOLD_OUT);
+    }
+
+    @Test
+    @DisplayName("status를 여러 번 주면 모두 담아 전달 (판매자 상점 판매 중 칸 = ACTIVE + PAYMENT_PENDING, #559)")
+    void searchProductsWithMultipleStatuses() throws Exception {
+        given(productSearchService.search(any()))
+                .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+        mockMvc.perform(get("/api/v1/products").param("sellerId", "7")
+                        .param("status", "ACTIVE").param("status", "PAYMENT_PENDING"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ProductSearchRequest> captor = ArgumentCaptor.forClass(ProductSearchRequest.class);
+        verify(productSearchService).search(captor.capture());
+        assertThat(captor.getValue().status()).containsExactly(ProductStatus.ACTIVE, ProductStatus.PAYMENT_PENDING);
+    }
+
+    @Test
+    @DisplayName("status=처럼 값을 비우면 빈 리스트로 전달 (서비스는 조건 없음과 같게 처리)")
+    void searchProductsWithEmptyStatus() throws Exception {
+        given(productSearchService.search(any()))
+                .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+        mockMvc.perform(get("/api/v1/products").param("status", ""))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ProductSearchRequest> captor = ArgumentCaptor.forClass(ProductSearchRequest.class);
+        verify(productSearchService).search(captor.capture());
+        assertThat(captor.getValue().status()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("검색 노출 상태 밖의 status(REVIEW_PENDING)면 400 INVALID_SEARCH_STATUS")
+    void searchProductsWithNonSearchableStatus() throws Exception {
+        given(productSearchService.search(any()))
+                .willThrow(new BusinessException(ProductErrorCode.INVALID_SEARCH_STATUS));
+
+        mockMvc.perform(get("/api/v1/products").param("status", "REVIEW_PENDING"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_SEARCH_STATUS"));
     }
 
     @Test
     @DisplayName("탭 개수를 조회하면 로그인 회원 ID와 숨김 필터로 조회해 상태별 개수를 반환")
     void getMyProductCounts() throws Exception {
         loginAs(SELLER_ID, SELLER);
-        // total, reviewPending, rejected, active, paymentPending, soldOut
+        // total, reviewPending, rejected, active, paymentPending, soldOut, 오늘 등록 · 한도, 오늘 사진 검수 · 한도
         given(productService.getMyProductCounts(SELLER_ID, true))
-                .willReturn(new MyProductCountResponse(4, 2, 1, 1, 0, 0));
+                .willReturn(new MyProductCountResponse(4, 2, 1, 1, 0, 0, 3, 20, 5, 30));
 
         mockMvc.perform(get("/api/v1/products/me/counts").param("hidden", "true"))
                 .andExpect(status().isOk())
@@ -581,6 +646,10 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.data.rejected").value(1))
                 .andExpect(jsonPath("$.data.active").value(1))
                 .andExpect(jsonPath("$.data.paymentPending").value(0))
-                .andExpect(jsonPath("$.data.soldOut").value(0));
+                .andExpect(jsonPath("$.data.soldOut").value(0))
+                .andExpect(jsonPath("$.data.todayRegistered").value(3))
+                .andExpect(jsonPath("$.data.dailyRegisterLimit").value(20))
+                .andExpect(jsonPath("$.data.todayPhotoReviews").value(5))
+                .andExpect(jsonPath("$.data.dailyPhotoReviewLimit").value(30));
     }
 }

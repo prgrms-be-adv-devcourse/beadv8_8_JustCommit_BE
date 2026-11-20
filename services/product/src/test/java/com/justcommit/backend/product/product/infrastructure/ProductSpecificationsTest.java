@@ -24,8 +24,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
@@ -45,14 +44,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers(disabledWithoutDocker = true) //테스트할 때 Docker로 진짜 DB 컨테이너를 띄워 주는 라이브러리
 class ProductSpecificationsTest {
 
-    @Container //테스트 전용 Postgres 컨테이너
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        SharedPostgres.register(registry);
     }
 
     private static final Long SELLER_ID = 1L;
@@ -115,7 +109,15 @@ class ProductSpecificationsTest {
         entityManager.flush();
         return idsOf(productRepository.findAll(
                 ProductSpecifications.searchCondition(keyword, null, null,
-                        light, watering, difficulty, null, null, onSale), LATEST));
+                        light, watering, difficulty, null, null, onSale, null, null), LATEST));
+    }
+
+    // 판매자 상점 목록 (공개 목록 + sellerId · status 조건, #486)
+    private Page<Product> shop(Long sellerId, ProductStatus status) {
+        entityManager.flush();
+        return productRepository.findAll(ProductSpecifications.searchCondition(null, null, null,
+                null, null, null, null, null, null, sellerId,
+                status == null ? null : List.of(status)), LATEST);
     }
 
     // 상품 하나 저장 (검색에 나오는 판매 중 상태로)
@@ -229,6 +231,31 @@ class ProductSpecificationsTest {
                 .containsExactlyInAnyOrder(active.getId(), others.getId(), soldOut.getId(), pending.getId());
         assertThat(search(null, null, null, null, null))
                 .containsExactlyInAnyOrder(active.getId(), others.getId(), soldOut.getId(), pending.getId());
+    }
+
+    @Test
+    @DisplayName("판매자 상점: sellerId면 그 판매자의 공개 상품만, status=SOLD_OUT이면 판매 완료만 (전체 개수 = 판매 완료 개수)")
+    void searchConditionWithSellerAndStatus() {
+        // 숨김 · 삭제 상품은 상점에도 나오지 않음, 남의 상품도 빠짐
+        assertThat(idsOf(shop(SELLER_ID, null))).containsExactly(active.getId(), soldOut.getId());
+
+        Page<Product> soldOutPage = shop(SELLER_ID, ProductStatus.SOLD_OUT);
+        assertThat(idsOf(soldOutPage)).containsExactly(soldOut.getId());
+        assertThat(soldOutPage.getTotalElements()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("판매자 상점 판매 중 칸: status 여러 값(ACTIVE · PAYMENT_PENDING)이면 판매 완료 없이 둘 다 (#559)")
+    void searchConditionWithSellerAndStatuses() {
+        Product pending = save(species("필레아", null, null, null), SELLER_ID, "결제 대기");
+        ReflectionTestUtils.setField(pending, "status", ProductStatus.PAYMENT_PENDING);
+        entityManager.flush();
+
+        Page<Product> onSaleTab = productRepository.findAll(ProductSpecifications.searchCondition(null, null, null,
+                null, null, null, null, null, null, SELLER_ID,
+                List.of(ProductStatus.ACTIVE, ProductStatus.PAYMENT_PENDING)), LATEST);
+        assertThat(idsOf(onSaleTab)).containsExactlyInAnyOrder(active.getId(), pending.getId());
+        assertThat(onSaleTab.getTotalElements()).isEqualTo(2);
     }
 
     @Test

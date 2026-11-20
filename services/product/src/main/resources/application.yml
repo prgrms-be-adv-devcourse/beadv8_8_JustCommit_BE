@@ -37,6 +37,12 @@ internal-api:
   key: ${INTERNAL_API_KEY:}
 
 custom:
+  # 상품 검색 (원본은 DB, OpenSearch는 다시 만들 수 있는 복사본). 타임아웃은 docs/conventions/resilience.md
+  search:
+    opensearch:
+      url: ${OPENSEARCH_URL:http://localhost:9200}
+      connect-timeout: 1s
+      read-timeout: 2s
   image:
     base-url: ${S3_PUBLIC_BASE_URL:http://localhost:9000/team06-replant-images}
   s3:
@@ -61,3 +67,6 @@ custom:
     deadline:
       enabled: true
       interval: PT10M
+    # 관리자 확인 12시간 지연 알림 (한국 시간 09~21시 매 정각, 새로 지연된 건을 묶어 ImageReviewDelayed 1개). 켜고 끄기는 deadline.enabled
+    delay-alert:
+      cron: "0 0 9-21 * * *"

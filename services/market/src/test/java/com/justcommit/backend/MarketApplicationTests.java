@@ -28,7 +28,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
-// 앱 전체를 띄우면 주문 만료 · 배송 예약 스케줄러도 돈다. 공유 DB에서 다른 테스트의 데이터를 건드리지 않게 끝나면 컨텍스트를 닫는다
+// 앱 전체를 띄우면 스케줄러 · 커넥션 풀이 계속 돈다. 다른 클래스가 실행되는 동안 남지 않게 끝나면 컨텍스트를 닫는다
 @DirtiesContext
 class MarketApplicationTests {
 
@@ -63,14 +63,38 @@ class MarketApplicationTests {
 
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(response.body())
-                .contains("replant_shipment_stuck{status=\"READY\"")
-                .contains("replant_shipment_stuck{status=\"CANCEL_PENDING\"");
+                // common-logging이 모든 지표에 application 태그를 붙이므로 라벨 순서와 상관없이 찾는다 (#301)
+                .containsPattern("replant_shipment_stuck\\{[^}]*status=\"READY\"")
+                .containsPattern("replant_shipment_stuck\\{[^}]*status=\"CANCEL_PENDING\"");
     }
 
     @Test
     @DisplayName("확인 필요 주문 수 게이지(market_orders_review_required)가 지표 레지스트리에 등록된다")
     void registersReviewRequiredOrderGauge(@Autowired MeterRegistry meterRegistry) {
         assertThat(meterRegistry.find("market.orders.review.required").gauge()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("토큰 없이 /actuator/prometheus가 열리고 서비스 이름 태그 · 응답 시간 히스토그램 · 알림 지표가 나온다 (common-logging, #301)")
+    void exposesPrometheusMetricsWithoutToken(@Value("${local.server.port}") int port) throws Exception {
+        HttpClient http = HttpClient.newHttpClient();
+        // 요청을 한 번 보내야 http_server_requests 지표가 생긴다
+        http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/actuator/health")).build(),
+                HttpResponse.BodyHandlers.discarding());
+
+        HttpResponse<String> response = http.send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/actuator/prometheus")).build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body())
+                .contains("application=\"market-service\"")
+                .contains("http_server_requests_seconds_bucket")
+                .contains("market_orders_review_required")
+                .contains("hikaricp_connections_active")
+                // 알림용 지표 (docs/infra/observability.md 「알림 규칙」)
+                .contains("outbox_pending_oldest_age_seconds")
+                .contains("outbox_failed");
     }
 
     private static String newAddressEventKey() {

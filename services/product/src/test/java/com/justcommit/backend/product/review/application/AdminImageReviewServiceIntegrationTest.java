@@ -9,6 +9,7 @@ import com.justcommit.backend.product.config.ClockConfig;
 import com.justcommit.backend.product.exception.ProductErrorCode;
 import com.justcommit.backend.product.product.domain.Product;
 import com.justcommit.backend.product.product.domain.ReviewScope;
+import com.justcommit.backend.product.product.event.ImageReviewDelayed;
 import com.justcommit.backend.product.product.event.ProductApproved;
 import com.justcommit.backend.product.product.event.ProductRejected;
 import com.justcommit.backend.product.product.event.ProductStatusChanged;
@@ -28,6 +29,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -46,16 +48,18 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.json.JsonMapper;
+import com.justcommit.backend.product.client.member.MemberQuery;
+import com.justcommit.backend.product.member.domain.MemberReplica;
 
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -65,6 +69,8 @@ import java.util.concurrent.Future;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -84,14 +90,9 @@ class AdminImageReviewServiceIntegrationTest {
     private static final Long ADMIN_ID = 1L;
     private static final Long OTHER_ADMIN_ID = 2L;
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
-
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        SharedPostgres.register(registry);
     }
 
     @TestConfiguration
@@ -118,6 +119,8 @@ class AdminImageReviewServiceIntegrationTest {
     @Autowired JdbcTemplate jdbc;
 
     @MockitoBean OutboxPublisher outboxPublisher;
+    // 회원 복제본 조회 (실제 조회는 MemberReplicaIntegrationTest). 기본은 빈 Map = 복제본 없음
+    @MockitoBean MemberQuery memberQuery;
 
     private Species species;
 
@@ -182,6 +185,7 @@ class AdminImageReviewServiceIntegrationTest {
     void listOldestFirst() {
         Product fresh = awaitingAdmin("새 건", 1);
         Product old = awaitingAdmin("오래된 건", 13);
+        given(memberQuery.getNicknames(List.of(SELLER_ID))).willReturn(Map.of(SELLER_ID, "식물집사"));
 
         List<AdminImageReviewResponse> list = adminService.findAwaiting(PageRequest.of(0, 20)).getContent();
 
@@ -196,6 +200,22 @@ class AdminImageReviewServiceIntegrationTest {
         assertThat(first.otherSpecies()).isFalse();
         assertThat(first.imageUrls()).containsExactly("http://localhost:9000/bucket/products/7/a.jpg");
         assertThat(first.engineResult().get("plant").get("plant").asBoolean()).isTrue();
+        // #519: 판매자 닉네임 · 가격 · 검수 요청 시각
+        assertThat(first.sellerNickname()).isEqualTo("식물집사");
+        assertThat(first.price()).isEqualByComparingTo("10000");
+        assertThat(first.requestedAt()).isEqualTo(reviewOf(old).getCreatedAt());
+        // 판매자가 같으면 닉네임은 한 번에 한 명분만 조회
+        verify(memberQuery, times(1)).getNicknames(List.of(SELLER_ID));
+    }
+
+    @Test
+    @DisplayName("목록: 회원 복제본이 아직 없는 판매자는 「알 수 없는 회원」")
+    void listUnknownSeller() {
+        awaitingAdmin("복제본 없음", 1);
+
+        AdminImageReviewResponse item = adminService.findAwaiting(PageRequest.of(0, 20)).getContent().get(0);
+
+        assertThat(item.sellerNickname()).isEqualTo(MemberReplica.UNKNOWN_NICKNAME);
     }
 
     @Test
@@ -428,5 +448,100 @@ class AdminImageReviewServiceIntegrationTest {
 
         assertThat(adminService.expireOverdue()).isZero();
         assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.ACTIVE);
+    }
+
+    // ── 12시간 지연 알림 (#509) ───────────────────────────────
+
+    @Test
+    @DisplayName("12시간 지난 관리자 확인 건을 묶어 ImageReviewDelayed 1개 발행, 다음 실행에서는 다시 보내지 않음")
+    void notifyDelayedOnce() {
+        Product older = awaitingAdmin("20시간", 20);
+        Product newer = awaitingAdmin("13시간", 13);
+        Product notYet = awaitingAdmin("5시간", 5);
+
+        assertThat(adminService.notifyDelayed()).isEqualTo(2);
+
+        ArgumentCaptor<ImageReviewDelayed> captor = ArgumentCaptor.forClass(ImageReviewDelayed.class);
+        verify(outboxPublisher, times(1)).publish(captor.capture());
+        ImageReviewDelayed event = captor.getValue();
+        assertThat(event.delayedCount()).isEqualTo(2);
+        // 알림 시각 = 이벤트의 기준 시각, 12시간 전인 건은 채우지 않음
+        assertThat(reviewOf(older).getDelayNotifiedAt()).isEqualTo(event.checkedAt());
+        assertThat(reviewOf(newer).getDelayNotifiedAt()).isEqualTo(event.checkedAt());
+        assertThat(reviewOf(notYet).getDelayNotifiedAt()).isNull();
+        // 알림은 상품 상태를 바꾸지 않음 (관리자 확인은 계속 대기)
+        assertThat(reload(older).getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
+        assertThat(reviewOf(older).isAwaitingAdmin()).isTrue();
+
+        // 다음 실행: 이미 알린 건은 다시 모으지 않음
+        assertThat(adminService.notifyDelayed()).isZero();
+        verify(outboxPublisher, times(1)).publish(any());
+    }
+
+    @Test
+    @DisplayName("이미 알린 건이 있어도 새로 12시간을 넘긴 건만 묶어 다시 1개 발행")
+    void notifyOnlyNewlyDelayed() {
+        awaitingAdmin("13시간", 13);
+        Product later = awaitingAdmin("5시간", 5);
+        adminService.notifyDelayed();
+
+        // 시간이 흘러 5시간 건도 12시간을 넘김
+        jdbc.update("update image_review set reviewed_at = ? where product_id = ?",
+                LocalDateTime.now(clock).minusHours(12).minusMinutes(1), later.getId());
+
+        assertThat(adminService.notifyDelayed()).isEqualTo(1);
+        ArgumentCaptor<ImageReviewDelayed> captor = ArgumentCaptor.forClass(ImageReviewDelayed.class);
+        verify(outboxPublisher, times(2)).publish(captor.capture());
+        assertThat(captor.getAllValues().get(1).delayedCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("12시간 전인 관리자 확인 건만 있으면 발행하지 않음")
+    void notifyDelayedSkipsBeforeTwelveHours() {
+        Product product = awaitingAdmin("11시간", 11);
+
+        assertThat(adminService.notifyDelayed()).isZero();
+
+        verify(outboxPublisher, never()).publish(any());
+        assertThat(reviewOf(product).getDelayNotifiedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("관리자 확인 건이 없으면 발행하지 않음")
+    void notifyDelayedWithNothing() {
+        assertThat(adminService.notifyDelayed()).isZero();
+
+        verify(outboxPublisher, never()).publish(any());
+    }
+
+    @Test
+    @DisplayName("24시간이 지나 자동 반려를 기다리는 건은 알리지 않음 (반려 스케줄러가 아직 안 돌았어도)")
+    void notifyDelayedSkipsExpireWaiting() {
+        Product expireWaiting = awaitingAdmin("25시간", 25);
+        Product delayed = awaitingAdmin("13시간", 13);
+
+        assertThat(adminService.notifyDelayed()).isEqualTo(1);
+
+        ArgumentCaptor<ImageReviewDelayed> captor = ArgumentCaptor.forClass(ImageReviewDelayed.class);
+        verify(outboxPublisher, times(1)).publish(captor.capture());
+        assertThat(captor.getValue().delayedCount()).isEqualTo(1);
+        assertThat(reviewOf(expireWaiting).getDelayNotifiedAt()).isNull();
+        assertThat(reviewOf(delayed).getDelayNotifiedAt()).isNotNull();
+        // 반려 대기 건은 그대로 자동 반려 대상
+        assertThat(reviewOf(expireWaiting).isAwaitingAdmin()).isTrue();
+    }
+
+    @Test
+    @DisplayName("12시간이 지났어도 관리자가 처리했거나 그사이 수정된 옛 검수는 알리지 않음")
+    void notifyDelayedSkipsHandledOrChanged() {
+        Product decided = awaitingAdmin("처리함", 13);
+        adminService.decide(reviewOf(decided).getId(), ADMIN_ID, ReviewDecision.APPROVED, null, null);
+        Product edited = awaitingAdmin("수정됨", 13);
+        editByseller(edited);
+        clearInvocations(outboxPublisher);
+
+        assertThat(adminService.notifyDelayed()).isZero();
+
+        verify(outboxPublisher, never()).publish(any());
     }
 }

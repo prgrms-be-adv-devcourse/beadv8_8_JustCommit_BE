@@ -1,0 +1,51 @@
+# 모든 서비스 공통 관측 기본값 (#301). 서비스 application.yml에 같은 키가 있으면 서비스 값이 이긴다
+# 지표는 API와 같은 8080에 연다: Nginx는 /api · /oauth2만 Gateway로 넘기고, 서비스 포트는 인터넷에 열려 있지 않다
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true # /actuator/health/liveness · readiness (K3s 프로브용)
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      # 응답 시간을 구간별로 세어 두면 Prometheus에서 p95 · p99를 계산할 수 있다 (세미 측정 #351과 같은 설정)
+      percentiles-histogram:
+        "[http.server.requests]": true
+
+  # 분산 추적 (ADR 0027): 모든 요청을 추적하고(트래픽이 적어 100%), 운영에서만 OTLP로 Alloy에 보낸다.
+  # 로컬은 받을 Alloy가 없어 기본으로 보내지 않음(traceId는 로그에 그대로 찍힘)
+  tracing:
+    sampling:
+      probability: 1.0
+    export:
+      enabled: ${TRACING_EXPORT_ENABLED:false}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTLP_TRACING_ENDPOINT:http://localhost:4318/v1/traces}
+  # 지표는 Prometheus(/actuator/prometheus), 로그는 Alloy가 컨테이너 로그로 모은다 → OTLP로는 추적만 보낸다
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  logging:
+    export:
+      otlp:
+        enabled: false
+
+spring:
+  kafka:
+    # Kafka 리스너가 받은 메시지의 traceparent 헤더를 이어받아 같은 traceId로 처리한다 (보내는 쪽은 Outbox가 헤더를 붙임)
+    listener:
+      observation-enabled: true
+
+server:
+  tomcat:
+    mbeanregistry:
+      enabled: true # tomcat_threads_busy_threads 지표 (WebFlux인 Gateway에서는 무시됨)

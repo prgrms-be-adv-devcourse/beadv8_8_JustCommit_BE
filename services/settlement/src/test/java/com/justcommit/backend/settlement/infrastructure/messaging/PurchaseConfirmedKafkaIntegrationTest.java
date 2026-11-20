@@ -17,16 +17,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import org.testcontainers.junit.jupiter.Container;
+import com.justcommit.backend.common.testcontainers.SharedKafka;
+import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.kafka.KafkaContainer;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
@@ -55,22 +54,18 @@ import static org.mockito.Mockito.verify;
 // 정산 지급 스케줄러는 끄고 수신만 본다. 수신은 PENDING 저장까지만 하고 payment를 부르지 않는다 (#428)
 @SpringBootTest
 @Testcontainers(disabledWithoutDocker = true)
+// 리스너가 공유 Kafka의 다른 클래스 메시지를 읽지 않게 끝나면 컨텍스트를 닫는다
+@DirtiesContext
 class PurchaseConfirmedKafkaIntegrationTest {
 
     private static final String LEGACY_TOPIC = "market.purchase-confirmed.v1";
     private static final String DLT = KafkaTopics.MARKET_EVENTS + ".DLT";
 
-    @Container
-    @ServiceConnection
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
-
-    @Container
-    static final KafkaContainer KAFKA = new KafkaContainer("apache/kafka:4.2.1");
-
     // 그룹 · 역직렬화 · offset 설정은 application.yml 그대로, 주소만 테스트 컨테이너로 바꿈
     @DynamicPropertySource
     static void testProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
+        SharedPostgres.register(registry);
+        SharedKafka.register(registry);
         registry.add("jwt.public-key", PurchaseConfirmedKafkaIntegrationTest::newPublicKey);
         registry.add("internal-api.key", () -> "test-internal-key");
         registry.add("custom.settlement.payout.enabled", () -> "false");
@@ -95,12 +90,14 @@ class PurchaseConfirmedKafkaIntegrationTest {
         // 수수료 5%는 판매액에만, 배송비는 정산금에 넣지 않음
         assertThat(settlement.getFee()).isEqualByComparingTo("1500");
         assertThat(settlement.getPayoutAmount()).isEqualByComparingTo("28500");
+        // sellerBurdenAmount 칸이 없는 이벤트는 부담금 0 (V4 seller_burden_amount NOT NULL)
+        assertThat(settlement.getSellerBurdenAmount()).isEqualByComparingTo("0");
         // 수신은 저장만: PENDING, 바로 지급 대상(next_attempt_at), 지급 전이라 완료 시각 없음 (V3 체크 제약도 통과)
         assertThat(settlement.getStatus()).isEqualTo(SettlementStatus.PENDING);
         assertThat(settlement.getAttemptCount()).isZero();
         assertThat(settlement.getNextAttemptAt()).isNotNull();
         assertThat(settlement.getCompletedAt()).isNull();
-        verify(settlementPayoutClient, never()).distributeSettlement(any(), any(), any(), any());
+        verify(settlementPayoutClient, never()).distributeSettlement(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -109,6 +106,7 @@ class PurchaseConfirmedKafkaIntegrationTest {
         kafkaTemplate.send(LEGACY_TOPIC, "2001", legacyJson(2001L));
         Settlement first = awaitSettlement(2001L);
         assertThat(first.getShippingFee()).isNull();
+        assertThat(first.getSellerBurdenAmount()).isEqualByComparingTo("0");
 
         kafkaTemplate.send(KafkaTopics.MARKET_EVENTS, "2001", purchaseConfirmedEnvelope(2001L, "3000"));
 
@@ -123,21 +121,21 @@ class PurchaseConfirmedKafkaIntegrationTest {
         // 두 번째 수신은 배송비만 채우고 상태 · 다음 시도 시각은 그대로
         assertThat(filled.getStatus()).isEqualTo(SettlementStatus.PENDING);
         assertThat(filled.getNextAttemptAt()).isEqualTo(first.getNextAttemptAt());
-        verify(settlementPayoutClient, never()).distributeSettlement(any(), any(), any(), any());
+        verify(settlementPayoutClient, never()).distributeSettlement(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
     @DisplayName("payment가 내려가 있어도(지급 호출이 예외) 구매 확정 수신은 성공하고 DLT로 가지 않는다")
     void receivesEvenWhenPaymentIsDown() {
         doThrow(new InternalApiUnavailableException("internal-payment", new RuntimeException("connection refused")))
-                .when(settlementPayoutClient).distributeSettlement(any(), any(), any(), any());
+                .when(settlementPayoutClient).distributeSettlement(any(), any(), any(), any(), any(), any(), any());
 
         kafkaTemplate.send(KafkaTopics.MARKET_EVENTS, "6001", purchaseConfirmedEnvelope(6001L, "3000"));
 
         Settlement settlement = awaitSettlement(6001L);
         assertThat(settlement.getStatus()).isEqualTo(SettlementStatus.PENDING);
         assertThat(settlement.getCompletedAt()).isNull();
-        verify(settlementPayoutClient, never()).distributeSettlement(any(), any(), any(), any());
+        verify(settlementPayoutClient, never()).distributeSettlement(any(), any(), any(), any(), any(), any(), any());
         assertThat(pollDlt("6001", Duration.ofSeconds(3))).isEmpty();
     }
 
@@ -150,13 +148,13 @@ class PurchaseConfirmedKafkaIntegrationTest {
 
         Settlement settlement = awaitSettlement(4001L);
         // 두 번째 메시지까지 소비된 뒤 건수를 봄 (같은 Key라 같은 파티션에서 차례로 처리)
-        verify(settlementService, timeout(20_000).times(2)).settle(eq(4001L), anyLong(), any(), any(), any());
+        verify(settlementService, timeout(20_000).times(2)).settle(eq(4001L), anyLong(), any(), any(), any(), any());
         assertThat(settlementRepository.findAll())
                 .filteredOn(s -> s.getSellerOrderId().equals(4001L))
                 .hasSize(1);
         assertThat(settlement.getStatus()).isEqualTo(SettlementStatus.PENDING);
         // 지급은 정산 지급 스케줄러 몫 (같은 정산 한 번 지급은 SettlementPayoutServiceIntegrationTest)
-        verify(settlementPayoutClient, never()).distributeSettlement(any(), any(), any(), any());
+        verify(settlementPayoutClient, never()).distributeSettlement(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -168,7 +166,7 @@ class PurchaseConfirmedKafkaIntegrationTest {
         kafkaTemplate.send(KafkaTopics.MARKET_EVENTS, "3001", purchaseConfirmedEnvelope(3001L, "3000"));
 
         awaitSettlement(3001L);
-        verify(settlementService, times(1)).settle(eq(3001L), anyLong(), any(), any(), any());
+        verify(settlementService, times(1)).settle(eq(3001L), anyLong(), any(), any(), any(), any());
         assertThat(pollDlt("3001", Duration.ofSeconds(3))).isEmpty();
     }
 
@@ -188,7 +186,7 @@ class PurchaseConfirmedKafkaIntegrationTest {
                 Map.of("sellerId", 7L, "saleAmount", 30000)));
 
         assertThat(pollDlt("5001", Duration.ofSeconds(30))).hasSize(1);
-        verify(settlementService, never()).settle(any(), any(), any(), any(), any());
+        verify(settlementService, never()).settle(any(), any(), any(), any(), any(), any());
     }
 
     private Settlement awaitSettlement(Long sellerOrderId) {
@@ -227,7 +225,7 @@ class PurchaseConfirmedKafkaIntegrationTest {
     // DLT에서 이 key의 메시지를 기다린다 (없으면 빈 목록)
     private List<ConsumerRecord<String, String>> pollDlt(String key, Duration wait) {
         Map<String, Object> props = Map.of(
-                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers(),
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, SharedKafka.container().getBootstrapServers(),
                 ConsumerConfig.GROUP_ID_CONFIG, "test-" + UUID.randomUUID(),
                 ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
                 ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,

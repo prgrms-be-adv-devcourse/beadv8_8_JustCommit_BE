@@ -1,7 +1,7 @@
 # 사진 검수
 
 > 언제 읽나: 상품 사진 검수 코드를 고칠 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-16 · 관련: Miro 13-1, 노션 「정책 정리」 3.3 · 3.4 · 3.16
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 13-1, 노션 「정책 정리」 3.3 · 3.4 · 3.16
 
 ## 흐름
 
@@ -91,7 +91,7 @@ sequenceDiagram
 - 두 관리자가 동시에 처리하면 검수 기록 행 잠금으로 한 명씩 처리하고, 늦은 쪽은 409 `REVIEW_ALREADY_PROCESSED`입니다. 그사이 판매자가 수정 · 삭제했으면(검수 버전 · 상태가 다름) 409 `REVIEW_OUTDATED`입니다.
 - 반려는 사유 필수입니다. `REVIEW_EXPIRED`는 기한 자동 반려 전용이라 관리자가 고를 수 없고, `OTHER`는 내용 필수(200자)입니다. 어기면 400 `INVALID_REJECT_REASON`입니다.
 - 처리자(`decided_by` `ENGINE` · `ADMIN` · `DEADLINE`, `admin_id`) · 결과 · 사유 · `OTHER` 내용 · 처리 시각(`decided_at`)을 `IMAGE_REVIEW`에 남깁니다. 통과 · 반려 이벤트는 자동 검수와 같습니다 (`ProductStatusChanged` · `ProductApproved` · `ProductRejected`).
-- **기한**: 관리자 확인으로 간 지 12시간이 지나면 관리자 확인 목록에 「지연」(`delayed`)으로 표시하고 판매자 화면에 "확인에 시간이 걸리고 있어요"를 보여줍니다. 관리자에게 대기 건수를 묶어 보내는 알림은 notification이 Kafka 구독을 켤 때 붙입니다 (⬜). 24시간이 지나면 기한 스케줄러([스케줄러 표](../reference/schedulers.md))가 `REVIEW_EXPIRED`로 자동 반려합니다 (자동 승인 없음, 그사이 수정 · 삭제된 상품은 건너뜀). `REVIEW_EXPIRED`는 판매자 잘못이 아니라 재검수 · 등록 제한에 세지 않고 같은 내용을 다시 제출할 수 있으며, 이의 신청 건이 `REVIEW_EXPIRED`로 끝나면 그 이의 신청도 횟수에 세지 않습니다. 주말에는 실제 처리 시간을 보고 조정합니다.
+- **기한**: 관리자 확인으로 간 지 12시간이 지나면 관리자 확인 목록에 「지연」(`delayed`)으로 표시하고 판매자 화면에 "확인에 시간이 걸리고 있어요"를 보여줍니다. 지연 알림 스케줄러가 한국 시간 09~21시 매 정각에 새로 12시간을 넘긴 건(24시간이 지나 자동 반려를 기다리는 건은 제외)을 묶어 관리자 알림 이벤트 `ImageReviewDelayed`(건수 · 모은 시각) 1개를 보내고, 보낸 건은 `IMAGE_REVIEW.delay_notified_at`을 채워 다시 알리지 않습니다 (0건이면 보내지 않음). notification은 관리자 역할(ADMIN)로 알림 1건을 만들어 관리자끼리 읽음을 공유하고, `event_key` `ADMIN_REVIEW_DELAYED:{eventId}`로 한 번만 저장합니다 (notification 담당 합의 11/19, 구독 #561). 24시간이 지나면 기한 스케줄러([스케줄러 표](../reference/schedulers.md))가 `REVIEW_EXPIRED`로 자동 반려합니다 (자동 승인 없음, 그사이 수정 · 삭제된 상품은 건너뜀). `REVIEW_EXPIRED`는 판매자 잘못이 아니라 재검수 · 등록 제한에 세지 않고 같은 내용을 다시 제출할 수 있으며, 이의 신청 건이 `REVIEW_EXPIRED`로 끝나면 그 이의 신청도 횟수에 세지 않습니다. 주말에는 실제 처리 시간을 보고 조정합니다.
 
 관리자 API: `GET /api/v1/admin/imageReviews?status=MANUAL`, `PATCH /api/v1/admin/imageReviews/{id}` (ADMIN)
 
@@ -99,8 +99,10 @@ sequenceDiagram
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| GET | `products/{id}/imageReviews` | 판매자 본인 검수 기록, 최신 검수 버전부터. 표시 상태(`IN_REVIEW` 검수 중 · `ADMIN_CHECK` 관리자 확인 중 · `ADMIN_CHECK_DELAYED` 확인 지연 · `APPROVED` · `REJECTED` · `REPLACED` 그사이 수정됨) · 반려 사유와 문구 · 판정 주체(`ENGINE` · `ADMIN` · `DEADLINE`) · 시각, 남은 재검수 횟수 · 이의 신청 가능 여부 · 기한 초과 재요청 가능 여부 (두 가능 여부는 상품 · 검수 상태만 봄. 검수 중 동시 5개는 신청할 때 확인해 넘으면 409 `REVIEW_PENDING_LIMIT_EXCEEDED`) |
+| GET | `products/{id}/imageReviews` | 판매자 본인 검수 기록, 최신 검수 버전부터. 표시 상태(`IN_REVIEW` 검수 중 · `ADMIN_CHECK` 관리자 확인 중 · `ADMIN_CHECK_DELAYED` 확인 지연 · `APPROVED` · `REJECTED` · `REPLACED` 그사이 수정됨) · 반려 사유와 문구 · 판정 주체(`ENGINE` · `ADMIN` · `DEADLINE`) · 시각 · 관리자 확인 기한 `expiresAt`(관리자 확인 중 · 지연일 때만, 관리자 목록과 같은 값 = 관리자 확인으로 간 시각 + 24시간, 이의 신청은 신청 시각부터), 남은 재검수 횟수 · 이의 신청 가능 여부 · 기한 초과 재요청 가능 여부 (두 가능 여부는 상품 · 검수 상태만 봄. 검수 중 동시 5개는 신청할 때 확인해 넘으면 409 `REVIEW_PENDING_LIMIT_EXCEEDED`) |
 | POST | `products/{id}/appeals` | 자동 반려 이의 신청 (`memo` 필수, 200자). 409 `APPEAL_NOT_ALLOWED` · `APPEAL_ALREADY_USED` |
+| GET | `products/me` | 내 상품 목록에 지금 검수 버전의 표시 상태 · 반려 사유와 문구 · 판정 주체 (값은 검수 기록과 같음). 한 페이지의 검수 기록을 쿼리 한 번으로 조회 |
+| GET | `products/me/counts` | 오늘 등록 수 · 오늘 사진 검수 수와 한도(20 · 30). 등록 제한 · 하루 사진 검수 제한과 같은 기준 (한국 시간 자정, 삭제 포함, 글 검사 · 기한 초과 다음 검수 제외) |
 | POST | `products/{id}/imageReviews` | 기한 초과(`REVIEW_EXPIRED`) 상품을 같은 내용으로 다시 검수 요청. 재검수 · 등록 제한에 세지 않음. 다른 상태면 409 `RESUBMIT_NOT_ALLOWED` |
 
 모두 SELLER, 본인 상품만 (남의 상품은 404 `PRODUCT_NOT_FOUND`).

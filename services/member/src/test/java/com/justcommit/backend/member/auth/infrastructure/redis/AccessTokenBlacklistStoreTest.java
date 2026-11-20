@@ -8,8 +8,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.junit.jupiter.Container;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import com.justcommit.backend.common.testcontainers.SharedRedis;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Duration;
@@ -24,12 +25,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers(disabledWithoutDocker = true)
 class AccessTokenBlacklistStoreTest {
 
+  @DynamicPropertySource
+  static void containers(DynamicPropertyRegistry registry) {
+    SharedRedis.register(registry);
+  }
+
   // SHA-256("abc") 표준 테스트 벡터 → 키 형식을 해시 도구와 독립적으로 확인
   private static final String SHA256_OF_ABC = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
   private static final String KEY_OF_ABC = "auth:blacklist:" + SHA256_OF_ABC;
-
-  @Container
-  static final GenericContainer<?> REDIS = new GenericContainer<>("redis:8-alpine").withExposedPorts(6379);
 
   private static LettuceConnectionFactory connectionFactory;
   private static StringRedisTemplate redisTemplate;
@@ -39,7 +42,7 @@ class AccessTokenBlacklistStoreTest {
   @BeforeAll
   static void connect() {
     connectionFactory = new LettuceConnectionFactory(
-        new RedisStandaloneConfiguration(REDIS.getHost(), REDIS.getMappedPort(6379)));
+        new RedisStandaloneConfiguration(SharedRedis.container().getHost(), SharedRedis.container().getMappedPort(6379)));
     connectionFactory.afterPropertiesSet();
     connectionFactory.start();
     redisTemplate = new StringRedisTemplate(connectionFactory);

@@ -1,7 +1,7 @@
 # 서버 배치 · 배포
 
 > 언제 읽나: 서버 구성이나 CI/CD를 바꿀 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: Miro 15, 노션 기획안 「배포 · 운영 변경」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 15, 노션 기획안 「배포 · 운영 변경」
 
 ## 서버 배치
 
@@ -46,6 +46,8 @@ Gateway는 K3s Service 이름으로 market에 보내고 K3s가 살아 있는 파
 | 대상 | 이미 떠 있는 서비스만 새 이미지로 바꿈. 처음 올리기는 수동 (`deploy/k3s/README.md`, `docker-compose.app.yml` 머리말) |
 | GHCR 로그인 | 실행마다 `GITHUB_TOKEN`으로 임시 폴더에 로그인 · 끝나면 지움 (서버 `~/.docker` 설정은 그대로) |
 | 실패 | 빌드가 하나라도 실패하면 배포하지 않음. 롤아웃 실패 시 옛 파드가 계속 응답하고, 되돌리기는 `kubectl -n replant rollout undo` |
+| 기동 대기 | compose 서비스는 `--wait`로 healthy까지 기다림. 헬스체크 `start_period` 120초 + 10초 × 3번 실패 = 최대 약 150초 (`--wait-timeout 180`), K3s는 `rollout status --timeout=5m` |
+| 실패 로그 | 실패한 그때 Actions 로그에 남김: compose는 컨테이너 상태 · 헬스체크 기록 · `docker logs --tail 80`, K3s는 최근 파드 2개의 상태 · 이벤트 · 로그(`--previous` 포함). 공개 로그라 `docker inspect` · `kubectl describe` 전체는 찍지 않고 `password` · `secret` · `token` · `key` 값과 URL 안 비밀번호는 `***`로 가림 |
 | 서버가 꺼진 시간 | 배포는 서버가 켜질 때까지 대기 (24시간 넘으면 실패) |
 | 외부 PR | 레포가 공개라, 외부 기여자 PR의 워크플로는 승인 후 실행으로 설정 (러너가 있는 서버를 보호) |
 

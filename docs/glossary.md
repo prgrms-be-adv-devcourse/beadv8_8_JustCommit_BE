@@ -1,7 +1,7 @@
 # 용어집 (유비쿼터스 언어)
 
 > 언제 읽나: 같은 대상을 부르는 표준 이름을 찾을 때, 별칭(다른 이름 · 일상어 · 영문)으로 검색할 때, 코드 이름과 문서 이름을 맞출 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-18 · 관련: 노션 「유비쿼터스 언어 정리」, 전체
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: 노션 「유비쿼터스 언어 정리」, 전체
 
 문서 · 코드 · PR · 회의에서는 「표준 용어」만 씁니다. 「별칭」은 검색용이며 본문에 쓰지 않습니다. 시간 · 금액 · 횟수 같은 값은 여기 적지 않고 「원본」 문서를 봅니다.
 
@@ -18,8 +18,11 @@
 | 결제 처리 중 | `PAYMENT_PROCESSING` (주문) | 결제중, 결제 시도 중 | payment에 결제를 요청했고 아직 결과를 반영하지 못한 주문. 결과를 모르면 이 상태로 남고 Saga 복구가 같은 orderId로 다시 요청. 만료하지 않음 | [주문 · 결제](flows/order-payment.md#멈춘-주문-복구) |
 | 결제 기한 만료 | `PAYMENT_WINDOW_EXPIRED` | 결제 시간 초과 | 결제 대기 기한이 지나 결제를 거절하는 것. 결제할 때 market이 직접 확인 | [market 정책](services/market.md#정책) |
 | 수락 · 거절 | `ACCEPT_PENDING` · `SellerOrderAccepted` · `SellerOrderRejected` | 주문 확인, 주문 승인 | 결제 후 판매자가 주문을 받을지 정하는 단계. 수락해야 배송이 생김 | [market 정책](services/market.md#정책) |
+| 수락 마감 | `acceptDeadline` (`SellerOrder.paidAt` 기준) | 수락 기한, 응답 기한 | 판매자가 수락하거나 거절해야 하는 시각. 지나면 자동 거절 | [market 정책](services/market.md#정책) |
 | 자동 거절 | – | 자동 취소 (구매자 알림 문구) | 판매자가 기한 안에 응답하지 않아 거절된 주문 | [market 정책](services/market.md#정책) |
 | 배송 | `Shipment` | 택배, 배송 건 | 판매자 주문 하나의 택배. 반품은 방향이 다른 새 배송 | [market](services/market.md) |
+| 배송 방향 | `direction` (`ShipmentDirection`) | – | 배송이 가는 길인지 반품인지. 판매자 주문 하나에 가는 길 배송은 1개, 반품 배송은 여러 개 | [market](services/market.md) |
+| 가는 길 | `OUTBOUND` (배송 방향) | 정방향, 원래 배송 | 판매자 → 구매자로 가는 배송. 구매 확정 · 취소 · 반품 기간은 가는 길 배송으로 판정 | [market](services/market.md) |
 | 택배 예약 | `BOOKED` | 접수, 택배 접수, 픽업 대기 (화면 표시) | 택배사에 수거를 예약한 상태. 상품 「예약」과 구분해 항상 「택배 예약」으로 씀 | [market 정책](services/market.md#정책) |
 | 수거 | `PICKED_UP` | 픽업, 가져감, 집하 | 택배사가 상품을 가져간 상태. 이후에는 취소 대신 반품 | [market 정책](services/market.md#정책) |
 | 배송 완료 | `DELIVERED` | 도착 | 구매자에게 도착한 상태. 자동 구매 확정 · 반품 기간의 기준 시점 | [market 정책](services/market.md#정책) |
@@ -31,12 +34,16 @@
 | 배송비 요금표 | ⬜ 테이블 이름 미정 | 운임표 | 지역 구분(기본 + 제주 · 도서산간) 배송비 표. market이 버전과 함께 보관 | [market 정책](services/market.md#정책) |
 | 구매 확정 | `PurchaseConfirmed` · `OrderItemAutoConfirmed` | 구매 완료, 거래 완료 | 구매자가 받았다고 확정 (직접 또는 자동). 정산의 시작점 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 취소 | `OrderItemCancelled` · `SellerOrderCancelled` | 주문 취소 | 수거 전에 구매자가 주문상품을 취소하는 것 | [취소 · 환불](flows/cancel-refund.md) |
-| 취소 중 | ⬜ 상태 이름 미정 (주문상품) | 환불 확인 중 | 환불 결과를 모르는 주문상품. 환불이 확정되면 취소 완료 | [취소 · 환불](flows/cancel-refund.md#실패와-재시도) |
+| 취소 사유 | `cancel_reason` (주문상품) · `CancelReason` (`BUYER`, `SELLER`, `AUTO`) | 취소 원인 | 주문상품이 취소 흐름에 들어간 이유 (구매자 취소, 판매자 거절, 자동 거절). 판매 재개 이벤트의 `reason` | [Kafka 토픽](reference/kafka-topics.md) |
+| 취소 중 | `CANCEL_PROCESSING` (주문상품) | 환불 확인 중 | 환불 결과를 모르는 주문상품. 환불이 확정되면 취소 완료 | [취소 · 환불](flows/cancel-refund.md#실패와-재시도) |
 | 환불 | `refunds/*` (payment) | 돈 돌려주기, 결제 취소 | **돈**이 주체. 결제한 돈을 구매자에게 돌려주는 것. 원인은 수거 전 취소 · 판매자 거절 · 자동 거절 · 반품 완료 | [payment](services/payment.md#정책) |
 | 반품 | `Return*` · `OrderItemReturned` | 환불 요청, 반품 요청, 교환 | **물건(택배)**이 주체. 받은 상품을 판매자에게 택배로 돌려보내는 절차. 끝나면 그 결과로 환불 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
-| 반품 신청 | `ReturnRequested` | 환불 요청 | 배송 완료 후 판매자 귀책으로 상품을 돌려보내겠다는 요청 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 신청 | `ReturnRequest` (`return_request`) · `RETURN_REQUESTED` (주문상품) · `ReturnRequested` | 환불 요청 | 배송 완료 후 판매자 귀책으로 상품을 돌려보내겠다는 요청 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 승인 · 거절 (반품) | `ReturnApproved` · `ReturnRejected` | 수락 (반품에는 안 씀) | 판매자가 반품을 받아들이거나 거절. 거절하면 그 주문상품은 바로 구매 확정 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
-| 반품 완료 | `OrderItemReturned` (반품 환불 뒤 발행) | 반품 도착 | 반품 택배가 판매자에게 도착한 것. 이때 환불이 일어남 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 사유 | `ReturnReason` (`DAMAGED`, `NOT_AS_DESCRIBED`, `OTHER`) | 반품 원인 | 반품 신청 때 고르는 판매자 귀책 사유 (상품 파손, 설명과 다름, 기타). 기타면 직접 작성 내용 필수 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 배송 중 | `RETURN_IN_TRANSIT` (주문상품) | 반품 수거 중 | 반품이 승인돼 반품 택배가 판매자에게 가는 중인 주문상품 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 환불 중 | `RETURN_PROCESSING` (주문상품) | 반품 도착, 반품 환불 확인 중 | 반품 택배가 판매자에게 도착했고 환불 결과를 기다리는 주문상품 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 완료 | `RETURNED` (주문상품) · `OrderItemReturned` (반품 환불 뒤 발행) | – | 반품 환불이 확정돼 반품이 끝난 것. 택배사 `RETURNED`(반송)와 다름 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 판매자 부담금 | – | 반품비, 왕복 택배비 | 반품 때 판매자가 내는 배송비 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 
 ## 돈
@@ -45,18 +52,16 @@
 
 | 표준 용어 | 코드 이름 | 별칭 (검색용) | 뜻 | 원본 |
 |---|---|---|---|---|
-| 예치금 | `WALLET` (회원) | 잔고, 잔액, 포인트, 지갑 | 회원 지갑의 돈 = 충전금 + 인출 가능 금액 | [payment](services/payment.md) |
-| 충전금 | `charge_balance` | 충전 잔액 | 토스로 충전한 금액. 계좌로 인출하지 않음 (탈퇴 정리 때만) | [payment 정책](services/payment.md#정책) |
-| 인출 가능 금액 | `withdrawable_balance` | 정산금, 출금 가능액 | 판매로 받은 정산금. 계좌로 인출 가능 | [payment 정책](services/payment.md#정책) |
-| 충전 취소 | `CHARGE` · `CANCEL_PENDING` (충전) | 충전 환불, 결제 취소 | 충전한 돈을 원래 결제수단으로 돌려받는 것 | [payment 정책](services/payment.md#정책) |
-| 인출 | `CASH_OUT` | 출금, 환급 | 인출 가능 금액을 계좌로 보내는 것 | [payment 정책](services/payment.md#정책) |
+| 예치금 | `WALLET` (회원) | 잔고, 잔액, 포인트, 지갑 | 회원 지갑 잔액 | [payment](services/payment.md) |
+| 인출 | `CASH_OUT` | 출금, 환급 | 잔액을 계좌로 보내는 것 | [payment 정책](services/payment.md#정책) |
 | 홀딩 지갑 | `HOLDING` | 보관 계좌, 에스크로 | 결제된 돈을 정산 전까지 맡아 두는 시스템 지갑 | [payment](services/payment.md) |
 | 매출 지갑 | `REVENUE` | 수익 계좌, 플랫폼 계좌 | 수수료 · 배송비 · 판매자 부담금이 쌓이는 시스템 지갑 | [payment](services/payment.md) |
 | 정산 | `SETTLEMENT` | 정산금 지급 | 판매자 주문이 끝나면 판매액에서 수수료 · 부담금을 빼 판매자에게 줄 돈 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 음수 정산 | – | 조정 정산, 마이너스 정산 | 부담금이 판매액보다 커서 0보다 작은 정산 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 미수금 | – | 빚, 미납금 | 음수 정산을 회수하지 못한 금액. 남아 있으면 인출 · 탈퇴 불가 | [구매 확정 → 정산](flows/confirm-settlement.md) |
+| 미수금 차감 | `RECEIVABLE_COLLECTION` | 미수금 상환, 미수금 납부, 빚 갚기 | 회원 지갑에 입금(충전, 정산금, 환불)되면 입금액 안에서 미수금을 먼저 빼 `REVENUE`로 옮기는 것. 입금 1건당 한 번 | [payment 정책](services/payment.md#정책) |
 | 결과 불명 | `InternalApiResultUnknownException` | 타임아웃, 알 수 없음 | 응답이 없어 상대가 처리했는지 모르는 상태. 바로 되돌리지 않고 같은 멱등 키로 확인 | [장애 처리](conventions/resilience.md#결과-불명-처리) |
-| 확인 필요 | `REVIEW_REQUIRED` | 수동 처리, 사람 확인 (돈 · 주문) | 자동 복구를 포기하고 사람이 확인해야 하는 상태 | [스케줄러](reference/schedulers.md) |
+| 확인 필요 | `REVIEW_REQUIRED` | 수동 처리, 사람 확인 (돈 · 주문) | 자동 복구를 포기하고 사람이 확인해야 하는 상태. 주문(결제 결과 불명)과 주문상품(환불 거절, 환불 결과 불명) 모두 | [스케줄러](reference/schedulers.md) |
 
 ## 상품 · 검수
 
@@ -79,6 +84,8 @@
 | 품종 · 별칭 | `SPECIES` · `SPECIES_ALIAS` | 식물 종류, 유통명 | 상품이 속한 식물 종류와 그 다른 이름 | [product](services/product.md) |
 | 판매 금지 품종 | `BANNED_SPECIES` | 금지 식물 | 법으로 사고팔 수 없는 품종. 품종 목록과 따로 관리 | [product 정책](services/product.md#정책) |
 | 상품 스냅샷 | `product_snapshot` | 상품 사본 (ai) | ai가 상품 이벤트로 채우는 상품 정보 사본 (상품 ID · 품종 ID · 판매자 ID · 상태 · 숨김 · 상품 버전, 모든 상태). 추천할 때 판매 중만 고름 | [ADR 0021](decisions/0021-product-event-payload-ai-snapshot.md) |
+| 품종 의미 검색 | `SpeciesSearchService` · `speciesSearches` | 문장으로 찾기, 의미 검색, 벡터 검색 | 사용자가 쓴 문장을 임베딩해 품종 벡터에서 가까운 품종과 그 품종의 판매 중 상품을 찾는 것. 상품 의미 검색 · 챗봇과 다름 | [검색 · 추천](flows/search-recommend.md#의미-검색) |
+| 추천 평가 세트 | `eval-pairs.csv` | 정답 쌍, 정답 조합 | 누가 봐도 같이 키우기 좋은 품종 짝과 근거. 장바구니 추천 Top-10에 정답 품종이 들어오는 수(적중 수)로 점수 규칙을 비교 | [검색 · 추천](flows/search-recommend.md) |
 
 ## 회원 · 인증
 
@@ -89,13 +96,15 @@
 | 회원 | `MEMBER` | 사용자, 유저 | 가입한 사람. URL 경로는 `users`, 코드 · 필드는 `member` | [member](services/member.md) |
 | 판매자 | `SELLER` | 셀러 | 판매자로 등록한 회원 | [member](services/member.md) |
 | 회원 복제본 | `MEMBER_REPLICA` | 레플리카, 회원 사본 | 다른 서비스가 회원 이벤트로 채우는 회원 정보 사본 (계좌는 없음) | [가입과 회원 복제본](flows/signup-and-replica.md) |
+| 알 수 없는 회원 | `MemberReplica.UNKNOWN_NICKNAME` | 닉네임 없음, 미확인 회원 | 회원 복제본에 아직 없는 회원(가입 이벤트 반영 전 등)의 닉네임 대신 보여 주는 이름. 「탈퇴한 회원」과 다름 | [외부 API 목록](reference/external-apis.md) |
 | 블랙리스트 | `auth:blacklist` | 로그아웃 토큰, 토큰 차단 | 로그아웃한 Access 토큰을 거절하는 목록 | [인증 규칙](conventions/auth.md#토큰-폐기) |
 | 회원 단위 폐기 | `auth:revoked-member` | 전체 로그아웃, 모든 기기 로그아웃 | 탈퇴 · 비밀번호 변경 · 재설정 · 소셜 연결 해제로 그 전의 인증을 무효화하는 것. 인증 버전으로 이전 Refresh 재발급을 막고, Redis에 폐기 시각이 기록된 뒤부터 이전 Access도 거절 | [인증 규칙](conventions/auth.md#토큰-폐기) |
 | 이중 검증 | – | – | Gateway와 각 서비스가 모두 토큰을 검증하는 것 | [인증 규칙](conventions/auth.md) |
 | 탈퇴 | `MemberWithdrawn` | 회원 삭제, 계정 삭제 | 소프트 삭제 · 익명화. 다른 서비스에는 「탈퇴한 회원」으로 표시 | [가입과 회원 복제본](flows/signup-and-replica.md#탈퇴) |
 | 탈퇴 기록 | `MemberWithdrawalRecord` (`member_withdrawal_record`) | 재가입 제한 기록 | 탈퇴한 회원의 이메일 · 휴대폰 HMAC과 탈퇴 시각을 재가입 제한 판정용으로 보관하는 기록. 기간이 지나면 삭제 | [가입과 회원 복제본](flows/signup-and-replica.md#재가입-제한) |
 | 소셜 연결 해제 | `INACTIVE` (회원 상태) · `SOCIAL_UNLINKED` (폐기 사유) | 카카오 연결 끊김, 연결 해제됨 | 카카오 연결이 끊겼지만 아직 탈퇴하지 않은 회원의 상태. 기존 로그인을 폐기하고 일반 회원 기능을 막음. 재연결 시 복구는 흐름 문서의 정책을 따름 | [가입과 회원 복제본](flows/signup-and-replica.md#카카오-연결-해제-웹훅) |
-| 카카오 연결 해제 웹훅 | `/api/v1/webhooks/kakao/unlink` (수신 기록 테이블 이름 ⬜ 미정) | 연결 해제 알림, unlink callback | 카카오계정 탈퇴 · 강제 탈퇴 · 카카오 관리자 처리 · 사용자 직접 연결 해제로 앱 연결이 끊겼을 때 카카오가 보내는 HTTP 요청. 택배사 「웹훅」과 다름 | [가입과 회원 복제본](flows/signup-and-replica.md#카카오-연결-해제-웹훅) |
+| 자동 탈퇴 처리 기록 | `handles_withdrawal` | – | 같은 회원 · 같은 연결 해제 상태에 들어온 카카오 연결 해제 웹훅 수신 기록 중 자동 탈퇴(확인 · 탈퇴 · 안내)를 진행하는 하나의 기록. 처리 완료 여부가 아니라 이 절차를 맡도록 선택됐는지를 뜻함 | [가입과 회원 복제본](flows/signup-and-replica.md#연결-해제-상태와-자동-탈퇴-처리-기록) |
+| 카카오 연결 해제 웹훅 | `/api/v1/webhooks/kakao/unlink` (수신 기록 `member_kakao_unlink_receipt`) | 연결 해제 알림, unlink callback | 카카오계정 탈퇴 · 강제 탈퇴 · 카카오 관리자 처리 · 사용자 직접 연결 해제로 앱 연결이 끊겼을 때 카카오가 보내는 HTTP 요청. 택배사 「웹훅」과 다름 | [가입과 회원 복제본](flows/signup-and-replica.md#카카오-연결-해제-웹훅) |
 | 탈퇴 토큰 | `auth:withdrawal` | – | 카카오 회원이 이메일 재인증 후 받아 최종 탈퇴 요청에 쓰는 일회용 토큰 | [Redis 키](reference/redis-keys.md) |
 | Fail-closed | – | 막힘 처리 | 확인 조회가 실패하면 허용하지 않고 막는 정책 (탈퇴) | [가입과 회원 복제본](flows/signup-and-replica.md#탈퇴) |
 

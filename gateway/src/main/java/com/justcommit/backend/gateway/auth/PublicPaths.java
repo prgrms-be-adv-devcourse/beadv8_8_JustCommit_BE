@@ -41,8 +41,13 @@ class PublicPaths {
       rule(HttpMethod.GET, "/api/v1/products"),
       rule(HttpMethod.GET, "/api/v1/products/{id:[0-9]+}"),
       rule(HttpMethod.GET, "/api/v1/species/**"),
+      // ai: 품종 의미 검색 (#570, 요청 수 제한은 라우트에서)
+      rule(HttpMethod.GET, "/api/v1/speciesSearches"),
       // market: 택배사 웹훅 (토큰 대신 market이 X-Api-Key 확인)
-      rule(HttpMethod.POST, "/api/v1/webhooks/courier")
+      rule(HttpMethod.POST, "/api/v1/webhooks/courier"),
+      // member: 카카오 연결 해제 웹훅 (#422, 토큰 대신 member가 Authorization: KakaoAK 확인, GET 쿼리 · POST 폼)
+      rule(HttpMethod.GET, "/api/v1/webhooks/kakao/unlink"),
+      rule(HttpMethod.POST, "/api/v1/webhooks/kakao/unlink")
   );
 
   private PublicPaths() {
