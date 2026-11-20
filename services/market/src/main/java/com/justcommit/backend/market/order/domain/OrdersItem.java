@@ -10,6 +10,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDateTime;
 
 @Entity
@@ -17,6 +18,10 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @Getter
 public class OrdersItem extends BaseTimeEntity {
+
+    // 반품 기간: 가는 길 배송 완료 시각부터 이 시간 안에 반품을 신청할 수 있고, 지나면 자동 구매 확정한다 (#382).
+    // 두 판정이 같은 값, 같은 경계를 쓰므로 한 시각에 둘 중 하나만 가능하다
+    public static final Duration RETURN_PERIOD = Duration.ofDays(3);
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "seller_order_id",  nullable = false)
@@ -65,6 +70,25 @@ public class OrdersItem extends BaseTimeEntity {
             throw new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_CONFIRMABLE);
         }
         this.status = OrderItemStatus.CONFIRMED;
+    }
+
+    // 반품 기간 안인지: 지금 < 배송 완료 + 반품 기간. 반품 기간이 끝났으면(같거나 지남) 자동 구매 확정 대상이다
+    public static boolean isWithinReturnPeriod(LocalDateTime deliveredAt, LocalDateTime now) {
+        return deliveredAt.isAfter(now.minus(RETURN_PERIOD));
+    }
+
+    // 반품 신청: 일반 → 반품 신청 (#382). 호출 전에 주문 → 판매자 주문을 잠그고 상태를 확인한다
+    public void requestReturn() {
+        if (this.status != OrderItemStatus.NORMAL) {
+            throw new IllegalStateException("일반 상태의 주문 상품만 반품을 신청할 수 있습니다. 현재 상태: " + this.status);
+        }
+        this.status = OrderItemStatus.RETURN_REQUESTED;
+    }
+
+    // 반품 흐름(신청, 배송 중, 환불 중, 완료)에 들어간 주문상품
+    public boolean isInReturn() {
+        return status == OrderItemStatus.RETURN_REQUESTED || status == OrderItemStatus.RETURN_IN_TRANSIT
+                || status == OrderItemStatus.RETURN_PROCESSING || status == OrderItemStatus.RETURNED;
     }
 
     // 판매자 수락: 수락 대기 → 일반 (#284)

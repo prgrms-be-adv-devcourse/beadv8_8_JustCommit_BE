@@ -16,8 +16,8 @@
 | product | `GET /internal/v1/products?ids=` | market | 상품 정보 · 가격 · 판매 상태 일괄 (장바구니 · 주문 · 추천 결과 카드). 응답에 상품 등록 시각 `createdAt`(추천 카드 「3일 전」 표시용). 검수 중 · 반려 상품은 제목 「검수 중인 상품」 · 썸네일 없음 | – | ✅ |
 | product | `POST /internal/v1/products/reservations` | market | 상품 예약 (아래 표) | orderId | ✅ |
 | payment | `POST /internal/v1/payments` | market | 잔액 차감 (`HOLDING`으로). 같은 orderId로 다시 오면 차감하지 않고 `ALREADY_PAID` | orderId | ✅ |
-| payment | `POST /internal/v1/refunds/order-items/{orderItemId}` | market | 상품 금액 환불 (취소 · 거절 · 반품). 같은 키면 `ALREADY_REFUNDED`로 처음 결과, 확정 실패는 4xx | orderItemId | ✅ |
-| payment | `POST /internal/v1/refunds/shipping-fees/{sellerOrderId}` | market | 배송비 환불. 같은 키면 `ALREADY_REFUNDED`, 확정 실패는 4xx | sellerOrderId | ✅ |
+| payment | `POST /internal/v1/refunds/orderItems/{orderItemId}` | market | 상품 금액 환불 (취소 · 거절 · 반품). 같은 키면 `ALREADY_REFUNDED`로 처음 결과, 확정 실패는 4xx | orderItemId | ✅ |
+| payment | `POST /internal/v1/refunds/shippingFees/{sellerOrderId}` | market | 배송비 환불. 같은 키면 `ALREADY_REFUNDED`, 확정 실패는 4xx | sellerOrderId | ✅ |
 | payment | `POST /internal/v1/settlementPayouts` | settlement | 정산 지급 (0 이상: 지급, 음수: 판매자 잔액에서 회수 후 미수금). 요청 `sellerOrderId`, `payoutAmount`, `fee`, `shippingFee`, `sellerBurdenAmount`(배송비와 부담금이 없으면 0). 배송비를 `HOLDING` → `REVENUE`로 옮김(이미 옮겼거나 환불됐으면 건너뜀). 검증 실패는 4xx `INVALID_AMOUNT`, 다시 보내도 실패 | settlementId | ✅ |
 | settlement | `GET /internal/v1/settlements/seller-orders/{sellerOrderId}` | market | 정산 완료 시각 | – | 🟨 |
 | market | `GET /internal/v1/shipments?sellerOrderIds=` | notification | 알림 문구용 배송 정보 | – | 🟨 |

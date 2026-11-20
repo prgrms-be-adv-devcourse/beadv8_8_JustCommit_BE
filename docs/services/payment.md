@@ -34,8 +34,8 @@
 | API | 부르는 서비스 | 멱등 키 |
 |---|---|---|
 | `POST /internal/v1/payments` | market | orderId |
-| `POST /internal/v1/refunds/order-items/{orderItemId}` | market | orderItemId |
-| `POST /internal/v1/refunds/shipping-fees/{sellerOrderId}` | market | sellerOrderId |
+| `POST /internal/v1/refunds/orderItems/{orderItemId}` | market | orderItemId |
+| `POST /internal/v1/refunds/shippingFees/{sellerOrderId}` | market | sellerOrderId |
 | `POST /internal/v1/settlementPayouts` | settlement | settlementId |
 | `GET /internal/v1/payments/members/{memberId}/withdrawalCheck` | member | – |
 

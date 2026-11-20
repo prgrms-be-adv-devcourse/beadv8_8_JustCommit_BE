@@ -7,6 +7,7 @@ import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.market.client.member.SellerAddressUnavailableException;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.shipment.domain.Shipment;
+import com.justcommit.backend.market.shipment.domain.ShipmentDirection;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.market.shipment.infrastructure.courier.*;
 import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
@@ -152,7 +153,7 @@ public class ShipmentService {
     // 행을 잠그고 바꿔서 같은 취소가 동시에 와도(따닥 · 택배사 웹훅과 겹침) 한 번만 기록된다.
     @Transactional
     public void cancelShipment(Long sellerOrderId) {
-        Shipment shipment = shipmentRepository.findForUpdateBySellerOrderId(sellerOrderId)
+        Shipment shipment = shipmentRepository.findForUpdateBySellerOrderIdAndDirection(sellerOrderId, ShipmentDirection.OUTBOUND)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.SHIPMENT_NOT_FOUND));
         try {
             if (!shipment.requestCancel(LocalDateTime.now())) {
