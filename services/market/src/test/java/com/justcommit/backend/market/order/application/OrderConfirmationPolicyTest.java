@@ -10,15 +10,17 @@ import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
 import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
+import com.justcommit.backend.market.order.infrastructure.ReturnRequestRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.infrastructure.kafka.PurchaseConfirmedEventPublisher;
+import com.justcommit.backend.market.order.infrastructure.kafka.SellerOrderEventPublisher;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -43,7 +45,18 @@ class OrderConfirmationPolicyTest {
     @Mock SellerOrderRepository sellerOrderRepository;
     @Mock ShipmentQuery shipmentQuery;
     @Mock PurchaseConfirmedEventPublisher eventPublisher;
-    @InjectMocks OrderItemConfirmationService confirmationService;
+    @Mock SellerOrderEventPublisher sellerOrderEventPublisher;
+    @Mock ReturnRequestRepository returnRequestRepository;
+    SellerOrderCompletion completion;
+    OrderItemConfirmationService confirmationService;
+
+    // 판매자 주문 종료 판정은 실제 컴포넌트로 둔다 (#383에서 구매 확정 서비스에서 분리)
+    @BeforeEach
+    void setUp() {
+        completion = new SellerOrderCompletion(returnRequestRepository, eventPublisher, sellerOrderEventPublisher);
+        confirmationService = new OrderItemConfirmationService(ordersRepository, ordersItemRepository,
+                sellerOrderRepository, shipmentQuery, completion, sellerOrderEventPublisher);
+    }
 
     @ParameterizedTest
     @EnumSource(value = OrderItemStatus.class, names = {"CANCEL_PROCESSING", "REVIEW_REQUIRED"})
@@ -105,7 +118,7 @@ class OrderConfirmationPolicyTest {
         ReflectionTestUtils.setField(fixture.second(), "status", OrderItemStatus.CANCELLED);
         fixture.sellerOrder().calculateSettlementBaseAmount();
 
-        ReflectionTestUtils.invokeMethod(confirmationService, "updateOrderStatus", fixture.sellerOrder().getOrder());
+        completion.complete(fixture.sellerOrder().getOrder(), fixture.sellerOrder());
 
         assertThat(fixture.sellerOrder().getSettlementBaseAmount()).isEqualByComparingTo("0");
         assertThat(fixture.sellerOrder().getOrder().getStatus()).isEqualTo(OrderStatus.CANCELLED);

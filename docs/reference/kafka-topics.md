@@ -32,10 +32,11 @@
 | `market.events.v1` | `SellerOrderAccepted` (판매자 수락, `rejectedItemCount` 포함) | notification | 구매자에게 수락 알림. `rejectedItemCount`가 1 이상이면 일부 거절 알림 1건으로 |
 | `market.events.v1` | `SellerOrderRejected` (상품 전부 거절, `reason`: `SELLER` · `AUTO`) | notification | `SELLER`: 구매자에게 판매자 거절 알림. `AUTO`: 구매자에게 자동 취소 · 판매자에게 24시간 자동 거절 알림 |
 | `market.events.v1` | `SellerOrderCancelled` · `OrderItemCancelled` (구매자 취소) | notification | 판매자에게만 취소 알림 (본인 취소는 구매자에게 안 보냄) |
-| `market.events.v1` | `PurchaseConfirmed` (판매자 주문이 끝나면, 수동 · 자동 확정 모두) | settlement · notification | 정산 생성(배송비 포함), 구매 확정 알림 |
+| `market.events.v1` | `PurchaseConfirmed` (판매자 주문이 끝나고 구매 확정 상품이 있으면, 수동, 자동 확정, 반품 거절 모두) | settlement · notification | 정산 생성(배송비 포함, 판매자 부담금 차감), 구매 확정 알림 |
+| `market.events.v1` | `SellerOrderReturned` (판매자 주문이 끝났는데 전부 반품) | settlement (⬜ #432) | 판매자 부담금만큼 음수 정산 생성. settlement 구독 전이라 지금은 받지 않고 건너뜀 (반품 완료는 #384부터 생겨 그 전에는 발행되지 않음) |
 | `market.events.v1` | `OrderItemAutoConfirmed` (주문상품 단위) | notification | 자동 구매 확정 알림 (정산은 받지 않음) |
 | `market.events.v1` | `ReturnRequested` · `ReturnApproved`(자동 승인 포함) · `ReturnRejected` · `OrderItemReturned`(반품 환불 뒤) | notification | 반품 신청 · 자동 승인 · 거절 · 환불 완료 알림 |
-| `market.events.v1` | `ShipmentStatusChanged` | notification | 배송 상태 · 반품 수거 알림 |
+| `market.events.v1` | `ShipmentStatusChanged` | notification | 가는 길 배송의 상태 알림. 반품 배송은 발행하지 않음 (반품 알림은 반품 이벤트로) |
 | `market.order-paid.v1` | 판매 완료 (`orderId`) | product | 이 주문이 잡은 `PAYMENT_PENDING` 상품만 `SOLD_OUT`. 0건이면 정상(로그만, DLT 아님) |
 | `market.order-expired.v1` · `market.order-failed.v1` | 결제 전 예약 해제 (`orderId`) | product | `PAYMENT_PENDING` → `ACTIVE`, `product_reservation`을 `RELEASED`로 (0건이어도). 만료 · 결제 확정 실패(예약 응답 타임아웃 · 지갑 없음 등) 때만, 결제 결과를 모르는 동안은 발행 안 함 |
 | `market.order-item-cancelled.v1` | 판매 재개 (`orderId` · `orderItemId` · `productId` · `reason`: `BUYER` · `SELLER` · `AUTO`) | product | 환불 성공 뒤 발행. `BUYER`면 `ACTIVE`, `SELLER` · `AUTO`면 `ACTIVE` + 숨김. 주문 전체 취소도 주문상품마다 |
@@ -61,12 +62,15 @@
 | `SellerOrderCancelled` | `orderId` · `sellerOrderId` · `sellerId` · `buyerId` (숫자), `cancelledAt` (시각) | 판매자 주문 전부 취소 |
 | `OrderItemCancelled` | `orderItemId` · `orderId` · `sellerOrderId` · `sellerId` (숫자), `productName` (문자열), `cancelledAt` (시각) | 일부 취소. product용 판매 재개(`market.order-item-cancelled.v1`)와 이름은 같고 토픽이 다름 |
 | `OrderItemAutoConfirmed` | `orderItemId` · `orderId` · `sellerOrderId` · `buyerId` (숫자), `confirmedAt` (시각) | |
-| `PurchaseConfirmed` | `sellerOrderId` · `sellerId` (숫자), `saleAmount` · `shippingFee` · `sellerBurdenAmount` (금액), `confirmedAt` (시각), `itemSummary` (문자열) | 정산은 `saleAmount`에만 수수료, `shippingFee`는 `REVENUE`로. `sellerBurdenAmount`(판매자 부담금)는 없으면 0, 정산금 = 판매액 − 수수료 − 판매자 부담금 |
-| `ShipmentStatusChanged` | `shipmentId` · `orderId` · `sellerOrderId` · `buyerId` · `sellerId` (숫자), `status` (`BOOKED` · `PICKED_UP` · `IN_TRANSIT` · `DELIVERED`), `occurredAt` (시각), `itemSummary` (문자열) | `occurredAt`은 배송 단계가 일어난 시각 |
+| `PurchaseConfirmed` | `sellerOrderId` · `sellerId` (숫자), `saleAmount` · `shippingFee` · `sellerBurdenAmount` (금액), `confirmedAt` (시각), `itemSummary` (문자열) | 정산은 `saleAmount`에만 수수료, `shippingFee`는 `REVENUE`로. `sellerBurdenAmount`(판매자 부담금) = 반품 완료된 반품 배송비 합, 없으면 0. 정산금 = 판매액 − 수수료 − 판매자 부담금. 판매자 주문 종료 판정이 구매 확정 상품이 있을 때 판매자 주문당 1번 (반품 거절로 끝나도, #383) |
+| `SellerOrderReturned` | `sellerOrderId` · `sellerId` (숫자), `sellerBurdenAmount` (금액), `returnedAt` (시각), `itemSummary` (문자열) | 전부 반품 (#383). 판매자 주문 종료 판정이 구매 확정 상품 없이 반품 완료가 있을 때 판매자 주문당 1번. `sellerBurdenAmount` = 반품 완료된 반품 배송비 합 + 원래 배송비, `itemSummary`는 반품된 상품 요약. 모두 취소면 정산 이벤트 없음 |
+| `ShipmentStatusChanged` | `shipmentId` · `orderId` · `sellerOrderId` · `buyerId` · `sellerId` (숫자), `status` (`BOOKED` · `PICKED_UP` · `IN_TRANSIT` · `DELIVERED`), `occurredAt` (시각), `itemSummary` (문자열) | `occurredAt`은 배송 단계가 일어난 시각. 가는 길 배송만 발행 (반품 배송은 발행 안 함, #383) |
 | `SellerOrderAccepted` | `orderId` · `sellerOrderId` · `sellerId` · `buyerId` (숫자), `rejectedItemCount` (숫자), `acceptedAt` (시각) | 판매자 수락 (#288). 판매자 주문당 1건, 수락 또는 거절 뒤 수락된 주문상품이 하나라도 남으면 발행 (남지 않으면 `SellerOrderRejected`). 전체 수락이면 `rejectedItemCount` 0, 일부 거절(수락된 상품이 남음)이면 이번에 거절한 주문상품 수 (구매자가 먼저 취소한 상품은 세지 않음) |
 | `SellerOrderRejected` | `orderId` · `sellerOrderId` · `sellerId` · `buyerId` (숫자), `reason` (`SELLER` · `AUTO`), `rejectedAt` (시각) | 판매자 주문의 남은 상품 전부 거절 (#288). 판매자 거절이면 `SELLER`, 24시간 자동 거절이면 `AUTO`. 결정 시점에 발행하므로 환불이 나중에 `REVIEW_REQUIRED`가 되어도 이미 나간 상태. 판매자 거절, 자동 거절은 `SellerOrderCancelled`를 보내지 않음 |
 | `ReturnRequested` | `returnRequestId`, `orderItemId`, `orderId`, `sellerOrderId`, `buyerId`, `sellerId` (숫자), `productName` (문자열), `reason` (`DAMAGED`, `NOT_AS_DESCRIBED`, `OTHER`), `requestedAt` (시각) | 구매자 반품 신청 (#382). 주문상품당 1건. 직접 작성 내용은 싣지 않음 |
-| `ReturnApproved`, `ReturnRejected`, `OrderItemReturned` | ⬜ | #383, #384 |
+| `ReturnApproved` | `returnRequestId`, `orderItemId`, `orderId`, `sellerOrderId`, `buyerId`, `sellerId` (숫자), `productName` (문자열), `decidedBy` (`SELLER`, `AUTO`), `decidedAt` (시각) | 반품 승인 (#383). 판매자 승인이면 `SELLER`, 48시간 자동 승인이면 `AUTO`. 반품 신청당 1건, 409나 건너뛴 자동 승인은 발행 안 함 |
+| `ReturnRejected` | `ReturnApproved`와 같은 칸 (`decidedBy`는 `SELLER`) | 판매자 반품 거절 (#383). 그 주문상품은 바로 구매 확정 |
+| `OrderItemReturned` | ⬜ | #384 |
 
 시각 칸은 market 서버 시간(서울)의 `LocalDateTime`입니다.
 

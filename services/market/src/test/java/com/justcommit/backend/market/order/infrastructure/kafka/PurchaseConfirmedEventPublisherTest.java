@@ -22,7 +22,7 @@ class PurchaseConfirmedEventPublisherTest {
     @DisplayName("구매 확정 이벤트를 market.events.v1 · Key sellerOrderId로 Outbox에 기록한다 (배송비 포함)")
     void publishesToOutbox() {
         PurchaseConfirmedEvent event = new PurchaseConfirmedEvent(8L, 21L, new BigDecimal("10000"),
-                new BigDecimal("3000"), LocalDateTime.of(2026, 11, 11, 10, 0), "몬스테라");
+                new BigDecimal("3000"), null, LocalDateTime.of(2026, 11, 11, 10, 0), "몬스테라");
 
         publisher.publishAfterCommit(event);
 
@@ -31,5 +31,6 @@ class PurchaseConfirmedEventPublisherTest {
         assertThat(event.eventType()).isEqualTo("PurchaseConfirmed");
         assertThat(event.aggregateId()).isEqualTo("8");
         assertThat(event.shippingFee()).isEqualByComparingTo("3000");
+        assertThat(event.sellerBurdenAmount()).isEqualByComparingTo("0"); // 판매자 부담금이 없으면 0 (#383)
     }
 }

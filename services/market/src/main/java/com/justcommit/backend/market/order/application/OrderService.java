@@ -19,12 +19,15 @@ import com.justcommit.backend.market.ReturnReason;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
+import com.justcommit.backend.market.order.domain.ReturnRequest;
+import com.justcommit.backend.market.order.domain.ReturnRequestStatus;
 import com.justcommit.backend.market.order.domain.SellerOrder;
 import com.justcommit.backend.market.order.event.OrderFailed;
 import com.justcommit.backend.market.order.event.OrderPaid;
 import com.justcommit.backend.market.order.infrastructure.AutoConfirmTarget;
 import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
+import com.justcommit.backend.market.order.infrastructure.ReturnRequestRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
@@ -54,6 +57,8 @@ public class OrderService {
     private static final Duration PAYMENT_WINDOW = OrderPaymentTransactions.PAYMENT_WINDOW;
     // 수락 자동 거절 한 번에 읽는 후보 수 (docs/reference/schedulers.md)
     static final int AUTO_REJECT_BATCH_SIZE = 100;
+    // 반품 자동 승인이 한 번 실행할 때 처리하는 최대 건수 (#383). 자동 거절과 같은 크기
+    static final int AUTO_APPROVE_BATCH_SIZE = 100;
 
     private final OrdersRepository ordersRepository;
     private final SellerOrderRepository sellerOrderRepository;
@@ -72,6 +77,7 @@ public class OrderService {
     private final OrderCancelRefunder orderCancelRefunder;
     private final SellerOrderDecisionTransactions sellerOrderDecisionTransactions;
     private final OrderReturnService orderReturnService;
+    private final ReturnRequestRepository returnRequestRepository;
     private final ShippingFeeTableService shippingFeeTableService;
 
     public OrderCreateResponse create(Long memberId, CartOrderCreateRequest request) {
@@ -246,6 +252,20 @@ public class OrderService {
         }
     }
 
+    // 반품 자동 승인 (#383): 응답 기간(48시간)이 지난 반품 신청 후보를 잠그지 않고 읽어 건마다 짧은 트랜잭션으로 승인한다.
+    // 한 건이 실패해도 다음 건은 계속한다
+    public void autoApproveExpiredReturns() {
+        LocalDateTime requestedBefore = LocalDateTime.now().minus(ReturnRequest.RESPONSE_PERIOD);
+        for (Long returnRequestId : returnRequestRepository.findAutoApproveCandidateIds(
+                ReturnRequestStatus.REQUESTED, requestedBefore, AUTO_APPROVE_BATCH_SIZE)) {
+            try {
+                orderReturnService.autoApprove(returnRequestId);
+            } catch (RuntimeException exception) {
+                log.error("반품 자동 승인 실패: returnRequestId={}", returnRequestId, exception);
+            }
+        }
+    }
+
     // 주문 단위로 잠그므로 후보를 주문별로 묶는다. 주문상품마다 잠그면 두 파드가 같은 주문의 상품을 서로 건너뛸 수 있다.
     public void autoConfirmDeliveredItems() {
         // 반품 기간이 끝난(배송 완료 + 반품 기간 <= 지금) 주문상품. 반품 신청 판정과 같은 상수, 같은 경계
@@ -271,6 +291,16 @@ public class OrderService {
     // 구매자 반품 신청 (#382)
     public void requestReturn(Long memberId, Long orderItemId, ReturnReason reason, String reasonDetail) {
         orderReturnService.request(memberId, orderItemId, reason, reasonDetail);
+    }
+
+    // 판매자 반품 승인 (#383)
+    public void approveReturn(Long sellerId, Long orderItemId) {
+        orderReturnService.approve(sellerId, orderItemId);
+    }
+
+    // 판매자 반품 거절 (#383)
+    public void rejectReturn(Long sellerId, Long orderItemId) {
+        orderReturnService.reject(sellerId, orderItemId);
     }
 
     // 구매자 취소 (#282, #284, ADR 0026): 주문상품을 취소 중으로 커밋한다. 수락 후 판매자 주문은 택배 취소 결과를 기다리고

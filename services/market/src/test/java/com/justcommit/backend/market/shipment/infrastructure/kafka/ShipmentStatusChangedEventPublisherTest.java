@@ -4,6 +4,7 @@ import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.OrderShippingInfo;
 import com.justcommit.backend.market.ShipmentStatusChangedEvent;
 import com.justcommit.backend.market.shipment.domain.Shipment;
+import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -55,6 +56,20 @@ class ShipmentStatusChangedEventPublisherTest {
         verify(transactionManager).getTransaction(any());
         verify(outboxPublisher).publish(EXPECTED);
         verify(transactionManager).commit(any());
+    }
+
+    @Test
+    @DisplayName("반품 배송은 트랜잭션 안이든 밖이든 기록하지 않는다 (#383)")
+    void skipsReturnShipment() {
+        Shipment returnShipment = Shipment.returnOf(7L, "몬스테라");
+        ReflectionTestUtils.setField(returnShipment, "id", 2L);
+        returnShipment.book("404000000002", BOOKED_AT);
+
+        publisher.publishAfterCommit(returnShipment, ORDER_INFO, BOOKED_AT);
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        publisher.publishAfterCommit(returnShipment, ShipmentStatus.DELIVERED, ORDER_INFO, BOOKED_AT);
+
+        verifyNoInteractions(outboxPublisher, transactionManager);
     }
 
     private Shipment bookedShipment() {

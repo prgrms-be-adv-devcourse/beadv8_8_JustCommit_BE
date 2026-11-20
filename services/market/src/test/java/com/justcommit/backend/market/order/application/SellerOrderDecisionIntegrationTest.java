@@ -1,5 +1,6 @@
 package com.justcommit.backend.market.order.application;
 
+import com.justcommit.backend.market.order.infrastructure.kafka.PurchaseConfirmedEventPublisher;
 import com.justcommit.backend.market.shipment.application.ShippingFeeTableService;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -88,7 +89,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaAuditingConfig.class, OrderPaymentTransactions.class, OrderRecoveryService.class,
         OrderCancelTransactions.class, OrderCancelRefunder.class, SellerOrderDecisionTransactions.class, OrderReturnService.class,
-        ShipmentQueryService.class, ShippingFeeTableService.class, OrderService.class, SellerOrderEventPublisher.class, EventEnvelopeMapper.class})
+        ShipmentQueryService.class, ShippingFeeTableService.class, OrderService.class, SellerOrderEventPublisher.class,
+        EventEnvelopeMapper.class, SellerOrderCompletion.class, PurchaseConfirmedEventPublisher.class})
 @ImportAutoConfiguration(OutboxAutoConfiguration.class)
 @TestPropertySource(properties = "outbox.scheduler.enabled=false")
 @Testcontainers(disabledWithoutDocker = true)

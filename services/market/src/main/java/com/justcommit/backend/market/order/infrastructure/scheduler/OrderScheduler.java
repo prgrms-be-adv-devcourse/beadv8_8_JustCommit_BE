@@ -53,6 +53,13 @@ public class OrderScheduler {
         orderService.autoRejectExpiredSellerOrders();
     }
 
+    // 반품 자동 승인 (#383): 반품 신청 후 48시간 무응답이면 승인하고 반품 배송을 만든다
+    // (주기 → docs/reference/schedulers.md)
+    @Scheduled(fixedDelay = 600_000, initialDelay = 50_000)
+    public void autoApproveExpiredReturns() {
+        orderService.autoApproveExpiredReturns();
+    }
+
     @Scheduled(fixedDelay = 3_600_000, initialDelay = 60_000)
     public void autoConfirmDeliveredItems() {
         orderService.autoConfirmDeliveredItems();
