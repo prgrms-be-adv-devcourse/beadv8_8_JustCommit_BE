@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-20 · infra/deploy.md · 배포 태그 파일: compose 서비스 태그를 앱 서버 `~/replant/.env`에서 읽고 CD가 배포 성공한 서비스만 갱신, `:latest` 폴백 제거(태그 없으면 오류), K3s 매니페스트는 `deploy/k3s/apply.sh`로 지금 이미지를 유지해 적용 — 11/20 `:latest` 되돌림 재발 방지 (#590)
 - 2026-11-20 · services/payment.md · reference/internal-apis.md · payment 환불 내부 API 경로 표기를 코드와 같은 카멜 케이스로 맞춤: `refunds/order-items/{orderItemId}` → `refunds/orderItems/{orderItemId}`, `refunds/shipping-fees/{sellerOrderId}` → `refunds/shippingFees/{sellerOrderId}` (코드 변경 없음) (#329) (#586)
 - 2026-11-20 · glossary.md · services/market.md · reference/external-apis.md · reference/kafka-topics.md · 반품 신청 구현: `POST orders/items/{id}/return`(반품 사유 `DAMAGED`, `NOT_AS_DESCRIBED`, `OTHER`, 직접 작성 내용 최대 500자, 기타면 필수), 가는 길 배송 완료 후 반품 기간(3일, 자동 구매 확정과 같은 상수와 경계) 안의 일반 주문상품만, 409 `RETURN_ALREADY_REQUESTED`, `RETURN_NOT_REQUESTABLE`, `RETURN_PERIOD_EXPIRED`. `RETURN_REQUEST` 테이블과 배송 방향 `direction`(가는 길만 판매자 주문당 1개, Flyway V10), 주문상품 상태 `REFUND_REQUESTED`, `REFUNDED`를 `RETURN_REQUESTED`, `RETURN_IN_TRANSIT`, `RETURN_PROCESSING`, `RETURNED`로, `ReturnRequested` payload 추가, 용어 「배송 방향」 「가는 길」 「반품 사유」 「반품 배송 중」 「반품 환불 중」 추가, 「반품 완료」를 환불 확정 시점으로 (#382) (#580)
 - 2026-11-20 · services/ai.md · flows/search-recommend.md · 🟨 챗봇 품질 점검(대표 질문 18개) 결과를 ai 「정책」에 기록, 「그중」 질문은 바로 앞 답변에서 이름을 말한 상품 중에서만, 답변의 마크다운 강조는 서버가 지움, 상품 유사도 하한 0.28 유지 (#303) (#578)
