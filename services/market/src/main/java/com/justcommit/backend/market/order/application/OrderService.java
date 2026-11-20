@@ -49,6 +49,8 @@ import static com.justcommit.backend.market.order.domain.OrderErrorCode.CHECKOUT
 public class OrderService {
 
     private static final Duration PAYMENT_WINDOW = OrderPaymentTransactions.PAYMENT_WINDOW;
+    // 수락 자동 거절 한 번에 읽는 후보 수 (docs/reference/schedulers.md)
+    static final int AUTO_REJECT_BATCH_SIZE = 100;
 
     private final OrdersRepository ordersRepository;
     private final SellerOrderRepository sellerOrderRepository;
@@ -65,6 +67,7 @@ public class OrderService {
     private final OrderPaymentTransactions orderPaymentTransactions;
     private final OrderCancelTransactions orderCancelTransactions;
     private final OrderCancelRefunder orderCancelRefunder;
+    private final SellerOrderDecisionTransactions sellerOrderDecisionTransactions;
 
     public OrderCreateResponse create(Long memberId, CartOrderCreateRequest request) {
         // 탈퇴한 회원의 주문을 막는 2차 방어 (1차는 Gateway의 토큰 폐기)
@@ -222,6 +225,21 @@ public class OrderService {
         }
     }
 
+    // 수락 자동 거절 (#285, ADR 0013): 후보는 잠그지 않고 읽고, 판매자 주문마다 짧은 트랜잭션으로 거절한 뒤
+    // 커밋 뒤 트랜잭션 밖에서 환불한다. 한 건이 실패해도 다음 건은 계속하고, 결과를 모르는 환불은 Saga 복구가 이어받는다.
+    // shortcut: 같은 판매자 주문이 매번 실패하거나(DB 오류 등) 계속 잠겨 건너뛰면 그 건이 늘 앞자리를 차지해, 100건이 쌓이면 뒤 판매자 주문이 밀린다. 필요해지면 실패 횟수 제외 장치를 넣는다.
+    public void autoRejectExpiredSellerOrders() {
+        LocalDateTime paidBefore = LocalDateTime.now().minus(SellerOrder.ACCEPT_WINDOW);
+        for (Long sellerOrderId : sellerOrderRepository.findAutoRejectCandidateIds(
+                OrderStatus.PAID, OrderItemStatus.ACCEPT_PENDING, paidBefore, AUTO_REJECT_BATCH_SIZE)) {
+            try {
+                refundBySellerOrder(sellerOrderDecisionTransactions.autoReject(sellerOrderId));
+            } catch (RuntimeException exception) {
+                log.error("수락 자동 거절 실패: sellerOrderId={}", sellerOrderId, exception);
+            }
+        }
+    }
+
     // 주문 단위로 잠그므로 후보를 주문별로 묶는다. 주문상품마다 잠그면 두 파드가 같은 주문의 상품을 서로 건너뛸 수 있다.
     public void autoConfirmDeliveredItems() {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(3);
@@ -242,10 +260,29 @@ public class OrderService {
         orderItemConfirmationService.confirm(memberId, orderItemId);
     }
 
-    // 구매자 취소 (#282, ADR 0026): 주문상품을 취소 중으로 커밋하고, 판매자 주문이 전부 취소면 택배 취소 결과를 기다린다.
-    // 환불, 취소 완료, 판매 재개는 Saga 복구가 택배 취소 결과를 읽은 뒤에 한다. API 응답은 요청 접수까지
+    // 구매자 취소 (#282, #284, ADR 0026): 주문상품을 취소 중으로 커밋한다. 수락 후 판매자 주문은 택배 취소 결과를 기다리고
+    // (환불, 취소 완료, 판매 재개는 Saga 복구가 결과를 읽은 뒤), 수락 전 판매자 주문은 커밋 뒤 바로 환불한다
     public void cancel(Long memberId, Long orderId) {
-        orderCancelTransactions.requestCancel(memberId, orderId);
+        refundBySellerOrder(orderCancelTransactions.requestCancel(memberId, orderId));
+    }
+
+    // 판매자 수락 (#284): 남은 수락 대기 주문상품을 모두 수락한다
+    public void acceptSellerOrder(Long sellerId, Long sellerOrderId) {
+        sellerOrderDecisionTransactions.accept(sellerId, sellerOrderId);
+    }
+
+    // 판매자 거절 (#284): 고른 주문상품은 커밋 뒤 트랜잭션 밖에서 바로 환불하고(결과를 모르면 복구가 이어받음), 나머지는 수락한다
+    public void rejectSellerOrderItems(Long sellerId, Long sellerOrderId, List<Long> orderItemIds) {
+        refundBySellerOrder(sellerOrderDecisionTransactions.reject(sellerId, sellerOrderId, orderItemIds));
+    }
+
+    // 배송비는 판매자 주문 묶음마다 한 번 요청하므로 판매자 주문별로 나눠 환불한다
+    private void refundBySellerOrder(List<OrderCancelTransactions.RefundClaim> claims) {
+        claims.stream()
+                .collect(Collectors.groupingBy(OrderCancelTransactions.RefundClaim::sellerOrderId, LinkedHashMap::new,
+                        Collectors.toList()))
+                .values()
+                .forEach(orderCancelRefunder::refund);
     }
 
     // 판매자 주문의 다른 상품이 남으면(배송 유지) 커밋 뒤 트랜잭션 밖에서 바로 환불하고, 결과를 모르면 복구가 이어받는다

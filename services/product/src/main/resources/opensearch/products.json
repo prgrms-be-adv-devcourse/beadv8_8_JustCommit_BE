@@ -32,6 +32,12 @@
           "char_filter": ["remove_spaces_and_symbols"],
           "tokenizer": "nori_tokenizer",
           "filter": ["ko_part_of_speech", "lowercase"]
+        },
+        "ko_word": {
+          "type": "custom",
+          "char_filter": ["symbols_to_space"],
+          "tokenizer": "whitespace",
+          "filter": ["lowercase"]
         }
       }
     }
@@ -43,22 +49,34 @@
       "title": {
         "type": "text",
         "analyzer": "ko_text",
-        "fields": { "compact": { "type": "text", "analyzer": "ko_compact" } }
+        "fields": {
+          "compact": { "type": "text", "analyzer": "ko_compact" },
+          "word": { "type": "text", "analyzer": "ko_word" }
+        }
       },
       "speciesName": {
         "type": "text",
         "analyzer": "ko_text",
-        "fields": { "compact": { "type": "text", "analyzer": "ko_compact" } }
+        "fields": {
+          "compact": { "type": "text", "analyzer": "ko_compact" },
+          "word": { "type": "text", "analyzer": "ko_word" }
+        }
       },
       "speciesAliases": {
         "type": "text",
         "analyzer": "ko_text",
-        "fields": { "compact": { "type": "text", "analyzer": "ko_compact" } }
+        "fields": {
+          "compact": { "type": "text", "analyzer": "ko_compact" },
+          "word": { "type": "text", "analyzer": "ko_word" }
+        }
       },
       "scientificName": {
         "type": "text",
         "analyzer": "ko_text",
-        "fields": { "compact": { "type": "text", "analyzer": "ko_compact" } }
+        "fields": {
+          "compact": { "type": "text", "analyzer": "ko_compact" },
+          "word": { "type": "text", "analyzer": "ko_word" }
+        }
       },
       "description": { "type": "text", "analyzer": "ko_text" },
       "speciesId": { "type": "long" },

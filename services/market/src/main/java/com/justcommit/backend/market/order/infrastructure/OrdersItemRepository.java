@@ -109,6 +109,18 @@ public interface OrdersItemRepository extends JpaRepository<OrdersItem, Long> {
                     @Param("now") LocalDateTime now,
                     @Param("processing") OrderItemStatus processing);
 
+    // 결제 완료: 그 주문의 일반 주문상품을 수락 대기로 바꾼다 (#284). 결제 결과 반영과 같은 트랜잭션
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update OrdersItem i set i.status = :acceptPending, i.updatedAt = :now
+             where i.sellerOrder.id in (select s.id from SellerOrder s where s.order.id = :orderId)
+               and i.status = :normal
+            """)
+    int markAcceptPending(@Param("orderId") Long orderId,
+                          @Param("now") LocalDateTime now,
+                          @Param("normal") OrderItemStatus normal,
+                          @Param("acceptPending") OrderItemStatus acceptPending);
+
     @Query("select i from OrdersItem i join fetch i.sellerOrder s join fetch s.order where s.order.id in :orderIds order by i.id")
     List<OrdersItem> findByOrderIds(@Param("orderIds") List<Long> orderIds);
 

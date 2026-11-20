@@ -20,9 +20,10 @@ public class OrderWithdrawalCheckService {
     // 결제 처리 중 · 확인 필요는 결제 결과를 모르는 주문이라 돈이 빠졌을 수 있다 (ADR 0023)
     static final Set<OrderStatus> ACTIVE_ORDER_STATUSES = Set.of(OrderStatus.PAYMENT_PENDING,
             OrderStatus.PAYMENT_PROCESSING, OrderStatus.REVIEW_REQUIRED, OrderStatus.PAID);
-    // 진행 중인 주문상품 상태. 취소 중, 확인 필요는 환불 결과를 모르는 주문상품이다 (#282)
-    // #284에서 ACCEPT_PENDING 추가 시 탈퇴 제한 대상에 포함
-    static final Set<OrderItemStatus> ACTIVE_ITEM_STATUSES = Set.of(OrderItemStatus.NORMAL, OrderItemStatus.REFUND_REQUESTED,
+    // 진행 중인 주문상품 상태. 수락 대기는 판매자 응답을 기다리는 결제된 주문상품이다 (#284).
+    // 취소 중, 확인 필요는 환불 결과를 모르는 주문상품이다 (#282)
+    static final Set<OrderItemStatus> ACTIVE_ITEM_STATUSES = Set.of(OrderItemStatus.ACCEPT_PENDING,
+            OrderItemStatus.NORMAL, OrderItemStatus.REFUND_REQUESTED,
             OrderItemStatus.CANCEL_PROCESSING, OrderItemStatus.REVIEW_REQUIRED);
 
     private final OrdersRepository ordersRepository;

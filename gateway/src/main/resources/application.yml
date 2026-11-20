@@ -13,6 +13,10 @@ spring:
     gateway:
       server:
         webflux:
+          # Nginx가 붙인 X-Forwarded-*(https · replant.kro.kr)를 믿고 서비스까지 넘긴다 (#550).
+          # 없으면 Gateway가 이 헤더를 지워 member가 카카오 redirect_uri를 내부 주소로 만든다 (KOE006).
+          # Nginx는 같은 서버에서 NodePort로 들어와 사설 10.x로 보이고, NodePort는 보안 그룹상 인터넷에서 닿지 않는다
+          trusted-proxies: ${GATEWAY_TRUSTED_PROXIES:10\.\d+\.\d+\.\d+|127\.0\.0\.1}
           # CORS는 Gateway에서만 (서비스에는 넣지 않음). 지금 프론트는 같은 출처(운영 Nginx · 로컬 Vite 프록시)라
           # 실제로 쓰이진 않지만, 프론트 주소가 갈라지면 CORS_ALLOWED_ORIGINS만 바꾸면 됨 (쉼표로 여러 개)
           globalcors:
@@ -92,6 +96,15 @@ spring:
               uri: ${PRODUCT_SERVICE_URL:http://localhost:8082}
               predicates:
                 - Path=/api/v1/products/**,/api/v1/species/**,/api/v1/admin/imageReviews/**,/api/v1/admin/products/**
+            # 카카오 연결 해제 웹훅 (#422): market 라우트(/api/v1/webhooks/**)보다 앞에서 member로.
+            # 응답 타임아웃 5초는 카카오의 3초 응답 요구와 별개 (앱이 응답하기 전에 여기서 끊기면 200을 보장할 수 없음)
+            - id: member-kakao-unlink-webhook
+              uri: ${MEMBER_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/v1/webhooks/kakao/unlink
+                - Method=GET,POST
+              metadata:
+                response-timeout: 5000
             - id: market-courier-webhook
               uri: ${MARKET_SERVICE_URL:http://localhost:8083}
               predicates:

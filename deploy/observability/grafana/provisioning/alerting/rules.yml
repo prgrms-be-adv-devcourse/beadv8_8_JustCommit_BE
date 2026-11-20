@@ -1,0 +1,455 @@
+# Grafana 알림 규칙 (#301). 원본 기준: docs/infra/observability.md 「알림 규칙」
+# 1분마다 계산, A(PromQL) 결과를 C(기준값)와 비교. 보내는 곳 · 반복 간격은 contact-points.yml · policies.yml
+# 화면에서 고칠 수 없다 → 이 파일을 고친 뒤 Grafana 재시작
+apiVersion: 1
+groups:
+- orgId: 1
+  name: replant
+  folder: replant
+  interval: 1m
+  rules:
+  - uid: replant-service-down
+    title: 서비스 다운
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: min by (service) (up{job="spring"})
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 1
+    for: 1m
+    noDataState: Alerting
+    execErrState: Error
+    annotations:
+      summary: '{{ $labels.service }}의 /actuator/prometheus가 1분 넘게 응답하지 않음. 데이터가 아예 없으면 앱 서버 Alloy가 멈춘 것'
+    labels:
+      team: replant
+    isPaused: false
+  - uid: replant-http-5xx
+    title: 5xx 급증
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: (sum by (service) (rate(http_server_requests_seconds_count{job="spring",uri!~"/actuator.*",status=~"5.."}[5m])) / sum by (service) (rate(http_server_requests_seconds_count{job="spring",uri!~"/actuator.*"}[5m])))
+          and sum by (service) (rate(http_server_requests_seconds_count{job="spring",uri!~"/actuator.*"}[5m])) > 0.1
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0.05
+    for: 5m
+    noDataState: OK
+    execErrState: Error
+    annotations:
+      summary: '{{ $labels.service }} 5xx 비율 {{ humanizePercentage $values.A.Value }} (5분 동안 요청이 30건 넘을 때만 판단)'
+    labels:
+      team: replant
+    isPaused: false
+  - uid: replant-outbox-pending
+    title: Outbox 대기
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: max by (service) (outbox_pending_oldest_age_seconds)
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 60
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    annotations:
+      summary: '{{ $labels.service }} 가장 오래된 미발행 Outbox가 {{ $values.A.Value }}초째 PENDING (Kafka 연결 확인)'
+    labels:
+      team: replant
+    isPaused: false
+  - uid: replant-outbox-failed
+    title: Outbox 발행 포기
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: max by (service) (outbox_failed)
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    annotations:
+      summary: '{{ $labels.service }} 재전송 5회 실패로 FAILED인 Outbox {{ $values.A.Value }}건 — outbox_event의 last_error 확인'
+    labels:
+      team: replant
+    isPaused: false
+  - uid: replant-dlt
+    title: DLT 유입
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: sum by (topic) (increase(kafka_topic_partition_current_offset{topic=~".+\\.DLT"}[5m])) > 0 or (sum by (topic) (kafka_topic_partition_current_offset{topic=~".+\\.DLT"}) > 0 unless sum by (topic)
+          (kafka_topic_partition_current_offset{topic=~".+\\.DLT"} offset 5m))
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    annotations:
+      summary: '{{ $labels.topic }}에 메시지가 들어옴 — 소비 실패 원인을 서비스 로그(Loki)에서 확인'
+    labels:
+      team: replant
+    isPaused: false
+  - uid: replant-disk
+    title: 디스크 80%
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: max by (server) (1 - node_filesystem_avail_bytes{job="node",mountpoint="/"} / node_filesystem_size_bytes{job="node",mountpoint="/"})
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0.8
+    for: 5m
+    noDataState: OK
+    execErrState: Error
+    annotations:
+      summary: '{{ $labels.server }} 서버 디스크 {{ humanizePercentage $values.A.Value }} 사용'
+    labels:
+      team: replant
+    isPaused: false
+  - uid: replant-memory-app
+    title: 메모리 (앱 서버 컨테이너)
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: max by (service) (container_memory_working_set_bytes{job="cadvisor",container_id!=""} / (container_spec_memory_limit_bytes{job="cadvisor",container_id!=""} > 0) * on (container_id) group_left
+          (service) up{job="docker_names"}) or max by (service) (container_memory_working_set_bytes{job="cadvisor",pod!=""} / (container_spec_memory_limit_bytes{job="cadvisor",pod!=""} > 0))
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0.9
+    for: 5m
+    noDataState: OK
+    execErrState: Error
+    annotations:
+      summary: '{{ $labels.service }} 컨테이너 메모리가 한도의 {{ humanizePercentage $values.A.Value }}'
+    labels:
+      team: replant
+    isPaused: false
+  - uid: replant-memory-data
+    title: 메모리 (데이터 서버)
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: max(1 - node_memory_MemAvailable_bytes{job="node",server="data"} / node_memory_MemTotal_bytes{job="node",server="data"})
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0.9
+    for: 5m
+    noDataState: OK
+    execErrState: Error
+    annotations:
+      summary: 데이터 서버 메모리 {{ humanizePercentage $values.A.Value }} 사용
+    labels:
+      team: replant
+    isPaused: false
+  - uid: replant-shipment-stuck
+    title: 배송 예약 · 취소 지연
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: max by (status) (replant_shipment_stuck)
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    annotations:
+      summary: '{{ $labels.status }} 상태로 10분 넘게 멈춘 배송 {{ $values.A.Value }}건 (READY = 택배 예약 안 됨, CANCEL_PENDING = 택배사 취소 결과 없음) — 배송 last_error · 404-express 상태 확인'
+    labels:
+      team: replant
+    isPaused: false
+  - uid: replant-settlement-payout-delayed
+    title: 정산 지급 지연
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: max(settlement_payouts_delayed)
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    annotations:
+      summary: 10분 넘게 미지급(PENDING · FAILED)인 정산 {{ $values.A.Value }}건 — settlement ERROR 로그 확인
+    labels:
+      team: replant
+    isPaused: false
+  - uid: replant-review-required
+    title: 결제 확인 필요 주문
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: max(market_orders_review_required)
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    annotations:
+      summary: REVIEW_REQUIRED 주문 {{ $values.A.Value }}건 — docs/infra/payment-review-runbook.md 순서대로 처리
+    labels:
+      team: replant
+    isPaused: false
+  - uid: replant-kakao-unlink-receive-failed
+    title: 카카오 연결 해제 웹훅 저장 실패
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: sum by (service) (increase(replant_kakao_unlink_receive_failures_total[5m]))
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    annotations:
+      summary: '{{ $labels.service }}: 카카오 연결 해제 웹훅 {{ $values.A.Value }}건을 저장하지 못함(5분) — 카카오는 다시 보내지 않음. Loki에서 event=KAKAO_UNLINK_RECEIVE_FAILED 로그 확인 후 흐름 문서 「운영 알림과 대응」 절차로 판단'
+    labels:
+      team: replant
+    isPaused: false
+  - uid: replant-kakao-unlink-failed
+    title: 카카오 연결 해제 웹훅 처리 멈춤
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: max by (service) (replant_kakao_unlink_failed)
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    annotations:
+      summary: '{{ $labels.service }}: 재시도를 다 써서 멈춘 카카오 연결 해제 웹훅 {{ $values.A.Value }}건 — member_kakao_unlink_receipt의 FAILED 기록(last_error · resume_state) 확인, member 담당에게 연락'
+    labels:
+      team: replant
+    isPaused: false

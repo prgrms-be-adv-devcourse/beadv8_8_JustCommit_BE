@@ -18,6 +18,7 @@
 | 결제 처리 중 | `PAYMENT_PROCESSING` (주문) | 결제중, 결제 시도 중 | payment에 결제를 요청했고 아직 결과를 반영하지 못한 주문. 결과를 모르면 이 상태로 남고 Saga 복구가 같은 orderId로 다시 요청. 만료하지 않음 | [주문 · 결제](flows/order-payment.md#멈춘-주문-복구) |
 | 결제 기한 만료 | `PAYMENT_WINDOW_EXPIRED` | 결제 시간 초과 | 결제 대기 기한이 지나 결제를 거절하는 것. 결제할 때 market이 직접 확인 | [market 정책](services/market.md#정책) |
 | 수락 · 거절 | `ACCEPT_PENDING` · `SellerOrderAccepted` · `SellerOrderRejected` | 주문 확인, 주문 승인 | 결제 후 판매자가 주문을 받을지 정하는 단계. 수락해야 배송이 생김 | [market 정책](services/market.md#정책) |
+| 수락 마감 | `acceptDeadline` (`SellerOrder.paidAt` 기준) | 수락 기한, 응답 기한 | 판매자가 수락하거나 거절해야 하는 시각. 지나면 자동 거절 | [market 정책](services/market.md#정책) |
 | 자동 거절 | – | 자동 취소 (구매자 알림 문구) | 판매자가 기한 안에 응답하지 않아 거절된 주문 | [market 정책](services/market.md#정책) |
 | 배송 | `Shipment` | 택배, 배송 건 | 판매자 주문 하나의 택배. 반품은 방향이 다른 새 배송 | [market](services/market.md) |
 | 택배 예약 | `BOOKED` | 접수, 택배 접수, 픽업 대기 (화면 표시) | 택배사에 수거를 예약한 상태. 상품 「예약」과 구분해 항상 「택배 예약」으로 씀 | [market 정책](services/market.md#정책) |
@@ -31,6 +32,7 @@
 | 배송비 요금표 | ⬜ 테이블 이름 미정 | 운임표 | 지역 구분(기본 + 제주 · 도서산간) 배송비 표. market이 버전과 함께 보관 | [market 정책](services/market.md#정책) |
 | 구매 확정 | `PurchaseConfirmed` · `OrderItemAutoConfirmed` | 구매 완료, 거래 완료 | 구매자가 받았다고 확정 (직접 또는 자동). 정산의 시작점 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 취소 | `OrderItemCancelled` · `SellerOrderCancelled` | 주문 취소 | 수거 전에 구매자가 주문상품을 취소하는 것 | [취소 · 환불](flows/cancel-refund.md) |
+| 취소 사유 | `cancel_reason` (주문상품) · `CancelReason` (`BUYER`, `SELLER`, `AUTO`) | 취소 원인 | 주문상품이 취소 흐름에 들어간 이유 (구매자 취소, 판매자 거절, 자동 거절). 판매 재개 이벤트의 `reason` | [Kafka 토픽](reference/kafka-topics.md) |
 | 취소 중 | `CANCEL_PROCESSING` (주문상품) | 환불 확인 중 | 환불 결과를 모르는 주문상품. 환불이 확정되면 취소 완료 | [취소 · 환불](flows/cancel-refund.md#실패와-재시도) |
 | 환불 | `refunds/*` (payment) | 돈 돌려주기, 결제 취소 | **돈**이 주체. 결제한 돈을 구매자에게 돌려주는 것. 원인은 수거 전 취소 · 판매자 거절 · 자동 거절 · 반품 완료 | [payment](services/payment.md#정책) |
 | 반품 | `Return*` · `OrderItemReturned` | 환불 요청, 반품 요청, 교환 | **물건(택배)**이 주체. 받은 상품을 판매자에게 택배로 돌려보내는 절차. 끝나면 그 결과로 환불 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
@@ -95,7 +97,8 @@
 | 탈퇴 | `MemberWithdrawn` | 회원 삭제, 계정 삭제 | 소프트 삭제 · 익명화. 다른 서비스에는 「탈퇴한 회원」으로 표시 | [가입과 회원 복제본](flows/signup-and-replica.md#탈퇴) |
 | 탈퇴 기록 | `MemberWithdrawalRecord` (`member_withdrawal_record`) | 재가입 제한 기록 | 탈퇴한 회원의 이메일 · 휴대폰 HMAC과 탈퇴 시각을 재가입 제한 판정용으로 보관하는 기록. 기간이 지나면 삭제 | [가입과 회원 복제본](flows/signup-and-replica.md#재가입-제한) |
 | 소셜 연결 해제 | `INACTIVE` (회원 상태) · `SOCIAL_UNLINKED` (폐기 사유) | 카카오 연결 끊김, 연결 해제됨 | 카카오 연결이 끊겼지만 아직 탈퇴하지 않은 회원의 상태. 기존 로그인을 폐기하고 일반 회원 기능을 막음. 재연결 시 복구는 흐름 문서의 정책을 따름 | [가입과 회원 복제본](flows/signup-and-replica.md#카카오-연결-해제-웹훅) |
-| 카카오 연결 해제 웹훅 | `/api/v1/webhooks/kakao/unlink` (수신 기록 테이블 이름 ⬜ 미정) | 연결 해제 알림, unlink callback | 카카오계정 탈퇴 · 강제 탈퇴 · 카카오 관리자 처리 · 사용자 직접 연결 해제로 앱 연결이 끊겼을 때 카카오가 보내는 HTTP 요청. 택배사 「웹훅」과 다름 | [가입과 회원 복제본](flows/signup-and-replica.md#카카오-연결-해제-웹훅) |
+| 자동 탈퇴 처리 기록 | `handles_withdrawal` | – | 같은 회원 · 같은 연결 해제 상태에 들어온 카카오 연결 해제 웹훅 수신 기록 중 자동 탈퇴(확인 · 탈퇴 · 안내)를 진행하는 하나의 기록. 처리 완료 여부가 아니라 이 절차를 맡도록 선택됐는지를 뜻함 | [가입과 회원 복제본](flows/signup-and-replica.md#연결-해제-상태와-자동-탈퇴-처리-기록) |
+| 카카오 연결 해제 웹훅 | `/api/v1/webhooks/kakao/unlink` (수신 기록 `member_kakao_unlink_receipt`) | 연결 해제 알림, unlink callback | 카카오계정 탈퇴 · 강제 탈퇴 · 카카오 관리자 처리 · 사용자 직접 연결 해제로 앱 연결이 끊겼을 때 카카오가 보내는 HTTP 요청. 택배사 「웹훅」과 다름 | [가입과 회원 복제본](flows/signup-and-replica.md#카카오-연결-해제-웹훅) |
 | 탈퇴 토큰 | `auth:withdrawal` | – | 카카오 회원이 이메일 재인증 후 받아 최종 탈퇴 요청에 쓰는 일회용 토큰 | [Redis 키](reference/redis-keys.md) |
 | Fail-closed | – | 막힘 처리 | 확인 조회가 실패하면 허용하지 않고 막는 정책 (탈퇴) | [가입과 회원 복제본](flows/signup-and-replica.md#탈퇴) |
 

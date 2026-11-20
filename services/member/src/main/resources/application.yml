@@ -125,6 +125,8 @@ member:
   # 카카오 어드민 API (#407 연결 해제, #422 상태 조회 예정). 어드민 키는 기본값 없음: 없거나 비어 있으면 member가 시작하지 않음
   kakao:
     admin-key: ${KAKAO_ADMIN_KEY}
+    # 연결 해제 웹훅의 app_id 확인용 (#422). 운영은 배포 스크립트가 값을 강제, 로컬은 비어 있으면 웹훅을 기록만 함
+    app-id: ${KAKAO_APP_ID:}
     api-base-url: https://kapi.kakao.com
     connect-timeout: 1s
     read-timeout: 3s

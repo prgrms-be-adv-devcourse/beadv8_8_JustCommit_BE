@@ -15,7 +15,7 @@
 | `market.order-failed.v1` | `orderId` | market |
 | `market.order-item-cancelled.v1` | `orderId` | market |
 | `market.order-item-returned.v1` | `orderId` | market |
-| `product.events.v1` | `productId` | product |
+| `product.events.v1` | `productId` (`ImageReviewDelayed`만 고정값 `image-review-delayed`) | product |
 | `product.review.v1` | `productId` | product |
 | `species.events.v1` | `speciesId` | ⬜ 발행 안 함 → [ADR 0020](../decisions/0020-species-profile-ai-seed.md) |
 | `settlement.events.v1` | `sellerId` | settlement |
@@ -45,6 +45,7 @@
 | `product.events.v1` | 상품 변경 — `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged` | product(색인 리스너) · ai | product: DB에서 최신 상품을 읽어 OpenSearch 문서를 덮어씀. ai: payload로 상품 스냅샷 upsert (`productVersion`이 저장값보다 클 때만) → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md) |
 | `product.events.v1` | `ProductApproved` | notification | 판매자에게 통과 알림 (색인 리스너는 건너뜀, 상태는 함께 나가는 `ProductStatusChanged`로 색인) |
 | `product.events.v1` | `ProductRejected` | notification | 판매자에게 반려 사유와 함께 알림 |
+| `product.events.v1` | `ImageReviewDelayed` | notification (구독은 notification Kafka 구독 연결 때) | 관리자에게 「검수 지연 N건」 알림. 관리자 역할(ADMIN)로 알림 1건을 만들어 관리자끼리 읽음을 공유, `event_key`는 `ADMIN_REVIEW_DELAYED:{eventId}`(봉투 `eventId`), 새로 지연된 건만 1번, payload 추가 없음 (notification 담당 합의 11/19). product 색인 리스너 · ai는 건너뜀 |
 | `product.review.v1` | `ProductReviewRequested` (`review_version` 포함) | product | 사진 검수 (비동기) |
 | `settlement.events.v1` | `SettlementCompleted` | notification | 정산 알림 |
 
@@ -64,7 +65,9 @@
 | `OrderItemAutoConfirmed` | `orderItemId` · `orderId` · `sellerOrderId` · `buyerId` (숫자), `confirmedAt` (시각) | |
 | `PurchaseConfirmed` | `sellerOrderId` · `sellerId` (숫자), `saleAmount` · `shippingFee` · `sellerBurdenAmount` (금액), `confirmedAt` (시각), `itemSummary` (문자열) | 정산은 `saleAmount`에만 수수료, `shippingFee`는 `REVENUE`로. `sellerBurdenAmount`(판매자 부담금)는 없으면 0, 정산금 = 판매액 − 수수료 − 판매자 부담금 |
 | `ShipmentStatusChanged` | `shipmentId` · `orderId` · `sellerOrderId` · `buyerId` · `sellerId` (숫자), `status` (`BOOKED` · `PICKED_UP` · `IN_TRANSIT` · `DELIVERED`), `occurredAt` (시각), `itemSummary` (문자열) | `occurredAt`은 배송 단계가 일어난 시각 |
-| `SellerOrderAccepted` · `SellerOrderRejected` · `Return*` · `OrderItemReturned` | ⬜ | 판매자 수락 · 거절(#283), 반품 때 |
+| `SellerOrderAccepted` | `orderId` · `sellerOrderId` · `sellerId` · `buyerId` (숫자), `rejectedItemCount` (숫자), `acceptedAt` (시각) | 판매자 수락 (#288). 판매자 주문당 1건, 수락 또는 거절 뒤 수락된 주문상품이 하나라도 남으면 발행 (남지 않으면 `SellerOrderRejected`). 전체 수락이면 `rejectedItemCount` 0, 일부 거절(수락된 상품이 남음)이면 이번에 거절한 주문상품 수 (구매자가 먼저 취소한 상품은 세지 않음) |
+| `SellerOrderRejected` | `orderId` · `sellerOrderId` · `sellerId` · `buyerId` (숫자), `reason` (`SELLER` · `AUTO`), `rejectedAt` (시각) | 판매자 주문의 남은 상품 전부 거절 (#288). 판매자 거절이면 `SELLER`, 24시간 자동 거절이면 `AUTO`. 결정 시점에 발행하므로 환불이 나중에 `REVIEW_REQUIRED`가 되어도 이미 나간 상태. 판매자 거절, 자동 거절은 `SellerOrderCancelled`를 보내지 않음 |
+| `Return*` · `OrderItemReturned` | ⬜ | 반품 때 |
 
 시각 칸은 market 서버 시간(서울)의 `LocalDateTime`입니다.
 
@@ -87,6 +90,7 @@
 | `ProductStatusChanged` | 아래 공통 칸 | 예약 · 판매 완료 · 예약 해제 · 판매 재개 · 숨김 · 삭제 · 판매자 탈퇴 정리 · 검수 결과(통과 · 반려 · 판매 중 → 관리자 확인) · 이의 신청 · 기한 초과 재요청 |
 | `ProductApproved` | `productId` · `sellerId` · `reviewVersion` (숫자), `productTitle` (문자열) | 검수 통과 알림용. 검수 중 → 판매 중으로 바뀔 때만 (판매 중 상품의 글 검사 통과는 보내지 않음) |
 | `ProductRejected` | `ProductApproved` 칸 + `reasonCode` (반려 사유 코드, 예: `HARMFUL_IMAGE`) · `reasonMessage` (판매자 문구, `OTHER`면 관리자 입력) | 검수 반려 알림용 (글 검사 반려 포함). 관리자 확인으로 넘어갈 때는 보내지 않음 |
+| `ImageReviewDelayed` | `delayedCount` (숫자, 이번에 묶은 건수), `checkedAt` (시각, 모은 시각) | 관리자 확인 12시간 지연 알림용 (#509). Key `image-review-delayed`(상품 하나에 묶이지 않음). 관리자 확인 지연 알림 스케줄러가 한국 시간 09~21시 매 정각에 확인해 새로 12시간을 넘긴 건(24시간 전)이 있을 때만 1개, 같은 건은 한 번만 ([사진 검수](../flows/image-review.md) 「관리자 수동 검수」). 시각은 product 서버 시간(서울)의 `LocalDateTime` |
 
 세 이벤트의 공통 payload (`version` 2, [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md)):
 
@@ -99,7 +103,7 @@
 | `hidden` | 참/거짓 | 숨김 여부 |
 | `productVersion` | 숫자 | 상품 버전. 상품 행을 바꾸는 모든 UPDATE에서 +1 (봉투 `version`과 다름). 받는 쪽은 저장된 값보다 클 때만 반영, 같으면 중복 |
 
-가격 · 제목은 싣지 않습니다 (화면에 보일 값은 market이 상품 ID로 조회). payload 값은 발행하는 트랜잭션에서 상품을 다시 읽어 채우고(`ProductEventPublisher` 한 곳에서, 엔티티가 아니라 DB 값을 바로 읽음), 상태 · 숨김을 바꾸는 곳은 반드시 새 값이 담긴 이벤트를 보냅니다. 순서는 `productVersion`으로 판단하고 봉투 `occurredAt`은 로그용입니다. ai가 이 payload로 상품 스냅샷을 저장하고(#293, product 색인 리스너는 develop 기준 아직 없음), 칸 추가는 공통 매퍼의 `FAIL_ON_UNKNOWN_PROPERTIES` 비활성으로 호환됩니다.
+가격 · 제목은 싣지 않습니다 (화면에 보일 값은 market이 상품 ID로 조회). payload 값은 발행하는 트랜잭션에서 상품을 다시 읽어 채우고(`ProductEventPublisher` 한 곳에서, 엔티티가 아니라 DB 값을 바로 읽음), 상태 · 숨김을 바꾸는 곳은 반드시 새 값이 담긴 이벤트를 보냅니다. 순서는 `productVersion`으로 판단하고 봉투 `occurredAt`은 로그용입니다. ai가 이 payload로 상품 스냅샷을 저장하고(#293), 칸 추가는 공통 매퍼의 `FAIL_ON_UNKNOWN_PROPERTIES` 비활성으로 호환됩니다.
 
 `ProductApproved` · `ProductRejected`는 notification이 product를 조회하지 않고 payload만으로 알림을 만들도록 판매자 · 상품 이름 · 사유를 싣습니다. 상품 상태 동기화(ai 스냅샷)는 같은 트랜잭션에서 함께 보내는 `ProductStatusChanged`가 맡습니다.
 

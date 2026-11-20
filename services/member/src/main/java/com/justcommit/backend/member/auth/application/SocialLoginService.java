@@ -4,10 +4,12 @@ import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
+import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
+import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -15,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.Locale;
 
 // 소셜 로그인: 기존 회원이면 토큰 발급, 신규 회원이면 가입 토큰 발급
@@ -27,6 +30,7 @@ public class SocialLoginService {
   private final JwtProvider jwtProvider;
   private final RefreshTokenIssuer refreshTokenIssuer;
   private final DatabaseClock databaseClock;
+  private final KakaoUnlinkReceiptRepository unlinkReceiptRepository;
 
   @Value("${jwt.access-token-expiration}")
   private Duration accessTokenExpiration;
@@ -46,6 +50,16 @@ public class SocialLoginService {
       // 탈퇴 회원은 토큰을 발급하지 않음 (탈퇴 · 재가입 안내는 #407)
       if (member.getStatus() == MemberStatus.DELETED) {
         throw new BusinessException(MemberErrorCode.SOCIAL_LOGIN_FAILED);
+      }
+      // 카카오 재로그인 = 재연결 (#422). 같은 회원 잠금 안에서 처리:
+      // - 이전 미처리 연결 해제 기록은 항상(ACTIVE여도) 무효. 작업자가 끊김을 확인한 직후 다시 로그인한 경우,
+      //   옛 조회 결과로 방금 돌아온 회원을 INACTIVE로 바꾸지 않게 한다 (대기 중인 안내 메일도 취소)
+      // - INACTIVE면 ACTIVE로 복구 (관리자 해제로 INACTIVE가 된 회원 포함, 이용 정지로 취급하지 않음)
+      if (command.provider() == Provider.KAKAO) {
+        unlinkReceiptRepository.invalidatePending(command.providerId(), LocalDateTime.now());
+      }
+      if (member.getStatus() == MemberStatus.INACTIVE) {
+        member.restoreActive();
       }
       return new SocialLoginResult.ExistingMember(issueTokens(member));
     }

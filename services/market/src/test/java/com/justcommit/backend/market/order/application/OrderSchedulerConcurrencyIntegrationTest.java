@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.client.payment.PaymentOutcome;
+import com.justcommit.backend.market.client.payment.RefundOutcome;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
 import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
@@ -75,7 +76,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaAuditingConfig.class, OrderService.class, OrderPaymentTransactions.class, OrderExpirationService.class,
-        OrderItemConfirmationService.class, OrderCancelTransactions.class, OrderCancelRefunder.class})
+        OrderItemConfirmationService.class, OrderCancelTransactions.class, OrderCancelRefunder.class,
+        SellerOrderDecisionTransactions.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED) // 스케줄러가 주문마다 자기 트랜잭션을 열고 커밋한다
 class OrderSchedulerConcurrencyIntegrationTest {
@@ -233,6 +235,32 @@ class OrderSchedulerConcurrencyIntegrationTest {
         assertThat(pods).hasSize(2);
         assertThat(jdbcTemplate.queryForList("select status from orders_item", String.class)).containsOnly("CONFIRMED");
         assertThat(jdbcTemplate.queryForList("select status from orders", String.class)).containsOnly("COMPLETED");
+    }
+
+    @Test
+    @DisplayName("[S-D09] 수락 자동 거절을 두 파드가 동시에 돌려도 주문상품마다 환불 요청은 한 번만 나가고, 판매자 주문을 나눠 처리한다")
+    void autoRejectsEachSellerOrderOnceWhenTwoPodsRunTogether() throws Exception {
+        saveOrders(true);
+        jdbcTemplate.update("update seller_order set paid_at = ?", LocalDateTime.now().minusHours(25));
+        jdbcTemplate.update("update orders_item set status = 'ACCEPT_PENDING'");
+        List<Long> itemIds = jdbcTemplate.queryForList("select id from orders_item", Long.class);
+        Queue<Long> refunded = new ConcurrentLinkedQueue<>();
+        Set<String> pods = ConcurrentHashMap.newKeySet();
+        // 환불은 커밋 뒤 트랜잭션 밖이라, 한 파드가 환불을 기다리는 동안 다른 파드가 다음 판매자 주문을 집는다
+        when(paymentUseCase.refundCancelledItem(anyLong(), anyLong(), anyLong(), any())).thenAnswer(invocation -> {
+            refunded.add(invocation.getArgument(0));
+            pods.add(Thread.currentThread().getName());
+            Thread.sleep(HOLD_MILLIS / 2);
+            return RefundOutcome.refunded();
+        });
+
+        runOnTwoPods(orderService::autoRejectExpiredSellerOrders);
+
+        assertThat(refunded).containsExactlyInAnyOrderElementsOf(itemIds);
+        assertThat(pods).hasSize(2);
+        assertThat(jdbcTemplate.queryForList("select status from orders_item", String.class)).containsOnly("CANCELLED");
+        assertThat(jdbcTemplate.queryForList("select cancel_reason from orders_item", String.class)).containsOnly("AUTO");
+        assertThat(jdbcTemplate.queryForList("select status from orders", String.class)).containsOnly("CANCELLED");
     }
 
     // 주문 ORDERS건, 각 판매자 주문 1건 · 주문상품 2건

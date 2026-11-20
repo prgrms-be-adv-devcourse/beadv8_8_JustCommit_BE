@@ -9,10 +9,12 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -29,6 +31,26 @@ public interface SellerOrderRepository extends JpaRepository<SellerOrder, Long> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from SellerOrder s where s.order.id = :orderId order by s.id")
     List<SellerOrder> findAllLockedByOrderId(@Param("orderId") Long orderId);
+
+    // 수락 자동 거절 후보 (#285): 결제 완료이고 수락 마감이 지났으며 수락 대기 주문상품이 남은 판매자 주문 id,
+    // 오래된 결제부터. paid_at이 없는 판매자 주문(V9 이전 결제분)은 비교에서 빠진다.
+    // 잠그지 않는다. 잠금은 판매자 주문마다 SellerOrderDecisionTransactions.autoReject에서 주문 → 판매자 주문 순으로 한다
+    @Query("""
+            select s.id from SellerOrder s
+             where s.order.status = :paid and s.paidAt <= :paidBefore
+               and exists (select 1 from OrdersItem i where i.sellerOrder = s and i.status = :acceptPending)
+             order by s.paidAt asc, s.id asc
+             limit :limit
+            """)
+    List<Long> findAutoRejectCandidateIds(@Param("paid") OrderStatus paid,
+                                          @Param("acceptPending") OrderItemStatus acceptPending,
+                                          @Param("paidBefore") LocalDateTime paidBefore,
+                                          @Param("limit") int limit);
+
+    // 결제 완료 시각 기록 (#284). 재결제 · 복구로 결제가 확정돼도 확정된 그 시각
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update SellerOrder s set s.paidAt = :paidAt, s.updatedAt = :paidAt where s.order.id = :orderId")
+    int markPaid(@Param("orderId") Long orderId, @Param("paidAt") LocalDateTime paidAt);
 
     @EntityGraph(attributePaths = "order")
     Page<SellerOrder> findBySellerId(Long sellerId, Pageable pageable);

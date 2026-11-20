@@ -40,7 +40,7 @@
 | GET | `sellers/{sellerId}` | 판매자 공개 정보 (닉네임 · 소개글 · 등록일, 숫자 id만) | 공개 |
 | PATCH | `sellers/me/intro` | 소개글 수정 (최대 500자, 빈 문자열은 삭제) | 로그인 (판매자만) |
 | GET | `/oauth2/authorization/kakao` · `/login/oauth2/code/kakao` | 카카오 로그인 (Spring Security 처리, `/api/v1` 아님) | 공개 |
-| GET · POST | `webhooks/kakao/unlink` | 카카오 연결 해제 웹훅 (`Authorization: KakaoAK {어드민 키}`) → [카카오 연결 해제 웹훅](#카카오-연결-해제-웹훅). ⬜ 미구현(#422) | 공개 |
+| GET · POST | `webhooks/kakao/unlink` | 카카오 연결 해제 웹훅 (`Authorization: KakaoAK {어드민 키}`) → [카카오 연결 해제 웹훅](#카카오-연결-해제-웹훅) | 공개 |
 
 #### 이메일 인증 목적
 
@@ -121,22 +121,21 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 
 #### 카카오 연결 해제 웹훅
 
-⬜ 미구현(#422). 처리 흐름은 [탈퇴 흐름](../flows/signup-and-replica.md#카카오-연결-해제-웹훅)에 있습니다.
+(#422) 처리 흐름은 [탈퇴 흐름](../flows/signup-and-replica.md#카카오-연결-해제-웹훅)에 있습니다.
 
 | 항목 | 내용 |
 |---|---|
 | 요청 | `GET` 쿼리 또는 `POST` 폼으로 `app_id` · `user_id`(카카오 회원번호) · `referrer_type` (카카오 공식 문서 「연결 해제 웹훅」) |
-| 인증 | `Authorization: KakaoAK {어드민 키}`가 틀리면 401로 끝냄(수신 기록 없음) |
-| 응답 | 인증에 성공하면 수신 기록을 저장한 뒤 3초 안에 200. 회원이 없거나 처리 대상이 아닌 사유여도 200 |
-| 경로 | Gateway에서 market 라우트(`/api/v1/webhooks/**`)보다 앞에 member 라우트 · 공개 경로 추가 필요 (#422) |
+| 인증 | `Authorization: KakaoAK {어드민 키}`가 없거나 틀리면 401(수신 기록 없음). 상수 시간 비교, 헤더 값 · 어드민 키는 로그에 남기지 않음 |
+| 응답 | 키가 맞으면 항상 200. `app_id` 누락 · 우리 앱 ID와 다름, `user_id` 누락 · 숫자가 아님은 회원 처리 없이 기록만(`IGNORED`), 알 수 없거나 누락된 `referrer_type`도 기록만, 기록 저장 실패도 200(오류 로그 + 운영 알림). 카카오는 3초 안 응답을 요구하지만 DB 장애 시에는 보장하지 못함 |
+| 경로 | Gateway에서 market 라우트(`/api/v1/webhooks/**`)보다 앞에 member 전용 라우트(응답 타임아웃 5초) · 공개 경로 (#422) |
 
-⬜ 미정: 수신 기록 저장 실패 시 응답 → [미정 항목](../open-questions.md)
 
 ### product
 
 | 메서드 | 경로 | 설명 | 권한 |
 |---|---|---|---|
-| GET | `products` | 목록 · 검색 · 필터 | 공개 |
+| GET | `products` | 목록 · 검색 · 필터. `keyword`가 있으면 OpenSearch(관련도순 기본), 없거나 `sellerId`가 있으면 DB(최신순 기본), `sort` `relevance` · `latest` · `priceAsc` · `priceDesc`. 판매자 상점 조건 `sellerId` · `status`(`ACTIVE` · `PAYMENT_PENDING` · `SOLD_OUT` 중 하나 이상, 여러 개는 `status=ACTIVE&status=PAYMENT_PENDING`, 하나라도 그 밖이면 400 `INVALID_SEARCH_STATUS`), 판매 완료 개수는 `sellerId` + `status=SOLD_OUT`의 `totalElements`. 응답 항목에 `sellerId` → [검색 · 추천](../flows/search-recommend.md) | 공개 |
 | POST | `products` | 등록 | SELLER |
 | GET | `products/{id}` | 상세 | 공개 |
 | PUT | `products/{id}` | 수정 | SELLER |
@@ -150,7 +149,8 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | GET | `species` · `species/{id}` | 품종 목록 · 상세 (학명 · 별칭) | 공개 |
 | GET | `admin/imageReviews?status=MANUAL&page&size` | 관리자 확인 대기 목록, 오래된 순 (사진 · 엔진 결과 · 판매자 품종 · 판매자 닉네임 `sellerNickname`(회원 복제본, 없으면 「알 수 없는 회원」) · 가격 `price` · 검수 요청 시각 `requestedAt` · 관리자 확인 사유 · 기한 `expiresAt` · 12시간 지연 `delayed`) | ADMIN |
 | PATCH | `admin/imageReviews/{id}` | 관리자 처리 `decision`(`APPROVED` · `REJECTED`) · `rejectReason` · `memo`(`OTHER`면 필수 200자, 다른 사유 · 통과면 저장하지 않음). 409 `REVIEW_ALREADY_PROCESSED` · `REVIEW_OUTDATED`, 400 `INVALID_REJECT_REASON` | ADMIN |
-| POST | `admin/products/searchIndex` | 상품 전체 색인: DB의 모든 상품을 OpenSearch에 다시 씀(삭제 상품은 문서 삭제). 응답 `indexed` · `deleted` · `skipped`(같거나 더 새 버전이 이미 있음) · `failed`, 여러 번 실행해도 결과가 같음 → [검색 · 추천](../flows/search-recommend.md) | ADMIN |
+| POST | `admin/products/searchIndex` | 상품 전체 색인: DB의 모든 상품을 OpenSearch에 다시 씀(삭제 상품은 문서 삭제). 응답 `indexed` · `deleted` · `skipped`(같거나 더 새 버전이 이미 있음) · `failed`, 여러 번 실행해도 결과가 같음. 재색인 중이면 409 `SEARCH_INDEXING_IN_PROGRESS` → [검색 · 추천](../flows/search-recommend.md) | ADMIN |
+| POST | `admin/products/searchIndex/rebuilds` | 상품 검색 무중단 재색인: 지금 매핑으로 `products_v{n+1}`을 채운 뒤 alias를 옮기고 옛 인덱스 삭제(그동안 검색은 옛 인덱스로 응답). 응답 `previousIndex` · `currentIndex` · `filled` · `caughtUp`(전체 색인과 같은 모양) · `previousDeleted`. 채우다 실패하면 새 인덱스를 지우고 500, 따라잡기 색인에 실패한 건이 있으면 옛 인덱스를 남김(`previousDeleted=false`), 전체 색인 · 재색인이 진행 중이면 409 `SEARCH_INDEXING_IN_PROGRESS` → [검색 · 추천](../flows/search-recommend.md) | ADMIN |
 
 ### market
 
@@ -166,7 +166,9 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | POST | `orders/items/{id}/cancel` | 상품 취소 | 로그인 |
 | POST | `orders/items/{id}/confirm` | 구매 확정 | 로그인 |
 | GET | `orders` · `orders/{id}` | 구매 내역 · 상세 | 로그인 |
-| GET | `orders/seller` · `orders/seller/{id}` | 판매 내역 · 상세 | SELLER |
+| GET | `orders/seller` · `orders/seller/{id}` | 판매 내역 · 상세 (목록 `acceptPending`, 목록과 상세 `acceptDeadline` 수락 마감: 수락 대기가 남았을 때만, 상세 상품별 `status`) | SELLER |
+| POST | `orders/seller/{id}/accept` | 판매자 수락: 남은 수락 대기 주문상품을 모두 수락, 배송 생성. 수락 대기가 없으면 409 `SELLER_ORDER_NOT_ACCEPTABLE`, 남의 판매자 주문은 404 | SELLER |
+| POST | `orders/seller/{id}/reject` | 판매자 거절 (`orderItemIds` 필수, 사유 없음): 고른 주문상품은 환불, 나머지는 수락. 이 판매자 주문에 없는 상품은 400 `INVALID_REJECT_ITEMS`, 고른 상품이 수락 대기가 아니면 409 `SELLER_ORDER_NOT_ACCEPTABLE` | SELLER |
 | POST | `webhooks/courier` | 택배사 웹훅 (`X-Api-Key`) | 공개 |
 
 ### payment · settlement · notification
@@ -212,7 +214,6 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 
 | 서비스 | 기능 | 설명 |
 |---|---|---|
-| market | 판매자 수락 · 거절 (판매자 주문 › 상품 트리 체크) | 판매 기록 화면 |
 | market | 반품 신청 (사유) · 판매자 승인 · 거절 | 노션 7절 |
 | market | 리뷰 작성 · 삭제 · 판매자 리뷰 목록 (태그 집계) | 노션 6절 |
 | notification | `GET notifications?read=` (커서 페이지네이션) | 삭제 API 없음 |
@@ -227,6 +228,8 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | `POST orders/{id}/cancel` | `PATCH orders/{id}` `{"status":"CANCELLED"}` |
 | `POST orders/items/{id}/cancel` | `PATCH orderItems/{id}` `{"status":"CANCELLED"}` |
 | `POST orders/items/{id}/confirm` | `PATCH orderItems/{id}` `{"status":"CONFIRMED"}` |
+| `POST orders/seller/{id}/accept` | `POST orders/seller/{id}/acceptances` |
+| `POST orders/seller/{id}/reject` | `POST orders/seller/{id}/rejections` `{"orderItemIds":[...]}` |
 | `PATCH users/me/addresses/{id}/default` | `PATCH users/me/addresses/{id}` `{"isDefault":true}` |
 
 🟨 팀이 고를 것: `products/me` → `users/me/products`, `orders/seller` → `sellerOrders`, `cart/items/{productId}` 유지 또는 cartItemId. ⬜ 바꾸는 시점(서비스 분리 때 · 프론트 동시 수정)은 미정.

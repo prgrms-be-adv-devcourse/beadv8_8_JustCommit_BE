@@ -25,7 +25,9 @@ x-service: &service
     interval: 10s
     timeout: 3s
     retries: 3
-    start_period: 60s
+    # 평소 시작은 24~34초지만, 서버가 막 켜졌거나 여러 서비스가 함께 뜰 때 80초를 넘긴 적이 있다 (#555).
+    # 이 시간 안의 실패는 세지 않으므로 늦어도 120초 + 10초 × 3 = 약 150초까지 기다린다 (cd.yml --wait-timeout 180보다 짧게)
+    start_period: 120s
 
 services:
   redis:
@@ -112,5 +114,35 @@ services:
       - "10.0.7.76:8086:8080"
     mem_limit: 512m
 
+  # 로그 · 지표 수집기 (#301, deploy/observability/alloy/config.alloy) → 데이터 서버 Loki · Prometheus
+  # 서버 네트워크를 그대로 써서(host) K3s 파드 IP · 사설 IP 포트에 닿고, 들어오는 포트는 열지 않는다
+  alloy:
+    image: grafana/alloy:v1.9.1
+    container_name: replant-alloy
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=127.0.0.1:12345 # Alloy 자체 화면 · 상태. 서버 안에서만
+    network_mode: host
+    cgroup: host # 컨테이너 · 파드 메모리(cAdvisor): 서버 전체 cgroup을 본다
+    volumes:
+      - ./deploy/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro # compose 컨테이너 로그
+      - /var/log/pods:/var/log/pods:ro # K3s 파드 로그
+      - /etc/rancher/k3s/k3s.yaml:/etc/rancher/k3s/k3s.yaml:ro # K3s 파드 찾기
+      - /run/k3s/containerd/containerd.sock:/run/k3s/containerd/containerd.sock:ro # K3s 파드 이름 (cAdvisor)
+      - /var/lib/docker:/var/lib/docker:ro # compose 컨테이너 이름 (cAdvisor)
+      - /proc:/host/proc:ro # 앱 서버 CPU · 메모리 · steal
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
+    mem_limit: 256m
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
 volumes:
   redis-data:
+  alloy-data:
