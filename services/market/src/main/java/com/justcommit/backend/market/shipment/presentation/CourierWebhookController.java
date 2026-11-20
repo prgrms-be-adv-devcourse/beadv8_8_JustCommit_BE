@@ -1,6 +1,7 @@
 package com.justcommit.backend.market.shipment.presentation;
 
 import com.justcommit.backend.market.shipment.application.ShipmentWebhookService;
+import com.justcommit.backend.market.shipment.application.ShippingFeeTableService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,6 +19,7 @@ import java.security.MessageDigest;
 public class CourierWebhookController {
 
     private final ShipmentWebhookService shipmentWebhookService;
+    private final ShippingFeeTableService shippingFeeTableService;
 
     @Value("${custom.courier.webhook-api-key}")
     private String webhookApiKey;
@@ -30,7 +32,12 @@ public class CourierWebhookController {
                 !MessageDigest.isEqual(webhookApiKey.getBytes(), apiKey == null ? new byte[0] : apiKey.getBytes())) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        shipmentWebhookService.receive(request);
+        // 요금표 변경은 배송 건이 없어 요금표 저장으로, 나머지는 배송 상태 반영으로. 둘 다 무시한 경우도 200 (택배사가 다시 보내지 않게)
+        if (request.isShippingFeesChanged()) {
+            shippingFeeTableService.save(request.toShippingFeeTable());
+        } else {
+            shipmentWebhookService.receive(request);
+        }
 
         return ResponseEntity.ok().build();
     }
