@@ -3,6 +3,7 @@ package com.justcommit.backend.market.order.infrastructure;
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.order.domain.OrdersItem;
+import com.justcommit.backend.market.shipment.domain.ShipmentDirection;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -27,7 +28,7 @@ public interface OrdersItemRepository extends JpaRepository<OrdersItem, Long> {
             from OrdersItem i
             join i.sellerOrder s
             join s.order o
-            join Shipment sh on sh.sellerOrderId = s.id
+            join Shipment sh on sh.sellerOrderId = s.id and sh.direction = :outbound
             where o.status = :orderStatus
               and i.status = :itemStatus
               and sh.status = :shipmentStatus
@@ -37,7 +38,8 @@ public interface OrdersItemRepository extends JpaRepository<OrdersItem, Long> {
     List<AutoConfirmTarget> findAutoConfirmTargets(@Param("orderStatus") OrderStatus orderStatus,
                                                    @Param("itemStatus") OrderItemStatus itemStatus,
                                                    @Param("shipmentStatus") ShipmentStatus shipmentStatus,
-                                                   @Param("cutoff") LocalDateTime cutoff);
+                                                   @Param("cutoff") LocalDateTime cutoff,
+                                                   @Param("outbound") ShipmentDirection outbound);
 
     // ===== 취소 중 주문상품의 환불 (#282). 상태 전환은 모두 「취소 중일 때만」 조건부 UPDATE라 두 파드, 늦은 응답이 겹쳐도 한 번만 반영된다
 

@@ -15,6 +15,7 @@ import com.justcommit.backend.market.client.product.ProductQuery;
 import com.justcommit.backend.market.client.product.ProductResult;
 import com.justcommit.backend.market.client.product.ProductUseCase;
 import com.justcommit.backend.market.client.product.ReservationItem;
+import com.justcommit.backend.market.ReturnReason;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
@@ -28,6 +29,7 @@ import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
 import com.justcommit.backend.market.shipment.application.ShipmentService;
+import com.justcommit.backend.market.shipment.domain.ShipmentDirection;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -68,6 +70,7 @@ public class OrderService {
     private final OrderCancelTransactions orderCancelTransactions;
     private final OrderCancelRefunder orderCancelRefunder;
     private final SellerOrderDecisionTransactions sellerOrderDecisionTransactions;
+    private final OrderReturnService orderReturnService;
 
     public OrderCreateResponse create(Long memberId, CartOrderCreateRequest request) {
         // 탈퇴한 회원의 주문을 막는 2차 방어 (1차는 Gateway의 토큰 폐기)
@@ -242,9 +245,11 @@ public class OrderService {
 
     // 주문 단위로 잠그므로 후보를 주문별로 묶는다. 주문상품마다 잠그면 두 파드가 같은 주문의 상품을 서로 건너뛸 수 있다.
     public void autoConfirmDeliveredItems() {
-        LocalDateTime cutoff = LocalDateTime.now().minusDays(3);
+        // 반품 기간이 끝난(배송 완료 + 반품 기간 <= 지금) 주문상품. 반품 신청 판정과 같은 상수, 같은 경계
+        LocalDateTime cutoff = LocalDateTime.now().minus(OrdersItem.RETURN_PERIOD);
         Map<Long, List<Long>> itemIdsByOrder = ordersItemRepository.findAutoConfirmTargets(
-                        OrderStatus.PAID, OrderItemStatus.NORMAL, ShipmentStatus.DELIVERED, cutoff).stream()
+                        OrderStatus.PAID, OrderItemStatus.NORMAL, ShipmentStatus.DELIVERED, cutoff,
+                        ShipmentDirection.OUTBOUND).stream()
                 .collect(Collectors.groupingBy(AutoConfirmTarget::orderId, LinkedHashMap::new,
                         Collectors.mapping(AutoConfirmTarget::orderItemId, Collectors.toList())));
         itemIdsByOrder.forEach((orderId, orderItemIds) -> {
@@ -258,6 +263,11 @@ public class OrderService {
 
     public void confirm(Long memberId, Long orderItemId) {
         orderItemConfirmationService.confirm(memberId, orderItemId);
+    }
+
+    // 구매자 반품 신청 (#382)
+    public void requestReturn(Long memberId, Long orderItemId, ReturnReason reason, String reasonDetail) {
+        orderReturnService.request(memberId, orderItemId, reason, reasonDetail);
     }
 
     // 구매자 취소 (#282, #284, ADR 0026): 주문상품을 취소 중으로 커밋한다. 수락 후 판매자 주문은 택배 취소 결과를 기다리고

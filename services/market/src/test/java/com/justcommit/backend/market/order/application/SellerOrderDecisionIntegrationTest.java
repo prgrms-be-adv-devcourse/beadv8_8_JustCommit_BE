@@ -86,7 +86,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaAuditingConfig.class, OrderPaymentTransactions.class, OrderRecoveryService.class,
-        OrderCancelTransactions.class, OrderCancelRefunder.class, SellerOrderDecisionTransactions.class,
+        OrderCancelTransactions.class, OrderCancelRefunder.class, SellerOrderDecisionTransactions.class, OrderReturnService.class,
         ShipmentQueryService.class, OrderService.class, SellerOrderEventPublisher.class, EventEnvelopeMapper.class})
 @ImportAutoConfiguration(OutboxAutoConfiguration.class)
 @TestPropertySource(properties = "outbox.scheduler.enabled=false")

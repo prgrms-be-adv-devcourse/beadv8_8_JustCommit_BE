@@ -83,10 +83,11 @@ class OrderConfirmationPolicyTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
     }
 
-    @Test
-    void refundRequestedItemBlocksSettlementAfterAnotherItemIsConfirmed() {
+    @ParameterizedTest
+    @EnumSource(value = OrderItemStatus.class, names = {"RETURN_REQUESTED", "RETURN_IN_TRANSIT", "RETURN_PROCESSING"})
+    void returnInProgressItemBlocksSettlementAfterAnotherItemIsConfirmed(OrderItemStatus returnStatus) {
         Fixture fixture = fixture();
-        ReflectionTestUtils.setField(fixture.second(), "status", OrderItemStatus.REFUND_REQUESTED);
+        ReflectionTestUtils.setField(fixture.second(), "status", returnStatus);
         stubDelivered(fixture, fixture.first());
 
         confirmationService.confirm(10L, 11L);
@@ -161,9 +162,9 @@ class OrderConfirmationPolicyTest {
     }
 
     @Test
-    void refundedItemIsExcludedFromSettlementWithoutChangingOriginalAmounts() {
+    void returnedItemIsExcludedFromSettlementWithoutChangingOriginalAmounts() {
         Fixture fixture = fixture();
-        ReflectionTestUtils.setField(fixture.second(), "status", OrderItemStatus.REFUNDED);
+        ReflectionTestUtils.setField(fixture.second(), "status", OrderItemStatus.RETURNED);
         fixture.sellerOrder().calculateSettlementBaseAmount();
         stubDelivered(fixture, fixture.first());
 

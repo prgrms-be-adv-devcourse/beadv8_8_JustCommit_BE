@@ -37,6 +37,7 @@ import com.justcommit.backend.market.order.infrastructure.kafka.SellerOrderEvent
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
 import com.justcommit.backend.market.shipment.application.ShipmentService;
+import com.justcommit.backend.market.shipment.domain.ShipmentDirection;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import org.junit.jupiter.api.BeforeEach;
 import com.justcommit.backend.market.client.payment.PaymentOutcome;
@@ -852,13 +853,13 @@ class OrderServiceTest {
     }
 
     @Test
-    void autoConfirmationSkipsRefundRequestedItemAfterCandidateLookup() {
+    void autoConfirmationSkipsReturnRequestedItemAfterCandidateLookup() {
         OrdersItem item = stubConfirmableItem();
-        ReflectionTestUtils.setField(item, "status", OrderItemStatus.REFUND_REQUESTED);
+        ReflectionTestUtils.setField(item, "status", OrderItemStatus.RETURN_REQUESTED);
 
         autoConfirm(item);
 
-        assertThat(item.getStatus()).isEqualTo(OrderItemStatus.REFUND_REQUESTED);
+        assertThat(item.getStatus()).isEqualTo(OrderItemStatus.RETURN_REQUESTED);
         verify(shipmentQuery, never()).findBySellerOrderId(any());
         verify(purchaseConfirmedEventPublisher, never()).publishAfterCommit(any());
     }
@@ -909,7 +910,7 @@ class OrderServiceTest {
     @Test
     void autoConfirmationGroupsItemsByOrderAndContinuesWithNextOrderAfterFailure() {
         when(ordersItemRepository.findAutoConfirmTargets(eq(OrderStatus.PAID), eq(OrderItemStatus.NORMAL),
-                eq(ShipmentStatus.DELIVERED), any(LocalDateTime.class)))
+                eq(ShipmentStatus.DELIVERED), any(LocalDateTime.class), eq(ShipmentDirection.OUTBOUND)))
                 .thenReturn(List.of(new AutoConfirmTarget(1L, 10L, 100L),
                         new AutoConfirmTarget(1L, 10L, 101L),
                         new AutoConfirmTarget(2L, 20L, 200L)));

@@ -7,6 +7,7 @@ import java.util.Optional;
 
 public interface ShipmentQuery {
 
+    // 판매자 주문의 가는 길 배송만 돌려준다. 반품 배송은 보지 않는다 (#382)
     ShipmentResult findBySellerOrderId(Long sellerOrderId);
     Map<Long, ShipmentResult> findBySellerOrderIds(List<Long> sellerOrderIds);
 
