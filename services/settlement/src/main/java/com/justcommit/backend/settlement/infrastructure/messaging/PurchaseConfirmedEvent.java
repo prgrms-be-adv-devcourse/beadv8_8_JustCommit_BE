@@ -4,8 +4,8 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 // market의 PurchaseConfirmed payload (docs/reference/kafka-topics.md 「payload」).
-// shippingFee: market.events.v1에서 새로 생김. 옛 토픽(market.purchase-confirmed.v1)에는 없어 null
-// sellerBurdenAmount: 판매자 부담금 (#433). 칸이 없으면(market이 보내기 전 · 옛 토픽) 0
+// shippingFee: 배송비. 정산 지급 때 REVENUE로 옮긴다
+// sellerBurdenAmount: 판매자 부담금 (#433). 칸이 없으면(market이 보내기 전) 0
 public record PurchaseConfirmedEvent(
         Long sellerOrderId,
         Long sellerId,

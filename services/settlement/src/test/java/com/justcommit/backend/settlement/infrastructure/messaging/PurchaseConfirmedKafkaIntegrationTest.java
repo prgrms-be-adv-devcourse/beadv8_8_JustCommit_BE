@@ -58,7 +58,6 @@ import static org.mockito.Mockito.verify;
 @DirtiesContext
 class PurchaseConfirmedKafkaIntegrationTest {
 
-    private static final String LEGACY_TOPIC = "market.purchase-confirmed.v1";
     private static final String DLT = KafkaTopics.MARKET_EVENTS + ".DLT";
 
     // 그룹 · 역직렬화 · offset 설정은 application.yml 그대로, 주소만 테스트 컨테이너로 바꿈
@@ -99,30 +98,6 @@ class PurchaseConfirmedKafkaIntegrationTest {
         assertThat(settlement.getAttemptCount()).isZero();
         assertThat(settlement.getNextAttemptAt()).isNotNull();
         assertThat(settlement.getCompletedAt()).isNull();
-        verify(settlementPayoutClient, never()).distributeSettlement(any(), any(), any(), any(), any(), any(), any());
-    }
-
-    @Test
-    @DisplayName("[S-H02] 같은 sellerOrderId가 옛 토픽과 새 토픽으로 한 번씩 와도 정산은 1건이고, 비어 있던 배송비는 새 토픽 값으로 채워진다")
-    void sameSellerOrderFromBothTopicsSettlesOnce() {
-        kafkaTemplate.send(LEGACY_TOPIC, "2001", legacyJson(2001L));
-        Settlement first = awaitSettlement(2001L);
-        assertThat(first.getShippingFee()).isNull();
-        assertThat(first.getSellerBurdenAmount()).isEqualByComparingTo("0");
-
-        kafkaTemplate.send(KafkaTopics.MARKET_EVENTS, "2001", purchaseConfirmedEnvelope(2001L, "3000"));
-
-        // 두 번째 수신이 커밋돼 배송비가 채워질 때까지 기다린 뒤 건수를 봄
-        Settlement filled = awaitShippingFee(2001L);
-        assertThat(filled.getId()).isEqualTo(first.getId());
-        assertThat(filled.getShippingFee()).isEqualByComparingTo("3000");
-        assertThat(filled.getPayoutAmount()).isEqualByComparingTo(first.getPayoutAmount());
-        assertThat(settlementRepository.findAll())
-                .filteredOn(s -> s.getSellerOrderId().equals(2001L))
-                .hasSize(1);
-        // 두 번째 수신은 배송비만 채우고 상태 · 다음 시도 시각은 그대로
-        assertThat(filled.getStatus()).isEqualTo(SettlementStatus.PENDING);
-        assertThat(filled.getNextAttemptAt()).isEqualTo(first.getNextAttemptAt());
         verify(settlementPayoutClient, never()).distributeSettlement(any(), any(), any(), any(), any(), any(), any());
     }
 
@@ -203,18 +178,6 @@ class PurchaseConfirmedKafkaIntegrationTest {
         throw new AssertionError("정산이 생기지 않음: sellerOrderId=" + sellerOrderId);
     }
 
-    private Settlement awaitShippingFee(Long sellerOrderId) {
-        long deadline = System.currentTimeMillis() + 20_000;
-        while (System.currentTimeMillis() < deadline) {
-            var found = settlementRepository.findBySellerOrderId(sellerOrderId);
-            if (found.isPresent() && found.get().getShippingFee() != null) {
-                return found.get();
-            }
-            sleep();
-        }
-        throw new AssertionError("배송비가 채워지지 않음: sellerOrderId=" + sellerOrderId);
-    }
-
     private static void sleep() {
         try {
             Thread.sleep(200);
@@ -262,13 +225,6 @@ class PurchaseConfirmedKafkaIntegrationTest {
     private static String envelope(String eventType, Long sellerOrderId, Map<String, ?> payload) {
         return ENVELOPE_MAPPER.toJson(new EventEnvelope(UUID.randomUUID().toString(), eventType, 1,
                 OffsetDateTime.now(), String.valueOf(sellerOrderId), JSON.valueToTree(payload)));
-    }
-
-    // 옛 market이 market.purchase-confirmed.v1로 보내던 JSON (봉투 없음, shippingFee 없음)
-    private static String legacyJson(Long sellerOrderId) {
-        return """
-                {"sellerOrderId":%d,"sellerId":7,"saleAmount":30000,"confirmedAt":"2026-11-12T10:00:00","itemSummary":"몬스테라"}
-                """.formatted(sellerOrderId).strip();
     }
 
     private static String newPublicKey() {
