@@ -49,6 +49,29 @@ class ShipmentQueryServiceTest {
     }
 
     @Test
+    void findsReturnShipmentsByShipmentIdsAndOmitsMissingIds() {
+        Shipment returnShipment = newShipment(7L);
+        ReflectionTestUtils.setField(returnShipment, "id", 31L);
+        ReflectionTestUtils.setField(returnShipment, "direction", ShipmentDirection.RETURN);
+        ReflectionTestUtils.setField(returnShipment, "status", ShipmentStatus.DELIVERED);
+        LocalDateTime deliveredAt = LocalDateTime.of(2026, 10, 15, 14, 0);
+        ReflectionTestUtils.setField(returnShipment, "deliveredAt", deliveredAt);
+        when(shipmentRepository.findAllById(List.of(31L, 99L))).thenReturn(List.of(returnShipment));
+
+        var result = shipmentQueryService.findByShipmentIds(List.of(31L, 99L));
+
+        assertThat(result).containsOnlyKeys(31L);
+        assertThat(result.get(31L).status()).isEqualTo("DELIVERED");
+        assertThat(result.get(31L).deliveredAt()).isEqualTo(deliveredAt);
+    }
+
+    @Test
+    void skipsQueryWhenShipmentIdsAreEmpty() {
+        assertThat(shipmentQueryService.findByShipmentIds(List.of())).isEmpty();
+        verifyNoInteractions(shipmentRepository);
+    }
+
+    @Test
     void findsShipmentBySellerOrderId() {
         Shipment shipment = newShipment(7L);
         ReflectionTestUtils.setField(shipment, "id", 30L);
