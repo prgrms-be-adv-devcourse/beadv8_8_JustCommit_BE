@@ -26,6 +26,27 @@ class ShipmentTest {
     }
 
     @Test
+    @DisplayName("기존 생성자로 만든 배송은 가는 길이다")
+    void constructorCreatesOutbound() {
+        Shipment shipment = newShipment();
+
+        assertThat(shipment.getDirection()).isEqualTo(ShipmentDirection.OUTBOUND);
+        assertThat(shipment.isReturn()).isFalse();
+    }
+
+    @Test
+    @DisplayName("반품 배송은 방향이 반품이고 READY 상태로 만들어진다 (#383)")
+    void returnOfCreatesReadyReturnShipment() {
+        Shipment shipment = Shipment.returnOf(SELLER_ORDER_ID, "몬스테라");
+
+        assertThat(shipment.getSellerOrderId()).isEqualTo(SELLER_ORDER_ID);
+        assertThat(shipment.getDirection()).isEqualTo(ShipmentDirection.RETURN);
+        assertThat(shipment.isReturn()).isTrue();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.READY);
+        assertThat(shipment.getItemSummary()).isEqualTo("몬스테라");
+    }
+
+    @Test
     @DisplayName("READY 상태에서 예약하면 BOOKED가 되고 송장번호와 예약 시각이 저장된다")
     void bookFromReady() {
         Shipment shipment = newShipment();

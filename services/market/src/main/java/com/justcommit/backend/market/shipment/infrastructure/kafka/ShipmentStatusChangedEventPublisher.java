@@ -33,7 +33,12 @@ public class ShipmentStatusChangedEventPublisher {
     }
 
     // 현재 상태가 아니라 지나간 단계를 알릴 때 (예: 웹훅이 먼저 와 CANCEL_LOCKED가 됐지만 판매자에게는 「택배 예약됨」을 알려야 할 때)
+    // 반품 배송은 발행하지 않는다 (#383). 받는 쪽이 가는 길 배송 기준으로 알림을 보내 반품 택배에 엉뚱한 알림이 가므로,
+    // 반품 알림은 주문 쪽 반품 이벤트(ReturnApproved 등)로 보낸다
     public void publishAfterCommit(Shipment shipment, ShipmentStatus status, OrderShippingInfo orderInfo, LocalDateTime occurredAt) {
+        if (shipment.isReturn()) {
+            return;
+        }
         ShipmentStatusChangedEvent event = new ShipmentStatusChangedEvent(shipment.getId(), orderInfo.orderId(),
                 shipment.getSellerOrderId(), orderInfo.buyerId(), orderInfo.sellerId(), status.name(),
                 occurredAt, shipment.getItemSummary());
