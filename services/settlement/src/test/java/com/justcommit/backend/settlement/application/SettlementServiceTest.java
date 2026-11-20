@@ -158,4 +158,55 @@ class SettlementServiceTest {
         assertThat(existing.getPayoutAmount()).isEqualByComparingTo("28500");
         assertThat(existing.getShippingFee()).isEqualByComparingTo("3000");
     }
+
+    @Test
+    @DisplayName("전부 반품: 판매액 0, 정산금 = -부담금인 정산을 PENDING, 다음 시도 = 지금(마이크로초 절삭)으로 저장한다")
+    void settleReturnedSavesNegativeSettlement() {
+        given(settlementRepository.findBySellerOrderId(70L)).willReturn(Optional.empty());
+        given(settlementRepository.save(any(Settlement.class))).willAnswer(invocation -> invocation.getArgument(0));
+
+        SettlementResult result = settlementService.settleReturned(70L, 7L, new BigDecimal("9000"), "몬스테라 외 1건");
+
+        ArgumentCaptor<Settlement> saved = ArgumentCaptor.forClass(Settlement.class);
+        verify(settlementRepository).save(saved.capture());
+        Settlement settlement = saved.getValue();
+        assertThat(settlement.getSaleAmount()).isEqualByComparingTo("0");
+        assertThat(settlement.getFee()).isEqualByComparingTo("0");
+        assertThat(settlement.getShippingFee()).isEqualByComparingTo("0");
+        assertThat(settlement.getSellerBurdenAmount()).isEqualByComparingTo("9000");
+        assertThat(settlement.getPayoutAmount()).isEqualByComparingTo("-9000");
+        assertThat(settlement.getStatus()).isEqualTo(SettlementStatus.PENDING);
+        assertThat(settlement.getNextAttemptAt()).isEqualTo(NOW_MICROS);
+        assertThat(settlement.getItemSummary()).isEqualTo("몬스테라 외 1건");
+        assertThat(result.getPayoutAmount()).isEqualByComparingTo("-9000");
+    }
+
+    @Test
+    @DisplayName("전부 반품: 같은 판매자 주문을 다시 받으면 새로 저장하지 않고 기존 정산을 그대로 둔다")
+    void settleReturnedTwiceKeepsExisting() {
+        Settlement existing = Settlement.createReturnedSettlement(80L, 7L, new BigDecimal("9000"), NOW_MICROS, "몬스테라");
+        given(settlementRepository.findBySellerOrderId(80L)).willReturn(Optional.of(existing));
+
+        SettlementResult result = settlementService.settleReturned(80L, 7L, new BigDecimal("12000"), "몬스테라");
+
+        verify(settlementRepository, never()).save(any(Settlement.class));
+        assertThat(existing.getSellerBurdenAmount()).isEqualByComparingTo("9000");
+        assertThat(result.getPayoutAmount()).isEqualByComparingTo("-9000");
+    }
+
+    @Test
+    @DisplayName("전부 반품: 구매 확정 정산이 이미 있는 판매자 주문이면 아무것도 바꾸지 않고 기존 결과를 돌려준다")
+    void settleReturnedKeepsPurchaseConfirmedSettlement() {
+        Settlement existing = Settlement.createSettlement(
+                90L, 7L, new BigDecimal("30000"), new BigDecimal("3000"), BigDecimal.ZERO, NOW_MICROS, "몬스테라");
+        given(settlementRepository.findBySellerOrderId(90L)).willReturn(Optional.of(existing));
+
+        SettlementResult result = settlementService.settleReturned(90L, 7L, new BigDecimal("9000"), "몬스테라");
+
+        verify(settlementRepository, never()).save(any(Settlement.class));
+        assertThat(existing.getSaleAmount()).isEqualByComparingTo("30000");
+        assertThat(existing.getSellerBurdenAmount()).isEqualByComparingTo("0");
+        assertThat(existing.getShippingFee()).isEqualByComparingTo("3000");
+        assertThat(result.getPayoutAmount()).isEqualByComparingTo("28500");
+    }
 }

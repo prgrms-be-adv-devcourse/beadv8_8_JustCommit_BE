@@ -9,7 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
-// 구매 확정 → 정산 생성. 같은 판매자 주문이 여러 번 와도 정산 UK(sellerOrderId)로 1건만 만든다
+// 구매 확정 · 전부 반품 → 정산 생성. 같은 판매자 주문이 여러 번 와도 정산 UK(sellerOrderId)로 1건만 만든다
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -23,6 +23,8 @@ public class PurchaseConfirmedEventListener {
     public void on(EventEnvelope envelope) {
         switch (envelope.eventType()) {
             case "PurchaseConfirmed" -> settle(envelopeMapper.readPayload(envelope, PurchaseConfirmedEvent.class));
+            case "SellerOrderReturned" ->
+                    settleReturned(envelopeMapper.readPayload(envelope, SellerOrderReturnedEvent.class));
             // 알림용 이벤트(ShipmentStatusChanged 등)는 정산과 상관없어 건너뜀
             default -> log.debug("settlement가 쓰지 않는 market 이벤트라 건너뜀: eventType={}, eventId={}",
                     envelope.eventType(), envelope.eventId());
@@ -35,6 +37,15 @@ public class PurchaseConfirmedEventListener {
                 event.sellerId(),
                 event.saleAmount(),
                 event.shippingFee(),
+                event.sellerBurdenAmount(),
+                event.itemSummary()
+        );
+    }
+
+    private void settleReturned(SellerOrderReturnedEvent event) {
+        settlementService.settleReturned(
+                event.sellerOrderId(),
+                event.sellerId(),
                 event.sellerBurdenAmount(),
                 event.itemSummary()
         );
