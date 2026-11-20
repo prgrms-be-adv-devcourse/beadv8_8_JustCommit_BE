@@ -47,7 +47,7 @@
 | `product.events.v1` | `ProductRejected` | notification | 판매자에게 반려 사유와 함께 알림 |
 | `product.events.v1` | `ImageReviewDelayed` | notification | 관리자에게 「검수 지연 N건」 알림. 관리자 역할(ADMIN)로 알림 1건(`member_id` 없음, `recipient_role = ADMIN`)을 만들어 관리자끼리 읽음을 공유, `event_key`는 `ADMIN_REVIEW_DELAYED:{eventId}`(봉투 `eventId`), 새로 지연된 건만 1번, payload 추가 없음 (notification 담당 합의 11/19, 구독 #561). product 색인 리스너 · ai는 건너뜀 |
 | `product.review.v1` | `ProductReviewRequested` (`review_version` 포함) | product | 사진 검수 (비동기) |
-| `settlement.events.v1` | `SettlementCompleted` | notification | 정산 알림 |
+| `settlement.events.v1` | `SettlementCompleted` | notification | 정산 알림. 정산이 `COMPLETED`가 될 때 정산당 1번, `payoutAmount`가 음수(음수 정산)면 회수 알림 |
 
 `ShipmentPickedUp`은 만들지 않습니다. 배송비 이동이 정산 지급 때로 바뀌어 받는 곳이 없고, 수거 알림은 `ShipmentStatusChanged`로 보냅니다 (노션 8.7). market → product 토픽은 서로 달라 도착 순서가 바뀔 수 있으므로, product는 "이 주문이 잡은 상품만, 바뀐 상품 0건이면 정상"으로 순서와 상관없이 처리합니다 → [product 정책](../services/product.md#정책)
 
@@ -164,3 +164,13 @@ product 색인 리스너는 상품 ID로 DB에서 최신 상품을 다시 읽습
   ]
 }
 ```
+
+### settlement 정산 이벤트 (`settlement.events.v1`, Key `sellerId`, #438)
+
+정산 지급 스케줄러가 정산을 `COMPLETED`로 바꾸는 트랜잭션에서 Outbox로 기록합니다. 정산당 1번이고, 지급 실패에는 보내지 않습니다.
+
+| eventType | payload | 비고 |
+|---|---|---|
+| `SettlementCompleted` | `settlementId` · `sellerOrderId` · `sellerId` (숫자), `saleAmount` · `fee` · `sellerBurdenAmount` · `payoutAmount` (금액), `itemSummary` (문자열), `completedAt` (시각) | `payoutAmount` = `saleAmount` − `fee` − `sellerBurdenAmount`. 음수 정산도 같은 이벤트로 보내고 `payoutAmount` 부호로 구분 (구분용 칸 없음). 배송비는 싣지 않음. 회수하지 못해 미수금으로 남은 금액은 payment만 알아 싣지 않음. 받는 쪽 멱등 키는 `settlementId` |
+
+시각 칸은 settlement 서버 시간(서울)의 `LocalDateTime`입니다.

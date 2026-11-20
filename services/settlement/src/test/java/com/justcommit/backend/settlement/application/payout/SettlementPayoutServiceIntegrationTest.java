@@ -3,6 +3,11 @@ package com.justcommit.backend.settlement.application.payout;
 import com.justcommit.backend.common.client.exception.InternalApiErrorException;
 import com.justcommit.backend.common.client.exception.InternalApiResultUnknownException;
 import com.justcommit.backend.common.client.exception.InternalApiUnavailableException;
+import com.justcommit.backend.common.messaging.EventEnvelopeMapper;
+import com.justcommit.backend.common.messaging.KafkaTopics;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
+import com.justcommit.backend.common.messaging.outbox.OutboxRelay;
+import com.justcommit.backend.settlement.SettlementCompletedEvent;
 import com.justcommit.backend.settlement.client.payment.SettlementPayoutClient;
 import com.justcommit.backend.settlement.domain.Settlement;
 import com.justcommit.backend.settlement.domain.SettlementStatus;
@@ -16,6 +21,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
@@ -48,6 +54,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -56,12 +63,15 @@ import static org.mockito.Mockito.verify;
 
 // 실제 PostgreSQL로 정산 지급 스케줄러의 확보(SKIP LOCKED + 임대) · 호출 · 결과 반영을 확인 (payment 호출만 목)
 // 스케줄러는 끄고 서비스를 직접 부른다 (백그라운드 실행이 테스트 데이터를 먼저 집지 않게)
+// Outbox는 실제 OutboxPublisher로 같은 트랜잭션에 outbox_event 행을 남기고, 커밋 뒤 Kafka 전송(OutboxRelay)만 목으로 둔다 (#438)
 @SpringBootTest
 @Testcontainers(disabledWithoutDocker = true)
 class SettlementPayoutServiceIntegrationTest {
 
     private static final String GROUP = "internal-payment";
     private static final long SELLER_ID = 7L;
+    // Outbox에 저장된 봉투 JSON을 읽어 payload를 확인한다 (운영과 같은 공통 형식)
+    private static final EventEnvelopeMapper ENVELOPE_MAPPER = new EventEnvelopeMapper();
 
     @DynamicPropertySource
     static void testProperties(DynamicPropertyRegistry registry) {
@@ -79,10 +89,14 @@ class SettlementPayoutServiceIntegrationTest {
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired TransactionTemplate transactionTemplate;
     @MockitoBean SettlementPayoutClient payoutClient;
+    // 실제 빈을 감싸 호출도 확인한다. 행은 outbox_event에 실제로 남는다
+    @MockitoSpyBean OutboxPublisher outboxPublisher;
+    @MockitoBean OutboxRelay outboxRelay; // 커밋 뒤 Kafka 전송
 
     @BeforeEach
     void cleanUp() {
         settlementRepository.deleteAll();
+        jdbcTemplate.execute("truncate table outbox_event");
     }
 
     @Test
@@ -206,6 +220,101 @@ class SettlementPayoutServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("지급에 성공하면 같은 트랜잭션에 SettlementCompleted가 outbox_event 1행으로 남는다 (settlement.events.v1, Key sellerId)")
+    void successRecordsSettlementCompleted() {
+        Settlement settlement = pending(1L, 1);
+
+        payoutService.payoutDue();
+
+        Settlement paid = reload(settlement);
+        List<Map<String, Object>> rows = outboxRows();
+        assertThat(rows).singleElement().satisfies(row -> {
+            assertThat(row.get("topic")).isEqualTo(KafkaTopics.SETTLEMENT_EVENTS);
+            assertThat(row.get("aggregate_id")).isEqualTo(String.valueOf(SELLER_ID));
+            assertThat(row.get("event_type")).isEqualTo("SettlementCompleted");
+        });
+        SettlementCompletedEvent event = payload(rows.getFirst());
+        assertThat(event.settlementId()).isEqualTo(settlement.getId());
+        assertThat(event.sellerOrderId()).isEqualTo(1L);
+        assertThat(event.sellerId()).isEqualTo(SELLER_ID);
+        assertThat(event.saleAmount()).isEqualByComparingTo("30000");
+        assertThat(event.fee()).isEqualByComparingTo("1500");
+        assertThat(event.sellerBurdenAmount()).isEqualByComparingTo("0");
+        assertThat(event.payoutAmount()).isEqualByComparingTo("28500");
+        assertThat(event.itemSummary()).isEqualTo("몬스테라 외 1건");
+        assertThat(event.completedAt()).isEqualTo(paid.getCompletedAt());
+    }
+
+    @Test
+    @DisplayName("음수 정산(회수)도 SettlementCompleted로 기록되고 payoutAmount가 음수다")
+    void negativeSettlementRecordsNegativePayout() {
+        save(Settlement.createSettlement(1L, SELLER_ID, new BigDecimal("10000"),
+                new BigDecimal("3000"), new BigDecimal("12000"), LocalDateTime.now().minusMinutes(1), "음수"));
+
+        payoutService.payoutDue();
+
+        SettlementCompletedEvent event = payload(outboxRows().getFirst());
+        assertThat(event.payoutAmount()).isEqualByComparingTo("-2500");
+        assertThat(event.sellerBurdenAmount()).isEqualByComparingTo("12000");
+        assertThat(outboxRows()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("지급에 실패하면 SettlementCompleted를 기록하지 않는다")
+    void failureRecordsNothing() {
+        pending(1L, 1);
+        doThrow(new InternalApiResultUnknownException(GROUP, null))
+                .when(payoutClient).distributeSettlement(anyLong(), anyLong(), anyLong(), any(), any(), any(), any());
+
+        payoutService.payoutDue();
+
+        assertThat(outboxRows()).isEmpty();
+        verify(outboxPublisher, never()).publish(any());
+    }
+
+    @Test
+    @DisplayName("Outbox 기록이 실패하면 COMPLETED도 롤백되고, 임대가 끝나 다시 돌면 같은 정산으로 다시 지급 요청해 COMPLETED + 1행이 된다")
+    void outboxFailureRollsBackCompletedAndRetries() {
+        Settlement settlement = pending(1L, 1);
+        doThrow(new IllegalStateException("outbox 저장 실패")).when(outboxPublisher).publish(any());
+
+        assertThat(payoutService.payoutDue()).isEqualTo(1);
+
+        Settlement rolledBack = reload(settlement);
+        assertThat(rolledBack.getStatus()).isEqualTo(SettlementStatus.PENDING);
+        assertThat(rolledBack.getCompletedAt()).isNull();
+        assertThat(outboxRows()).isEmpty();
+
+        // 임대가 끝난 것처럼 당겨서 다시 돌린다
+        doCallRealMethod().when(outboxPublisher).publish(any());
+        makeDue(settlement);
+        assertThat(payoutService.payoutDue()).isEqualTo(1);
+
+        assertThat(reload(settlement).getStatus()).isEqualTo(SettlementStatus.COMPLETED);
+        assertThat(outboxRows()).hasSize(1);
+        verify(payoutClient, times(2)).distributeSettlement(eq(settlement.getId()), anyLong(), anyLong(),
+                any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("호출 중 다른 실행이 먼저 지급 완료로 바꿨으면 늦게 온 성공은 SettlementCompleted를 다시 기록하지 않는다")
+    void lateSuccessAfterOtherCompletionRecordsNothing() {
+        Settlement settlement = pending(1L, 1);
+        doAnswer(invocation -> {
+            jdbcTemplate.update("""
+                    UPDATE settlement SET status = 'COMPLETED', completed_at = now(), next_attempt_at = NULL
+                     WHERE id = ?""", settlement.getId());
+            return null;
+        }).when(payoutClient).distributeSettlement(anyLong(), anyLong(), anyLong(), any(), any(), any(), any());
+
+        payoutService.payoutDue();
+
+        assertThat(reload(settlement).getStatus()).isEqualTo(SettlementStatus.COMPLETED);
+        assertThat(outboxRows()).isEmpty();
+        verify(outboxPublisher, never()).publish(any());
+    }
+
+    @Test
     @DisplayName("다음 시도 시각 전인 정산과 COMPLETED 정산은 집지 않는다")
     void skipsNotDueAndCompleted() {
         save(Settlement.createSettlement(1L, SELLER_ID, new BigDecimal("30000"), null, BigDecimal.ZERO,
@@ -277,7 +386,7 @@ class SettlementPayoutServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("[S-G04] 두 실행(파드 2개)이 동시에 돌아도 정산마다 지급 요청은 한 번이다")
+    @DisplayName("[S-G04] 두 실행(파드 2개)이 동시에 돌아도 정산마다 지급 요청과 SettlementCompleted 기록은 한 번이다")
     void concurrentExecutionsRequestEachSettlementOnce() throws Exception {
         List<Long> ids = new ArrayList<>();
         for (long i = 1; i <= 20; i++) {
@@ -316,6 +425,8 @@ class SettlementPayoutServiceIntegrationTest {
         assertThat(calls.values()).allSatisfy(count -> assertThat(count).hasValue(1));
         assertThat(settlementRepository.findAll())
                 .allSatisfy(s -> assertThat(s.getStatus()).isEqualTo(SettlementStatus.COMPLETED));
+        assertThat(outboxRows()).extracting(row -> payload(row).settlementId())
+                .containsExactlyInAnyOrderElementsOf(ids);
     }
 
     @Test
@@ -398,6 +509,18 @@ class SettlementPayoutServiceIntegrationTest {
     private Settlement pending(long sellerOrderId, int minutesAgo) {
         return save(Settlement.createSettlement(sellerOrderId, SELLER_ID, new BigDecimal("30000"),
                 new BigDecimal("3000"), BigDecimal.ZERO, LocalDateTime.now().minusMinutes(minutesAgo), "몬스테라 외 1건"));
+    }
+
+    // 커밋된 outbox_event 행 (오래된 순)
+    private List<Map<String, Object>> outboxRows() {
+        return jdbcTemplate.queryForList(
+                "SELECT topic, aggregate_id, event_type, payload FROM outbox_event ORDER BY created_at");
+    }
+
+    // 봉투 JSON에서 SettlementCompleted payload를 읽는다
+    private static SettlementCompletedEvent payload(Map<String, Object> row) {
+        return ENVELOPE_MAPPER.readPayload(ENVELOPE_MAPPER.fromJson((String) row.get("payload")),
+                SettlementCompletedEvent.class);
     }
 
     // 금액은 scale과 상관없이 값으로 비교
