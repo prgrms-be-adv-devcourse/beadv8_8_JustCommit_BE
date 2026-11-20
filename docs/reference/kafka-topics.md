@@ -33,7 +33,7 @@
 | `market.events.v1` | `SellerOrderRejected` (상품 전부 거절, `reason`: `SELLER` · `AUTO`) | notification | `SELLER`: 구매자에게 판매자 거절 알림. `AUTO`: 구매자에게 자동 취소 · 판매자에게 24시간 자동 거절 알림 |
 | `market.events.v1` | `SellerOrderCancelled` · `OrderItemCancelled` (구매자 취소) | notification | 판매자에게만 취소 알림 (본인 취소는 구매자에게 안 보냄) |
 | `market.events.v1` | `PurchaseConfirmed` (판매자 주문이 끝나고 구매 확정 상품이 있으면, 수동, 자동 확정, 반품 거절 모두) | settlement · notification | 정산 생성(배송비 포함, 판매자 부담금 차감), 구매 확정 알림 |
-| `market.events.v1` | `SellerOrderReturned` (판매자 주문이 끝났는데 전부 반품) | settlement (⬜ #432) | 판매자 부담금만큼 음수 정산 생성. settlement 구독 전이라 지금은 받지 않고 건너뜀 (반품 완료는 #384부터 생겨 그 전에는 발행되지 않음) |
+| `market.events.v1` | `SellerOrderReturned` (판매자 주문이 끝났는데 전부 반품) | settlement | 판매액 0, 정산금 = −판매자 부담금인 정산 생성 (부담금 0이면 정산금 0, #432) |
 | `market.events.v1` | `OrderItemAutoConfirmed` (주문상품 단위) | notification | 자동 구매 확정 알림 (정산은 받지 않음) |
 | `market.events.v1` | `ReturnRequested` · `ReturnApproved`(자동 승인 포함) · `ReturnRejected` · `OrderItemReturned`(반품 환불 뒤) | notification | 반품 신청 · 자동 승인 · 거절 · 환불 완료 알림 |
 | `market.events.v1` | `ShipmentStatusChanged` | notification | 가는 길 배송의 상태 알림. 반품 배송은 발행하지 않음 (반품 알림은 반품 이벤트로) |
