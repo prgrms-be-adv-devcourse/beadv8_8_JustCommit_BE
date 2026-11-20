@@ -8,7 +8,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 // 기본 은행 (custom.bank.mode=fake). 메모리에서 항상 성공하고, 같은 멱등 키면 처음 결과를 돌려준다
-// 앱을 다시 시작하면 기록이 사라진다. 모의 은행 서버 연결은 #389
+// 앱을 다시 시작하면 기록이 사라진다. 모의 은행 서버로 보내려면 custom.bank.mode=http (BankClientConfig)
 @Component
 @ConditionalOnProperty(prefix = "custom.bank", name = "mode", havingValue = "fake", matchIfMissing = true)
 public class FakeBankTransferClient implements BankTransferClient {
