@@ -31,7 +31,7 @@
 | 반송 | `RETURNING` · `RETURNED` (택배사) | 취소 반송 | 취소가 인정됐지만 택배사 장애로 이미 수거된 상품을 택배사가 판매자에게 돌려보내는 것 (택배사 비용). 구매자가 신청하는 반품과 다름 | [취소 · 환불](flows/cancel-refund.md) |
 | 택배사 | – | 404-express, 모의 택배사, courier | 배송을 맡는 외부 서비스 (지금은 모의 택배사 404-express) | [market](services/market.md) |
 | 웹훅 | – | webhook, 콜백 | 택배사가 배송 상태 · 취소 · 요금표 변경을 알려 주는 HTTP 요청 | [market 정책](services/market.md#정책) |
-| 배송비 요금표 | ⬜ 테이블 이름 미정 | 운임표 | 지역 구분(기본 + 제주 · 도서산간) 배송비 표. market이 버전과 함께 보관 | [market 정책](services/market.md#정책) |
+| 배송비 요금표 | `ShippingFeeTable` (`SHIPPING_FEE_TABLE`) | 운임표 | 지역 구분(기본 + 제주 · 도서산간) 배송비 표. market이 버전과 함께 보관 | [market 정책](services/market.md#정책) |
 | 구매 확정 | `PurchaseConfirmed` · `OrderItemAutoConfirmed` | 구매 완료, 거래 완료 | 구매자가 받았다고 확정 (직접 또는 자동). 정산의 시작점 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 취소 | `OrderItemCancelled` · `SellerOrderCancelled` | 주문 취소 | 수거 전에 구매자가 주문상품을 취소하는 것 | [취소 · 환불](flows/cancel-refund.md) |
 | 취소 사유 | `cancel_reason` (주문상품) · `CancelReason` (`BUYER`, `SELLER`, `AUTO`) | 취소 원인 | 주문상품이 취소 흐름에 들어간 이유 (구매자 취소, 판매자 거절, 자동 거절). 판매 재개 이벤트의 `reason` | [Kafka 토픽](reference/kafka-topics.md) |

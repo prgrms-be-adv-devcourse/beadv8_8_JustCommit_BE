@@ -29,6 +29,7 @@ import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.presentation.CartOrderCreateRequest;
 import com.justcommit.backend.market.order.presentation.OrderCreateResponse;
 import com.justcommit.backend.market.shipment.application.ShipmentService;
+import com.justcommit.backend.market.shipment.application.ShippingFeeTableService;
 import com.justcommit.backend.market.shipment.domain.ShipmentDirection;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import lombok.RequiredArgsConstructor;
@@ -71,6 +72,7 @@ public class OrderService {
     private final OrderCancelRefunder orderCancelRefunder;
     private final SellerOrderDecisionTransactions sellerOrderDecisionTransactions;
     private final OrderReturnService orderReturnService;
+    private final ShippingFeeTableService shippingFeeTableService;
 
     public OrderCreateResponse create(Long memberId, CartOrderCreateRequest request) {
         // 탈퇴한 회원의 주문을 막는 2차 방어 (1차는 Gateway의 토큰 폐기)
@@ -118,14 +120,15 @@ public class OrderService {
         Orders order = new Orders(orderNo, memberId, request.recipientName(), request.recipientPhone(),
                 request.zipcode(), request.address1(), request.address2(), selectedItems.size());
 
+        // 배송비는 판매자 주문 1건당 1번, 배송지가 같으니 모든 판매자 주문이 같은 금액이다
+        BigDecimal shippingFee = shippingFeeTableService.feeFor(request.zipcode());
         List<SellerOrder> sellerOrders = new ArrayList<>();
         productsBySeller.forEach((sellerId, sellerProducts) -> {
             SellerOrder sellerOrder = new SellerOrder(order, sellerId);
             sellerOrder.addItems(sellerProducts.stream()
                     .map(product -> new OrdersItem(sellerOrder, product.productId(), product.title(), product.price()))
                     .toList());
-            // TODO: 배송비 정책이 정해지면 판매자별 배송비를 계산해 설정한다. 세미에서는 기본배송비 삼천원
-            sellerOrder.setShippingFee(BigDecimal.valueOf(3_000));
+            sellerOrder.setShippingFee(shippingFee);
             sellerOrders.add(sellerOrder);
         });
         order.addSellerOrders(sellerOrders);
