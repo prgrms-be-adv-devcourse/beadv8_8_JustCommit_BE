@@ -1,5 +1,6 @@
 package com.justcommit.backend.market.order.application;
 
+import com.justcommit.backend.market.shipment.application.ShippingFeeTableService;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
@@ -77,7 +78,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaAuditingConfig.class, OrderService.class, OrderPaymentTransactions.class, OrderExpirationService.class,
         OrderItemConfirmationService.class, OrderCancelTransactions.class, OrderCancelRefunder.class,
-        SellerOrderDecisionTransactions.class, OrderReturnService.class})
+        SellerOrderDecisionTransactions.class, OrderReturnService.class, ShippingFeeTableService.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED) // 스케줄러가 주문마다 자기 트랜잭션을 열고 커밋한다
 class OrderSchedulerConcurrencyIntegrationTest {
