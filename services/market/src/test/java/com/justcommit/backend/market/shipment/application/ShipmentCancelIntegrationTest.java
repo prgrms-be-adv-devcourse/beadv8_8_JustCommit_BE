@@ -8,6 +8,7 @@ import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.market.config.JpaAuditingConfig;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.shipment.domain.Shipment;
+import com.justcommit.backend.market.shipment.domain.ShipmentDirection;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingRequest;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingResponse;
@@ -229,7 +230,7 @@ class ShipmentCancelIntegrationTest {
     }
 
     private Shipment shipment() {
-        return shipmentRepository.findBySellerOrderId(7L).orElseThrow();
+        return shipmentRepository.findBySellerOrderIdAndDirection(7L, ShipmentDirection.OUTBOUND).orElseThrow();
     }
 
     private CourierBookingResponse bookingResponse() {
