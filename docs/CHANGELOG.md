@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-20 · glossary.md · 취소 완료(환불 확정)도 판매자 주문 종료 판정을 부름: 취소 중 상품이 마지막 미완료 상품이면 그때 정산 이벤트를 보내고, 다른 판매자 주문이 먼저 끝났어도 주문이 `PAID`에 남지 않음 (#383) (#593)
 - 2026-11-20 · flows/cancel-refund.md · 반품 배송비를 3,000원 고정에서 그 판매자 주문의 배송비(주문 때 요금표로 계산해 저장한 값, #592 지역 할증 포함)로 바꿈 (#383) (#593)
 - 2026-11-20 · reference/kafka-topics.md · `SellerOrderReturned` 구독자 settlement를 ⬜ #432로 표시 (settlement 리스너가 아직 받지 않음) (#383) (#593)
 - 2026-11-20 · glossary.md · flows/cancel-refund.md · flows/confirm-settlement.md · reference/kafka-topics.md · reference/external-apis.md · reference/schedulers.md · reference/internal-apis.md · services/market.md · 반품 승인, 거절, 자동 승인과 판매자 주문 종료 판정 구현: 판매자 `POST orders/items/{id}/return/approve`, `reject`(SELLER, 본문 없음, 늦은 응답은 409 `RETURN_NOT_DECIDABLE`), 승인 때 반품 배송(`READY`, 구매자 → 판매자 예약)과 반품 배송비 스냅샷, 거절은 바로 구매 확정, 48시간 반품 자동 승인 스케줄러(10분, 주문 SKIP LOCKED, `AUTO`), 판매자 주문 종료 판정(`SellerOrderCompletion`)이 구매 확정 상품이 있으면 `PurchaseConfirmed`(`sellerBurdenAmount` = 반품 완료된 반품 배송비 합), 전부 반품이면 `SellerOrderReturned`(반품 배송비 합 + 원래 배송비), 모두 취소면 발행 안 함, `ReturnApproved`, `ReturnRejected`, `SellerOrderReturned` payload 추가, 반품 배송은 `ShipmentStatusChanged`를 발행하지 않음, 판매 목록, 상세에 반품 신청 정보(`returnDeadlineAt`은 응답 전에만), 용어 「반품 배송」 「판매자 주문 종료 판정」 「반품 응답 마감」 「자동 승인 (반품)」 「전부 반품」 추가, 「판매자 부담금」에 전부 반품 정의, 탈퇴 확인 진행 중 상태를 코드와 맞춤(옛 `REFUND_REQUESTED` 삭제) (#383) (#593)

@@ -76,6 +76,7 @@ public class OrderCancelTransactions {
     private final ShipmentQuery shipmentQuery;
     private final OutboxPublisher outboxPublisher;
     private final SellerOrderEventPublisher sellerOrderEventPublisher;
+    private final SellerOrderCompletion sellerOrderCompletion;
 
     public OrderCancelTransactions(PlatformTransactionManager transactionManager,
                                    OrdersRepository ordersRepository,
@@ -84,7 +85,8 @@ public class OrderCancelTransactions {
                                    ShipmentService shipmentService,
                                    ShipmentQuery shipmentQuery,
                                    OutboxPublisher outboxPublisher,
-                                   SellerOrderEventPublisher sellerOrderEventPublisher) {
+                                   SellerOrderEventPublisher sellerOrderEventPublisher,
+                                   SellerOrderCompletion sellerOrderCompletion) {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.ordersRepository = ordersRepository;
         this.sellerOrderRepository = sellerOrderRepository;
@@ -93,6 +95,7 @@ public class OrderCancelTransactions {
         this.shipmentQuery = shipmentQuery;
         this.outboxPublisher = outboxPublisher;
         this.sellerOrderEventPublisher = sellerOrderEventPublisher;
+        this.sellerOrderCompletion = sellerOrderCompletion;
     }
 
     // ===== 취소 요청
@@ -356,7 +359,9 @@ public class OrderCancelTransactions {
         };
     }
 
-    // 환불 확정: 취소 완료 + 판매 재개 Outbox + 판매자 알림. 주문의 모든 주문상품이 취소되면 주문도 취소
+    // 환불 확정: 취소 완료 + 판매 재개 Outbox + 판매자 알림, 그 뒤 판매자 주문 종료 판정 (#383 리뷰).
+    // 취소 중이던 상품이 마지막 미완료 상품이면 여기서 판매자 주문이 끝나므로 정산 이벤트를 보내고,
+    // 모든 판매자 주문이 끝났으면 주문을 완료(구매 확정, 반품 완료가 있음) 또는 취소(전부 취소)로 바꾼다
     private boolean completeCancel(RefundClaim claim) {
         Boolean applied = transactionTemplate.execute(status -> {
             LocalDateTime now = LocalDateTime.now();
@@ -373,11 +378,8 @@ public class OrderCancelTransactions {
             // 벌크 UPDATE가 영속성 컨텍스트를 비웠으므로 다시 읽는다
             SellerOrder sellerOrder = notifySeller(claim, now);
             Orders order = sellerOrder.getOrder();
-            boolean allCancelled = order.getSellerOrders().stream()
-                    .flatMap(other -> other.getItems().stream())
-                    .allMatch(item -> item.getStatus() == OrderItemStatus.CANCELLED);
-            if (allCancelled && order.getStatus() == OrderStatus.PAID) {
-                order.cancel();
+            if (order.getStatus() == OrderStatus.PAID) {
+                sellerOrderCompletion.complete(order, sellerOrder);
             }
             return true;
         });

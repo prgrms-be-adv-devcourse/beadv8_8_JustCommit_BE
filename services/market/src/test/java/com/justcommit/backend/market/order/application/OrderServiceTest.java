@@ -130,7 +130,8 @@ class OrderServiceTest {
                 sellerOrderEventPublisher, cartService));
         OrderCancelTransactions cancelTransactions = new OrderCancelTransactions(new NoOpTransactionManager(),
                 ordersRepository, sellerOrderRepository, ordersItemRepository, shipmentService, shipmentQuery,
-                outboxPublisher, sellerOrderEventPublisher);
+                outboxPublisher, sellerOrderEventPublisher,
+                new SellerOrderCompletion(returnRequestRepository, purchaseConfirmedEventPublisher, sellerOrderEventPublisher));
         ReflectionTestUtils.setField(orderService, "orderCancelTransactions", cancelTransactions);
         ReflectionTestUtils.setField(orderService, "orderCancelRefunder",
                 new OrderCancelRefunder(paymentUseCase, cancelTransactions));
