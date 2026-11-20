@@ -293,4 +293,23 @@ public class WalletTransaction extends BaseTimeEntity {
                 revenueWallet.getReceivable()
         );
     }
+
+    // 인출: 회원 지갑에서 나간 금액 (ref_id = 인출 건 ID)
+    public static WalletTransaction cashOut(
+            Wallet memberWallet,
+            Long cashOutId,
+            BigDecimal amount,
+            LocalDateTime occurredAt
+    ) {
+        return new WalletTransaction(
+                memberWallet,
+                RefType.CASH_OUT,
+                cashOutId,
+                occurredAt,
+                TransactionStatus.OUT,
+                amount,
+                memberWallet.getBalance(),
+                memberWallet.getReceivable()
+        );
+    }
 }

@@ -17,6 +17,34 @@ management:
       percentiles-histogram:
         "[http.server.requests]": true
 
+  # 분산 추적 (ADR 0027): 모든 요청을 추적하고(트래픽이 적어 100%), 운영에서만 OTLP로 Alloy에 보낸다.
+  # 로컬은 받을 Alloy가 없어 기본으로 보내지 않음(traceId는 로그에 그대로 찍힘)
+  tracing:
+    sampling:
+      probability: 1.0
+    export:
+      enabled: ${TRACING_EXPORT_ENABLED:false}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTLP_TRACING_ENDPOINT:http://localhost:4318/v1/traces}
+  # 지표는 Prometheus(/actuator/prometheus), 로그는 Alloy가 컨테이너 로그로 모은다 → OTLP로는 추적만 보낸다
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  logging:
+    export:
+      otlp:
+        enabled: false
+
+spring:
+  kafka:
+    # Kafka 리스너가 받은 메시지의 traceparent 헤더를 이어받아 같은 traceId로 처리한다 (보내는 쪽은 Outbox가 헤더를 붙임)
+    listener:
+      observation-enabled: true
+
 server:
   tomcat:
     mbeanregistry:

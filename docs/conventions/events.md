@@ -1,7 +1,7 @@
 # 이벤트 규칙
 
 > 언제 읽나: Kafka 이벤트를 발행하거나 구독할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-12 · 관련: Miro 8 · 11-1 · 11-2, 노션 기획안 「이벤트 규칙」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 8 · 11-1 · 11-2, 노션 기획안 「이벤트 규칙」
 
 ## 이름과 토픽
 
@@ -93,7 +93,7 @@ public void confirm(...) {
 | `aggregate_id` | `varchar(100)` | Kafka Key |
 | `topic` · `event_type` | `varchar(100)` | 보낼 토픽 · 이벤트 이름 |
 | `payload` | `text` | 봉투 JSON |
-| `traceparent` | `varchar(55)` | 헤더로 보낼 값 (common-logging 전까지 비어 있음) |
+| `traceparent` | `varchar(55)` | 헤더로 보낼 값. 발행할 때 지금 요청의 traceparent를 저장(`CurrentTraceparent`), 진행 중인 추적이 없으면(스케줄러 등) 비어 있고 헤더도 안 붙임 |
 | `status` · `published_at` | `varchar(20)` · `timestamptz` | `PENDING` · `PUBLISHED` · `FAILED`, 발행 시각 |
 | `attempt_count` · `last_error` | `integer` · `varchar(500)` | 실패 횟수(커밋 직후 발행 포함) · 마지막 실패 원인 |
 | `created_at` | `timestamptz` | 재전송 · 대기 시간 알림 기준 |

@@ -27,8 +27,11 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-kafka'
     // 알림 지표 (OutboxMetrics). MeterRegistry 빈은 서비스의 common-logging(actuator)이 만든다
     implementation 'io.micrometer:micrometer-core'
+    // traceparent 저장 (CurrentTraceparent). Tracer 빈은 서비스의 common-logging(OTel 브리지)이 만든다
+    implementation 'io.micrometer:micrometer-tracing'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.micrometer:micrometer-tracing-test'
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
     testImplementation 'org.testcontainers:testcontainers-postgresql'

@@ -40,6 +40,7 @@
 | ai → OpenAI 임베딩 (재임베딩 운영 API) | ⬜ 미정 (따로 설정 안 함) | ⬜ 미정 | ⬜ 미정 |
 | payment → 토스페이먼츠 | 3초 / 60초 | 없음 | 결과 불명 → `PENDING` 유지, 결제 조회로 `APPROVED`, `FAILED`, `REVIEW_REQUIRED` 중 하나로 확정 → [스케줄러 표](../reference/schedulers.md) |
 | market → 모의 택배사 | 3초 / 5초 | 10초 큐 + 건별 백오프 10초 → 30초 → 1분 고정, **포기 없음** | 배송 `READY` · `CANCEL_PENDING` 유지. 서킷 없음 |
+| payment → 모의 은행 | 3초 / 5초 | 없음 | 인출 건 `PENDING` 유지 (잔액은 차감된 채로). 서킷 없음 |
 | member → Gmail SMTP | 연결 · 응답 · 쓰기 각 5초 | 없음 (사용자가 재발송) | 메일 전용 실행기에서 비동기 발송(응답은 SMTP를 기다리지 않음). SMTP 실패는 메일 스레드가 그 요청의 예약을 정리하고, 정리가 끝나면 다시 요청 가능. 메일 작업 제출 거절 시에만 가입 · 계좌 변경 `EMAIL_SEND_FAILED` → [메일 발송](../reference/external-apis.md#메일-발송) |
 
 ## 서킷 브레이커

@@ -1,5 +1,7 @@
 package com.justcommit.backend.notification.infrastructure.sse;
 
+import com.justcommit.backend.notification.domain.RecipientRole;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -23,7 +25,7 @@ class NotificationSseRegistryTest {
     void sendsUnreadCountOnConnect() {
         RecordingEmitter emitter = new RecordingEmitter();
 
-        registry.add(BUYER, emitter, 3);
+        registry.add(BUYER, null, emitter, 3);
 
         assertThat(emitter.sent).containsExactly("event:unread\ndata:3\n\n");
     }
@@ -34,9 +36,9 @@ class NotificationSseRegistryTest {
         RecordingEmitter tab1 = new RecordingEmitter();
         RecordingEmitter tab2 = new RecordingEmitter();
         RecordingEmitter other = new RecordingEmitter();
-        registry.add(BUYER, tab1, 0);
-        registry.add(BUYER, tab2, 0);
-        registry.add(OTHER, other, 0);
+        registry.add(BUYER, null, tab1, 0);
+        registry.add(BUYER, null, tab2, 0);
+        registry.add(OTHER, null, other, 0);
 
         registry.sendUnreadCount(BUYER, 1);
 
@@ -49,7 +51,7 @@ class NotificationSseRegistryTest {
     @DisplayName("끊긴 연결은 보내다 실패하면 목록에서 뺀다")
     void removesBrokenConnection() {
         RecordingEmitter emitter = new RecordingEmitter();
-        registry.add(BUYER, emitter, 0);
+        registry.add(BUYER, null, emitter, 0);
         emitter.broken = true;
 
         registry.sendUnreadCount(BUYER, 1);
@@ -58,10 +60,28 @@ class NotificationSseRegistryTest {
     }
 
     @Test
+    @DisplayName("관리자로 연결한 회원만 역할별 회원에 들어가고, 연결이 모두 끊기면 빠진다")
+    void remembersRoleWhileConnected() {
+        RecordingEmitter admin = new RecordingEmitter();
+        registry.add(1L, RecipientRole.ADMIN, admin, 0);
+        registry.add(BUYER, null, new RecordingEmitter(), 0);
+
+        assertThat(registry.membersWithRole(RecipientRole.ADMIN)).containsExactly(1L);
+        assertThat(registry.roleOf(1L)).isEqualTo(RecipientRole.ADMIN);
+        assertThat(registry.roleOf(BUYER)).isNull();
+
+        admin.broken = true;
+        registry.sendUnreadCount(1L, 1);
+
+        assertThat(registry.membersWithRole(RecipientRole.ADMIN)).isEmpty();
+        assertThat(registry.roleOf(1L)).isNull();
+    }
+
+    @Test
     @DisplayName("하트비트는 주석 한 줄을 보낸다")
     void heartbeatSendsComment() {
         RecordingEmitter emitter = new RecordingEmitter();
-        registry.add(BUYER, emitter, 0);
+        registry.add(BUYER, null, emitter, 0);
 
         registry.heartbeat();
 

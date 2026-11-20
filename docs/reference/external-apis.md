@@ -184,12 +184,35 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | GET | `wallet` · `wallet/transactions` | 예치금 · 거래 내역 | 로그인 |
 | POST | `wallet/charges` | 충전 요청 | 로그인 |
 | POST | `wallet/charges/{id}/confirm` | 충전 승인 (토스) | 로그인 |
+| POST | `wallet/cashOuts` | 인출 신청 (`Idempotency-Key` 필수) → [인출](#인출) | 로그인 |
+| GET | `wallet/cashOuts` | 인출 내역 → [인출](#인출) | 로그인 |
 | GET | `settlements` | 정산 내역 | SELLER |
 | GET | `notifications` | 알림 목록 | 로그인 |
 | GET | `notifications/unreadCount` | 안 읽은 수 | 로그인 |
 | PATCH | `notifications` | 모두 읽음 | 로그인 |
 | PATCH | `notifications/{id}` | 읽음 | 로그인 |
 | GET | `notifications/subscribe` | SSE 구독 | 로그인 |
+
+#### 인출
+
+회원 지갑 잔액을 member에 등록된 계좌로 보냅니다. 신청 때 member에서 계좌를 조회해 인출 건에 암호문으로 저장하고, 응답과 내역에는 계좌 뒤 4자리만 보냅니다. 한도는 잔액(`balance`) 전체입니다.
+
+| 단계 | 요청 | 동작, 응답 |
+|---|---|---|
+| 인출 신청 | `POST wallet/cashOuts`, 헤더 `Idempotency-Key`(1 ~ 64자), `{ amount }` | 200 `data: { cashOutId, amount, status, accountLast4, balanceAfter }`. 잔액을 바로 차감하고, 지급이 끝나면 `COMPLETED`, 지급이 실패하면 `PENDING`(차감 유지). 같은 키에 같은 금액이면 처음 결과(계좌 조회와 지급을 다시 하지 않음), 같은 키에 다른 금액이면 409 `IDEMPOTENCY_KEY_CONFLICT` |
+| 인출 내역 | `GET wallet/cashOuts?page=&size=` | 200 페이지 `content[]: { cashOutId, amount, status, accountLast4, requestedAt, completedAt }`, 최근 신청 순. 지갑이 없으면 빈 목록 |
+
+거절하면 잔액, 거래 내역, 인출 건이 바뀌지 않습니다.
+
+| 상황 | 응답 |
+|---|---|
+| `Idempotency-Key` 헤더 없음 | 400 `MISSING_HEADER` |
+| 키가 비었거나 64자 초과 | 400 `INVALID_IDEMPOTENCY_KEY` |
+| 금액이 0 이하이거나 원 단위가 아님 | 400 `INVALID_AMOUNT` |
+| 계좌 없음 (member 404) | 404 `CASH_OUT_ACCOUNT_NOT_FOUND` |
+| 계좌 조회 실패 (연결 실패, 타임아웃, 그 밖의 에러 응답) | 503 `ACCOUNT_LOOKUP_FAILED` |
+| 잔액보다 큰 금액, 지갑 없음 | 400 `CASH_OUT_LIMIT_EXCEEDED` |
+| 미수금 남음 | 409 `RECEIVABLE_REMAINING` |
 
 ## 추가 예정
 
@@ -199,7 +222,6 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 |---|---|---|
 | market | 반품 신청 (사유) · 판매자 승인 · 거절 | 노션 7절 |
 | market | 리뷰 작성 · 삭제 · 판매자 리뷰 목록 (태그 집계) | 노션 6절 |
-| payment | 인출 | 노션 4.6 |
 | notification | `GET notifications?read=` (커서 페이지네이션) | 삭제 API 없음 |
 | ai | 챗봇 | ⬜ 범위 보류 |
 

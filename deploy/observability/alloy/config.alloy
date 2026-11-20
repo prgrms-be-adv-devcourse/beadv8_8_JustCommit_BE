@@ -1,12 +1,43 @@
 // 앱 서버(10.0.7.76) Alloy 설정 (#301). docs/infra/observability.md
-// 앱 서버의 로그 · 지표를 모아 데이터 서버(10.0.7.79)로 보낸다. 앱 서버에는 들어오는 포트를 열지 않는다.
+// 앱 서버의 로그 · 지표 · 추적을 모아 데이터 서버(10.0.7.79)로 보낸다.
+// 바깥(인터넷 · 다른 서버)에서 들어오는 포트는 열지 않는다. 추적 받는 4318은 이 서버 사설 IP에만 열어 서비스 · 파드만 보낸다.
 //
 //   compose 컨테이너 로그 ─┐
 //   K3s 파드 로그 ─────────┴─▶ loki.write ──▶ Loki 10.0.7.79:3100
 //   서비스 /actuator/prometheus ─┐
 //   앱 서버 CPU · 메모리 · steal ─┴─▶ remote_write ──▶ Prometheus 10.0.7.79:9090
+//   서비스 추적(OTLP HTTP 4318) ──▶ otelcol ──▶ Tempo 10.0.7.79:4317
 //
 // 라벨: server(app) · service(member · market 등) · pod(K3s만)
+
+// ===================== 추적 (ADR 0027) =====================
+// 서비스(compose · K3s 파드)가 OTLP_TRACING_ENDPOINT=http://10.0.7.76:4318/v1/traces 로 보낸다
+
+otelcol.receiver.otlp "services" {
+  http {
+    endpoint = "10.0.7.76:4318"
+  }
+
+  output {
+    traces = [otelcol.processor.batch.traces.input]
+  }
+}
+
+// 하나씩 보내지 않고 모아서 보낸다
+otelcol.processor.batch "traces" {
+  output {
+    traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "10.0.7.79:4317"
+    tls {
+      insecure = true // 사설망 안 (보안 그룹이 앱 서버에서 오는 4317만 허용)
+    }
+  }
+}
 
 // ===================== 보내는 곳 =====================
 

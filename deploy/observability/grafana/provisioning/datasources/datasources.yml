@@ -14,3 +14,29 @@ datasources:
     type: loki
     access: proxy
     url: http://loki:3100
+    # 로그 줄의 traceId를 눌러 Tempo 추적으로 이동 (Spring Boot 4 로그의 [traceId-spanId])
+    # $$는 Grafana 파일 등록에서 「글자 그대로의 $」 (환경변수로 바꾸지 않게)
+    jsonData:
+      derivedFields:
+        - name: traceId
+          matcherRegex: '\[([0-9a-f]{32})-[0-9a-f]{16}\]'
+          datasourceUid: tempo
+          url: '$${__value.raw}'
+          urlDisplayLabel: Tempo에서 보기
+
+  # 분산 추적 (ADR 0027). 추적 화면에서 같은 traceId의 로그(Loki)로 이동
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        filterByTraceID: false
+        customQuery: true
+        query: '{server="app"} |= "$${__trace.traceId}"'
+      nodeGraph:
+        enabled: true
