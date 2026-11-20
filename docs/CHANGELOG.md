@@ -7,7 +7,7 @@
 
 ## 기록
 
-- 2026-11-20 · services/settlement.md · reference/internal-apis.md · settlement 탈퇴 확인 내부 API 구현: `GET /internal/v1/settlements/members/{memberId}/withdrawalCheck`, 판매자의 `PENDING`, `FAILED` 정산 수로 `INCOMPLETE_SETTLEMENT` 판정(0원 정산, 음수 정산 포함, 읽기 전용, 잠그지 않음), `details.incompleteSettlementCount`, 정산 기록이 없는 회원은 차단 없음, 정책 「탈퇴」 행을 구현과 맞춤 (#441)
+- 2026-11-20 · services/settlement.md · reference/internal-apis.md · settlement 탈퇴 확인 내부 API 구현: `GET /internal/v1/settlements/members/{memberId}/withdrawalCheck`, 판매자의 `PENDING`, `FAILED` 정산 수로 `INCOMPLETE_SETTLEMENT` 판정(0원 정산, 음수 정산 포함, 읽기 전용, 잠그지 않음), `details.incompleteSettlementCount`, 정산 기록이 없는 회원은 차단 없음, 정책 「탈퇴」 행을 구현과 맞춤 (#441) (#603)
 - 2026-11-20 · glossary.md · 취소 완료(환불 확정)도 판매자 주문 종료 판정을 부름: 취소 중 상품이 마지막 미완료 상품이면 그때 정산 이벤트를 보내고, 다른 판매자 주문이 먼저 끝났어도 주문이 `PAID`에 남지 않음 (#383) (#593)
 - 2026-11-20 · flows/cancel-refund.md · 반품 배송비를 3,000원 고정에서 그 판매자 주문의 배송비(주문 때 요금표로 계산해 저장한 값, #592 지역 할증 포함)로 바꿈 (#383) (#593)
 - 2026-11-20 · reference/kafka-topics.md · `SellerOrderReturned` 구독자 settlement를 ⬜ #432로 표시 (settlement 리스너가 아직 받지 않음) (#383) (#593)
