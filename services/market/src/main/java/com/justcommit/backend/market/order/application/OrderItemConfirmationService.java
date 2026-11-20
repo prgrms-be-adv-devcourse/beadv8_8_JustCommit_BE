@@ -98,7 +98,7 @@ public class OrderItemConfirmationService {
             throw new BusinessException(OrderErrorCode.SHIPMENT_NOT_DELIVERED);
         }
         if (automatic && (shipmentResult.deliveredAt() == null
-                || shipmentResult.deliveredAt().isAfter(LocalDateTime.now().minusDays(3)))) {
+                || OrdersItem.isWithinReturnPeriod(shipmentResult.deliveredAt(), LocalDateTime.now()))) {
             return;
         }
 
@@ -137,11 +137,14 @@ public class OrderItemConfirmationService {
         return names.size() == 1 ? names.get(0) : names.get(0) + " 외 " + (names.size() - 1) + "건";
     }
 
-    // 아직 끝나지 않은 주문상품: 수락 대기, 일반, 반품 요청, 환불 결과를 기다리는 취소 중, 확인 필요 (#282, #284).
+    // 아직 끝나지 않은 주문상품: 수락 대기, 일반, 환불 결과를 기다리는 취소 중, 확인 필요 (#282, #284),
+    // 반품 진행 중(신청, 배송 중, 환불 중, #382). 반품 완료는 끝난 상태다.
     // 취소 중은 택배 취소가 거절되면 일반으로 돌아오므로 판매자 주문, 주문을 끝내지 않는다
     private static boolean isUnfinished(OrdersItem item) {
-        return item.getStatus() == OrderItemStatus.ACCEPT_PENDING || item.getStatus() == OrderItemStatus.NORMAL || item.getStatus() == OrderItemStatus.REFUND_REQUESTED
-                || item.getStatus() == OrderItemStatus.CANCEL_PROCESSING || item.getStatus() == OrderItemStatus.REVIEW_REQUIRED;
+        return item.getStatus() == OrderItemStatus.ACCEPT_PENDING || item.getStatus() == OrderItemStatus.NORMAL
+                || item.getStatus() == OrderItemStatus.CANCEL_PROCESSING || item.getStatus() == OrderItemStatus.REVIEW_REQUIRED
+                || item.getStatus() == OrderItemStatus.RETURN_REQUESTED || item.getStatus() == OrderItemStatus.RETURN_IN_TRANSIT
+                || item.getStatus() == OrderItemStatus.RETURN_PROCESSING;
     }
 
     private void updateOrderStatus(Orders orders) {

@@ -24,8 +24,13 @@ public class Shipment extends BaseTimeEntity {
     // last_error 칸 길이 (V7)
     static final int LAST_ERROR_MAX_LENGTH = 500;
 
-    @Column(unique = true, nullable = false)
+    // 가는 길 배송만 판매자 주문당 1개 (V10 부분 유니크 인덱스 uk_shipment_seller_order_id_outbound)
+    @Column(nullable = false)
     private Long sellerOrderId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private ShipmentDirection direction;
 
     @Column(unique = true, length = 30)
     private String courierOrderNo;
@@ -73,6 +78,7 @@ public class Shipment extends BaseTimeEntity {
     public Shipment(Long sellerOrderId, String itemSummary) {
         this.sellerOrderId = sellerOrderId;
         this.itemSummary = itemSummary;
+        this.direction = ShipmentDirection.OUTBOUND;
         this.status = ShipmentStatus.READY;
     }
 

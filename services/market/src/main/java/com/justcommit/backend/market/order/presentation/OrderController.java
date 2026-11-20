@@ -116,6 +116,18 @@ public class OrderController {
         return ResponseEntity.ok().build();
     }
 
+    // 구매자 반품 신청 (#382): 배송 완료 뒤 반품 기간 안에 주문상품 하나씩
+    @PostMapping("/items/{orderItemId}/return")
+    public ResponseEntity<Void> requestReturn(@AuthenticationPrincipal AuthMember member, @PathVariable Long orderItemId,
+                                              @Valid @RequestBody ReturnRequestCreateRequest request) {
+        if (member == null) {
+            throw new BusinessException(OrderErrorCode.AUTH_REQUIRED);
+        }
+        orderService.requestReturn(member.memberId(), orderItemId, request.reason(), request.reasonDetail());
+
+        return ResponseEntity.ok().build();
+    }
+
     @PostMapping("/items/{orderItemId}/confirm")
     public ResponseEntity<Void> confirm(@AuthenticationPrincipal AuthMember member, @PathVariable Long orderItemId) {
         if (member == null) {

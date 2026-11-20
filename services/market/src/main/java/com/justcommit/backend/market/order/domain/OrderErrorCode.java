@@ -28,7 +28,10 @@ public enum OrderErrorCode implements ErrorCode {
     CHECKOUT_DATA_MISMATCH(HttpStatus.CONFLICT, "주문에 필요한 정보가 일치하지 않습니다."),
     WITHDRAWN_MEMBER(HttpStatus.FORBIDDEN, "탈퇴한 회원은 주문할 수 없습니다."),
     SELLER_ORDER_NOT_ACCEPTABLE(HttpStatus.CONFLICT, "수락 대기 중인 주문 상품이 없거나 이미 처리되었습니다."),
-    INVALID_REJECT_ITEMS(HttpStatus.BAD_REQUEST, "거절할 주문 상품이 이 판매자 주문에 없습니다.");
+    INVALID_REJECT_ITEMS(HttpStatus.BAD_REQUEST, "거절할 주문 상품이 이 판매자 주문에 없습니다."),
+    RETURN_NOT_REQUESTABLE(HttpStatus.CONFLICT, "반품을 신청할 수 없는 주문 상품입니다."),
+    RETURN_PERIOD_EXPIRED(HttpStatus.CONFLICT, "반품 신청 기간이 지났습니다."),
+    RETURN_ALREADY_REQUESTED(HttpStatus.CONFLICT, "이미 반품을 신청한 주문 상품입니다.");
 
     private final HttpStatus status;
     private final String message;

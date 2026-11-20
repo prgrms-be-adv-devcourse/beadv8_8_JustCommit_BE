@@ -73,13 +73,16 @@ public class SellerOrder extends BaseTimeEntity {
 
     // 정산 기준액 = 취소되지 않은 주문상품 금액. 수락 대기도 결제된 유효 상품이라 포함한다 (#284).
     // 빼면 결제 직후 판매자 주문이 0원(미정산 대상, 전부 취소와 같은 값)으로 보이고 수락할 때마다 다시 계산해야 한다.
-    // 구매 확정은 배송 완료 뒤라 그 시점에 수락 대기 상품은 남아 있지 않다
+    // 구매 확정은 배송 완료 뒤라 그 시점에 수락 대기 상품은 남아 있지 않다.
+    // 반품 진행 중(신청, 배송 중, 환불 중)은 거절되면 구매 확정되므로 포함하고, 반품 완료는 환불됐으므로 뺀다 (#382)
     public void calculateSettlementBaseAmount() {
         this.settlementBaseAmount = this.items.stream()
                 .filter(i->
                         i.getStatus().equals(OrderItemStatus.ACCEPT_PENDING)
                                 || i.getStatus().equals(OrderItemStatus.NORMAL)
-                                || i.getStatus().equals(OrderItemStatus.REFUND_REQUESTED)
+                                || i.getStatus().equals(OrderItemStatus.RETURN_REQUESTED)
+                                || i.getStatus().equals(OrderItemStatus.RETURN_IN_TRANSIT)
+                                || i.getStatus().equals(OrderItemStatus.RETURN_PROCESSING)
                                 || i.getStatus().equals(OrderItemStatus.CONFIRMED))
                 .map(OrdersItem::getPrice).reduce(BigDecimal.ZERO, BigDecimal::add);
     }

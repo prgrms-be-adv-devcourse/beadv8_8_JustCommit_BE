@@ -21,6 +21,8 @@
 | 수락 마감 | `acceptDeadline` (`SellerOrder.paidAt` 기준) | 수락 기한, 응답 기한 | 판매자가 수락하거나 거절해야 하는 시각. 지나면 자동 거절 | [market 정책](services/market.md#정책) |
 | 자동 거절 | – | 자동 취소 (구매자 알림 문구) | 판매자가 기한 안에 응답하지 않아 거절된 주문 | [market 정책](services/market.md#정책) |
 | 배송 | `Shipment` | 택배, 배송 건 | 판매자 주문 하나의 택배. 반품은 방향이 다른 새 배송 | [market](services/market.md) |
+| 배송 방향 | `direction` (`ShipmentDirection`) | – | 배송이 가는 길인지 반품인지. 판매자 주문 하나에 가는 길 배송은 1개, 반품 배송은 여러 개 | [market](services/market.md) |
+| 가는 길 | `OUTBOUND` (배송 방향) | 정방향, 원래 배송 | 판매자 → 구매자로 가는 배송. 구매 확정 · 취소 · 반품 기간은 가는 길 배송으로 판정 | [market](services/market.md) |
 | 택배 예약 | `BOOKED` | 접수, 택배 접수, 픽업 대기 (화면 표시) | 택배사에 수거를 예약한 상태. 상품 「예약」과 구분해 항상 「택배 예약」으로 씀 | [market 정책](services/market.md#정책) |
 | 수거 | `PICKED_UP` | 픽업, 가져감, 집하 | 택배사가 상품을 가져간 상태. 이후에는 취소 대신 반품 | [market 정책](services/market.md#정책) |
 | 배송 완료 | `DELIVERED` | 도착 | 구매자에게 도착한 상태. 자동 구매 확정 · 반품 기간의 기준 시점 | [market 정책](services/market.md#정책) |
@@ -36,9 +38,12 @@
 | 취소 중 | `CANCEL_PROCESSING` (주문상품) | 환불 확인 중 | 환불 결과를 모르는 주문상품. 환불이 확정되면 취소 완료 | [취소 · 환불](flows/cancel-refund.md#실패와-재시도) |
 | 환불 | `refunds/*` (payment) | 돈 돌려주기, 결제 취소 | **돈**이 주체. 결제한 돈을 구매자에게 돌려주는 것. 원인은 수거 전 취소 · 판매자 거절 · 자동 거절 · 반품 완료 | [payment](services/payment.md#정책) |
 | 반품 | `Return*` · `OrderItemReturned` | 환불 요청, 반품 요청, 교환 | **물건(택배)**이 주체. 받은 상품을 판매자에게 택배로 돌려보내는 절차. 끝나면 그 결과로 환불 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
-| 반품 신청 | `ReturnRequested` | 환불 요청 | 배송 완료 후 판매자 귀책으로 상품을 돌려보내겠다는 요청 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 신청 | `ReturnRequest` (`return_request`) · `RETURN_REQUESTED` (주문상품) · `ReturnRequested` | 환불 요청 | 배송 완료 후 판매자 귀책으로 상품을 돌려보내겠다는 요청 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 승인 · 거절 (반품) | `ReturnApproved` · `ReturnRejected` | 수락 (반품에는 안 씀) | 판매자가 반품을 받아들이거나 거절. 거절하면 그 주문상품은 바로 구매 확정 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
-| 반품 완료 | `OrderItemReturned` (반품 환불 뒤 발행) | 반품 도착 | 반품 택배가 판매자에게 도착한 것. 이때 환불이 일어남 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 사유 | `ReturnReason` (`DAMAGED`, `NOT_AS_DESCRIBED`, `OTHER`) | 반품 원인 | 반품 신청 때 고르는 판매자 귀책 사유 (상품 파손, 설명과 다름, 기타). 기타면 직접 작성 내용 필수 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 배송 중 | `RETURN_IN_TRANSIT` (주문상품) | 반품 수거 중 | 반품이 승인돼 반품 택배가 판매자에게 가는 중인 주문상품 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 환불 중 | `RETURN_PROCESSING` (주문상품) | 반품 도착, 반품 환불 확인 중 | 반품 택배가 판매자에게 도착했고 환불 결과를 기다리는 주문상품 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 완료 | `RETURNED` (주문상품) · `OrderItemReturned` (반품 환불 뒤 발행) | – | 반품 환불이 확정돼 반품이 끝난 것. 택배사 `RETURNED`(반송)와 다름 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 판매자 부담금 | – | 반품비, 왕복 택배비 | 반품 때 판매자가 내는 배송비 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 
 ## 돈

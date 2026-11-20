@@ -1,6 +1,7 @@
 package com.justcommit.backend.market.shipment.application;
 
 import com.justcommit.backend.market.shipment.domain.Shipment;
+import com.justcommit.backend.market.shipment.domain.ShipmentDirection;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,7 @@ class ShipmentQueryServiceTest {
         ReflectionTestUtils.setField(shipment, "status", ShipmentStatus.DELIVERED);
         LocalDateTime deliveredAt = LocalDateTime.of(2026, 10, 12, 13, 0);
         ReflectionTestUtils.setField(shipment, "deliveredAt", deliveredAt);
-        when(shipmentRepository.findBySellerOrderIdIn(List.of(7L, 8L))).thenReturn(List.of(shipment));
+        when(shipmentRepository.findBySellerOrderIdInAndDirection(List.of(7L, 8L), ShipmentDirection.OUTBOUND)).thenReturn(List.of(shipment));
 
         var result = shipmentQueryService.findBySellerOrderIds(List.of(7L, 8L));
 
@@ -58,7 +59,7 @@ class ShipmentQueryServiceTest {
         ReflectionTestUtils.setField(shipment, "bookedAt", LocalDateTime.of(2026, 10, 12, 10, 0));
         ReflectionTestUtils.setField(shipment, "pickedUpAt", LocalDateTime.of(2026, 10, 12, 10, 3));
         ReflectionTestUtils.setField(shipment, "inTransitAt", LocalDateTime.of(2026, 10, 12, 10, 5));
-        when(shipmentRepository.findBySellerOrderId(7L)).thenReturn(Optional.of(shipment));
+        when(shipmentRepository.findBySellerOrderIdAndDirection(7L, ShipmentDirection.OUTBOUND)).thenReturn(Optional.of(shipment));
 
         var result = shipmentQueryService.findBySellerOrderId(7L);
 
@@ -73,7 +74,7 @@ class ShipmentQueryServiceTest {
 
     @Test
     void returnsNullWhenShipmentDoesNotExist() {
-        when(shipmentRepository.findBySellerOrderId(7L)).thenReturn(Optional.empty());
+        when(shipmentRepository.findBySellerOrderIdAndDirection(7L, ShipmentDirection.OUTBOUND)).thenReturn(Optional.empty());
 
         assertThat(shipmentQueryService.findBySellerOrderId(7L)).isNull();
     }
