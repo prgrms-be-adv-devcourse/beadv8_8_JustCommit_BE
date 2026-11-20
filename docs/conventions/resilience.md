@@ -34,7 +34,7 @@
 | member → market · payment · settlement (탈퇴 확인) | 1초 / 3초, **병렬** | 연결 실패만 1회 | Fail-closed: 탈퇴 막음. 최악 약 5.2초(연결 1 + 쉼 0.2 + 재연결 1 + 응답 3). 그 뒤 카카오 연결 해제(최악 4초)까지 이어져 탈퇴 POST는 Gateway 전용 라우트 20초 |
 | member → 카카오 연결 해제 (탈퇴) | 1초 / 3초 | 없음 | 탈퇴 막음(503 `SOCIAL_UNLINK_FAILED`). 탈퇴 토큰은 이미 소모돼 재인증 후 다시 시도. 이미 해제된 회원의 `-101`은 성공으로 처리 (DB의 `provider_id`로 부른 연결 해제 응답에만) |
 | market → ai 추천 | 1초 / 2초 | 연결 실패만 1회 (common-web 공통, 최악 약 4.2초) | 빈 목록 (장바구니 조회는 영향 없음, 화면은 최신 상품으로 대신 → [ADR 0029](../decisions/0029-cart-recommendation-latest-fallback-on-screen.md)) |
-| product → OpenSearch | 1초 / 2초 | 1회 | DB LIKE 검색으로 대신 (관련도 · 오타 허용 · 한국어 분석 없음) |
+| product → OpenSearch | 1초 / 2초, 연결 풀 · 동시 검색 상한 20, 자리 대기 0.2초 | 연결 실패만 1회 | DB LIKE 검색으로 대신 (관련도 · 오타 허용 · 한국어 분석 없음). 응답 없이 멈춰도 최대 약 2초, 상한이 차면 0.2초 뒤 대신 (#574) |
 | product → OpenAI Moderation · Claude Haiku (사진 검수) | 🟨 3초 / 20초 | 비동기 최대 3회 | 자동 통과 · 자동 반려 없이 관리자 확인 |
 | ai → OpenAI 임베딩 (재임베딩 운영 API) | ⬜ 미정 (따로 설정 안 함) | ⬜ 미정 | ⬜ 미정 |
 | payment → 토스페이먼츠 | 3초 / 60초 | 없음 | 결과 불명 → `PENDING` 유지, 결제 조회로 `APPROVED`, `FAILED`, `REVIEW_REQUIRED` 중 하나로 확정 → [스케줄러 표](../reference/schedulers.md) |

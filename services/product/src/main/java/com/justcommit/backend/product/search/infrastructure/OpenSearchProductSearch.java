@@ -6,10 +6,15 @@ import com.justcommit.backend.product.search.application.ProductSearchSort;
 import com.justcommit.backend.product.search.application.ProductSearchUnavailableException;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.net.ConnectException;
 import java.util.ArrayList;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
+import java.time.Duration;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.hc.client5.http.ConnectTimeoutException;
 import org.opensearch.client.json.JsonData;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch._types.FieldValue;
@@ -20,6 +25,8 @@ import org.opensearch.client.opensearch._types.query_dsl.Operator;
 import org.opensearch.client.opensearch._types.query_dsl.Query;
 import org.opensearch.client.opensearch.core.SearchRequest;
 import org.opensearch.client.opensearch.core.SearchResponse;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -35,12 +42,21 @@ import org.springframework.stereotype.Component;
  * ({@code AUTO:3,6}: 1 ~ 2글자는 정확히, 3 ~ 5글자는 1글자, 6글자 이상은 2글자). 오타 허용은 정확히 맞는 것보다
  * 점수가 낮도록 가중치를 절반으로 둔다. 설명은 길어 엉뚱한 단어가 걸리기 쉬워 오타를 허용하지 않는다.
  *
- * <p>연결 실패 · 시간 초과는 1번 더 보낸다 (docs/conventions/resilience.md product → OpenSearch 재시도 1회).
- * 그래도 실패하거나 OpenSearch가 오류로 답하면 {@link ProductSearchUnavailableException} (서비스가 LIKE로 대신).
+ * <p>실패 처리 (docs/conventions/resilience.md product → OpenSearch, #574):
+ * <ul>
+ *   <li>연결 실패(거부 · 연결 시간 초과): 요청이 도착하지 않았으므로 1번 더 보낸다.</li>
+ *   <li>읽기 시간 초과 · 연결 끊김: 다시 보내도 같을 가능성이 커서 바로 포기 (다시 보내면 대체까지 2배로 기다림).</li>
+ *   <li>연결 풀이 가득 차 빌리기 대기 시간을 넘김: OpenSearch가 이미 밀리고 있다는 뜻이라 바로 포기.</li>
+ *   <li>OpenSearch가 오류로 답함: 바로 포기.</li>
+ * </ul>
+ * 포기하면 {@link ProductSearchUnavailableException} (서비스가 LIKE로 대신).
+ *
+ * <p>동시에 OpenSearch를 기다리는 검색은 연결 풀 크기까지만 둔다 (#574). 자리가 없으면 빌리기 대기 시간만 기다리고 LIKE로.
+ * HttpClient 비동기 풀은 빌리기 대기 시간이 지났는지를 연결이 반납될 때만 확인해서, 응답 없는 OpenSearch에서는
+ * 0.2초가 아니라 읽기 시간 초과(2초)까지 기다리게 되기 때문. 이 상한이 OpenSearch 때문에 묶이는 요청 스레드 수의 상한이 된다.
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class OpenSearchProductSearch implements ProductKeywordSearch {
 
     static final float TITLE_BOOST = 3f;
@@ -55,6 +71,22 @@ public class OpenSearchProductSearch implements ProductKeywordSearch {
     static final int MAX_RESULT_WINDOW = 10_000;
 
     private final OpenSearchClient client;
+    private final Semaphore inFlight;
+    private final Duration permitWait;
+
+    @Autowired
+    public OpenSearchProductSearch(OpenSearchClient client,
+                                   @Value("${custom.search.opensearch.max-connections}") int maxConcurrent,
+                                   @Value("${custom.search.opensearch.connection-request-timeout}") Duration permitWait) {
+        this.client = client;
+        this.inFlight = new Semaphore(maxConcurrent);
+        this.permitWait = permitWait;
+    }
+
+    // 테스트용: 동시 검색 상한 · 대기는 운영 기본값
+    public OpenSearchProductSearch(OpenSearchClient client) {
+        this(client, OpenSearchConfig.DEFAULT_MAX_CONNECTIONS, OpenSearchConfig.DEFAULT_CONNECTION_REQUEST_TIMEOUT);
+    }
 
     @Override
     public Result search(Condition condition, ProductSearchSort sort, int page, int size) {
@@ -78,18 +110,48 @@ public class OpenSearchProductSearch implements ProductKeywordSearch {
     }
 
     private SearchResponse<ProductDocument> execute(SearchRequest request) {
+        acquire();
+        try {
+            return executeWithRetry(request);
+        } finally {
+            inFlight.release();
+        }
+    }
+
+    private void acquire() {
+        try {
+            if (!inFlight.tryAcquire(permitWait.toMillis(), TimeUnit.MILLISECONDS)) {
+                throw new ProductSearchUnavailableException("OpenSearch 동시 검색 상한 초과", null);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ProductSearchUnavailableException("OpenSearch 검색 대기 중 중단", e);
+        }
+    }
+
+    private SearchResponse<ProductDocument> executeWithRetry(SearchRequest request) {
         for (int attempt = 1; ; attempt++) {
             try {
                 return client.search(request, ProductDocument.class);
-            } catch (IOException e) {
-                // 연결 실패 · 읽기 시간 초과 (HTTP 클라이언트가 IOException으로 줌)
+            } catch (ConnectException | ConnectTimeoutException e) {
+                // 연결 실패: 요청이 OpenSearch에 닿지 않았으므로 다시 보내도 안전
                 if (attempt >= MAX_ATTEMPTS) {
                     throw new ProductSearchUnavailableException("OpenSearch 검색 연결 실패", e);
                 }
-                log.info("OpenSearch 검색 실패, 한 번 더 보냄: {}", e.toString());
+                log.info("OpenSearch 연결 실패, 한 번 더 보냄: {}", e.toString());
+            } catch (IOException e) {
+                // 읽기 시간 초과(SocketTimeoutException) · 연결 끊김. 응답 없이 멈춘 OpenSearch에 다시 보내면 또 기다리기만 함
+                throw new ProductSearchUnavailableException("OpenSearch 검색 응답 없음", e);
             } catch (OpenSearchException e) {
                 // OpenSearch가 오류로 답함 (인덱스 없음 · 서버 오류). 다시 보내도 같을 가능성이 커서 재시도하지 않음
                 throw new ProductSearchUnavailableException("OpenSearch 검색 오류: " + e.error().type(), e);
+            } catch (RuntimeException e) {
+                // 연결 풀이 가득 차 빌리기 대기 시간을 넘기면 HttpClient는 TimeoutException을 주고,
+                // OpenSearch 클라이언트가 이를 RuntimeException으로 감싼다 (IOException이 아님)
+                if (hasCause(e, TimeoutException.class)) {
+                    throw new ProductSearchUnavailableException("OpenSearch 연결 풀 대기 시간 초과", e);
+                }
+                throw e;
             }
         }
     }
@@ -193,5 +255,14 @@ public class OpenSearchProductSearch implements ProductKeywordSearch {
 
     private static SortOptions field(String field, SortOrder order) {
         return SortOptions.of(s -> s.field(f -> f.field(field).order(order)));
+    }
+
+    private static boolean hasCause(Throwable error, Class<? extends Throwable> type) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (type.isInstance(cause)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

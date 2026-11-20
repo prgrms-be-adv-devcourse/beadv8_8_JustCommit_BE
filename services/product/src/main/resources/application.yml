@@ -43,6 +43,9 @@ custom:
       url: ${OPENSEARCH_URL:http://localhost:9200}
       connect-timeout: 1s
       read-timeout: 2s
+      # 연결 풀 크기 · 풀에서 연결을 빌리려고 기다리는 시간 (넘으면 바로 LIKE로 대신, #574)
+      max-connections: 20
+      connection-request-timeout: 200ms
   image:
     base-url: ${S3_PUBLIC_BASE_URL:http://localhost:9000/team06-replant-images}
   s3:
