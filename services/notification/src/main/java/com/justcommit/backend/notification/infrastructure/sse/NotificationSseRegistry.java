@@ -1,5 +1,6 @@
 package com.justcommit.backend.notification.infrastructure.sse;
 
+import com.justcommit.backend.notification.domain.RecipientRole;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -7,8 +8,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter.SseEventBuilder;
 
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -21,12 +24,17 @@ public class NotificationSseRegistry {
     private static final String UNREAD_EVENT = "unread";
 
     private final Map<Long, List<SseEmitter>> emitters = new ConcurrentHashMap<>();
+    // 연결한 회원의 역할 알림 역할 (관리자면 ADMIN). 역할 알림이 오면 이 역할로 연결한 회원 모두에게 보낸다 (#561)
+    private final Map<Long, RecipientRole> roles = new ConcurrentHashMap<>();
 
-    // 연결을 등록하고, 지금 안 읽은 알림 수를 그 연결에만 바로 보낸다.
-    public void add(Long memberId, SseEmitter emitter, long unreadCount) {
+    // 연결을 등록하고, 지금 안 읽은 알림 수를 그 연결에만 바로 보낸다. role은 역할 알림을 받지 않는 회원이면 null
+    public void add(Long memberId, RecipientRole role, SseEmitter emitter, long unreadCount) {
         emitters.compute(memberId, (id, list) -> {
             List<SseEmitter> connections = (list == null) ? new CopyOnWriteArrayList<>() : list;
             connections.add(emitter);
+            if (role != null) {
+                roles.put(memberId, role);
+            }
             return connections;
         });
         emitter.onCompletion(() -> remove(memberId, emitter));
@@ -41,6 +49,22 @@ public class NotificationSseRegistry {
 
     public boolean hasConnection(Long memberId) {
         return emitters.containsKey(memberId);
+    }
+
+    // 연결할 때 기억한 역할 (역할 알림을 받지 않으면 null)
+    public RecipientRole roleOf(Long memberId) {
+        return roles.get(memberId);
+    }
+
+    // 이 역할로 연결 중인 회원들
+    public Set<Long> membersWithRole(RecipientRole role) {
+        Set<Long> members = new HashSet<>();
+        roles.forEach((memberId, memberRole) -> {
+            if (memberRole == role) {
+                members.add(memberId);
+            }
+        });
+        return members;
     }
 
     // 그 회원의 모든 탭에 안 읽은 알림 수를 보낸다. 연결이 없으면 아무것도 하지 않는다.
@@ -70,7 +94,11 @@ public class NotificationSseRegistry {
     private void remove(Long memberId, SseEmitter emitter) {
         emitters.computeIfPresent(memberId, (id, connections) -> {
             connections.remove(emitter);
-            return connections.isEmpty() ? null : connections;
+            if (connections.isEmpty()) {
+                roles.remove(memberId);
+                return null;
+            }
+            return connections;
         });
     }
 

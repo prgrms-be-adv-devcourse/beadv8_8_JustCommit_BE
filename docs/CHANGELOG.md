@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-19 · services/notification.md · reference/kafka-topics.md · flows/image-review.md · reference/env-vars.md · notification 이벤트 구독 연결: `market.events.v1` · `product.events.v1`을 봉투 `eventType`으로 받음(옛 개별 토픽 구독 제거, 처음 붙을 때 `latest`), 구매자 일부 취소 · 검수 통과 · 반려 판매자 알림 추가(`NOTIFICATION.product_id`, V2), 관리자 검수 지연 `ImageReviewDelayed`는 `recipient_role = ADMIN` 알림 1건 · 읽음 공유 · `ADMIN_REVIEW_DELAYED:{eventId}`(V3, `member_id` NULL 허용), `KAFKA_LISTENER_AUTO_STARTUP` 기본 켜짐. 수락 · 거절은 market 발행 전이라 이름 연결만, 정산 완료는 발행 뒤 (#561) (#567)
 - 2026-11-20 · reference/internal-apis.md · reference/env-vars.md · 계좌 조회 payment 연동 표시를 ✅ #387로 다시 맞춤(develop 병합 때 #388로 돌아감), 인출 계좌번호 암호화 키를 결제키와 나눠 `CASH_OUT_ACCOUNT_ENCRYPTION_KEY` 추가, `TOSS_SECRET_KEY`와 `PAYMENT_KEY_ENCRYPTION_KEY` 행 분리 (#387)
 - 2026-11-20 · services/payment.md · 회원 이벤트 구독 구현 표시: `member.events.v1`을 받아 `MEMBER_REPLICA`에 조건부 upsert(저장된 `occurredAt`보다 오래된 이벤트 무시, 탈퇴 표시는 되살리지 않음), `MemberCreated`면 회원 지갑을 `on conflict (member_id) do nothing`으로 생성(V5 `member_replica`, 컨슈머 그룹 `payment`) (#387) (#573) 
 - 2026-11-20 · reference/external-apis.md · reference/internal-apis.md · services/member.md · services/payment.md · reference/env-vars.md · testing/scenarios.md · 인출 구현 반영: `POST wallet/cashOuts`(`Idempotency-Key` 필수, 같은 키에 다른 금액은 409)와 `GET wallet/cashOuts` 확정, 「추가 예정」의 인출 행 삭제, 계좌 조회 연동을 #387로(✅), 인출 정책에서 「실패하면 복원」 삭제(지급 실패는 `PENDING` 유지, 재시도와 복원은 #389), payment 환경변수 `MEMBER_SERVICE_URL`과 `BANK_MODE` 추가, S-G05에 미수금이 있으면 인출 불가 결과 기록 (#387)

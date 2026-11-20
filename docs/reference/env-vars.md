@@ -12,6 +12,7 @@
 | `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` | 모든 서비스 | 서비스마다 다른 DB · 계정. `DB_URL`은 JDBC 주소 전체(예: `jdbc:postgresql://{호스트}:5432/member_db`), 없으면 로컬 `localhost:5432/{서비스}_db` |
 | `KAFKA_BOOTSTRAP_SERVERS` · `SPRING_APPLICATION_NAME` | 모든 서비스 | – |
 | `*_TOPIC` (13개) | 각 서비스 | 도메인 토픽 이름 (`common-messaging` 상수 기본값) |
+| `KAFKA_LISTENER_AUTO_STARTUP` | notification | 이벤트 구독 켜기 · 끄기. 없으면 켜짐(`true`). 급히 알림 생성만 멈춰야 할 때 `false`로 재시작 (#561) |
 | `JWT_PRIVATE_KEY` | member | RS256 개인키 |
 | `JWT_PUBLIC_KEY` | Gateway · 모든 서비스 | 이중 검증용 공개키 |
 | `OAUTH2_STATE_SECRET` | member | 카카오 state 서명 |
