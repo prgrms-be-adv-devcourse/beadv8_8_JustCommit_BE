@@ -50,6 +50,9 @@ custom:
       key-encryption-key: ${PAYMENT_KEY_ENCRYPTION_KEY}
       connect-timeout: 3s
       read-timeout: 60s
+    cash-out:
+      # 인출 계좌번호 암호화 키 (결제키 암호화 키와 다른 값). 없으면 앱이 시작하지 않는다
+      account-encryption-key: ${CASH_OUT_ACCOUNT_ENCRYPTION_KEY}
     # 결과 불명 충전(PENDING) 복구 스케줄러 (#363). 값의 원본은 docs/reference/schedulers.md
     charge-recovery:
       interval: 5m

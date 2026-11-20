@@ -7,7 +7,7 @@ import com.justcommit.backend.payment.domain.RefType;
 import com.justcommit.backend.payment.domain.Wallet;
 import com.justcommit.backend.payment.domain.WalletTransaction;
 import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
-import com.justcommit.backend.payment.infrastructure.crypto.PaymentKeyCipher;
+import com.justcommit.backend.payment.infrastructure.crypto.AccountNoCipher;
 import com.justcommit.backend.payment.infrastructure.repository.CashOutRepository;
 import com.justcommit.backend.payment.infrastructure.repository.WalletRepository;
 import com.justcommit.backend.payment.infrastructure.repository.WalletTransactionRepository;
@@ -32,7 +32,7 @@ public class CashOutService {
     private final WalletRepository walletRepository;
     private final WalletTransactionRepository walletTransactionRepository;
     private final CashOutRepository cashOutRepository;
-    private final PaymentKeyCipher paymentKeyCipher;
+    private final AccountNoCipher accountNoCipher;
     private final Clock clock;
 
     // 잠금 없이 같은 키 인출 건을 찾는다. 금액이 다르면 409
@@ -69,7 +69,7 @@ public class CashOutService {
         wallet.debit(amount);
         CashOut cashOut = cashOutRepository.saveAndFlush(CashOut.pending(
                 wallet.getId(), amount, idempotencyKey, account.bankCode(),
-                paymentKeyCipher.encrypt(account.accountNo()), account.accountLast4(), account.accountHolder(), now));
+                accountNoCipher.encrypt(account.accountNo()), account.accountLast4(), account.accountHolder(), now));
         walletTransactionRepository.save(WalletTransaction.cashOut(wallet, cashOut.getId(), amount, now));
 
         return new RequestOutcome(new CashOutResult(cashOut.getId(), amount, cashOut.getStatus(),

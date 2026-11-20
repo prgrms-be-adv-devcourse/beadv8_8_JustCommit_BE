@@ -16,6 +16,7 @@ import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
 import com.justcommit.backend.payment.infrastructure.bank.BankTransferClient;
 import com.justcommit.backend.payment.infrastructure.bank.BankTransferRequest;
 import com.justcommit.backend.payment.infrastructure.bank.BankTransferResult;
+import com.justcommit.backend.payment.infrastructure.crypto.AccountNoCipher;
 import com.justcommit.backend.payment.infrastructure.crypto.PaymentKeyCipher;
 import com.justcommit.backend.payment.infrastructure.repository.CashOutRepository;
 import com.justcommit.backend.payment.infrastructure.repository.WalletRepository;
@@ -69,7 +70,8 @@ import static org.mockito.Mockito.verify;
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ClockConfig.class, PaymentKeyCipher.class, CashOutService.class, CashOutFacade.class})
+@Import({JpaAuditingConfig.class, ClockConfig.class, AccountNoCipher.class, PaymentKeyCipher.class,
+        CashOutService.class, CashOutFacade.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @ExtendWith(OutputCaptureExtension.class)
@@ -89,6 +91,7 @@ class CashOutIntegrationTest {
     @Autowired CashOutRepository cashOutRepository;
     @Autowired WalletRepository walletRepository;
     @Autowired WalletTransactionRepository walletTransactionRepository;
+    @Autowired AccountNoCipher accountNoCipher;
     @Autowired PaymentKeyCipher paymentKeyCipher;
     @Autowired JdbcTemplate jdbcTemplate;
 
@@ -128,7 +131,10 @@ class CashOutIntegrationTest {
         assertThat(cashOut.getStatus()).isEqualTo(CashOutStatus.COMPLETED);
         assertThat(cashOut.getCompletedAt()).isNotNull();
         assertThat(cashOut.getAccountNoEnc()).doesNotContain(ACCOUNT_NO);
-        assertThat(paymentKeyCipher.decrypt(cashOut.getAccountNoEnc())).isEqualTo(ACCOUNT_NO);
+        assertThat(accountNoCipher.decrypt(cashOut.getAccountNoEnc())).isEqualTo(ACCOUNT_NO);
+        // 계좌번호는 결제키와 다른 키로 암호화한다
+        assertThatThrownBy(() -> paymentKeyCipher.decrypt(cashOut.getAccountNoEnc()))
+                .isInstanceOf(IllegalStateException.class);
         assertThat(cashOut.getBankCode()).isEqualTo("004");
         assertThat(cashOut.getAccountHolder()).isEqualTo("홍길동");
 

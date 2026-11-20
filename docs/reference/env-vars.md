@@ -32,7 +32,9 @@
 | `MAIL_USERNAME` · `MAIL_PASSWORD` | member | Gmail SMTP |
 | `FRONTEND_BASE_URL` · `COOKIE_SECURE` | member | 리다이렉트 · 쿠키 Secure |
 | `ACCOUNT_ENCRYPTION_KEY` · `MEMBER_HMAC_KEY` | member | 계좌 암호화(AES) · 회원 정보 HMAC(계좌 중복 확인, 탈퇴 기록의 이메일 · 휴대폰 HMAC. 입력 앞 용도 접두사 `account:` · `email:` · `phone:`로 구분). 둘 다 32바이트 Base64 · 서로 다른 값 · 기본값 없음(없으면 시작 실패). 운영은 배포 전에 인프라 담당이 주입 |
-| `TOSS_SECRET_KEY` · `PAYMENT_KEY_ENCRYPTION_KEY` | payment | 토스페이먼츠 |
+| `TOSS_SECRET_KEY` | payment | 토스페이먼츠 승인, 조회 |
+| `PAYMENT_KEY_ENCRYPTION_KEY` | payment | 토스 결제키(`charge.pg_payment_key_enc`) 암호화(AES-GCM). 32바이트 Base64, 기본값 없음(없으면 payment가 시작하지 않음) |
+| `CASH_OUT_ACCOUNT_ENCRYPTION_KEY` | payment | 인출 계좌번호(`cash_out.account_no_enc`) 암호화(AES-GCM). `PAYMENT_KEY_ENCRYPTION_KEY`와 다른 값, 32바이트 Base64, 기본값 없음(없으면 payment가 시작하지 않음). 운영은 `deploy/scripts/make-env.sh`가 만들어 `payment.env`에 넣음 |
 | `COURIER_BASE_URL` · `COURIER_API_KEY` · `WEBHOOK_API_KEY` | market | 모의 택배사 · 웹훅 |
 | `AWS_REGION` · S3 버킷 | product | 사진 업로드 (자격 증명은 EC2 IAM 역할) |
 | `OPENAI_API_KEY` | product | OpenAI Moderation (사진 · 글 유해 검사). 없으면 검수가 관리자 확인으로 |

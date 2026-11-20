@@ -49,6 +49,7 @@ add_shared MEMBER_ADDRESS_EVENT_KEY    "openssl rand -base64 32"
 add_shared ACCOUNT_ENCRYPTION_KEY      "openssl rand -base64 32"
 add_shared MEMBER_HMAC_KEY             "openssl rand -base64 32"
 add_shared PAYMENT_KEY_ENCRYPTION_KEY  "openssl rand -base64 32"
+add_shared CASH_OUT_ACCOUNT_ENCRYPTION_KEY "openssl rand -base64 32"  # 인출 계좌번호 (결제키와 다른 키, #387)
 add_shared OAUTH2_STATE_SECRET         "openssl rand -base64 32"
 
 # 2) JWT RS256 키 한 쌍: 없을 때만 만든다. env에는 PEM 머리말을 뺀 한 줄 Base64로 넣는다
@@ -128,6 +129,7 @@ write() { cat > "$S/$1.env"; chmod 600 "$S/$1.env"; echo "  작성: $1.env"; }
   echo "INTERNAL_API_KEY=$(sh_ INTERNAL_API_KEY)"
   echo "TOSS_SECRET_KEY=$(ext TOSS_SECRET_KEY)"
   echo "PAYMENT_KEY_ENCRYPTION_KEY=$(sh_ PAYMENT_KEY_ENCRYPTION_KEY)"
+  echo "CASH_OUT_ACCOUNT_ENCRYPTION_KEY=$(sh_ CASH_OUT_ACCOUNT_ENCRYPTION_KEY)"
 } | write payment
 
 {
