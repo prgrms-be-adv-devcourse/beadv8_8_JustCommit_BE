@@ -88,6 +88,8 @@ services:
     image: ghcr.io/prgrms-be-adv-devcourse/replant-payment:${PAYMENT_TAG:-latest}
     container_name: replant-payment
     env_file: ${HOME}/secrets/payment.env
+    environment:
+      MEMBER_SERVICE_URL: http://member:8080
     ports:
       - "10.0.7.76:8084:8080"
     mem_limit: 512m

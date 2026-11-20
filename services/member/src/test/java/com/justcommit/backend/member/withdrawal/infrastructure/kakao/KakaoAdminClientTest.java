@@ -13,6 +13,8 @@ import static com.github.tomakehurst.wiremock.client.WireMock.absent;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
@@ -29,6 +31,7 @@ class KakaoAdminClientTest {
 
   private static final String ADMIN_KEY = "test-admin-key";
   private static final String UNLINK = "/v1/user/unlink";
+  private static final String USER_ME = "/v2/user/me";
 
   @RegisterExtension
   static final WireMockExtension KAKAO = WireMockExtension.newInstance()
@@ -110,6 +113,48 @@ class KakaoAdminClientTest {
   void blankAdminKey() {
     assertThatThrownBy(() -> new KakaoAdminClient(KAKAO.baseUrl(), " ", Duration.ofSeconds(1), Duration.ofSeconds(3)))
         .isInstanceOf(IllegalStateException.class);
+  }
+
+  // ===== 연결 상태 조회 (#422) =====
+
+  @Test
+  @DisplayName("[#422] 연결 상태 조회: 200이면 연결됨. 어드민 키와 쿼리(target_id_type=user_id, target_id=회원번호)로 부르고 내부 키는 보내지 않는다")
+  void linkStatus_linked() {
+    KAKAO.stubFor(get(urlPathEqualTo(USER_ME)).willReturn(okJson("{\"id\":1234567890}")));
+
+    assertThat(client.linkStatus("1234567890")).isEqualTo(KakaoAdminClient.LinkStatus.LINKED);
+
+    KAKAO.verify(getRequestedFor(urlPathEqualTo(USER_ME))
+        .withHeader("Authorization", equalTo("KakaoAK " + ADMIN_KEY))
+        .withHeader("X-Internal-Key", absent())
+        .withQueryParam("target_id_type", equalTo("user_id"))
+        .withQueryParam("target_id", equalTo("1234567890")));
+  }
+
+  @Test
+  @DisplayName("[#422] 연결 상태 조회: 400 + code -101이면 끊김")
+  void linkStatus_unlinked() {
+    KAKAO.stubFor(get(urlPathEqualTo(USER_ME))
+        .willReturn(errorJson(400, "{\"msg\":\"NotRegisteredUserException\",\"code\":-101}")));
+
+    assertThat(client.linkStatus("1234567890")).isEqualTo(KakaoAdminClient.LinkStatus.UNLINKED);
+  }
+
+  @Test
+  @DisplayName("[#422] 연결 상태 조회: 403 + -101 · 다른 카카오 오류 · 본문이 JSON이 아님 · 500 · 시간 초과는 확인 실패(재시도 대상)")
+  void linkStatus_unavailable() {
+    String minus101 = "{\"msg\":\"NotRegisteredUserException\",\"code\":-101}";
+    assertLinkStatusUnavailable(errorJson(403, minus101));
+    assertLinkStatusUnavailable(errorJson(400, "{\"msg\":\"InvalidArgument\",\"code\":-2}"));
+    assertLinkStatusUnavailable(aResponse().withStatus(400).withBody("not json"));
+    assertLinkStatusUnavailable(aResponse().withStatus(500));
+    assertLinkStatusUnavailable(okJson("{\"id\":1}").withFixedDelay(1500));
+  }
+
+  private void assertLinkStatusUnavailable(com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder response) {
+    KAKAO.resetAll();
+    KAKAO.stubFor(get(urlPathEqualTo(USER_ME)).willReturn(response));
+    assertThatThrownBy(() -> client.linkStatus("1234567890")).isInstanceOf(KakaoApiUnavailableException.class);
   }
 
   private void assertUnlinkFailed() {

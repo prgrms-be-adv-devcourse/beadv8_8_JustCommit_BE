@@ -27,7 +27,7 @@ public class MyInfoService {
 
   public MyInfoResult getMyInfo(Long memberId) {
     Member member = memberRepository.findById(memberId)
-            .filter(m -> m.getStatus() != MemberStatus.DELETED) // 탈퇴 회원은 없는 회원과 같은 404 (#407, 계좌가 NULL이라 복호화 전에 막음)
+            .filter(m -> m.getStatus() == MemberStatus.ACTIVE) // 탈퇴(#407, 계좌가 NULL이라 복호화 전에 막음) · 카카오 연결 해제(INACTIVE, #422) 회원은 없는 회원과 같은 404
             .orElseThrow(() -> new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
 
     // 복호화한 원문은 이 메서드 안에서만 쓰고 밖으로는 마스킹한 값만 내보냄

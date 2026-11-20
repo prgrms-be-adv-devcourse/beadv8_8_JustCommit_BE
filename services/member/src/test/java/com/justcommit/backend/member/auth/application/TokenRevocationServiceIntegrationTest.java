@@ -10,6 +10,7 @@ import com.justcommit.backend.member.auth.infrastructure.redis.RefreshTokenRedis
 import com.justcommit.backend.member.auth.infrastructure.redis.RevokedMemberRedisStore;
 import com.justcommit.backend.member.auth.infrastructure.repository.TokenRevocationRepository;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
@@ -303,6 +304,42 @@ class TokenRevocationServiceIntegrationTest {
     assertThat(revocationRepository.findById(expired.getId()).orElseThrow().getStatus())
         .isEqualTo(RevocationStatus.EXPIRED);
     assertThat(redisTemplate.hasKey(revokedKey(member.getId()))).isFalse();
+  }
+
+  @Test
+  @DisplayName("[#422] SOCIAL_UNLINKED 폐기: 콜백에서 계산한 폐기 후 버전이 커밋된 인증 버전 · 폐기 작업 버전과 같고, 회원은 INACTIVE")
+  void socialUnlinkVersionContract() {
+    Member member = saveMember();
+    AtomicInteger expected = new AtomicInteger(-1);
+
+    RevocationResult result = revocationService.revoke(member.getId(), RevocationReason.SOCIAL_UNLINKED, m -> {
+      m.markSocialUnlinked();
+      expected.set(TokenRevocationService.versionAfterRevocation(m));
+    });
+
+    assertThat(result).isEqualTo(RevocationResult.COMPLETED);
+    Member after = memberRepository.findById(member.getId()).orElseThrow();
+    assertThat(after.getStatus()).isEqualTo(MemberStatus.INACTIVE);
+    assertThat(after.getTokenVersion()).isEqualTo(expected.get()).isEqualTo(1);
+    TokenRevocation revocation = onlyRevocationOf(member.getId());
+    assertThat(revocation.getReason()).isEqualTo(RevocationReason.SOCIAL_UNLINKED);
+    assertThat(revocation.getTokenVersion()).isEqualTo(expected.get());
+  }
+
+  @Test
+  @DisplayName("[#422] SOCIAL_UNLINKED 폐기 콜백이 예외로 끝나면 INACTIVE 전환 · 인증 버전 · 폐기 작업 모두 롤백")
+  void socialUnlinkRollsBack() {
+    Member member = saveMember();
+
+    assertThatThrownBy(() -> revocationService.revoke(member.getId(), RevocationReason.SOCIAL_UNLINKED, m -> {
+      m.markSocialUnlinked();
+      throw new IllegalStateException("기록 확인 실패");
+    })).isInstanceOf(IllegalStateException.class).hasMessage("기록 확인 실패");
+
+    Member after = memberRepository.findById(member.getId()).orElseThrow();
+    assertThat(after.getStatus()).isEqualTo(MemberStatus.ACTIVE);
+    assertThat(after.getTokenVersion()).isZero();
+    assertThat(revocationsOf(member.getId())).isEmpty();
   }
 
   @Test

@@ -57,7 +57,7 @@ public class PasswordChangeService {
     RevocationResult result;
     try {
       result = tokenRevocationService.revoke(memberId, RevocationReason.PASSWORD_CHANGED, member -> {
-        if (member.getStatus() == MemberStatus.DELETED) {
+        if (member.getStatus() != MemberStatus.ACTIVE) { // 탈퇴 · 카카오 연결 해제(INACTIVE, #422)
           throw new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND);
         }
         // 소셜 회원은 비밀번호가 없음

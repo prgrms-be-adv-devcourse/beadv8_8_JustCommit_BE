@@ -1,13 +1,19 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
 - 2026-11-19 · services/notification.md · reference/kafka-topics.md · flows/image-review.md · reference/env-vars.md · notification 이벤트 구독 연결: `market.events.v1` · `product.events.v1`을 봉투 `eventType`으로 받음(옛 개별 토픽 구독 제거, 처음 붙을 때 `latest`), 구매자 일부 취소 · 검수 통과 · 반려 판매자 알림 추가(`NOTIFICATION.product_id`, V2), 관리자 검수 지연 `ImageReviewDelayed`는 `recipient_role = ADMIN` 알림 1건 · 읽음 공유 · `ADMIN_REVIEW_DELAYED:{eventId}`(V3, `member_id` NULL 허용), `KAFKA_LISTENER_AUTO_STARTUP` 기본 켜짐. 수락 · 거절은 market 발행 전이라 이름 연결만, 정산 완료는 발행 뒤 (#561) (#567)
+- 2026-11-20 · reference/internal-apis.md · reference/env-vars.md · 계좌 조회 payment 연동 표시를 ✅ #387로 다시 맞춤(develop 병합 때 #388로 돌아감), 인출 계좌번호 암호화 키를 결제키와 나눠 `CASH_OUT_ACCOUNT_ENCRYPTION_KEY` 추가, `TOSS_SECRET_KEY`와 `PAYMENT_KEY_ENCRYPTION_KEY` 행 분리 (#387)
+- 2026-11-20 · services/payment.md · 회원 이벤트 구독 구현 표시: `member.events.v1`을 받아 `MEMBER_REPLICA`에 조건부 upsert(저장된 `occurredAt`보다 오래된 이벤트 무시, 탈퇴 표시는 되살리지 않음), `MemberCreated`면 회원 지갑을 `on conflict (member_id) do nothing`으로 생성(V5 `member_replica`, 컨슈머 그룹 `payment`) (#387) (#573) 
+- 2026-11-20 · reference/external-apis.md · reference/internal-apis.md · services/member.md · services/payment.md · reference/env-vars.md · testing/scenarios.md · 인출 구현 반영: `POST wallet/cashOuts`(`Idempotency-Key` 필수, 같은 키에 다른 금액은 409)와 `GET wallet/cashOuts` 확정, 「추가 예정」의 인출 행 삭제, 계좌 조회 연동을 #387로(✅), 인출 정책에서 「실패하면 복원」 삭제(지급 실패는 `PENDING` 유지, 재시도와 복원은 #389), payment 환경변수 `MEMBER_SERVICE_URL`과 `BANK_MODE` 추가, S-G05에 미수금이 있으면 인출 불가 결과 기록 (#387)
+- 2026-11-20 · reference/kafka-topics.md · product 색인 리스너(`ProductSearchIndexListener`, #485)가 구현돼 「product 색인 리스너는 develop 기준 아직 없음」 문구 삭제
+- 2026-11-19 · reference/kafka-topics.md · services/market.md · 판매자 수락, 거절 이벤트 발행: `SellerOrderAccepted`(`rejectedItemCount`, 전체 수락 0, 일부 거절은 이번에 거절한 수), `SellerOrderRejected`(`reason` `SELLER` · `AUTO`)를 수락, 거절, 자동 거절 트랜잭션 마지막에 판매자 주문당 1건 `market.events.v1`로, payload 표 추가. 409와 건너뛴 자동 거절은 발행 안 함, `SellerOrderCancelled`는 구매자 취소 전용 유지 (#288) (#568)
+- 2026-11-19 · flows/signup-and-replica.md · services/member.md · conventions/auth.md · reference/external-apis.md · reference/schedulers.md · reference/env-vars.md · reference/redis-keys.md · infra/observability.md · infra/kakao-unlink-runbook.md · glossary.md · open-questions.md · testing/scenarios.md · 카카오 연결 해제 웹훅 구현: `GET · POST webhooks/kakao/unlink` 수신은 어드민 키 확인 후 항상 200 · 수신 기록(`member_kakao_unlink_receipt`)만 동기 저장, 10초 스케줄러가 카카오 연결을 다시 조회해 끊겼으면 `SOCIAL_UNLINKED` 폐기 + `INACTIVE` → 자동 탈퇴 사유는 3곳 확인 후 자동 탈퇴 · 막히면 가입 이메일 안내, 관리자 해제는 `INACTIVE`까지만, 결과 반영은 회원 → 기록 잠금 안에서 처리권 · 단계 · 연결 해제 버전 확인, 5회 실패 시 `FAILED`. 카카오 재로그인은 미처리 기록 무효화 + `ACTIVE` 복구, `INACTIVE`는 재발급 401 · 본인 기능 404. 운영 알림 2개(수신 저장 실패 · `FAILED`)와 저장 실패 복구 로그(로그 금지 목록의 범위 있는 예외), 멈춘 기록 재개 · 종료 SQL과 운영 절차 문서, Gateway 전용 라우트. 같은 초 재연결 Access는 재현만, 해결은 #546 (#566)
 - 2026-11-19 · reference/schedulers.md · market `@Scheduled` 스레드를 1개에서 4개로(`spring.task.scheduling.pool.size`): 자동 거절 환불이 길어져도 결제 대기 만료, Saga 복구, 택배 예약이 밀리지 않게 (#285)
 - 2026-11-19 · services/market.md · reference/schedulers.md · open-questions.md · testing/scenarios.md · 24시간 자동 거절 구현 반영: 수락 마감이 지난 판매자 주문을 10분마다 최대 100건 읽어 주문 행 SKIP LOCKED → 판매자 주문 잠금 → 다시 확인 후 남은 상품을 자동 거절(`AUTO`)하고 커밋 뒤 환불, 결제 완료 시각이 없는 판매자 주문은 제외. 수락과 자동 거절이 겹치면 먼저 주문을 잠근 쪽이 처리(늦은 수락, 거절은 409, 자동 거절은 건너뜀)로 확정하고 미정 항목에서 삭제, S-D09 결과 기록 (#285) (#564)
 - 2026-11-19 · flows/search-recommend.md · reference/external-apis.md · services/product.md · 검색 2단계: 찾는 곳에 설명 추가(가중치 제목 3 > 품종명 · 별칭 · 학명 2 > 설명 1), 오타 허용 `AUTO:3,6`을 제목 · 품종명 · 별칭 · 학명의 `.word` 하위 필드(`ko_word`, 공백으로만 자름)에서 가중치 절반으로, 인덱스 이름 `products_v{n}` · 매핑 파일 `opensearch/products.json`, 무중단 재색인 `POST admin/products/searchIndex/rebuilds`(새 인덱스 채움 → refresh → alias 이동 → 따라잡기 색인 → 옛 인덱스 삭제, 따라잡기 실패 시 옛 인덱스 유지, 전체 색인 · 재색인은 한 서버에서 하나만 · 진행 중 409 `SEARCH_INDEXING_IN_PROGRESS`) (#487)

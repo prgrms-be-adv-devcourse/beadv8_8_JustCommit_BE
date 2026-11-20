@@ -3,6 +3,7 @@ package com.justcommit.backend.member.member.application;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.Role;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
@@ -121,6 +122,7 @@ class MyInfoServiceTest {
   private Member givenMember() {
     Member member = mock(Member.class);
     given(member.getId()).willReturn(MEMBER_ID);
+    given(member.getStatus()).willReturn(MemberStatus.ACTIVE); // ACTIVE만 조회 (#422)
     given(member.getEmail()).willReturn("test@example.com");
     given(member.getNickname()).willReturn("테스트");
     given(member.getPhone()).willReturn("01012345678");

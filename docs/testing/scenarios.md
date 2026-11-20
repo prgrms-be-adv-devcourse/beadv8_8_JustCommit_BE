@@ -1,7 +1,7 @@
 # 테스트 시나리오
 
 > 언제 읽나: 시나리오 ID로 내용을 찾거나 결과를 기록할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: [노션 「테스트 시나리오」 4절](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: [노션 「테스트 시나리오」 4절](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
 
 시나리오마다 어느 서비스의 테스트인지, 무엇을 대신 세우는지(WireMock · 테스트 Kafka · Clock 등), 무엇을 확인하는지는 노션 「테스트 시나리오」 4절 표에 있습니다. 이 문서는 ID · 문장 · 결과 기록용입니다.
 
@@ -16,10 +16,10 @@
 | S-A05 | 외부에서 `/internal/**` 호출 → 라우팅 없음 (404) | 보안 | 통합 | PR |  |  |
 | S-A06 | `X-Internal-Key` 없이 내부 API 직접 호출 → 거부 | 보안 | 통합 | PR |  |  |
 | S-A07 | 남의 주문 · 알림 조회 · 수정 → 404 | 규칙 | 통합 | PR |  |  |
-| S-A08 | 비밀번호 변경 · 재설정 · 탈퇴 · 소셜 연결 해제 → 폐기 시각 기록 후 `iat <= 끊은 시각`인 Access는 Gateway 401. 옛 인증 버전 Refresh 삭제를 시도하며, 삭제 실패 시에도 인증 버전 비교로 재발급 401 | 보안 | 통합 | PR |  | 부분 검증 (11/18): 직접 탈퇴 · Refresh 폐기(`WithdrawalScenarioTest`, `TokenRevocationServiceIntegrationTest`), Gateway Access 차단(`JwtAuthenticationIntegrationTest`) 확인. 소셜 연결 해제는 #422 |
+| S-A08 | 비밀번호 변경 · 재설정 · 탈퇴 · 소셜 연결 해제 → 폐기 시각 기록 후 `iat <= 끊은 시각`인 Access는 Gateway 401. 옛 인증 버전 Refresh 삭제를 시도하며, 삭제 실패 시에도 인증 버전 비교로 재발급 401 | 보안 | 통합 | PR |  | 검증 (11/19): 직접 탈퇴 · Refresh 폐기(`WithdrawalScenarioTest`, `TokenRevocationServiceIntegrationTest`), Gateway Access 차단(`JwtAuthenticationIntegrationTest`), 소셜 연결 해제 `SOCIAL_UNLINKED` 폐기 · 폐기 후 버전 계약(`TokenRevocationServiceIntegrationTest`, `KakaoUnlinkProcessorIntegrationTest`) |
 | S-A09 | 인증번호 5회 오답 시 폐기. 같은 이메일 · 같은 용도의 첫 예약부터 24시간 동안 최대 5회 예약 허용, 한도 초과 시 추가 예약 · 메일 발송 없음(가입 인증은 429, 재설정 · 가입 계정 안내는 기존 200 응답 유지) | 규칙 | 통합 | PR |  |  |
 | S-A10 | 탈퇴 재확인: 로컬 비밀번호 오답이 비밀번호 변경과 합산되고, 누적 5번째 오답까지 400, 이후 요청부터 429 `PASSWORD_CHANGE_LOCKED` + `Retry-After`. 비밀번호가 맞아도 탈퇴가 완료되지 않으면 실패 횟수 유지 / 탈퇴 토큰을 다른 회원 · 발급 뒤 인증 버전 변경 · 재사용으로 쓰면 400 `INVALID_WITHDRAWAL_TOKEN` / 공개 인증 경로의 `WITHDRAWAL` 목적은 400 | 보안 | 통합 | PR |  | 완료 (11/18): `WithdrawalServiceIntegrationTest`(비밀번호 변경과 실패 횟수 합산 · 막힌 탈퇴의 횟수 유지 포함), `WithdrawalVerificationIntegrationTest` |
-| S-A11 | 폐기 기록이 `PENDING`인 동안 탈퇴 회원의 기존 Access로 내 정보 · 배송지 등록 · 판매자 등록 → 404 `MEMBER_NOT_FOUND`(member 상태 검사), `INACTIVE` 회원의 Refresh 재발급 → 401 `INVALID_REFRESH_TOKEN` | 보안 | 통합 | PR |  | 부분 검증 (11/18): `DELETED` 회원 접근 차단(`WithdrawnMemberAccessIntegrationTest`). `INACTIVE`는 #422 |
+| S-A11 | 폐기 기록이 `PENDING`인 동안 탈퇴 회원의 기존 Access로 내 정보 · 배송지 조회 · 배송지 등록 · 판매자 등록 → 404 `MEMBER_NOT_FOUND`(member 상태 검사), `INACTIVE` 회원의 Refresh 재발급 → 401 `INVALID_REFRESH_TOKEN` | 보안 | 통합 | PR |  | 검증 (11/19): `DELETED` · `INACTIVE` 회원 접근 차단(`WithdrawnMemberAccessIntegrationTest`), `INACTIVE` 재발급 401(`TokenReissueServiceTest`) |
 
 ## B. 회원
 
@@ -34,8 +34,8 @@
 | S-B07 | 재가입 제한: 탈퇴한 이메일만 · 휴대폰만 · 둘 다 같으면 30일 이내 로컬 · 소셜 가입 거절(일치 항목을 구분하지 않는 같은 응답), 30일이 지나면 가입 가능(정리 스케줄러가 기록을 아직 지우지 않았어도) | 경계 | 통합 | PR |  | 완료 (11/18): `RejoinRestrictionIntegrationTest` |
 | S-B08 | 같은 이메일 · 휴대폰으로 가입과 탈퇴가 동시에 진행 → 탈퇴가 커밋되면 가입이 재가입 제한을 우회하지 못함 (실제 PostgreSQL) | 경계 | 통합 | PR |  | 완료 (11/18): 실제 PostgreSQL에서 커밋 전후 · 사전 검사 통과 후 가입 · 탈퇴가 끼어드는 경합(로컬 가입 경로, `RejoinRestrictionIntegrationTest`) |
 | S-B09 | 카카오 탈퇴: 연결 해제 실패 → 503 `SOCIAL_UNLINK_FAILED`, 회원 변화 없음 · 탈퇴 토큰 소비됨 / 연결 해제 성공 뒤 DB 롤백 확인 → 회원 `ACTIVE` 유지, 재인증 후 다시 탈퇴할 때 `-101`을 성공으로 처리 / 커밋 결과 불명 → 503 `RESULT_UNKNOWN`, 자동 재요청 금지 | 장애 | 통합 | PR |  | 완료 (11/18): 연결 해제 실패 · 롤백 · 롤백 뒤 재시도(`WithdrawalServiceIntegrationTest`), HTTP 400 + `-101`만 성공(`KakaoAdminClientTest`). `RESULT_UNKNOWN`은 503 응답 매핑 · 쿠키 유지까지 검증(`WithdrawalControllerIntegrationTest`) |
-| S-B10 | 카카오 연결 해제 웹훅: 키가 틀리면 401(기록 없음), 맞으면 수신 기록 저장 후 3초 안에 200 / 같은 연결 해제 상태에서 웹훅이 중복 수신돼도 회원 상태 변경 · 토큰 폐기 · 자동 탈퇴를 멱등 처리 / `INCOMPLETE_SIGN_UP` · 회원 없음은 기록만 / `UNLINK_FROM_ADMIN`은 `INACTIVE`만 / 자동 탈퇴 대상은 `ALLOWED`면 탈퇴, `BLOCKED`면 `INACTIVE` + 안내 메일 | 규칙 | 통합 | PR |  | 미검증: #422에서 구현 · 검증 예정 |
-| S-B11 | 재연결 경쟁: 웹훅으로 `INACTIVE`가 된 뒤 카카오로 다시 로그인 → `ACTIVE` 복구 · 미처리 기록 무효 → 늦게 실행된 자동 탈퇴는 탈퇴하지 않음 / 폐기 시각과 같은 초에 재연결해 받은 새 Access를 쓸 수 있는지 확인(#422에서 처리 방식 결정) | 경계 | 통합 | PR |  | 미검증: #422에서 구현 · 검증 예정 |
+| S-B10 | 카카오 연결 해제 웹훅: 키가 틀리면 401(기록 없음), 맞으면 요청 값과 관계없이 200, 정상 요청은 수신 기록 저장 후 정상 상황에서 3초 안에 응답 / 같은 연결 해제 상태에서 웹훅이 중복 수신돼도 회원 상태 변경 · 토큰 폐기 · 자동 탈퇴를 멱등 처리 / `INCOMPLETE_SIGN_UP` · 회원 없음은 기록만 / `UNLINK_FROM_ADMIN`은 `INACTIVE`만 / 자동 탈퇴 대상은 `ALLOWED`면 탈퇴, `BLOCKED`면 `INACTIVE` + 안내 메일, `UNAVAILABLE`이면 안내 없이 재시도 후 소진 시 `FAILED` | 규칙 | 통합 | PR |  | 검증 (11/19): 수신(`KakaoUnlinkWebhookIntegrationTest`, 저장 실패 · 테이블 잠금 지연에도 3초 안 200), 처리(`KakaoUnlinkProcessorIntegrationTest`), Gateway 라우트(`KakaoUnlinkWebhookRouteIntegrationTest`). 실제 카카오 웹훅은 운영 HTTPS 주소 등록 뒤 확인 |
+| S-B11 | 재연결 경쟁: 웹훅으로 `INACTIVE`가 된 뒤 카카오로 다시 로그인 → `ACTIVE` 복구 · 미처리 기록 무효 → 늦게 실행된 자동 탈퇴는 탈퇴하지 않음 / 끊김 조회 직후 `ACTIVE` 상태로 재로그인해도 옛 조회 결과로 `INACTIVE`가 되지 않음 / 폐기 시각과 같은 초에 재연결해 받은 새 Access는 #422에서 재현으로 현재 동작만 확인하고, 해결 · 정상 사용 검증은 #546 | 경계 | 통합 | PR |  | 부분 검증 (11/19): 재로그인 복구 · 무효화 · 경합(3곳 확인 도중 재로그인 포함, `KakaoReloginIntegrationTest`, `KakaoUnlinkProcessorIntegrationTest`), 같은 초 Access 재현(현재 Gateway 규칙상 거절 대상, `KakaoReloginIntegrationTest`). 해결 · 정상 사용 검증은 #546 |
 
 ## C. 상품 · 검색
 
@@ -119,7 +119,7 @@
 | S-G02 | 배송 완료 72시간 후 자동 구매 확정 | 규칙 | 통합 | PR |  |  |
 | S-G03 | 정산 지급 때 배송비 `HOLDING` → `REVENUE`, 배송비가 환불된 판매자 주문은 건너뜀 | 정상 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |
 | S-G04 | 정산금 지급을 같은 settlementId로 두 번 → 1번만 입금 | 중복 | 통합 | PR |  | 완료 (11/19): `PaymentIdempotencyIntegrationTest`, `PaymentSettlementIntegrationTest` |
-| S-G05 | 전부 반품 → 음수 정산 → 판매자 잔액에서 회수 → 부족분 미수금 → 다음 입금에서 먼저 차감, 미수금 있으면 인출 불가 | 경계 | 통합 | PR |  | 부분 검증 (11/19): 잔액에서 회수와 부족분 미수금(`PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest`), 다음 입금(충전, 정산금, 환불)에서 먼저 차감(`MemberWalletDepositorTest`, `PaymentServiceSettlementTest`, `PaymentServiceRefundTest`, `ReceivableCollectionIntegrationTest`). 인출 불가는 인출 구현 때 |
+| S-G05 | 전부 반품 → 음수 정산 → 판매자 잔액에서 회수 → 부족분 미수금 → 다음 입금에서 먼저 차감, 미수금 있으면 인출 불가 | 경계 | 통합 | PR |  | 부분 검증 (11/19): 잔액에서 회수와 부족분 미수금(`PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest`), 다음 입금(충전, 정산금, 환불)에서 먼저 차감(`MemberWalletDepositorTest`, `PaymentServiceSettlementTest`, `PaymentServiceRefundTest`, `ReceivableCollectionIntegrationTest`), 미수금이 있으면 인출 불가(11/20, `CashOutIntegrationTest`) |
 | S-G06 | 0원 정산 (판매자 부담금 = 판매액 − 수수료) → 판매자 잔액은 그대로, 판매자 지갑에 `SETTLEMENT` 0원 행 1건, 부담금은 `REVENUE`로 | 경계 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |
 | S-G07 | 판매액 0 (전부 반품, 수수료 0) → `HOLDING`에서 판매액을 꺼내지 않고 판매자 잔액에서만 회수, 부족분 미수금 | 경계 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |
 | S-G08 | 배송비를 이미 옮긴 판매자 주문의 정산 지급 → 배송비는 다시 옮기지 않고 정산은 지급 | 중복 | 통합 | PR |  | 완료 (11/19): `PaymentServiceSettlementTest`, `PaymentSettlementIntegrationTest` |
