@@ -2,9 +2,9 @@ package com.justcommit.backend.ai.search.infrastructure;
 
 import com.justcommit.backend.ai.search.application.QueryEmbedder;
 import java.time.Duration;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.ai.openai.OpenAiEmbeddingOptions;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 

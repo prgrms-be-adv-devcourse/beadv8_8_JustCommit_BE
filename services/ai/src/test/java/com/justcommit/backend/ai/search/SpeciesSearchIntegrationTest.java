@@ -143,7 +143,7 @@ class SpeciesSearchIntegrationTest {
     }
 
     @Test
-    @DisplayName("문장이 없거나 2자 미만 · 100자 초과, size 1~10 밖이면 400이고 OpenAI를 부르지 않는다")
+    @DisplayName("문장이 없거나 2자 미만 · 100자 초과, size 1~10 밖 · 숫자 아님이면 400이고 OpenAI를 부르지 않는다")
     void rejectsInvalidRequest() throws Exception {
         assertThat(send("")).isEqualTo(400);
         assertThat(search(" a ", 5).statusCode()).isEqualTo(400);
@@ -151,6 +151,11 @@ class SpeciesSearchIntegrationTest {
         assertThat(search("가".repeat(100), 0).statusCode()).isEqualTo(400);
         assertThat(search("가".repeat(100), 11).statusCode()).isEqualTo(400);
         assertThat(json.readTree(search(" a ", 5).body()).get("code").asString()).isEqualTo("INVALID_SEARCH_QUERY");
+        HttpResponse<String> notNumber = http.send(HttpRequest.newBuilder(
+                URI.create(base() + "?query=%EC%8B%9D%EB%AC%BC%20%EC%B6%94%EC%B2%9C&size=abc")).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(notNumber.statusCode()).isEqualTo(400);
+        assertThat(json.readTree(notNumber.body()).get("code").asString()).isEqualTo("INVALID_SEARCH_SIZE");
         assertThat(embedder.calls.get()).isZero();
     }
 

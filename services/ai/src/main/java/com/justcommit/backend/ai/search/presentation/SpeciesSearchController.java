@@ -1,6 +1,8 @@
 package com.justcommit.backend.ai.search.presentation;
 
+import com.justcommit.backend.ai.common.AiErrorCode;
 import com.justcommit.backend.ai.search.application.SpeciesSearchService;
+import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.response.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,8 +21,17 @@ public class SpeciesSearchController {
     @GetMapping
     public ApiResponse<SpeciesSearchResponse> search(
             @RequestParam(required = false) String query,
-            @RequestParam(defaultValue = "5") int size) {
+            @RequestParam(defaultValue = "5") String size) {
         return ApiResponse.ok("문장으로 품종을 찾았습니다.",
-                SpeciesSearchResponse.from(speciesSearchService.search(query, size)));
+                SpeciesSearchResponse.from(speciesSearchService.search(query, parseSize(size))));
+    }
+
+    // 숫자가 아닌 size도 공통 타입 변환 400이 아니라 INVALID_SEARCH_SIZE로 (범위 검증은 서비스)
+    private static int parseSize(String size) {
+        try {
+            return Integer.parseInt(size.strip());
+        } catch (NumberFormatException e) {
+            throw new BusinessException(AiErrorCode.INVALID_SEARCH_SIZE);
+        }
     }
 }

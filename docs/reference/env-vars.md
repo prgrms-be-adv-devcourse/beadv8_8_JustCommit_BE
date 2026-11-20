@@ -1,7 +1,7 @@
 # 환경변수
 
 > 언제 읽나: 환경변수 · 비밀값을 추가하거나 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro A3
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: Miro A3
 
 ## 변수 표
 
@@ -19,7 +19,7 @@
 | `MEMBER_ADDRESS_EVENT_KEY` | member · market (같은 값) | 주소 이벤트 전송 키 (판매자 배송지 목록 암호화, `EventFieldCipher` 키 버전 `k1`). `openssl rand -base64 32`로 생성, 서버 설정은 인프라 담당. member · market 적용 완료(#233 · #275), `.env.example` 추가 완료(#233) |
 | `REDIS_HOST` · `REDIS_PORT` · `REDIS_PASSWORD` | member · Gateway | – |
 | `OPENSEARCH_URL` | product | 상품 검색 OpenSearch 주소 (예: `http://{호스트}:9200`, 보안 플러그인을 꺼서 계정 없음). 없으면 로컬 `http://localhost:9200`(`docker-compose.yml`의 `opensearch`). 운영은 `deploy/scripts/make-env.sh`가 데이터 서버 사설 IP의 9200으로 넣음 |
-| `MEMBER_SERVICE_URL` · `PRODUCT_SERVICE_URL` · `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` · `NOTIFICATION_SERVICE_URL` | Gateway | 라우팅할 서비스 주소. 없으면 로컬 포트(8081 ~ 8086) |
+| `MEMBER_SERVICE_URL` · `PRODUCT_SERVICE_URL` · `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` · `NOTIFICATION_SERVICE_URL` · `AI_SERVICE_URL` | Gateway | 라우팅할 서비스 주소. 없으면 로컬 포트(8081 ~ 8086 · ai 8087) |
 | `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` | member | 탈퇴 확인 내부 API 그룹 주소. 없으면 로컬 포트(8083 · 8084 · 8085) |
 | `PRODUCT_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` · `AI_SERVICE_URL` | market | 내부 API 그룹 주소. 없으면 로컬 포트(8082 · 8084 · 8085 · 8087) |
 | `GATEWAY_TRUSTED_PROXIES` | Gateway | `X-Forwarded-*`를 믿을 보낸 쪽 주소(정규식). 없으면 `10.x` · `127.0.0.1`(같은 서버 Nginx). 여기에 없는 곳이 보낸 `X-Forwarded-*`는 서비스에 넘기지 않음 |
