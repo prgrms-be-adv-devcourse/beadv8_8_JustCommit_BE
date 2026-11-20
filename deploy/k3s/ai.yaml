@@ -33,6 +33,9 @@ spec:
             - name: http
               containerPort: 8080
           envFrom:
+            # 추적 보낼 곳(OTLP_TRACING_ENDPOINT 등) · 서비스 주소 (endpoints.yaml)
+            - configMapRef:
+                name: replant-endpoints
             - secretRef:
                 name: ai-env
           resources:

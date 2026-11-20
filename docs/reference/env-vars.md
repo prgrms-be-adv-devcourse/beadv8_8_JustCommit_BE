@@ -22,6 +22,7 @@
 | `MEMBER_SERVICE_URL` · `PRODUCT_SERVICE_URL` · `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` · `NOTIFICATION_SERVICE_URL` | Gateway | 라우팅할 서비스 주소. 없으면 로컬 포트(8081 ~ 8086) |
 | `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` | member | 탈퇴 확인 내부 API 그룹 주소. 없으면 로컬 포트(8083 · 8084 · 8085) |
 | `PRODUCT_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` · `AI_SERVICE_URL` | market | 내부 API 그룹 주소. 없으면 로컬 포트(8082 · 8084 · 8085 · 8087) |
+| `TRACING_EXPORT_ENABLED` · `OTLP_TRACING_ENDPOINT` | 모든 서비스 · Gateway | 추적(span)을 OTLP로 보낼지 · 보낼 곳. 없으면 보내지 않음(로컬). 운영은 `true` · `http://10.0.7.76:4318/v1/traces`(앱 서버 Alloy)를 compose `x-tracing-env` · K3s `replant-endpoints`가 넣음 (비밀값 아님) |
 | `MEMBER_SERVICE_URL` | payment | 계좌 조회 내부 API 그룹 주소. 없으면 로컬 포트(8081) |
 | `BANK_MODE` | payment | 인출 지급 은행 구현. 없으면 `fake`(메모리에서 항상 성공). 모의 은행 서버 연결은 별도 task |
 | `GATEWAY_TRUSTED_PROXIES` | Gateway | `X-Forwarded-*`를 믿을 보낸 쪽 주소(정규식). 없으면 `10.x` · `127.0.0.1`(같은 서버 Nginx). 여기에 없는 곳이 보낸 `X-Forwarded-*`는 서비스에 넘기지 않음 |

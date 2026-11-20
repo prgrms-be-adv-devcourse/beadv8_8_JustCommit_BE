@@ -29,6 +29,11 @@ x-service: &service
     # 이 시간 안의 실패는 세지 않으므로 늦어도 120초 + 10초 × 3 = 약 150초까지 기다린다 (cd.yml --wait-timeout 180보다 짧게)
     start_period: 120s
 
+# 분산 추적: 서비스가 추적(span)을 이 서버의 Alloy(OTLP HTTP 4318)로 보낸다 → 데이터 서버 Tempo (ADR 0027)
+x-tracing-env: &tracing-env
+  TRACING_EXPORT_ENABLED: "true"
+  OTLP_TRACING_ENDPOINT: http://10.0.7.76:4318/v1/traces
+
 services:
   redis:
     image: redis:8-alpine
@@ -61,6 +66,7 @@ services:
     container_name: replant-member
     env_file: ${HOME}/secrets/member.env
     environment:
+      <<: *tracing-env
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       MARKET_SERVICE_URL: http://10.0.7.76:30083 # K3s market (NodePort)
@@ -79,6 +85,7 @@ services:
     container_name: replant-product
     # S3는 EC2 IAM 역할로 접속한다. S3_ENDPOINT · S3_ACCESS_KEY · S3_SECRET_KEY(로컬 RustFS용)는 넣지 않는다
     env_file: ${HOME}/secrets/product.env
+    environment: *tracing-env
     ports:
       - "10.0.7.76:8082:8080"
     mem_limit: 768m
@@ -88,6 +95,7 @@ services:
     image: ghcr.io/prgrms-be-adv-devcourse/replant-payment:${PAYMENT_TAG:-latest}
     container_name: replant-payment
     env_file: ${HOME}/secrets/payment.env
+    environment: *tracing-env
     environment:
       MEMBER_SERVICE_URL: http://member:8080
     ports:
@@ -100,6 +108,7 @@ services:
     container_name: replant-settlement
     env_file: ${HOME}/secrets/settlement.env
     environment:
+      <<: *tracing-env
       PAYMENT_SERVICE_URL: http://payment:8080
     ports:
       - "10.0.7.76:8085:8080"
@@ -110,6 +119,7 @@ services:
     image: ghcr.io/prgrms-be-adv-devcourse/replant-notification:${NOTIFICATION_TAG:-latest}
     container_name: replant-notification
     env_file: ${HOME}/secrets/notification.env
+    environment: *tracing-env
     ports:
       - "10.0.7.76:8086:8080"
     mem_limit: 512m

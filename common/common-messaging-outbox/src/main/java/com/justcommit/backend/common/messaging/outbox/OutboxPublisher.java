@@ -8,6 +8,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Clock;
+import java.util.function.Supplier;
 
 /**
  * 서비스가 이벤트를 보내는 입구 (Kafka로 직접 보내지 않는다, 정책 10.13-6).
@@ -20,12 +21,16 @@ public class OutboxPublisher {
   private final EventEnvelopeMapper mapper;
   private final OutboxRelay relay;
   private final Clock clock;
+  // 지금 요청의 W3C traceparent (추적이 없으면 null)
+  private final Supplier<String> traceparent;
 
-  OutboxPublisher(EntityManager entityManager, EventEnvelopeMapper mapper, OutboxRelay relay, Clock clock) {
+  OutboxPublisher(EntityManager entityManager, EventEnvelopeMapper mapper, OutboxRelay relay, Clock clock,
+                  Supplier<String> traceparent) {
     this.entityManager = entityManager;
     this.mapper = mapper;
     this.relay = relay;
     this.clock = clock;
+    this.traceparent = traceparent;
   }
 
   public void publish(IntegrationEvent event) {
@@ -36,8 +41,9 @@ public class OutboxPublisher {
     }
 
     EventEnvelope envelope = mapper.wrap(event);
-    // TODO: common-logging 추적 설정 이후 현재 요청의 traceparent를 함께 저장
-    OutboxEvent outboxEvent = OutboxEvent.pending(envelope, event.topic(), mapper.toJson(envelope), null, clock.instant());
+    // 지금 요청의 traceparent를 함께 저장 → 나중에 보낼 때 Kafka 헤더로 (받는 쪽이 같은 traceId로 이어감)
+    OutboxEvent outboxEvent = OutboxEvent.pending(envelope, event.topic(), mapper.toJson(envelope),
+        traceparent.get(), clock.instant());
     entityManager.persist(outboxEvent);
 
     // 커밋이 성공한 뒤에만 릴레이에 넘김 (롤백되면 호출되지 않음)

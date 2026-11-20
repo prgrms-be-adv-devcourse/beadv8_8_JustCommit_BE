@@ -20,10 +20,12 @@ dependencyManagement {
 }
 
 // 관측 공통 (#301, docs/conventions/common-modules.md)
-// 지금은 지표(/actuator/prometheus)만. 추적(micrometer-tracing · OTLP)은 Tempo 단계에서 더한다
+// 지표(/actuator/prometheus) + 분산 추적(Micrometer Tracing OTel 브리지 → OTLP → Alloy → Tempo, ADR 0027)
 dependencies {
     api 'org.springframework.boot:spring-boot-starter-actuator'
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+    // traceId 생성 · REST(traceparent) 전파 · OTLP 내보내기. Tracer는 Outbox가 traceparent를 저장할 때 씀
+    api 'org.springframework.boot:spring-boot-starter-opentelemetry'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
