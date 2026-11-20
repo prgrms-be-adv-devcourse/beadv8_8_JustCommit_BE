@@ -3,6 +3,8 @@ package com.justcommit.backend.settlement.application.payout;
 import com.justcommit.backend.common.client.exception.InternalApiErrorException;
 import com.justcommit.backend.common.client.exception.InternalApiResultUnknownException;
 import com.justcommit.backend.common.client.exception.InternalApiUnavailableException;
+import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
+import com.justcommit.backend.settlement.SettlementCompletedEvent;
 import com.justcommit.backend.settlement.client.payment.SettlementPayoutClient;
 import com.justcommit.backend.settlement.domain.Settlement;
 import com.justcommit.backend.settlement.infrastructure.repository.SettlementRepository;
@@ -29,6 +31,12 @@ import java.util.Optional;
 // - 성공은 임대를 검사하지 않는다. 지급 성공은 누가 반영해도 결과가 같고, COMPLETED면 complete가 아무것도 하지 않는다
 // - 실패는 임대가 그대로일 때만 반영한다. 임대가 끝나 다른 실행이 다시 잡은 건을 늦게 온 실패가 덮어쓰지 않게
 // - 시각은 건마다 Clock에서 읽고 마이크로초로 자른다 (timestamp(6)에 저장된 임대 값과 그대로 비교되게)
+//
+// 이벤트 기록 (#438):
+// - 성공 결과 Tx에서 COMPLETED로 바꾼 바로 다음 SettlementCompleted를 Outbox에 기록한다. 커밋된 뒤에만 Kafka로 나간다
+// - 이미 COMPLETED면 건너뛰므로 정산 하나당 한 번만 기록된다. 실패 결과에는 기록하지 않는다
+// - Outbox 기록이 실패하면 COMPLETED도 함께 롤백된다. 임대가 끝나면 같은 settlementId로 다시 지급 요청하고
+//   (payment 멱등이라 지급은 한 번) 그때 다시 기록한다
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -37,6 +45,7 @@ public class SettlementPayoutService {
     private final TransactionTemplate transactionTemplate;
     private final SettlementRepository settlementRepository;
     private final SettlementPayoutClient settlementPayoutClient;
+    private final OutboxPublisher outboxPublisher;
     private final SettlementPayoutProperties properties;
     private final Clock clock;
 
@@ -92,6 +101,7 @@ public class SettlementPayoutService {
                         return;
                     }
                     settlement.complete(now());
+                    outboxPublisher.publish(SettlementCompletedEvent.from(settlement));
                     log.info("정산 지급 완료: settlementId={}, sellerId={}",
                             target.settlementId(), target.sellerId());
                 }));

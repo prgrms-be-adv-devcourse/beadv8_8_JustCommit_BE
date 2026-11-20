@@ -4,13 +4,12 @@ import com.justcommit.backend.common.messaging.EventEnvelope;
 import com.justcommit.backend.common.messaging.EventEnvelopeMapper;
 import com.justcommit.backend.common.messaging.KafkaTopics;
 import com.justcommit.backend.settlement.application.SettlementService;
-import com.justcommit.backend.settlement.config.KafkaConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
-// 구매 확정 → 정산 생성. 같은 판매자 주문이 두 토픽으로 와도 정산 UK(sellerOrderId)로 1건만 만든다
+// 구매 확정 → 정산 생성. 같은 판매자 주문이 여러 번 와도 정산 UK(sellerOrderId)로 1건만 만든다
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -28,15 +27,6 @@ public class PurchaseConfirmedEventListener {
             default -> log.debug("settlement가 쓰지 않는 market 이벤트라 건너뜀: eventType={}, eventId={}",
                     envelope.eventType(), envelope.eventId());
         }
-    }
-
-    // 옛 토픽 (봉투가 아닌 JSON, shippingFee · sellerBurdenAmount 없음). market 전환이 끝나면 지운다
-    @KafkaListener(
-            topics = "${custom.kafka.topics.purchase-confirmed}",
-            containerFactory = KafkaConfig.LEGACY_JSON_LISTENER_FACTORY
-    )
-    public void onLegacyPurchaseConfirmed(PurchaseConfirmedEvent event) {
-        settle(event);
     }
 
     private void settle(PurchaseConfirmedEvent event) {
