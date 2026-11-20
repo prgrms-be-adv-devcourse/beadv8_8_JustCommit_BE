@@ -1,14 +1,13 @@
 package com.justcommit.backend.payment.application;
 
-import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.payment.domain.RefType;
 import com.justcommit.backend.payment.domain.TransactionStatus;
 import com.justcommit.backend.payment.domain.Wallet;
 import com.justcommit.backend.payment.domain.WalletTransaction;
-import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
 import com.justcommit.backend.payment.infrastructure.repository.WalletRepository;
 import com.justcommit.backend.payment.infrastructure.repository.WalletTransactionRepository;
 import com.justcommit.backend.payment.presentation.dto.WalletTransactionResponse;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -26,7 +25,6 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -102,13 +100,38 @@ class WalletServiceTest {
     }
 
     @Test
-    void throwsWalletNotFoundWhenMemberHasNoWallet() {
+    @DisplayName("지갑 없는 회원의 거래 내역 조회는 빈 목록이고 지갑을 만들지 않는다")
+    void returnsEmptyPageWhenMemberHasNoWallet() {
         when(walletRepository.findByMemberId(MEMBER_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> walletService.getTransactions(MEMBER_ID, RefType.CHARGE, pageable))
-                .isInstanceOf(BusinessException.class)
-                .hasFieldOrPropertyWithValue("errorCode", PaymentErrorCode.WALLET_NOT_FOUND);
+        Page<WalletTransactionResponse> result = walletService.getTransactions(MEMBER_ID, RefType.CHARGE, pageable);
+
+        assertThat(result.getContent()).isEmpty();
+        assertThat(result.getTotalElements()).isZero();
+        assertThat(result.getPageable()).isEqualTo(pageable);
         verifyNoInteractions(walletTransactionRepository);
+        verify(walletRepository, never()).save(any());
+        verify(walletRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("지갑이 없는 회원의 잔액은 0이고 지갑을 만들지 않는다")
+    void returnsZeroBalanceWhenMemberHasNoWallet() {
+        when(walletRepository.findByMemberId(MEMBER_ID)).thenReturn(Optional.empty());
+
+        assertThat(walletService.getBalance(MEMBER_ID)).isEqualByComparingTo("0");
+        verify(walletRepository, never()).save(any());
+        verify(walletRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("지갑이 있으면 잔액을 돌려준다")
+    void returnsWalletBalance() {
+        Wallet wallet = walletWithId();
+        wallet.credit(new BigDecimal("5000"));
+        when(walletRepository.findByMemberId(MEMBER_ID)).thenReturn(Optional.of(wallet));
+
+        assertThat(walletService.getBalance(MEMBER_ID)).isEqualByComparingTo("5000");
     }
 
     private Wallet walletWithId() {

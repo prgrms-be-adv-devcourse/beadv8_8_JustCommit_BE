@@ -1,12 +1,15 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-20 · reference/internal-apis.md · reference/env-vars.md · 계좌 조회 payment 연동 표시를 ✅ #387로 다시 맞춤(develop 병합 때 #388로 돌아감), 인출 계좌번호 암호화 키를 결제키와 나눠 `CASH_OUT_ACCOUNT_ENCRYPTION_KEY` 추가, `TOSS_SECRET_KEY`와 `PAYMENT_KEY_ENCRYPTION_KEY` 행 분리 (#387)
+- 2026-11-20 · services/payment.md · 회원 이벤트 구독 구현 표시: `member.events.v1`을 받아 `MEMBER_REPLICA`에 조건부 upsert(저장된 `occurredAt`보다 오래된 이벤트 무시, 탈퇴 표시는 되살리지 않음), `MemberCreated`면 회원 지갑을 `on conflict (member_id) do nothing`으로 생성(V5 `member_replica`, 컨슈머 그룹 `payment`) (#387) (#573) 
+- 2026-11-20 · reference/external-apis.md · reference/internal-apis.md · services/member.md · services/payment.md · reference/env-vars.md · testing/scenarios.md · 인출 구현 반영: `POST wallet/cashOuts`(`Idempotency-Key` 필수, 같은 키에 다른 금액은 409)와 `GET wallet/cashOuts` 확정, 「추가 예정」의 인출 행 삭제, 계좌 조회 연동을 #387로(✅), 인출 정책에서 「실패하면 복원」 삭제(지급 실패는 `PENDING` 유지, 재시도와 복원은 #389), payment 환경변수 `MEMBER_SERVICE_URL`과 `BANK_MODE` 추가, S-G05에 미수금이 있으면 인출 불가 결과 기록 (#387)
 - 2026-11-20 · reference/kafka-topics.md · product 색인 리스너(`ProductSearchIndexListener`, #485)가 구현돼 「product 색인 리스너는 develop 기준 아직 없음」 문구 삭제
 - 2026-11-19 · reference/kafka-topics.md · services/market.md · 판매자 수락, 거절 이벤트 발행: `SellerOrderAccepted`(`rejectedItemCount`, 전체 수락 0, 일부 거절은 이번에 거절한 수), `SellerOrderRejected`(`reason` `SELLER` · `AUTO`)를 수락, 거절, 자동 거절 트랜잭션 마지막에 판매자 주문당 1건 `market.events.v1`로, payload 표 추가. 409와 건너뛴 자동 거절은 발행 안 함, `SellerOrderCancelled`는 구매자 취소 전용 유지 (#288) (#568)
 - 2026-11-19 · flows/signup-and-replica.md · services/member.md · conventions/auth.md · reference/external-apis.md · reference/schedulers.md · reference/env-vars.md · reference/redis-keys.md · infra/observability.md · infra/kakao-unlink-runbook.md · glossary.md · open-questions.md · testing/scenarios.md · 카카오 연결 해제 웹훅 구현: `GET · POST webhooks/kakao/unlink` 수신은 어드민 키 확인 후 항상 200 · 수신 기록(`member_kakao_unlink_receipt`)만 동기 저장, 10초 스케줄러가 카카오 연결을 다시 조회해 끊겼으면 `SOCIAL_UNLINKED` 폐기 + `INACTIVE` → 자동 탈퇴 사유는 3곳 확인 후 자동 탈퇴 · 막히면 가입 이메일 안내, 관리자 해제는 `INACTIVE`까지만, 결과 반영은 회원 → 기록 잠금 안에서 처리권 · 단계 · 연결 해제 버전 확인, 5회 실패 시 `FAILED`. 카카오 재로그인은 미처리 기록 무효화 + `ACTIVE` 복구, `INACTIVE`는 재발급 401 · 본인 기능 404. 운영 알림 2개(수신 저장 실패 · `FAILED`)와 저장 실패 복구 로그(로그 금지 목록의 범위 있는 예외), 멈춘 기록 재개 · 종료 SQL과 운영 절차 문서, Gateway 전용 라우트. 같은 초 재연결 Access는 재현만, 해결은 #546 (#566)

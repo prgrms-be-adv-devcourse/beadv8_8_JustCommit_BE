@@ -5,6 +5,7 @@ import com.justcommit.backend.payment.domain.WalletType;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -24,4 +25,13 @@ public interface WalletRepository extends JpaRepository<Wallet, Long> {
     @Query("select w from Wallet w where w.walletType = :walletType")
     Optional<Wallet> findByWalletTypeForUpdate(@Param("walletType") WalletType walletType);
 
+    // 가입 이벤트(MemberCreated)로 회원 지갑을 만든다. 이미 있으면 그대로 (member_id UK).
+    // 필요한 시점에 만드는 기존 경로(WalletService.createIfAbsent)와 동시에 와도 지갑은 하나
+    @Modifying
+    @Query(value = """
+            insert into wallet (wallet_type, member_id, balance, receivable, version, created_at, updated_at)
+            values ('MEMBER', :memberId, 0, 0, 0, localtimestamp, localtimestamp)
+            on conflict (member_id) do nothing
+            """, nativeQuery = true)
+    int insertMemberWalletIfAbsent(@Param("memberId") Long memberId);
 }
