@@ -176,6 +176,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | 메서드 | 경로 | 설명 | 권한 |
 |---|---|---|---|
 | GET | `speciesSearches` | 품종 의미 검색. `query`(2 ~ 100자) · `size`(1 ~ 10, 기본 5). 응답 `data.items[{speciesId, name, similarity, productIds}]`(유사도 순, 상품은 판매 중 최신 3개), 결과가 없으면 빈 목록. 400 `INVALID_SEARCH_QUERY` · `INVALID_SEARCH_SIZE`, 503 `SEMANTIC_SEARCH_UNAVAILABLE`, 429 요청 수 제한 → [검색 · 추천](../flows/search-recommend.md#의미-검색) | 공개 |
+| POST | `chatbot/messages` | 🟨 챗봇 (#297). 요청 `{conversationId?, message}`(1~300자, conversationId가 없으면 새 대화). 응답 `conversationId` · `answer` · `answerGenerated`(false면 고정 문장) · `products[{productId, title, price, thumbnailUrl, speciesId, speciesName}]`(판매 중만) · `species[{speciesId, name}]`(근거). 다른 회원 대화 403 `CONVERSATION_FORBIDDEN`, 없는 대화 404 `CONVERSATION_NOT_FOUND`, 질문 임베딩 실패 503 `CHATBOT_UNAVAILABLE`, 회원당 요청 수 제한 429 → [검색 · 추천](../flows/search-recommend.md#의미-검색) | 로그인 |
 
 ### payment · settlement · notification
 
@@ -223,7 +224,6 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | market | 반품 신청 (사유) · 판매자 승인 · 거절 | 노션 7절 |
 | market | 리뷰 작성 · 삭제 · 판매자 리뷰 목록 (태그 집계) | 노션 6절 |
 | notification | `GET notifications?read=` (커서 페이지네이션) | 삭제 API 없음 |
-| ai | 챗봇 | ⬜ 범위 보류 |
 
 ## 경로 개선안
 
