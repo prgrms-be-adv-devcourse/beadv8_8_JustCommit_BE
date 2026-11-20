@@ -32,7 +32,7 @@ import java.util.List;
 
 // Claude Haiku 식물 식별. 사진 전부와 금지 품종 목록을 넣고, 답은 structured output(JSON 형식 지정)으로 받음
 // SDK가 429 · 5xx · 연결 실패를 2번 다시 시도함(요청마다 30초 타임아웃 → 최악 약 90초). 그래도 실패 · 거절 · 잘린 응답이면 ReviewEngineException
-// 4xx(429 제외, 예: 사진이 base64 10MB 한도를 넘음)는 다시 보내도 같아서 재처리하지 않는 ReviewEngineException (#594)
+// 4xx(408 · 429 제외, 예: 사진이 base64 10MB 한도를 넘음)는 다시 보내도 같아서 재처리하지 않는 ReviewEngineException (#594)
 @Component
 public class HaikuPlantIdentifier implements PlantIdentifier {
 

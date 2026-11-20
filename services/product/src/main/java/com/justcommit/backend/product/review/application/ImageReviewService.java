@@ -48,7 +48,7 @@ import java.util.List;
 //    외부 API를 기다리는 동안 DB 커넥션 · 행 잠금을 잡지 않으려고 트랜잭션을 나눔
 // 3) 엔진 오류 재처리: 외부 API가 재시도 후에도 실패하면 상품은 그대로 두고 ENGINE_ERROR,
 //    재처리 스케줄러가 5분 뒤 같은 검수 버전으로 다시 검수 (최대 3회, 그래도 실패하면 관리자 확인 ENGINE_ERROR)
-//    외부 API가 4xx(429 제외)로 답하면 다시 해도 같으므로 재처리 없이 바로 관리자 확인 ENGINE_ERROR (#594)
+//    외부 API가 4xx(408 · 429 제외)로 답하면 다시 해도 같으므로 재처리 없이 바로 관리자 확인 ENGINE_ERROR (#594)
 // 4) 멈춘 검수 요청: 30분이 지나도 REQUESTED면(DB 오류로 DLT · 이벤트 유실) 재처리 스케줄러가 엔진 오류 재처리처럼 맡음
 @Slf4j
 @Service
@@ -303,7 +303,11 @@ public class ImageReviewService implements ReviewRequester {
             return;
         }
         review.complete(outcome.verdict(), outcome.engineResult(), outcome.errorMessage(), LocalDateTime.now(clock));
-        if (isEngineError(outcome.verdict())) {
+        if (isEngineError(outcome.verdict()) && !outcome.retryable()) {
+            // 4xx는 API 키 · 권한 오류처럼 모든 상품에 걸릴 수 있어 ERROR로 남겨 알아채게 함 (#597 리뷰)
+            log.error("검수 엔진 오류, 재처리 없이 관리자 확인 ({}): productId={}, reviewVersion={}, error={}",
+                    noRetryReason(review, outcome), target.productId(), target.reviewVersion(), outcome.errorMessage());
+        } else if (isEngineError(outcome.verdict())) {
             log.warn("검수 엔진 오류, 재처리 없이 관리자 확인 ({}): productId={}, reviewVersion={}, error={}",
                     noRetryReason(review, outcome), target.productId(), target.reviewVersion(), outcome.errorMessage());
         }
@@ -380,7 +384,7 @@ public class ImageReviewService implements ReviewRequester {
     private record Claimed(Long productId, int reviewVersion) {
     }
 
-    // retryable=false: 외부 API 4xx(429 제외)가 하나라도 있으면 엔진 오류 재처리하지 않음
+    // retryable=false: 외부 API 4xx(408 · 429 제외)가 하나라도 있으면 엔진 오류 재처리하지 않음
     private record Outcome(ReviewVerdict verdict, String engineResult, String errorMessage, boolean retryable) {
 
         Outcome(ReviewVerdict verdict, String engineResult, String errorMessage) {
