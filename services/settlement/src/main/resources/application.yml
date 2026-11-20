@@ -22,6 +22,12 @@ spring:
       value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
         spring.deserializer.value.delegate.class: com.justcommit.backend.common.messaging.consumer.EventEnvelopeDeserializer
+  # @Scheduled 스레드 수 (기본 1). Kafka 장애로 Outbox 재전송이 길어져도(건당 최대 5초 × 100건)
+  # 정산 지급 큐가 제 주기에 돌게 한다. 정산 지급은 SKIP LOCKED와 임대로 막고 있어 동시에 돌아도 안전하다 (docs/reference/schedulers.md)
+  task:
+    scheduling:
+      pool:
+        size: 3
   http:
     serviceclient:
       internal-payment:

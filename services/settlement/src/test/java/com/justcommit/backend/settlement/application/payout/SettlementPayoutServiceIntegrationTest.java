@@ -70,6 +70,8 @@ class SettlementPayoutServiceIntegrationTest {
         registry.add("internal-api.key", () -> "test-internal-key");
         registry.add("spring.kafka.listener.auto-startup", () -> "false");
         registry.add("custom.settlement.payout.enabled", () -> "false");
+        // Outbox 재전송 · 정리 스케줄러는 끈다 (common-messaging-outbox)
+        registry.add("outbox.scheduler.enabled", () -> "false");
     }
 
     @Autowired SettlementPayoutService payoutService;

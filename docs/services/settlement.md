@@ -1,7 +1,7 @@
 # settlement 서비스
 
 > 언제 읽나: settlement 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 5, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: Miro 5, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -17,7 +17,7 @@
 |---|---|
 | `SETTLEMENT` | 정산 (`sellerOrderId` UK, `PENDING` / `COMPLETED` / `FAILED`, 음수 가능, `shipping_fee` 배송비: 옛 토픽으로만 받은 정산은 null, 같은 판매자 주문이 새 토픽으로 오면 채움) |
 | `MEMBER_REPLICA` | 회원 복제본 |
-| `OUTBOX` | 발행 대기 이벤트 |
+| `OUTBOX_EVENT` | 발행 대기 이벤트 (`common-messaging-outbox`, Flyway V5) |
 
 ## 외부 API
 

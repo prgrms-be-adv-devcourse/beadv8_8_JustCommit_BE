@@ -69,6 +69,8 @@ class PurchaseConfirmedKafkaIntegrationTest {
         registry.add("jwt.public-key", PurchaseConfirmedKafkaIntegrationTest::newPublicKey);
         registry.add("internal-api.key", () -> "test-internal-key");
         registry.add("custom.settlement.payout.enabled", () -> "false");
+        // Outbox 재전송 · 정리 스케줄러는 끈다 (common-messaging-outbox)
+        registry.add("outbox.scheduler.enabled", () -> "false");
     }
 
     private static final EventEnvelopeMapper ENVELOPE_MAPPER = new EventEnvelopeMapper();
