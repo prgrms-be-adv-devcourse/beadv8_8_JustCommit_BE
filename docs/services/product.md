@@ -93,7 +93,7 @@
 |---|---|
 | 숨김 | 상태와 별개. 판매자 본인만 봄, 남이 상세를 열면 403 `PRODUCT_HIDDEN`(삭제 404와 구분), 새 주문 불가, 장바구니에는 "숨긴 상품" |
 | 검수 중 · 반려 노출 | `REVIEW_PENDING` · `REJECTED`는 판매자 본인만 봄(내 상품 목록 · 상세), 남이 상세를 열면 404 `PRODUCT_NOT_FOUND`(검색에도 안 나와 없는 상품처럼), 예약 불가(409 `PRODUCT_NOT_RESERVABLE`). 내부 API(`ProductResult`)는 제목을 「검수 중인 상품」으로 가리고 썸네일을 비움(장바구니에 반려 사진 · 글이 보이지 않게) |
-| 등록 | SELLER만 (403 `NOT_SELLER`). 품종 · 제목 · 설명 · 가격 · 사진 필수. 사진은 본인이 Presigned URL로 올린 JPEG · PNG, 10MB 이하, 1~10장 |
+| 등록 | SELLER만 (403 `NOT_SELLER`). 품종 · 제목 · 설명 · 가격 · 사진 필수. 사진은 본인이 Presigned URL로 올린 JPEG · PNG, 7.5MB 이하, 1~10장 |
 | 수정 | 본인 · `ACTIVE` · `REJECTED` · `REVIEW_PENDING`만, 전체 교체, 검수 버전 +1. 판매 중 상품의 글만 바뀌면 판매를 이어 가며 글 검사만 (걸리면 `REJECTED`, 관리자 확인이면 `REVIEW_PENDING`), 그 밖에는 처음부터 검수(사진 · 품종이 바뀜, 검수 중 · 반려 상품). 예약과 겹치지 않게 행 잠금 |
 | 삭제 | 본인 · `ACTIVE` · `REJECTED` · `REVIEW_PENDING`만, 소프트 삭제, 사진은 커밋 후 S3에서 삭제 |
 | 재검수 · 이의 신청 | 재검수 2회, 자동 반려는 수정 없이 이의 신청 1회 → [사진 검수](../flows/image-review.md) |

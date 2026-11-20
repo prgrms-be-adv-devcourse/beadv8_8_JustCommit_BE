@@ -89,16 +89,18 @@ class OpenAiModerationClientTest {
     void retryExhausted() {
         server.expect(ExpectedCount.times(3), requestTo(URL)).andRespond(withServerError());
 
-        assertThatThrownBy(() -> client.isTextFlagged("글")).isInstanceOf(ReviewEngineException.class);
+        assertThatThrownBy(() -> client.isTextFlagged("글"))
+                .isInstanceOfSatisfying(ReviewEngineException.class, e -> assertThat(e.isRetryable()).isTrue());   // 5xx는 엔진 오류 재처리 대상
         server.verify();
     }
 
     @Test
-    @DisplayName("400은 다시 시도하지 않음")
+    @DisplayName("400은 다시 시도하지 않고, 엔진 오류 재처리도 하지 않는 예외 (#594)")
     void badRequest() {
         server.expect(ExpectedCount.once(), requestTo(URL)).andRespond(withBadRequest());
 
-        assertThatThrownBy(() -> client.isTextFlagged("글")).isInstanceOf(ReviewEngineException.class);
+        assertThatThrownBy(() -> client.isTextFlagged("글"))
+                .isInstanceOfSatisfying(ReviewEngineException.class, e -> assertThat(e.isRetryable()).isFalse());
         server.verify();
     }
 

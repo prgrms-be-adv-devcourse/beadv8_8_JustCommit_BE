@@ -23,6 +23,7 @@ import java.util.Map;
 
 // OpenAI Moderation (omni-moderation-latest). 사진은 한 요청에 한 장씩, 글은 제목 · 설명을 합쳐 한 번
 // 429 · 5xx · 연결 실패는 잠깐 쉬고 다시 시도(모두 3번), 그래도 실패하거나 응답을 해석하지 못하면 ReviewEngineException
+// 4xx(429 제외)는 다시 보내도 같아서 바로 재처리하지 않는 ReviewEngineException (#594)
 @Component
 public class OpenAiModerationClient implements ModerationClient {
 
@@ -90,8 +91,11 @@ public class OpenAiModerationClient implements ModerationClient {
                         .body(JsonNode.class);
                 return flagged(response);
             } catch (RestClientResponseException e) {
+                if (ReviewEngineException.isClientError(e.getStatusCode().value())) {
+                    throw ReviewEngineException.rejected("Moderation 요청 거부: " + e.getStatusCode().value(), e);
+                }
                 if (!isRetryable(e.getStatusCode())) {
-                    throw new ReviewEngineException("Moderation 요청 실패: " + e.getStatusCode(), e);
+                    throw new ReviewEngineException("Moderation 요청 실패: " + e.getStatusCode().value(), e);
                 }
                 last = e;
             } catch (ResourceAccessException e) {

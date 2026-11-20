@@ -48,6 +48,7 @@ import java.util.List;
 //    외부 API를 기다리는 동안 DB 커넥션 · 행 잠금을 잡지 않으려고 트랜잭션을 나눔
 // 3) 엔진 오류 재처리: 외부 API가 재시도 후에도 실패하면 상품은 그대로 두고 ENGINE_ERROR,
 //    재처리 스케줄러가 5분 뒤 같은 검수 버전으로 다시 검수 (최대 3회, 그래도 실패하면 관리자 확인 ENGINE_ERROR)
+//    외부 API가 4xx(429 제외)로 답하면 다시 해도 같으므로 재처리 없이 바로 관리자 확인 ENGINE_ERROR (#594)
 // 4) 멈춘 검수 요청: 30분이 지나도 REQUESTED면(DB 오류로 DLT · 이벤트 유실) 재처리 스케줄러가 엔진 오류 재처리처럼 맡음
 @Slf4j
 @Service
@@ -208,12 +209,12 @@ public class ImageReviewService implements ReviewRequester {
             return new Outcome(ReviewVerdict.manual(ManualReason.REPEATED_REJECTIONS, null), null, null);
         }
         Instant deadline = clock.instant().plus(REVIEW_TIME_BUDGET);
-        List<String> errors = new ArrayList<>();
+        EngineErrors errors = new EngineErrors();
         List<ImageData> images = null;
         try {
             images = target.imageUrls().stream().map(imageReader::read).toList();
         } catch (RuntimeException e) {
-            errors.add("사진 읽기 실패: " + e.getMessage());
+            errors.add("사진 읽기 실패", e);
             log.warn("검수 사진 읽기 실패: productId={}", target.productId(), e);
         }
 
@@ -231,7 +232,7 @@ public class ImageReviewService implements ReviewRequester {
                 checkTimeBudget(deadline);
                 moderation = new ModerationResult(imageFlagged, moderationClient.isTextFlagged(text(target)));
             } catch (RuntimeException e) {
-                errors.add("Moderation: " + e.getMessage());
+                errors.add("Moderation", e);
                 log.warn("Moderation 실패: productId={}", target.productId(), e);
             }
         }
@@ -244,30 +245,30 @@ public class ImageReviewService implements ReviewRequester {
                 checkTimeBudget(deadline);
                 plant = plantIdentifier.identify(images, bannedListService.promptNames());
             } catch (RuntimeException e) {
-                errors.add("Haiku: " + e.getMessage());
+                errors.add("Haiku", e);
                 log.warn("식물 식별 실패: productId={}", target.productId(), e);
             }
         }
 
         BannedTextMatcher.Match text = bannedListService.matchText(target.title(), target.description());
         ReviewVerdict verdict = judgeProvider.get().judge(moderation, plant, text, target.sellerSpecies());
-        return new Outcome(verdict, engineJson(new EngineResult(moderation, plant)), errors.isEmpty() ? null : String.join(" / ", errors));
+        return new Outcome(verdict, engineJson(new EngineResult(moderation, plant)), errors.message(), errors.retryable());
     }
 
     // 판매 중 상품의 글만 수정: 글 유해 검사 · 금지어 대조만
     private Outcome reviewText(Target target) {
         Boolean textFlagged = null;
-        String error = null;
+        EngineErrors errors = new EngineErrors();
         try {
             textFlagged = moderationClient.isTextFlagged(text(target));
         } catch (RuntimeException e) {
-            error = "Moderation: " + e.getMessage();
+            errors.add("Moderation", e);
             log.warn("Moderation 실패(글): productId={}", target.productId(), e);
         }
         BannedTextMatcher.Match text = bannedListService.matchText(target.title(), target.description());
         ReviewVerdict verdict = judgeProvider.get().judgeText(textFlagged, text);
         ModerationResult moderation = textFlagged == null ? null : ModerationResult.textOnly(textFlagged);
-        return new Outcome(verdict, engineJson(new EngineResult(moderation, null)), error);
+        return new Outcome(verdict, engineJson(new EngineResult(moderation, null)), errors.message(), errors.retryable());
     }
 
     // 판정을 상품에 반영. 검수 버전이 같고 기대한 상태일 때만 (그사이 수정 · 삭제 · 예약됐으면 반영하지 않음)
@@ -278,7 +279,7 @@ public class ImageReviewService implements ReviewRequester {
             return;   // 같은 요청이 동시에 두 번 처리됨. 먼저 끝난 쪽만 반영
         }
         ProductStatus from = expectedStatus(target.scope());
-        if (isEngineError(outcome.verdict()) && canRetry(review)) {
+        if (isEngineError(outcome.verdict()) && outcome.retryable() && canRetry(review)) {
             // 상품 상태는 그대로. 같은 조건으로 UPDATE해 그사이 버전이 바뀌지 않았는지만 확인
             if (productRepository.applyReviewResult(target.productId(), target.reviewVersion(), from, from) == 0) {
                 review.markStale();
@@ -302,6 +303,10 @@ public class ImageReviewService implements ReviewRequester {
             return;
         }
         review.complete(outcome.verdict(), outcome.engineResult(), outcome.errorMessage(), LocalDateTime.now(clock));
+        if (isEngineError(outcome.verdict())) {
+            log.warn("검수 엔진 오류, 재처리 없이 관리자 확인 ({}): productId={}, reviewVersion={}, error={}",
+                    noRetryReason(review, outcome), target.productId(), target.reviewVersion(), outcome.errorMessage());
+        }
         publishResult(target, review, outcome.verdict(), from, to);
         log.info("검수 완료: productId={}, reviewVersion={}, decision={}, rejectReason={}, manualReason={}",
                 target.productId(), target.reviewVersion(), outcome.verdict().decision(),
@@ -330,6 +335,17 @@ public class ImageReviewService implements ReviewRequester {
     // 재처리 횟수가 남았고 API 키가 있을 때만 (키가 없으면 다시 해도 실패하므로 바로 관리자 확인)
     private boolean canRetry(ImageReview review) {
         return review.getRetryCount() < MAX_ENGINE_RETRIES && isEngineConfigured();
+    }
+
+    // 엔진 오류를 재처리하지 않은 이유 (로그로 원인을 나눔)
+    private String noRetryReason(ImageReview review, Outcome outcome) {
+        if (!outcome.retryable()) {
+            return "외부 API 4xx: 요청이 거부돼 다시 해도 같음";
+        }
+        if (!isEngineConfigured()) {
+            return "API 키 없음";
+        }
+        return "재처리 " + review.getRetryCount() + "/" + MAX_ENGINE_RETRIES + "회 소진";
     }
 
     private void checkTimeBudget(Instant deadline) {
@@ -364,7 +380,34 @@ public class ImageReviewService implements ReviewRequester {
     private record Claimed(Long productId, int reviewVersion) {
     }
 
-    private record Outcome(ReviewVerdict verdict, String engineResult, String errorMessage) {
+    // retryable=false: 외부 API 4xx(429 제외)가 하나라도 있으면 엔진 오류 재처리하지 않음
+    private record Outcome(ReviewVerdict verdict, String engineResult, String errorMessage, boolean retryable) {
+
+        Outcome(ReviewVerdict verdict, String engineResult, String errorMessage) {
+            this(verdict, engineResult, errorMessage, true);
+        }
+    }
+
+    // 단계별 외부 API 실패를 모아 image_review.error_message로 남김
+    private static final class EngineErrors {
+
+        private final List<String> messages = new ArrayList<>();
+        private boolean retryable = true;
+
+        void add(String step, RuntimeException e) {
+            messages.add(step + ": " + e.getMessage());
+            if (e instanceof ReviewEngineException engine && !engine.isRetryable()) {
+                retryable = false;
+            }
+        }
+
+        String message() {
+            return messages.isEmpty() ? null : String.join(" / ", messages);
+        }
+
+        boolean retryable() {
+            return retryable;
+        }
     }
 
     // image_review.engine_result에 남길 엔진 결과 (관리자 화면 · 기준값 확인용, 실패한 단계는 null)

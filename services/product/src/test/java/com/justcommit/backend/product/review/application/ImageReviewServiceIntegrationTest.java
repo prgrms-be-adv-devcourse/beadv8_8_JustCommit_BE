@@ -580,6 +580,52 @@ class ImageReviewServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("#594 외부 API 4xx(요청 거부)는 재처리 없이 바로 관리자 확인(ENGINE_ERROR), 재처리 횟수 0")
+    void clientErrorGoesManualWithoutRetry() {
+        keysConfigured();
+        willThrow(ReviewEngineException.rejected("Haiku 요청 거부: 400", null))
+                .given(plantIdentifier).identify(anyList(), anyList());
+        Product product = register("몬스테라 팝니다", null);
+
+        imageReviewService.review(product.getId(), 0);
+
+        assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);
+        ImageReview review = reviewOf(product, 0);
+        assertThat(review.getStatus()).isEqualTo(ReviewStatus.DONE);
+        assertThat(review.getDecision()).isEqualTo(ReviewDecision.MANUAL);
+        assertThat(review.getManualReason()).isEqualTo(ManualReason.ENGINE_ERROR);
+        assertThat(review.getRetryCount()).isZero();
+        assertThat(review.getNextRetryAt()).isNull();
+        assertThat(review.getReviewedAt()).isNotNull();   // 관리자 확인 기한은 바로 이때부터
+        assertThat(review.getErrorMessage()).contains("Haiku 요청 거부: 400");
+
+        makeRetryDue();
+        assertThat(imageReviewService.retryEngineErrors()).isZero();
+        verify(plantIdentifier, times(1)).identify(anyList(), anyList());
+    }
+
+    @Test
+    @DisplayName("#594 글 검사도 Moderation 4xx면 재처리 없이 바로 관리자 확인")
+    void textOnlyClientErrorGoesManual() {
+        keysConfigured();
+        identifyAs(MONSTERA, 0.95);
+        Product product = register("몬스테라 팝니다", null);
+        imageReviewService.review(product.getId(), 0);
+        assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.ACTIVE);
+
+        updateText(product, "물 잘 주면 잘 자라요");
+        willThrow(ReviewEngineException.rejected("Moderation 요청 거부: 400", null))
+                .given(moderationClient).isTextFlagged(anyString());
+        imageReviewService.review(product.getId(), 1);
+
+        ImageReview review = reviewOf(product, 1);
+        assertThat(review.getStatus()).isEqualTo(ReviewStatus.DONE);
+        assertThat(review.getManualReason()).isEqualTo(ManualReason.ENGINE_ERROR);
+        assertThat(review.getRetryCount()).isZero();
+        assertThat(reload(product).getStatus()).isEqualTo(ProductStatus.REVIEW_PENDING);   // 관리자가 볼 때까지 판매 멈춤
+    }
+
+    @Test
     @DisplayName("[S-C10] 그사이 상품이 수정돼 검수 버전이 다르면 재처리하지 않음 (STALE)")
     void retrySkipsChangedVersion() {
         keysConfigured();
