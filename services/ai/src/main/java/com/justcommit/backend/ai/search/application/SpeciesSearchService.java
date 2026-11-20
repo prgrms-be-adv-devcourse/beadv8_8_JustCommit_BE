@@ -34,7 +34,7 @@ public class SpeciesSearchService {
     public SpeciesSearchService(
             QueryEmbedder queryEmbedder,
             SpeciesSearchQueryRepository queryRepository,
-            @Value("${custom.species-search.min-similarity:0.28}") double minSimilarity) {
+            @Value("${custom.species-search.min-similarity:0.35}") double minSimilarity) {
         this.queryEmbedder = queryEmbedder;
         this.queryRepository = queryRepository;
         this.minSimilarity = minSimilarity;
