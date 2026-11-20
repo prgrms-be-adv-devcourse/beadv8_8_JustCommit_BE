@@ -193,7 +193,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 
 | 단계 | 요청 | 동작, 응답 |
 |---|---|---|
-| 인출 신청 | `POST wallet/cashOuts`, 헤더 `Idempotency-Key`(1 ~ 64자), `{ amount }` | 200 `data: { cashOutId, amount, status, accountLast4, balanceAfter }`. 잔액을 바로 차감하고, 지급이 끝나면 `COMPLETED`, 지급이 실패하면 `PENDING`(차감 유지, 재시도와 복원은 ⬜ #389). 같은 키에 같은 금액이면 처음 결과(계좌 조회와 지급을 다시 하지 않음), 같은 키에 다른 금액이면 409 `IDEMPOTENCY_KEY_CONFLICT` |
+| 인출 신청 | `POST wallet/cashOuts`, 헤더 `Idempotency-Key`(1 ~ 64자), `{ amount }` | 200 `data: { cashOutId, amount, status, accountLast4, balanceAfter }`. 잔액을 바로 차감하고, 지급이 끝나면 `COMPLETED`, 지급이 실패하면 `PENDING`(차감 유지). 같은 키에 같은 금액이면 처음 결과(계좌 조회와 지급을 다시 하지 않음), 같은 키에 다른 금액이면 409 `IDEMPOTENCY_KEY_CONFLICT` |
 | 인출 내역 | `GET wallet/cashOuts?page=&size=` | 200 페이지 `content[]: { cashOutId, amount, status, accountLast4, requestedAt, completedAt }`, 최근 신청 순. 지갑이 없으면 빈 목록 |
 
 거절하면 잔액, 거래 내역, 인출 건이 바뀌지 않습니다.
