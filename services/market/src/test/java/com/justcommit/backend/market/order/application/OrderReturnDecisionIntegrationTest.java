@@ -48,6 +48,8 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -56,6 +58,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
@@ -104,6 +107,7 @@ class OrderReturnDecisionIntegrationTest {
     @Autowired OrdersRepository ordersRepository;
     @Autowired ReturnRequestRepository returnRequestRepository;
     @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired PlatformTransactionManager transactionManager;
 
     @AfterEach
     void cleanUp() {
@@ -169,6 +173,39 @@ class OrderReturnDecisionIntegrationTest {
                 .isInstanceOfSatisfying(BusinessException.class, e ->
                         assertThat(e.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
         assertThat(itemStatus(fixture.returnItemId())).isEqualTo("RETURN_REQUESTED");
+    }
+
+    @Test
+    @DisplayName("남의 판매자 주문이면 주문 잠금을 기다리지 않고 바로 404 (잠그기 전에 판매자 확인)")
+    void otherSellerDoesNotWaitForOrderLock() throws Exception {
+        Fixture fixture = fixture(LocalDateTime.now().minusHours(1), OrderItemStatus.CONFIRMED);
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService holder = Executors.newSingleThreadExecutor();
+        try {
+            // 다른 트랜잭션이 주문 행을 잠그고 쥐고 있다
+            Future<?> hold = holder.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
+                jdbcTemplate.queryForObject("select id from orders where id = ? for update", Long.class, fixture.orderId());
+                locked.countDown();
+                try {
+                    release.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }));
+            assertThat(locked.await(5, TimeUnit.SECONDS)).isTrue();
+
+            CompletableFuture<Void> call = CompletableFuture.runAsync(() -> orderReturnService.approve(999L, fixture.returnItemId()));
+            assertThatThrownBy(() -> call.get(2, TimeUnit.SECONDS)) // 잠금을 기다렸다면 시간 초과
+                    .hasCauseInstanceOf(BusinessException.class)
+                    .cause().satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                            .isEqualTo(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
+            release.countDown();
+            hold.get(5, TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+            holder.shutdownNow();
+        }
     }
 
     @Test

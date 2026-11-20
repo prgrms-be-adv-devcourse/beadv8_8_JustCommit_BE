@@ -175,13 +175,17 @@ public class OrderReturnService {
                 decidedBy, now));
     }
 
-    // 주문 → 판매자 주문 순으로 잠그고, 잠근 뒤 반품 신청을 읽는다. 본인 판매자 주문이 아니면 없는 것으로 본다
+    // 주문 → 판매자 주문 순으로 잠그고, 잠근 뒤 반품 신청을 읽는다. 본인 판매자 주문이 아니면 없는 것으로 본다.
+    // 남의 주문상품 요청이 남의 주문 행을 잠그지 않도록 잠그기 전에 판매자를 먼저 확인하고, 잠근 뒤에도 다시 확인한다
     private Locked lockForSeller(Long sellerId, Long orderItemId) {
         Long orderId = ordersItemRepository.findOrderIdByItemId(orderItemId).orElseThrow(()
                 -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
-        Orders order = ordersRepository.findLockedById(orderId).orElseThrow(()
-                -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
         Long sellerOrderId = ordersItemRepository.findSellerOrderIdByItemId(orderItemId).orElseThrow(()
+                -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
+        if (!sellerOrderRepository.existsByIdAndSellerId(sellerOrderId, sellerId)) {
+            throw new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND);
+        }
+        Orders order = ordersRepository.findLockedById(orderId).orElseThrow(()
                 -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
         SellerOrder sellerOrder = sellerOrderRepository.findLockedById(sellerOrderId).orElseThrow(()
                 -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
