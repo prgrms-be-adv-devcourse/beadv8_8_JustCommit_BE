@@ -10,6 +10,7 @@
 | `add-indexes.sql` | 가설 2: 목록 조회 컬럼 인덱스 3개 (되돌리는 문 포함) |
 | `delivered-orders.sql` | 가설 1 · 5: 배송 완료 4일 지난 주문 추가 → 다음 자동 구매확정이 한꺼번에 확정 · 정산 (`-v delivered=3000 -v tag=sched1`) |
 | `check-concurrent.sql` | `concurrent.js` 뒤 상품마다 결제된 주문 1건 · 지갑 출금 금액이 맞는지 확인 |
+| `product-seed.sql` | MSA product DB용 판매 중 상품 (`-v products=10000 -v sellers=200`, 실행할 때마다 더 쌓임, #571). 넣은 뒤 관리자 전체 색인 API로 OpenSearch 색인 |
 
 다른 SQL도 넣는 방법은 아래 `seed.sql`과 같다 (`-v` 값만 다름, 비밀번호 해시는 `seed.sql`만 필요).
 

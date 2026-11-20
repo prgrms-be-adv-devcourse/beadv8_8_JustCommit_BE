@@ -2,6 +2,7 @@ package com.justcommit.backend.market.order.application;
 
 import com.justcommit.backend.market.order.domain.ReturnRequestStatus;
 import com.justcommit.backend.market.order.domain.ReturnRequest;
+import com.justcommit.backend.market.shipment.application.ShippingFeeTableService;
 import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.common.client.exception.InternalApiErrorException;
 import com.justcommit.backend.common.client.exception.InternalApiResultUnknownException;
@@ -110,12 +111,14 @@ class OrderServiceTest {
     @Mock OrderReturnService orderReturnService;
     @Mock SellerOrderEventPublisher sellerOrderEventPublisher;
     @Mock OrderItemConfirmationService orderItemConfirmationService;
+    @Mock ShippingFeeTableService shippingFeeTableService;
     @InjectMocks OrderService orderService;
     private OrderItemConfirmationService confirmationServiceUnderTest;
     private Orders savedOrder;
 
     @BeforeEach
     void setUpConfirmationService() {
+        lenient().when(shippingFeeTableService.feeFor(any())).thenReturn(BigDecimal.valueOf(3_000));
         confirmationServiceUnderTest = new OrderItemConfirmationService(ordersRepository, ordersItemRepository,
                 sellerOrderRepository, shipmentQuery,
                 new SellerOrderCompletion(returnRequestRepository, purchaseConfirmedEventPublisher, sellerOrderEventPublisher),
@@ -228,6 +231,27 @@ class OrderServiceTest {
         assertThat(response.itemCount()).isEqualTo(3);
         verify(productQuery).getProducts(List.of(101L, 102L, 103L));
         verify(cartService).removeSelectedItems(10L, List.of(1L, 2L, 3L));
+    }
+
+    @Test
+    @DisplayName("배송비는 배송지 우편번호로 요금표에서 계산해 판매자 주문마다 한 번씩 붙인다 (#589)")
+    void appliesShippingFeeFromTablePerSellerOrder() {
+        when(shippingFeeTableService.feeFor("12345")).thenReturn(BigDecimal.valueOf(8_000));
+        stubLookup(List.of(selected(1L, 101L, "10000"), selected(2L, 102L, "20000")),
+                List.of(product(101L, 20L, "상품1", "10000", true),
+                        product(102L, 30L, "상품2", "20000", true)));
+        stubSavedOrder();
+        stubInsufficientBalance();
+
+        OrderCreateResponse response = orderService.create(10L, request(1L, 2L));
+
+        ArgumentCaptor<Orders> orderCaptor = ArgumentCaptor.forClass(Orders.class);
+        verify(ordersRepository).saveAndFlush(orderCaptor.capture());
+        assertThat(orderCaptor.getValue().getSellerOrders())
+                .extracting(SellerOrder::getShippingFee)
+                .allSatisfy(fee -> assertThat(fee).isEqualByComparingTo("8000"));
+        assertThat(response.totalAmount()).isEqualByComparingTo("46000");
+        verify(shippingFeeTableService).feeFor("12345");
     }
 
     @Test

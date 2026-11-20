@@ -172,7 +172,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | POST | `orders/seller/{id}/reject` | 판매자 거절 (`orderItemIds` 필수, 사유 없음): 고른 주문상품은 환불, 나머지는 수락. 이 판매자 주문에 없는 상품은 400 `INVALID_REJECT_ITEMS`, 고른 상품이 수락 대기가 아니면 409 `SELLER_ORDER_NOT_ACCEPTABLE` | SELLER |
 | POST | `orders/items/{id}/return/approve` | 판매자 반품 승인 (본문 없음, 성공 200 본문 없음): 그 주문상품만 담은 반품 배송(`READY`)을 만들고 반품 배송비를 남김. 응답 전 반품 신청이 아니면(이미 승인, 거절, 자동 승인 포함) 409 `RETURN_NOT_DECIDABLE`, 남의 판매자 주문의 주문상품은 404 | SELLER |
 | POST | `orders/items/{id}/return/reject` | 판매자 반품 거절 (본문 없음, 성공 200 본문 없음): 그 주문상품을 바로 구매 확정. 409, 404는 승인과 같음 | SELLER |
-| POST | `webhooks/courier` | 택배사 웹훅 (`X-Api-Key`) | 공개 |
+| POST | `webhooks/courier` | 택배사 웹훅 (`X-Api-Key`): 배송 상태(`courierOrderNo` · `trackingNo` 필수)와 요금표 변경(`status` `SHIPPING_FEES_CHANGED`, `version` · `updatedAt` · `baseFee` · `jejuSurcharge` · `remoteSurcharge` · `jejuZipcodes` · `remoteZipcodes`) 두 가지. 본문 원본은 404-express `docs/design.md` 「웹훅」 | 공개 |
 
 ### ai
 

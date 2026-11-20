@@ -33,14 +33,17 @@ class SettlementApplicationTests {
         registry.add("jwt.public-key", SettlementApplicationTests::newPublicKey);
         registry.add("internal-api.key", () -> "test-internal-key");
         registry.add("spring.kafka.listener.auto-startup", () -> "false");
+        // Outbox 재전송 · 정리 스케줄러는 끈다 (common-messaging-outbox)
+        registry.add("outbox.scheduler.enabled", () -> "false");
     }
 
     @Test
-    @DisplayName("빈 DB에서 Flyway V1 · V2가 적용되고 ddl-auto validate로 settlement 서비스가 뜬다")
+    @DisplayName("빈 DB에서 Flyway V1 · V2 · V5(outbox_event)가 적용되고 ddl-auto validate로 settlement 서비스가 뜬다")
     void contextLoads(@Autowired Flyway flyway) {
         assertThat(flyway.info().applied())
                 .extracting(info -> info.getVersion().getVersion(), MigrationInfo::getState)
-                .contains(tuple("1", MigrationState.SUCCESS), tuple("2", MigrationState.SUCCESS));
+                .contains(tuple("1", MigrationState.SUCCESS), tuple("2", MigrationState.SUCCESS),
+                        tuple("5", MigrationState.SUCCESS));
     }
 
     private static String newPublicKey() {

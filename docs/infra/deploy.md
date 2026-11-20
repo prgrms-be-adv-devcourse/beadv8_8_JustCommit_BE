@@ -30,7 +30,7 @@ Gateway는 K3s Service 이름으로 market에 보내고 K3s가 살아 있는 파
 
 ## CI/CD
 
-워크플로는 `.github/workflows/cd.yml`입니다.
+워크플로는 `.github/workflows/cd.yml`입니다. 404-express는 별도 레포 `gasic37200/404-express`의 `cd.yml`이 main push마다 같은 러너로 배포합니다 (서버 `~/404-express`).
 
 1. develop 머지
 2. 경로 필터로 바뀐 서비스만 고름 (`common/` · `Dockerfile` · Gradle 설정 · `cd.yml`이 바뀌면 전체). 테스트는 하지 않음 (PR CI에서)
