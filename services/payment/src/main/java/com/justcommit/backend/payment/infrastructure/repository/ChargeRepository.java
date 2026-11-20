@@ -1,6 +1,7 @@
 package com.justcommit.backend.payment.infrastructure.repository;
 
 import com.justcommit.backend.payment.domain.Charge;
+import com.justcommit.backend.payment.domain.ChargeStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Lock;
@@ -9,11 +10,15 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.Optional;
 
 public interface ChargeRepository extends JpaRepository<Charge, Long> {
 
     Optional<Charge> findByIdAndWallet_MemberId(Long id, Long memberId);
+
+    // 탈퇴 확인: 지갑에 주어진 상태의 충전이 하나라도 있는지 (idx_charge_wallet_id)
+    boolean existsByWallet_IdAndStatusIn(Long walletId, Collection<ChargeStatus> statuses);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from Charge c where c.id = :id and c.wallet.memberId = :memberId")

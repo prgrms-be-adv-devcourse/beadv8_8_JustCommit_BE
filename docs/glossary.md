@@ -1,7 +1,7 @@
 # 용어집 (유비쿼터스 언어)
 
 > 언제 읽나: 같은 대상을 부르는 표준 이름을 찾을 때, 별칭(다른 이름 · 일상어 · 영문)으로 검색할 때, 코드 이름과 문서 이름을 맞출 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: 노션 「유비쿼터스 언어 정리」, 전체
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: 노션 「유비쿼터스 언어 정리」, 전체
 
 문서 · 코드 · PR · 회의에서는 「표준 용어」만 씁니다. 「별칭」은 검색용이며 본문에 쓰지 않습니다. 시간 · 금액 · 횟수 같은 값은 여기 적지 않고 「원본」 문서를 봅니다.
 
@@ -21,6 +21,8 @@
 | 수락 마감 | `acceptDeadline` (`SellerOrder.paidAt` 기준) | 수락 기한, 응답 기한 | 판매자가 수락하거나 거절해야 하는 시각. 지나면 자동 거절 | [market 정책](services/market.md#정책) |
 | 자동 거절 | – | 자동 취소 (구매자 알림 문구) | 판매자가 기한 안에 응답하지 않아 거절된 주문 | [market 정책](services/market.md#정책) |
 | 배송 | `Shipment` | 택배, 배송 건 | 판매자 주문 하나의 택배. 반품은 방향이 다른 새 배송 | [market](services/market.md) |
+| 배송 방향 | `direction` (`ShipmentDirection`) | – | 배송이 가는 길인지 반품인지. 판매자 주문 하나에 가는 길 배송은 1개, 반품 배송은 여러 개 | [market](services/market.md) |
+| 가는 길 | `OUTBOUND` (배송 방향) | 정방향, 원래 배송 | 판매자 → 구매자로 가는 배송. 구매 확정 · 취소 · 반품 기간은 가는 길 배송으로 판정 | [market](services/market.md) |
 | 택배 예약 | `BOOKED` | 접수, 택배 접수, 픽업 대기 (화면 표시) | 택배사에 수거를 예약한 상태. 상품 「예약」과 구분해 항상 「택배 예약」으로 씀 | [market 정책](services/market.md#정책) |
 | 수거 | `PICKED_UP` | 픽업, 가져감, 집하 | 택배사가 상품을 가져간 상태. 이후에는 취소 대신 반품 | [market 정책](services/market.md#정책) |
 | 배송 완료 | `DELIVERED` | 도착 | 구매자에게 도착한 상태. 자동 구매 확정 · 반품 기간의 기준 시점 | [market 정책](services/market.md#정책) |
@@ -36,9 +38,12 @@
 | 취소 중 | `CANCEL_PROCESSING` (주문상품) | 환불 확인 중 | 환불 결과를 모르는 주문상품. 환불이 확정되면 취소 완료 | [취소 · 환불](flows/cancel-refund.md#실패와-재시도) |
 | 환불 | `refunds/*` (payment) | 돈 돌려주기, 결제 취소 | **돈**이 주체. 결제한 돈을 구매자에게 돌려주는 것. 원인은 수거 전 취소 · 판매자 거절 · 자동 거절 · 반품 완료 | [payment](services/payment.md#정책) |
 | 반품 | `Return*` · `OrderItemReturned` | 환불 요청, 반품 요청, 교환 | **물건(택배)**이 주체. 받은 상품을 판매자에게 택배로 돌려보내는 절차. 끝나면 그 결과로 환불 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
-| 반품 신청 | `ReturnRequested` | 환불 요청 | 배송 완료 후 판매자 귀책으로 상품을 돌려보내겠다는 요청 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 신청 | `ReturnRequest` (`return_request`) · `RETURN_REQUESTED` (주문상품) · `ReturnRequested` | 환불 요청 | 배송 완료 후 판매자 귀책으로 상품을 돌려보내겠다는 요청 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 승인 · 거절 (반품) | `ReturnApproved` · `ReturnRejected` | 수락 (반품에는 안 씀) | 판매자가 반품을 받아들이거나 거절. 거절하면 그 주문상품은 바로 구매 확정 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
-| 반품 완료 | `OrderItemReturned` (반품 환불 뒤 발행) | 반품 도착 | 반품 택배가 판매자에게 도착한 것. 이때 환불이 일어남 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 사유 | `ReturnReason` (`DAMAGED`, `NOT_AS_DESCRIBED`, `OTHER`) | 반품 원인 | 반품 신청 때 고르는 판매자 귀책 사유 (상품 파손, 설명과 다름, 기타). 기타면 직접 작성 내용 필수 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 배송 중 | `RETURN_IN_TRANSIT` (주문상품) | 반품 수거 중 | 반품이 승인돼 반품 택배가 판매자에게 가는 중인 주문상품 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 환불 중 | `RETURN_PROCESSING` (주문상품) | 반품 도착, 반품 환불 확인 중 | 반품 택배가 판매자에게 도착했고 환불 결과를 기다리는 주문상품 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 완료 | `RETURNED` (주문상품) · `OrderItemReturned` (반품 환불 뒤 발행) | – | 반품 환불이 확정돼 반품이 끝난 것. 택배사 `RETURNED`(반송)와 다름 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 판매자 부담금 | – | 반품비, 왕복 택배비 | 반품 때 판매자가 내는 배송비 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 
 ## 돈
@@ -79,6 +84,7 @@
 | 품종 · 별칭 | `SPECIES` · `SPECIES_ALIAS` | 식물 종류, 유통명 | 상품이 속한 식물 종류와 그 다른 이름 | [product](services/product.md) |
 | 판매 금지 품종 | `BANNED_SPECIES` | 금지 식물 | 법으로 사고팔 수 없는 품종. 품종 목록과 따로 관리 | [product 정책](services/product.md#정책) |
 | 상품 스냅샷 | `product_snapshot` | 상품 사본 (ai) | ai가 상품 이벤트로 채우는 상품 정보 사본 (상품 ID · 품종 ID · 판매자 ID · 상태 · 숨김 · 상품 버전, 모든 상태). 추천할 때 판매 중만 고름 | [ADR 0021](decisions/0021-product-event-payload-ai-snapshot.md) |
+| 품종 의미 검색 | `SpeciesSearchService` · `speciesSearches` | 문장으로 찾기, 의미 검색, 벡터 검색 | 사용자가 쓴 문장을 임베딩해 품종 벡터에서 가까운 품종과 그 품종의 판매 중 상품을 찾는 것. 상품 의미 검색 · 챗봇과 다름 | [검색 · 추천](flows/search-recommend.md#의미-검색) |
 | 추천 평가 세트 | `eval-pairs.csv` | 정답 쌍, 정답 조합 | 누가 봐도 같이 키우기 좋은 품종 짝과 근거. 장바구니 추천 Top-10에 정답 품종이 들어오는 수(적중 수)로 점수 규칙을 비교 | [검색 · 추천](flows/search-recommend.md) |
 
 ## 회원 · 인증

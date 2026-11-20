@@ -165,11 +165,18 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | POST | `orders/{id}/cancel` | 전체 취소 | 로그인 |
 | POST | `orders/items/{id}/cancel` | 상품 취소 | 로그인 |
 | POST | `orders/items/{id}/confirm` | 구매 확정 | 로그인 |
+| POST | `orders/items/{id}/return` | 반품 신청: 본문 `reason`(`DAMAGED`, `NOT_AS_DESCRIBED`, `OTHER`), `reasonDetail`(최대 500자, `OTHER`면 필수, 그 밖에는 선택). 가는 길 배송 완료 후 반품 기간 안의 일반 주문상품만. 이미 신청함 409 `RETURN_ALREADY_REQUESTED`, 반품 불가 상태 409 `RETURN_NOT_REQUESTABLE`, 기간 지남 409 `RETURN_PERIOD_EXPIRED`, 남의 주문상품 404 | 로그인 |
 | GET | `orders` · `orders/{id}` | 구매 내역 · 상세 | 로그인 |
 | GET | `orders/seller` · `orders/seller/{id}` | 판매 내역 · 상세 (목록 `acceptPending`, 목록과 상세 `acceptDeadline` 수락 마감: 수락 대기가 남았을 때만, 상세 상품별 `status`) | SELLER |
 | POST | `orders/seller/{id}/accept` | 판매자 수락: 남은 수락 대기 주문상품을 모두 수락, 배송 생성. 수락 대기가 없으면 409 `SELLER_ORDER_NOT_ACCEPTABLE`, 남의 판매자 주문은 404 | SELLER |
 | POST | `orders/seller/{id}/reject` | 판매자 거절 (`orderItemIds` 필수, 사유 없음): 고른 주문상품은 환불, 나머지는 수락. 이 판매자 주문에 없는 상품은 400 `INVALID_REJECT_ITEMS`, 고른 상품이 수락 대기가 아니면 409 `SELLER_ORDER_NOT_ACCEPTABLE` | SELLER |
 | POST | `webhooks/courier` | 택배사 웹훅 (`X-Api-Key`) | 공개 |
+
+### ai
+
+| 메서드 | 경로 | 설명 | 권한 |
+|---|---|---|---|
+| GET | `speciesSearches` | 품종 의미 검색. `query`(2 ~ 100자) · `size`(1 ~ 10, 기본 5). 응답 `data.items[{speciesId, name, similarity, productIds}]`(유사도 순, 상품은 판매 중 최신 3개), 결과가 없으면 빈 목록. 400 `INVALID_SEARCH_QUERY` · `INVALID_SEARCH_SIZE`, 503 `SEMANTIC_SEARCH_UNAVAILABLE`, 429 요청 수 제한 → [검색 · 추천](../flows/search-recommend.md#의미-검색) | 공개 |
 
 ### payment · settlement · notification
 
@@ -214,7 +221,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 
 | 서비스 | 기능 | 설명 |
 |---|---|---|
-| market | 반품 신청 (사유) · 판매자 승인 · 거절 | 노션 7절 |
+| market | 반품 판매자 승인, 거절 (#383) | 노션 7절 |
 | market | 리뷰 작성 · 삭제 · 판매자 리뷰 목록 (태그 집계) | 노션 6절 |
 | notification | `GET notifications?read=` (커서 페이지네이션) | 삭제 API 없음 |
 | ai | 챗봇 | ⬜ 범위 보류 |

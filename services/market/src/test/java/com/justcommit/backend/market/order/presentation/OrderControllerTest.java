@@ -5,6 +5,7 @@ import com.justcommit.backend.common.security.AuthMember;
 import com.justcommit.backend.common.response.PagingResponse;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.OrderItemStatus;
+import com.justcommit.backend.market.ReturnReason;
 import com.justcommit.backend.market.order.application.OrderReadService;
 import com.justcommit.backend.market.order.application.OrderService;
 import org.junit.jupiter.api.AfterEach;
@@ -248,5 +249,63 @@ class OrderControllerTest {
 
         verify(orderReadService, never()).buyerOrders(any(), any());
         verify(orderReadService, never()).sellerOrder(any(), any());
+    }
+
+    @Test
+    void requestsReturnForAuthenticatedBuyer() throws Exception {
+        mockMvc.perform(post("/api/v1/orders/items/11/return")
+                        .contentType("application/json")
+                        .content("{\"reason\":\"DAMAGED\",\"reasonDetail\":\"잎이 부러져 왔어요\"}"))
+                .andExpect(status().isOk());
+
+        // 기타가 아닌 사유의 직접 작성 내용도 버리지 않고 넘긴다
+        verify(orderService).requestReturn(10L, 11L, ReturnReason.DAMAGED, "잎이 부러져 왔어요");
+    }
+
+    @Test
+    void returnWithOtherReasonRequiresReasonDetail() throws Exception {
+        mockMvc.perform(post("/api/v1/orders/items/11/return")
+                        .contentType("application/json")
+                        .content("{\"reason\":\"OTHER\",\"reasonDetail\":\"  \"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(orderService, never()).requestReturn(any(), any(), any(), any());
+    }
+
+    @Test
+    void returnRequiresReason() throws Exception {
+        mockMvc.perform(post("/api/v1/orders/items/11/return")
+                        .contentType("application/json")
+                        .content("{\"reasonDetail\":\"사유 없음\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(orderService, never()).requestReturn(any(), any(), any(), any());
+    }
+
+    @Test
+    void returnReasonDetailIsLimitedTo500CharactersForEveryReason() throws Exception {
+        String tooLong = "가".repeat(501);
+        mockMvc.perform(post("/api/v1/orders/items/11/return")
+                        .contentType("application/json")
+                        .content("{\"reason\":\"NOT_AS_DESCRIBED\",\"reasonDetail\":\"" + tooLong + "\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/v1/orders/items/11/return")
+                        .contentType("application/json")
+                        .content("{\"reason\":\"OTHER\",\"reasonDetail\":\"" + "가".repeat(500) + "\"}"))
+                .andExpect(status().isOk());
+
+        verify(orderService).requestReturn(10L, 11L, ReturnReason.OTHER, "가".repeat(500));
+    }
+
+    @Test
+    void returnRequiresAuthentication() throws Exception {
+        SecurityContextHolder.clearContext();
+
+        mockMvc.perform(post("/api/v1/orders/items/11/return")
+                        .contentType("application/json")
+                        .content("{\"reason\":\"DAMAGED\"}"))
+                .andExpect(status().isUnauthorized());
+
+        verify(orderService, never()).requestReturn(any(), any(), any(), any());
     }
 }

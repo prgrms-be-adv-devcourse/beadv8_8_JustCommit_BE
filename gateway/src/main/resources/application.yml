@@ -129,6 +129,21 @@ spring:
               uri: ${SETTLEMENT_SERVICE_URL:http://localhost:8085}
               predicates:
                 - Path=/api/v1/settlements/**
+            # 품종 의미 검색 (#570): 부를 때마다 OpenAI 임베딩 비용이 들어 IP당 제한
+            # 처음 10번 연속 가능, 그 뒤 6초마다 1번 (1초에 1개 차고 최대 60개, 요청 1번에 6개)
+            - id: ai-species-searches
+              uri: ${AI_SERVICE_URL:http://localhost:8087}
+              predicates:
+                - Path=/api/v1/speciesSearches
+                - Method=GET
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.burstCapacity: 60
+                    redis-rate-limiter.requestedTokens: 6
+                    key-resolver: "#{@clientIpKeyResolver}"
+                    throw-on-limit: true
             - id: notification-subscribe
               uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
               predicates:

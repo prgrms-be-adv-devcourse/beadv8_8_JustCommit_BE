@@ -1,7 +1,7 @@
 # market 서비스
 
 > 언제 읽나: market 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -27,10 +27,10 @@ market 서비스가 소유하는 테이블입니다 (market DB).
 | `CART` | 장바구니 |
 | `ORDERS` | 구매자 주문 |
 | `SELLER_ORDER` | 판매자별 주문 (배송비 · 배송 단위 · `confirmedAt`, 결제 완료 시각 `paid_at`(재결제면 재결제 완료 시각, 수락 마감의 기준, Flyway V9)) |
-| `ORDERS_ITEM` | 주문상품 (`ACCEPT_PENDING` · `NORMAL` · `CANCEL_PROCESSING`, `CANCELLED`, `REVIEW_REQUIRED` 등, 환불 Saga 복구용 `attempt_count`, `attempted_at`, `last_error`, 취소 사유 `cancel_reason`(`BUYER`, `SELLER`, `AUTO`, Flyway V9)) |
-| `SHIPMENT` | 배송 (방향: 가는 길 / 반품, 택배 예약 · 취소 큐용 `next_attempt_at` · `attempt_count` · `last_error`, 취소 누른 시각 `cancel_requested_at`) |
+| `ORDERS_ITEM` | 주문상품 (`ACCEPT_PENDING` · `NORMAL` · `CANCEL_PROCESSING`, `CANCELLED`, `REVIEW_REQUIRED`, 반품 `RETURN_REQUESTED`, `RETURN_IN_TRANSIT`, `RETURN_PROCESSING`, `RETURNED` 등, 환불 Saga 복구용 `attempt_count`, `attempted_at`, `last_error`, 취소 사유 `cancel_reason`(`BUYER`, `SELLER`, `AUTO`, Flyway V9)) |
+| `SHIPMENT` | 배송 (방향 `direction`: 가는 길 `OUTBOUND` / 반품 `RETURN`, 가는 길만 판매자 주문당 1개(부분 유니크 인덱스, Flyway V10), 택배 예약 · 취소 큐용 `next_attempt_at` · `attempt_count` · `last_error`, 취소 누른 시각 `cancel_requested_at`) |
 | `SHIPMENT_CANCEL_RESULT` | 택배 취소 결과 (배송 · 판매자 주문 · 취소됨 / 취소 불가 · 시각). 택배 취소 큐가 쓰고 주문 Saga 복구가 읽어 환불 · 되돌림 → [ADR 0026](../decisions/0026-courier-cancel-queue-and-distance-judgment.md) |
-| ⬜ 반품 신청 (이름 미정) | 주문상품별 반품 사유 · 상태 |
+| `RETURN_REQUEST` | 반품 신청 (주문상품당 1건 `order_item_id` UK, 반품 사유 `reason`, 직접 작성 내용 `reason_detail`, 상태 `REQUESTED`, `APPROVED`, `REJECTED`, `COMPLETED`, 결정한 쪽 `decided_by`, 반품 배송비 `return_shipping_fee`, 반품 배송 `shipment_id`, Flyway V10) |
 | ⬜ 배송비 요금표 (이름 미정) | 기본 + 제주 · 도서산간 요금, 도서산간 우편번호, 버전 |
 | `REVIEW` | 리뷰 (`seller_order_id` UK, 소프트 삭제) |
 | `REVIEW_TAG` | 리뷰 태그 5종 집계 |
@@ -41,7 +41,7 @@ market 서비스가 소유하는 테이블입니다 (market DB).
 
 market 서비스가 제공하는 외부 API입니다 (경로 앞 `/api/v1` 생략).
 
-`cart` · `cart/items` · `cart/items/{productId}` · `cart/recommendations` · `orders/cart` · `orders/{id}/pay` · `orders/{id}/cancel` · `orders/items/{id}/cancel` · `orders/items/{id}/confirm` · `orders` · `orders/{id}` · `orders/seller` · `orders/seller/{id}` · `orders/seller/{id}/accept` · `orders/seller/{id}/reject` · `webhooks/courier` + ⬜ 반품 신청 · 반품 승인 · 거절 · 리뷰 → [외부 API 목록](../reference/external-apis.md)
+`cart` · `cart/items` · `cart/items/{productId}` · `cart/recommendations` · `orders/cart` · `orders/{id}/pay` · `orders/{id}/cancel` · `orders/items/{id}/cancel` · `orders/items/{id}/confirm` · `orders` · `orders/{id}` · `orders/seller` · `orders/seller/{id}` · `orders/seller/{id}/accept` · `orders/seller/{id}/reject` · `orders/items/{id}/return` · `webhooks/courier` + ⬜ 반품 승인 · 거절 · 리뷰 → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 
@@ -72,7 +72,7 @@ market 서비스가 발행하는 Kafka 이벤트입니다. 모두 Outbox로 발�
 
 | 토픽 | 이벤트 | 발행 방식 |
 |---|---|---|
-| `market.events.v1` | `SellerOrderPaid` · `SellerOrderAccepted` · `SellerOrderRejected` · `SellerOrderCancelled` · `OrderItemCancelled` · `PurchaseConfirmed` · `OrderItemAutoConfirmed` · `ShipmentStatusChanged` · `ReturnRequested` · `ReturnApproved` · `ReturnRejected` · `OrderItemReturned` | ✅ Outbox (#277 B). `ShipmentPickedUp`은 삭제 (배송비는 `PurchaseConfirmed.shippingFee`로). `SellerOrderAccepted` · `SellerOrderRejected`는 수락, 거절, 자동 거절 트랜잭션에서 판매자 주문당 1건 (#288). 반품 이벤트는 반품 기능 때 |
+| `market.events.v1` | `SellerOrderPaid` · `SellerOrderAccepted` · `SellerOrderRejected` · `SellerOrderCancelled` · `OrderItemCancelled` · `PurchaseConfirmed` · `OrderItemAutoConfirmed` · `ShipmentStatusChanged` · `ReturnRequested` · `ReturnApproved` · `ReturnRejected` · `OrderItemReturned` | ✅ Outbox (#277 B). `ShipmentPickedUp`은 삭제 (배송비는 `PurchaseConfirmed.shippingFee`로). `SellerOrderAccepted` · `SellerOrderRejected`는 수락, 거절, 자동 거절 트랜잭션에서 판매자 주문당 1건 (#288). `ReturnRequested`는 반품 신청 트랜잭션에서 1건 (#382), 나머지 반품 이벤트는 #383, #384 |
 | `market.order-paid.v1` · `market.order-expired.v1` · `market.order-failed.v1` · `market.order-item-cancelled.v1` | product에 판매 완료 · 결제 전 예약 해제 · 판매 재개 (키 `orderId`). 판매 재개는 환불 성공 뒤, 전체 취소도 주문상품마다, `reason`은 `BUYER`, `SELLER`(판매자 거절), `AUTO`(자동 거절) | ✅ Outbox (#277 A) |
 | `market.order-item-returned.v1` | 반품 환불 뒤 판매 재개 | ⬜ 반품 기능 때 |
 

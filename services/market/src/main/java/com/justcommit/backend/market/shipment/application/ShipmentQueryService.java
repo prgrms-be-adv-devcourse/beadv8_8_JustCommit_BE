@@ -5,6 +5,7 @@ import com.justcommit.backend.market.ShipmentQuery;
 import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.shipment.domain.Shipment;
 import com.justcommit.backend.market.shipment.domain.ShipmentCancelResult;
+import com.justcommit.backend.market.shipment.domain.ShipmentDirection;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentCancelResultRepository;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
 import lombok.RequiredArgsConstructor;
@@ -28,9 +29,10 @@ public class ShipmentQueryService implements ShipmentQuery {
     private final ShipmentRepository shipmentRepository;
     private final ShipmentCancelResultRepository cancelResultRepository;
 
+    // 판매자 주문의 가는 길 배송 (반품 배송은 보지 않는다, #382)
     @Override
     public ShipmentResult findBySellerOrderId(Long sellerOrderId) {
-        return shipmentRepository.findBySellerOrderId(sellerOrderId)
+        return shipmentRepository.findBySellerOrderIdAndDirection(sellerOrderId, ShipmentDirection.OUTBOUND)
                 .map(this::toResult)
                 .orElse(null);
     }
@@ -40,7 +42,7 @@ public class ShipmentQueryService implements ShipmentQuery {
         if (sellerOrderIds.isEmpty()) {
             return Map.of();
         }
-        return shipmentRepository.findBySellerOrderIdIn(sellerOrderIds).stream()
+        return shipmentRepository.findBySellerOrderIdInAndDirection(sellerOrderIds, ShipmentDirection.OUTBOUND).stream()
                 .collect(Collectors.toMap(Shipment::getSellerOrderId, this::toResult));
     }
 

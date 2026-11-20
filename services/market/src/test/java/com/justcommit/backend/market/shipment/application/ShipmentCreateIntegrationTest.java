@@ -5,6 +5,7 @@ import com.justcommit.backend.market.OrderShippingInfo;
 import com.justcommit.backend.market.client.member.MemberAddress;
 import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.market.config.JpaAuditingConfig;
+import com.justcommit.backend.market.shipment.domain.ShipmentDirection;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingRequest;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingResponse;
@@ -79,7 +80,7 @@ class ShipmentCreateIntegrationTest {
     void createsReadyWithoutCallingCourier() {
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> shipmentService.createShipment(7L, List.of("몬스테라")));
 
-        assertThat(shipmentRepository.findBySellerOrderId(7L)).hasValueSatisfying(shipment -> {
+        assertThat(shipmentRepository.findBySellerOrderIdAndDirection(7L, ShipmentDirection.OUTBOUND)).hasValueSatisfying(shipment -> {
             assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.READY);
             // 택배 주문번호의 날짜는 배송 생성일(= 수락일)
             assertThat(shipment.getCourierOrderNo()).startsWith("shipment-"
@@ -96,7 +97,7 @@ class ShipmentCreateIntegrationTest {
         new TransactionTemplate(transactionManager).executeWithoutResult(status ->
                 shipmentService.createShipment(7L, List.of("몬스테라", "필로덴드론", "스킨답서스")));
 
-        assertThat(shipmentRepository.findBySellerOrderId(7L)).hasValueSatisfying(shipment ->
+        assertThat(shipmentRepository.findBySellerOrderIdAndDirection(7L, ShipmentDirection.OUTBOUND)).hasValueSatisfying(shipment ->
                 assertThat(shipment.getItemSummary()).isEqualTo("몬스테라 외 2건"));
     }
 
@@ -108,7 +109,7 @@ class ShipmentCreateIntegrationTest {
             status.setRollbackOnly(); // 수락 처리 중 에러로 롤백되는 상황
         });
 
-        assertThat(shipmentRepository.findBySellerOrderId(7L)).isEmpty();
+        assertThat(shipmentRepository.findBySellerOrderIdAndDirection(7L, ShipmentDirection.OUTBOUND)).isEmpty();
         verify(courierClient, never()).book(anyString(), any());
     }
 
@@ -134,7 +135,7 @@ class ShipmentCreateIntegrationTest {
 
         shipmentService.bookReadyShipments(); // 10초 예약 큐 한 번
 
-        assertThat(shipmentRepository.findBySellerOrderId(7L))
+        assertThat(shipmentRepository.findBySellerOrderIdAndDirection(7L, ShipmentDirection.OUTBOUND))
                 .hasValueSatisfying(shipment -> assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.BOOKED));
     }
 }

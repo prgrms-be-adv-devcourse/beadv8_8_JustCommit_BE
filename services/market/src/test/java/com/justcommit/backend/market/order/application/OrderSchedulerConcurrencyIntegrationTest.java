@@ -77,7 +77,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaAuditingConfig.class, OrderService.class, OrderPaymentTransactions.class, OrderExpirationService.class,
         OrderItemConfirmationService.class, OrderCancelTransactions.class, OrderCancelRefunder.class,
-        SellerOrderDecisionTransactions.class})
+        SellerOrderDecisionTransactions.class, OrderReturnService.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED) // 스케줄러가 주문마다 자기 트랜잭션을 열고 커밋한다
 class OrderSchedulerConcurrencyIntegrationTest {
