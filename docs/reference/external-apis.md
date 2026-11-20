@@ -171,6 +171,12 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | POST | `orders/seller/{id}/reject` | 판매자 거절 (`orderItemIds` 필수, 사유 없음): 고른 주문상품은 환불, 나머지는 수락. 이 판매자 주문에 없는 상품은 400 `INVALID_REJECT_ITEMS`, 고른 상품이 수락 대기가 아니면 409 `SELLER_ORDER_NOT_ACCEPTABLE` | SELLER |
 | POST | `webhooks/courier` | 택배사 웹훅 (`X-Api-Key`) | 공개 |
 
+### ai
+
+| 메서드 | 경로 | 설명 | 권한 |
+|---|---|---|---|
+| GET | `speciesSearches` | 품종 의미 검색. `query`(2 ~ 100자) · `size`(1 ~ 10, 기본 5). 응답 `data.items[{speciesId, name, similarity, productIds}]`(유사도 순, 상품은 판매 중 최신 3개), 결과가 없으면 빈 목록. 400 `INVALID_SEARCH_QUERY` · `INVALID_SEARCH_SIZE`, 503 `SEMANTIC_SEARCH_UNAVAILABLE`, 429 요청 수 제한 → [검색 · 추천](../flows/search-recommend.md#의미-검색) | 공개 |
+
 ### payment · settlement · notification
 
 | 메서드 | 경로 | 설명 | 권한 |
