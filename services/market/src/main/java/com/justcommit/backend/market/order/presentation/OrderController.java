@@ -128,6 +128,28 @@ public class OrderController {
         return ResponseEntity.ok().build();
     }
 
+    // 판매자 반품 승인 (#383): 반품 배송을 만든다. 응답 전 반품 신청이 아니면 409
+    @PostMapping("/items/{orderItemId}/return/approve")
+    public ResponseEntity<Void> approveReturn(@AuthenticationPrincipal AuthMember member,
+                                              @PathVariable Long orderItemId) {
+        if (member == null) {
+            throw new BusinessException(OrderErrorCode.AUTH_REQUIRED);
+        }
+        orderService.approveReturn(member.memberId(), orderItemId);
+        return ResponseEntity.ok().build();
+    }
+
+    // 판매자 반품 거절 (#383): 그 주문상품을 바로 구매 확정한다. 응답 전 반품 신청이 아니면 409
+    @PostMapping("/items/{orderItemId}/return/reject")
+    public ResponseEntity<Void> rejectReturn(@AuthenticationPrincipal AuthMember member,
+                                             @PathVariable Long orderItemId) {
+        if (member == null) {
+            throw new BusinessException(OrderErrorCode.AUTH_REQUIRED);
+        }
+        orderService.rejectReturn(member.memberId(), orderItemId);
+        return ResponseEntity.ok().build();
+    }
+
     @PostMapping("/items/{orderItemId}/confirm")
     public ResponseEntity<Void> confirm(@AuthenticationPrincipal AuthMember member, @PathVariable Long orderItemId) {
         if (member == null) {

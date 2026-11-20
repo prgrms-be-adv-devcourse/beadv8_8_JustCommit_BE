@@ -65,4 +65,11 @@ class OrderSchedulerTest {
 
         verify(orderService).autoConfirmDeliveredItems();
     }
+
+    @Test
+    void delegatesReturnAutoApprovalToOrderService() {
+        orderScheduler.autoApproveExpiredReturns();
+
+        verify(orderService).autoApproveExpiredReturns();
+    }
 }

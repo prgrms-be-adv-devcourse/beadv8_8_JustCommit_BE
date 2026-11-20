@@ -14,9 +14,11 @@ import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
+import com.justcommit.backend.market.order.domain.ReturnRequest;
 import com.justcommit.backend.market.order.domain.SellerOrder;
 import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
+import com.justcommit.backend.market.order.infrastructure.ReturnRequestRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.presentation.OrderDetailResponse;
 import com.justcommit.backend.market.order.presentation.OrderListRequest;
@@ -57,6 +59,7 @@ public class OrderReadService implements OrderQuery {
     private final ShipmentQuery shipmentQuery;
     private final SettlementQuery settlementQuery;
     private final ProductQuery productQuery;
+    private final ReturnRequestRepository returnRequestRepository;
 
     public PagingResponse<OrderResponse> buyerOrders(Long buyerId, OrderListRequest request) {
         Page<Orders> page = ordersRepository.findByBuyerId(buyerId, request.toPageable());
@@ -102,6 +105,7 @@ public class OrderReadService implements OrderQuery {
         Map<Long, OrdersItem> firstItems = new HashMap<>();
         Map<Long, Integer> itemCounts = new HashMap<>();
         Set<Long> acceptPending = new HashSet<>();
+        Set<Long> returnRequested = new HashSet<>();
         Map<Long, ShipmentResult> shipments = shipmentsBySellerOrder(sellerOrderIds);
         if (!sellerOrderIds.isEmpty()) {
             for (OrdersItem item : ordersItemRepository.findBySellerOrderIds(sellerOrderIds)) {
@@ -111,10 +115,14 @@ public class OrderReadService implements OrderQuery {
                 if (item.getStatus() == OrderItemStatus.ACCEPT_PENDING) {
                     acceptPending.add(id);
                 }
+                if (item.getStatus() == OrderItemStatus.RETURN_REQUESTED) {
+                    returnRequested.add(id);
+                }
             }
         }
         Map<Long, String> thumbnails = thumbnailsByProduct(
                 firstItems.values().stream().map(OrdersItem::getProductId).toList());
+        Map<Long, ReturnRequest> earliestReturns = earliestPendingReturns(sellerOrderIds);
         return PagingResponse.from(page.map(sellerOrder -> {
             Orders order = sellerOrder.getOrder();
             ShipmentResult shipment = shipments.get(sellerOrder.getId());
@@ -122,14 +130,43 @@ public class OrderReadService implements OrderQuery {
             // 판매자 주문마다 items를 다시 읽지 않도록 위에서 읽은 주문상품으로 수락 마감을 정한다
             LocalDateTime acceptDeadline = acceptPending.contains(sellerOrder.getId()) && sellerOrder.getPaidAt() != null
                     ? sellerOrder.getPaidAt().plus(SellerOrder.ACCEPT_WINDOW) : null;
+            ReturnRequest earliestReturn = earliestReturns.get(sellerOrder.getId());
             return new SellerOrderResponse(sellerOrder.getId(), order.getId(), order.getOrderNo(),
                     sellerOrder.getTotalAmount(), sellerOrder.getConfirmedAt(),
                     itemCounts.getOrDefault(sellerOrder.getId(), 0), order.getStatus(),
                     shipment == null ? null : shipment.status(),
                     firstItem == null ? null : firstItem.getProductName(),
                     firstItem == null ? null : thumbnails.get(firstItem.getProductId()),
-                    sellerOrder.getCreatedAt(), acceptDeadline != null, acceptDeadline);
+                    sellerOrder.getCreatedAt(), acceptDeadline != null, acceptDeadline,
+                    returnRequested.contains(sellerOrder.getId()),
+                    earliestReturn == null ? null : earliestReturn.getRequestedAt(),
+                    earliestReturn == null ? null : earliestReturn.responseDeadline());
         }));
+    }
+
+    // 판매자 주문마다 응답 전(REQUESTED) 반품 신청 중 응답 마감이 가장 이른 것. 판매자 주문 id 목록으로 한 번에 읽는다
+    private Map<Long, ReturnRequest> earliestPendingReturns(List<Long> sellerOrderIds) {
+        if (sellerOrderIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, ReturnRequest> result = new HashMap<>();
+        for (ReturnRequest returnRequest : returnRequestRepository.findBySellerOrderIdIn(sellerOrderIds)) {
+            if (!returnRequest.isRequested()) {
+                continue;
+            }
+            result.merge(returnRequest.getSellerOrderId(), returnRequest, (current, candidate) ->
+                    candidate.responseDeadline().isBefore(current.responseDeadline()) ? candidate : current);
+        }
+        return result;
+    }
+
+    private static SellerOrderDetailResponse.Item toSellerItem(OrdersItemResult item, String thumbnailUrl,
+                                                               ReturnRequest returnRequest) {
+        if (returnRequest == null) {
+            return SellerOrderDetailResponse.Item.of(item, thumbnailUrl);
+        }
+        return SellerOrderDetailResponse.Item.of(item, thumbnailUrl, returnRequest.getReason(),
+                returnRequest.getReasonDetail(), returnRequest.getRequestedAt(), returnRequest.responseDeadline());
     }
 
     public SellerOrderDetailResponse sellerOrder(Long sellerId, Long sellerOrderId) {
@@ -139,8 +176,10 @@ public class OrderReadService implements OrderQuery {
         List<OrdersItemResult> orderItems = itemsBySellerOrder(List.of(sellerOrderId))
                 .getOrDefault(sellerOrderId, List.of());
         Map<Long, String> thumbnails = thumbnailsByProduct(orderItems.stream().map(OrdersItemResult::productId).toList());
+        Map<Long, ReturnRequest> returns = returnRequestRepository.findBySellerOrderIdIn(List.of(sellerOrderId)).stream()
+                .collect(Collectors.toMap(ReturnRequest::getOrderItemId, r -> r));
         List<SellerOrderDetailResponse.Item> items = orderItems.stream()
-                .map(item -> SellerOrderDetailResponse.Item.of(item, thumbnails.get(item.productId())))
+                .map(item -> toSellerItem(item, thumbnails.get(item.productId()), returns.get(item.id())))
                 .toList();
         ShipmentResult shipment = shipmentQuery.findBySellerOrderId(sellerOrderId);
         SellerOrderSettlement settlement = settlementQuery.getSettlement(sellerOrderId);

@@ -3,11 +3,14 @@ package com.justcommit.backend.market.order.infrastructure.kafka;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
 import com.justcommit.backend.market.OrderItemCancelledEvent;
+import com.justcommit.backend.market.ReturnApprovedEvent;
+import com.justcommit.backend.market.ReturnRejectedEvent;
 import com.justcommit.backend.market.ReturnRequestedEvent;
 import com.justcommit.backend.market.SellerOrderAcceptedEvent;
 import com.justcommit.backend.market.SellerOrderCancelledEvent;
 import com.justcommit.backend.market.SellerOrderPaidEvent;
 import com.justcommit.backend.market.SellerOrderRejectedEvent;
+import com.justcommit.backend.market.SellerOrderReturnedEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -43,6 +46,18 @@ public class SellerOrderEventPublisher {
     }
 
     public void publishAfterCommit(ReturnRequestedEvent event) {
+        outboxPublisher.publish(event);
+    }
+
+    public void publishAfterCommit(ReturnApprovedEvent event) {
+        outboxPublisher.publish(event);
+    }
+
+    public void publishAfterCommit(ReturnRejectedEvent event) {
+        outboxPublisher.publish(event);
+    }
+
+    public void publishAfterCommit(SellerOrderReturnedEvent event) {
         outboxPublisher.publish(event);
     }
 }

@@ -49,6 +49,10 @@ public class SellerOrder extends BaseTimeEntity {
 
     public static final Duration ACCEPT_WINDOW = Duration.ofHours(24);
 
+    // 배송비: 판매자 주문마다 3,000원. 반품 배송비도 같은 값을 판매자 부담금으로 남긴다 (#383).
+    // TODO: 배송비 정책이 정해지면 판매자별 배송비를 계산한다
+    public static final BigDecimal DEFAULT_SHIPPING_FEE = BigDecimal.valueOf(3_000);
+
     public SellerOrder(Orders order, Long sellerId) {
         this.order = order;
         this.sellerId = sellerId;

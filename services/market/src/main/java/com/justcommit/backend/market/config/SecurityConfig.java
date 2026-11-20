@@ -23,6 +23,10 @@ public class SecurityConfig {
             // 판매자 수락, 거절은 SELLER 토큰만 (#284). 본인 판매자 주문인지는 서비스가 다시 확인한다
             .requestMatchers(HttpMethod.POST, "/api/v1/orders/seller/*/accept", "/api/v1/orders/seller/*/reject")
                 .hasRole("SELLER")
+            // 판매자 반품 승인, 거절도 SELLER 토큰만 (#383). 본인 판매자 주문인지는 서비스가 다시 확인한다
+            .requestMatchers(HttpMethod.POST, "/api/v1/orders/items/*/return/approve",
+                    "/api/v1/orders/items/*/return/reject")
+                .hasRole("SELLER")
             .anyRequest().authenticated())
         .build();
   }

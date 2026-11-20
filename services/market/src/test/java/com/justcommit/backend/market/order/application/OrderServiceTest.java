@@ -1,5 +1,7 @@
 package com.justcommit.backend.market.order.application;
 
+import com.justcommit.backend.market.order.domain.ReturnRequestStatus;
+import com.justcommit.backend.market.order.domain.ReturnRequest;
 import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.common.client.exception.InternalApiErrorException;
 import com.justcommit.backend.common.client.exception.InternalApiResultUnknownException;
@@ -31,6 +33,7 @@ import com.justcommit.backend.market.order.event.OrderPaid;
 import com.justcommit.backend.market.order.infrastructure.AutoConfirmTarget;
 import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
+import com.justcommit.backend.market.order.infrastructure.ReturnRequestRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.infrastructure.kafka.PurchaseConfirmedEventPublisher;
 import com.justcommit.backend.market.order.infrastructure.kafka.SellerOrderEventPublisher;
@@ -103,6 +106,8 @@ class OrderServiceTest {
     @Mock ShipmentService shipmentService;
     @Mock ShipmentQuery shipmentQuery;
     @Mock PurchaseConfirmedEventPublisher purchaseConfirmedEventPublisher;
+    @Mock ReturnRequestRepository returnRequestRepository;
+    @Mock OrderReturnService orderReturnService;
     @Mock SellerOrderEventPublisher sellerOrderEventPublisher;
     @Mock OrderItemConfirmationService orderItemConfirmationService;
     @InjectMocks OrderService orderService;
@@ -112,7 +117,9 @@ class OrderServiceTest {
     @BeforeEach
     void setUpConfirmationService() {
         confirmationServiceUnderTest = new OrderItemConfirmationService(ordersRepository, ordersItemRepository,
-                sellerOrderRepository, shipmentQuery, purchaseConfirmedEventPublisher, sellerOrderEventPublisher);
+                sellerOrderRepository, shipmentQuery,
+                new SellerOrderCompletion(returnRequestRepository, purchaseConfirmedEventPublisher, sellerOrderEventPublisher),
+                sellerOrderEventPublisher);
         // 트랜잭션 경계 순서만 보는 단위 테스트라 실제 커밋 없이 동기화 콜백만 돈다. CAS 동작은 통합 테스트에서 확인
         ReflectionTestUtils.setField(orderService, "orderPaymentTransactions", new OrderPaymentTransactions(
                 new NoOpTransactionManager(), ordersRepository, sellerOrderRepository, ordersItemRepository,
@@ -887,8 +894,11 @@ class OrderServiceTest {
         verify(purchaseConfirmedEventPublisher, never()).publishAfterCommit(any());
     }
 
+    // #383: 정산 이벤트 여부는 저장된 정산 기준액이 아니라 주문상품 상태로 정한다 (구매 확정 1개 이상이면 PurchaseConfirmed).
+    // 상품 가격은 0보다 커서 구매 확정 상품이 있으면 판매액도 0보다 크다. 저장된 값이 어긋나 있어도 다시 계산해 보낸다
     @Test
-    void doesNotPublishSettlementEventForZeroSaleAmount() {
+    @DisplayName("저장된 정산 기준액이 0이어도 구매 확정 상품 합을 다시 계산해 PurchaseConfirmed를 보낸다 (#383)")
+    void recalculatesSaleAmountFromConfirmedItems() {
         OrdersItem item = stubConfirmableItem();
         ReflectionTestUtils.setField(item.getSellerOrder(), "settlementBaseAmount", BigDecimal.ZERO);
         when(shipmentQuery.findBySellerOrderId(7L))
@@ -897,7 +907,9 @@ class OrderServiceTest {
         confirmationServiceUnderTest.confirm(10L, item.getId());
 
         assertThat(item.getStatus()).isEqualTo(OrderItemStatus.CONFIRMED);
-        verify(purchaseConfirmedEventPublisher, never()).publishAfterCommit(any());
+        ArgumentCaptor<PurchaseConfirmedEvent> event = ArgumentCaptor.forClass(PurchaseConfirmedEvent.class);
+        verify(purchaseConfirmedEventPublisher).publishAfterCommit(event.capture());
+        assertThat(event.getValue().saleAmount()).isEqualByComparingTo(item.getPrice());
     }
 
     @Test
@@ -1075,5 +1087,22 @@ class OrderServiceTest {
 
     private static BigDecimal money(String value) {
         return new BigDecimal(value);
+    }
+
+    @Test
+    @DisplayName("반품 자동 승인: 48시간 지난 응답 전 후보를 건마다 승인하고, 한 건이 실패해도 다음 건을 계속한다 (#383)")
+    void autoApproveContinuesAfterFailure() {
+        LocalDateTime before = LocalDateTime.now().minus(ReturnRequest.RESPONSE_PERIOD);
+        when(returnRequestRepository.findAutoApproveCandidateIds(eq(ReturnRequestStatus.REQUESTED),
+                any(LocalDateTime.class), eq(OrderService.AUTO_APPROVE_BATCH_SIZE))).thenReturn(List.of(1L, 2L));
+        when(orderReturnService.autoApprove(1L)).thenThrow(new IllegalStateException("실패"));
+
+        orderService.autoApproveExpiredReturns();
+
+        verify(orderReturnService).autoApprove(1L);
+        verify(orderReturnService).autoApprove(2L);
+        ArgumentCaptor<LocalDateTime> cutoff = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(returnRequestRepository).findAutoApproveCandidateIds(any(), cutoff.capture(), anyInt());
+        assertThat(cutoff.getValue()).isAfterOrEqualTo(before).isBefore(before.plusSeconds(5));
     }
 }
