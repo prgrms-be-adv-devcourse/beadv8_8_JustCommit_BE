@@ -93,6 +93,22 @@ class ShippingFeeTablePersistenceTest {
         assertThat(shippingFeeTableService.currentVersion()).contains(3);
     }
 
+    @Test
+    @DisplayName("요금표를 아직 못 받았으면 기본 배송비 3,000원으로 계산한다")
+    void defaultFeeWithoutTable() {
+        assertThat(shippingFeeTableService.feeFor("40200")).isEqualByComparingTo("3000");
+    }
+
+    @Test
+    @DisplayName("배송비는 가장 높은 버전의 요금표로 계산한다")
+    void feeFromLatestVersion() {
+        shippingFeeTableService.save(table(1, 3_000));
+        shippingFeeTableService.save(table(2, 4_000));
+
+        assertThat(shippingFeeTableService.feeFor("06236")).isEqualByComparingTo("4000");
+        assertThat(shippingFeeTableService.feeFor("40200")).isEqualByComparingTo("9000");
+    }
+
     private static ShippingFeeTable table(int version, long baseFee) {
         return new ShippingFeeTable(version, LocalDateTime.of(2026, 11, 18, 10, 0),
                 BigDecimal.valueOf(baseFee), BigDecimal.valueOf(3_000), BigDecimal.valueOf(5_000),

@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.Optional;
 
 @Slf4j
@@ -14,7 +15,21 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class ShippingFeeTableService {
 
+    // 요금표를 한 번도 받지 못했을 때 쓰는 배송비 (세미의 고정 배송비, 11/20 사용자 결정)
+    static final BigDecimal DEFAULT_SHIPPING_FEE = BigDecimal.valueOf(3_000);
+
     private final ShippingFeeTableRepository shippingFeeTableRepository;
+
+    // 배송지 우편번호의 배송비를 지금 요금표(가장 높은 버전)로 계산한다. 주문을 만들 때 판매자 주문마다 저장하므로
+    // 새 요금표는 받은 뒤 생성되는 주문부터 쓰인다
+    public BigDecimal feeFor(String zipcode) {
+        return shippingFeeTableRepository.findTopByOrderByVersionDesc()
+                .map(table -> table.feeFor(zipcode))
+                .orElseGet(() -> {
+                    log.warn("배송비 요금표가 아직 없어 기본 배송비 {}원을 씁니다: zipcode={}", DEFAULT_SHIPPING_FEE, zipcode);
+                    return DEFAULT_SHIPPING_FEE;
+                });
+    }
 
     // 받은 요금표를 저장한다. 지금 것보다 버전이 높을 때만 저장하고, 같거나 낮으면(재전송 · 순서 꼬임) 무시한다.
     // 두 파드가 같은 버전을 동시에 받으면 버전 UK에 한쪽만 들어가고 나머지는 무시로 끝낸다.
