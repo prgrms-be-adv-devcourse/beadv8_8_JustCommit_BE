@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-20 · reference/ports.md · infra/deploy.md · 404-express를 앱 서버 사설 IP `10.0.7.76:3000`에만 공개(market → `COURIER_BASE_URL`), 웹훅은 Gateway NodePort 30080으로, 배포는 404-express 레포 CD (#525)
 - 2026-11-20 · services/market.md · glossary.md · reference/schedulers.md · reference/external-apis.md · 배송비 요금표 구현: 테이블 이름 `SHIPPING_FEE_TABLE`(버전마다 한 행, 우편번호 구간 jsonb, Flyway V11), 택배 웹훅 `SHIPPING_FEES_CHANGED`를 주문번호 · 송장번호 없이 받아 저장(같거나 낮은 버전 무시, 200), 배송비 = 기본 + 지역 할증 하나(도서산간 → 제주 순), 요금표를 받기 전에는 3,000원, 매일 09:30 버전 대사에 ShedLock 도입(`SHEDLOCK`, Flyway V12) (#589)
 - 2026-11-20 · infra/deploy.md · 배포 태그 파일: compose 서비스 태그를 앱 서버 `~/replant/.env`에서 읽고 CD가 배포 성공한 서비스만 갱신, `:latest` 폴백 제거(태그 없으면 오류), K3s 매니페스트는 `deploy/k3s/apply.sh`로 지금 이미지를 유지해 적용 — 11/20 `:latest` 되돌림 재발 방지 (#590)
 - 2026-11-20 · services/payment.md · reference/internal-apis.md · payment 환불 내부 API 경로 표기를 코드와 같은 카멜 케이스로 맞춤: `refunds/order-items/{orderItemId}` → `refunds/orderItems/{orderItemId}`, `refunds/shipping-fees/{sellerOrderId}` → `refunds/shippingFees/{sellerOrderId}` (코드 변경 없음) (#329) (#586)

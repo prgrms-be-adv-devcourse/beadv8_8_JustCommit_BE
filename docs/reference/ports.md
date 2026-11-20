@@ -15,7 +15,7 @@ Docker · K3s 안에서는 서비스가 모두 8080, 로컬 실행 때만 서비
 | member · product · payment · settlement · notification (compose) | 앱 | 각 8080 → 서버 포트 8081 · 8082 · 8084 ~ 8086 (사설 IP `10.0.7.76`에만 바인딩, Gateway · market 파드가 이 주소로 부름) | 8081 · 8082 · 8084 ~ 8086 | ❌ |
 | ai-service (K3s) | 앱 | NodePort 없음 (market만 부르므로 K3s 안에서만) | 8087 | ❌ |
 | redis | 앱 | 6379 (서버 내부 주소) | 6379 | ❌ |
-| 404-express | 앱 | 기존 | – | ❌ (내부망) |
+| 404-express (compose) | 앱 | 3000 (사설 IP `10.0.7.76`에만 바인딩, market 파드가 `COURIER_BASE_URL`로 부름). 웹훅은 Gateway NodePort 30080으로 보냄 | – | ❌ |
 | postgres (pgvector) | 데이터 (t3.medium) | 5432 | 5432 | 앱 서버 보안 그룹만 |
 | kafka (KRaft) | 데이터 | 9092 | 9092 | 앱 서버 보안 그룹만 |
 | opensearch | 데이터 | 9200 | 9200 | 앱 서버 보안 그룹만 |
