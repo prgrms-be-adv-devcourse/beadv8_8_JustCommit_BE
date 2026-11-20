@@ -7,7 +7,7 @@
 
 ## 기록
 
-- 2026-11-20 · glossary.md · services/settlement.md · reference/kafka-topics.md · flows/confirm-settlement.md · settlement가 `SellerOrderReturned`(전부 반품) 구독: 판매액, 수수료, 배송비 0이고 정산금 = −판매자 부담금인 `PENDING` 정산 생성, 배송비 0원 판매자 주문이라 부담금 0이면 정산금 0, 필수 값 없음이나 부담금 음수는 재시도 없이 DLT, 정산 UK로 1건(구매 확정 정산이 있으면 그대로), 「전부 반품」 뜻을 0원 경우까지, 「음수 정산」 뜻을 정산금 기준으로 고침 (#432)
+- 2026-11-20 · glossary.md · services/settlement.md · reference/kafka-topics.md · flows/confirm-settlement.md · settlement가 `SellerOrderReturned`(전부 반품) 구독: 판매액, 수수료, 배송비 0이고 정산금 = −판매자 부담금인 `PENDING` 정산 생성, 배송비 0원 판매자 주문이라 부담금 0이면 정산금 0, 필수 값 없음이나 부담금 음수는 재시도 없이 DLT, 정산 UK로 1건(구매 확정 정산이 있으면 그대로), 「전부 반품」 뜻을 0원 경우까지, 「음수 정산」 뜻을 정산금 기준으로 고침 (#432) (#602)
 - 2026-11-20 · glossary.md · 취소 완료(환불 확정)도 판매자 주문 종료 판정을 부름: 취소 중 상품이 마지막 미완료 상품이면 그때 정산 이벤트를 보내고, 다른 판매자 주문이 먼저 끝났어도 주문이 `PAID`에 남지 않음 (#383) (#593)
 - 2026-11-20 · flows/cancel-refund.md · 반품 배송비를 3,000원 고정에서 그 판매자 주문의 배송비(주문 때 요금표로 계산해 저장한 값, #592 지역 할증 포함)로 바꿈 (#383) (#593)
 - 2026-11-20 · reference/kafka-topics.md · `SellerOrderReturned` 구독자 settlement를 ⬜ #432로 표시 (settlement 리스너가 아직 받지 않음) (#383) (#593)
