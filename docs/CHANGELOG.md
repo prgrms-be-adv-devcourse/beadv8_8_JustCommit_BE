@@ -1,12 +1,15 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-20 · reference/internal-apis.md · reference/env-vars.md · 계좌 조회 payment 연동 표시를 ✅ #387로 다시 맞춤(develop 병합 때 #388로 돌아감), 인출 계좌번호 암호화 키를 결제키와 나눠 `CASH_OUT_ACCOUNT_ENCRYPTION_KEY` 추가, `TOSS_SECRET_KEY`와 `PAYMENT_KEY_ENCRYPTION_KEY` 행 분리 (#387)
+- 2026-11-20 · services/payment.md · 회원 이벤트 구독 구현 표시: `member.events.v1`을 받아 `MEMBER_REPLICA`에 조건부 upsert(저장된 `occurredAt`보다 오래된 이벤트 무시, 탈퇴 표시는 되살리지 않음), `MemberCreated`면 회원 지갑을 `on conflict (member_id) do nothing`으로 생성(V5 `member_replica`, 컨슈머 그룹 `payment`) (#387) (#573) 
+- 2026-11-20 · reference/external-apis.md · reference/internal-apis.md · services/member.md · services/payment.md · reference/env-vars.md · testing/scenarios.md · 인출 구현 반영: `POST wallet/cashOuts`(`Idempotency-Key` 필수, 같은 키에 다른 금액은 409)와 `GET wallet/cashOuts` 확정, 「추가 예정」의 인출 행 삭제, 계좌 조회 연동을 #387로(✅), 인출 정책에서 「실패하면 복원」 삭제(지급 실패는 `PENDING` 유지, 재시도와 복원은 #389), payment 환경변수 `MEMBER_SERVICE_URL`과 `BANK_MODE` 추가, S-G05에 미수금이 있으면 인출 불가 결과 기록 (#387)
 - 2026-11-20 · reference/kafka-topics.md · product 색인 리스너(`ProductSearchIndexListener`, #485)가 구현돼 「product 색인 리스너는 develop 기준 아직 없음」 문구 삭제
 - 2026-11-19 · infra/observability.md · conventions/events.md · reference/ports.md · reference/env-vars.md · Tempo 분산 추적 구현: common-logging에 `spring-boot-starter-opentelemetry`(샘플링 100%, 운영만 OTLP 전송), Outbox가 발행 때 traceparent 저장 → Kafka 헤더, 리스너 관측으로 이어받음, Alloy 4318 → Tempo 4317(3일), Grafana 로그 ↔ 추적 traceId 연결, 환경변수 `TRACING_EXPORT_ENABLED` · `OTLP_TRACING_ENDPOINT` (#301)
 - 2026-11-19 · reference/kafka-topics.md · services/market.md · 판매자 수락, 거절 이벤트 발행: `SellerOrderAccepted`(`rejectedItemCount`, 전체 수락 0, 일부 거절은 이번에 거절한 수), `SellerOrderRejected`(`reason` `SELLER` · `AUTO`)를 수락, 거절, 자동 거절 트랜잭션 마지막에 판매자 주문당 1건 `market.events.v1`로, payload 표 추가. 409와 건너뛴 자동 거절은 발행 안 함, `SellerOrderCancelled`는 구매자 취소 전용 유지 (#288) (#568)

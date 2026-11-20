@@ -96,6 +96,8 @@ services:
     container_name: replant-payment
     env_file: ${HOME}/secrets/payment.env
     environment: *tracing-env
+    environment:
+      MEMBER_SERVICE_URL: http://member:8080
     ports:
       - "10.0.7.76:8084:8080"
     mem_limit: 512m

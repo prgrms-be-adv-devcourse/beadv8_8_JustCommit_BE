@@ -1,7 +1,7 @@
 # 내부 API 목록
 
 > 언제 읽나: 서비스 간 내부 API의 경로 · 멱등 키를 찾을 때
-> 상태: 🟨 제안 · 마지막 수정 2026-11-19 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
+> 상태: 🟨 제안 · 마지막 수정 2026-11-20 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
 
 ## 목록
 
@@ -9,7 +9,7 @@
 
 | 제공 | API | 부르는 서비스 | 용도 | 멱등 키 | 상태 |
 |---|---|---|---|---|---|
-| member | `GET /internal/v1/members/{memberId}/account` | payment | 인출 신청 때 계좌 받기: `bankCode`(금융결제원 3자리) · `accountNo`(member가 복호화한 원문) · `accountHolder`. 없는 회원 · 탈퇴 회원은 404 `MEMBER_NOT_FOUND`. ⬜ 운영 전송 보호 방식(서비스 간 HTTPS 또는 응답 암호화)은 payment · 인프라 담당과 정함 | – | ✅ member 구현 · ⬜ payment 연동(#388) |
+| member | `GET /internal/v1/members/{memberId}/account` | payment | 인출 신청 때 계좌 받기: `bankCode`(금융결제원 3자리) · `accountNo`(member가 복호화한 원문) · `accountHolder`. 없는 회원 · 탈퇴 회원은 404 `MEMBER_NOT_FOUND`. ⬜ 운영 전송 보호 방식(서비스 간 HTTPS 또는 응답 암호화)은 payment · 인프라 담당과 정함 | – | ✅ member 구현 · ✅ payment 연동(#387) |
 | market | `GET /internal/v1/orders/members/{memberId}/withdrawalCheck` | member | `hasWithdrawalBlocker` + 차단 사유 코드 (`ACTIVE_BUYER_ORDER` 구매자로 진행 중 주문 · `ACTIVE_SELLER_ORDER` 판매자로 진행 중 주문), `details`에 `activeBuyerOrderCount` · `activeSellerOrderCount`. 진행 중: 주문 `PAYMENT_PENDING`, `PAYMENT_PROCESSING`, `REVIEW_REQUIRED`, `PAID` 중 주문상품 `ACCEPT_PENDING`(판매자 수락 대기), `NORMAL` · `REFUND_REQUESTED`가 있는 주문 | – | ✅ |
 | payment | `GET /internal/v1/payments/members/{memberId}/withdrawalCheck` | member | `hasWithdrawalBlocker` + 차단 사유 코드 (`WALLET_BALANCE_REMAINING` 지갑 잔액 남음 · `TRANSACTION_IN_PROGRESS` 진행 중 충전 · 인출 · `SELLER_DEBT_REMAINING` 판매자 미수금 남음), `details`에 `walletBalance` · `hasPendingTransactions` · `outstandingDebt`. 지갑 없는 회원은 200 + `hasWithdrawalBlocker: false` + `blockingReasons: []` | – | ✅ |
 | settlement | `GET /internal/v1/settlements/members/{memberId}/withdrawalCheck` | member | `hasWithdrawalBlocker` + 차단 사유 코드 (`INCOMPLETE_SETTLEMENT` 완료되지 않은 정산), `details`에 `incompleteSettlementCount`. 정산 기록이 없는 회원은 200 + `hasWithdrawalBlocker: false` + `blockingReasons: []` | – | ✅ |
