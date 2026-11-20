@@ -55,6 +55,17 @@ public interface OrdersItemRepository extends JpaRepository<OrdersItem, Long> {
                                               @Param("attemptedBefore") LocalDateTime attemptedBefore,
                                               @Param("limit") int limit);
 
+    // 반품 환불 첫 시도 후보 (#384): 반품 환불 중이고 환불 시도 기록이 비어 있는(도착 처리만 된) 주문상품 id.
+    // 잠그지 않는다. 선점은 startRefund 조건부 UPDATE로 한다 (재시도 후보는 findRefundRecoveryCandidateIds)
+    @Query("""
+            select i.id from OrdersItem i
+             where i.status = :processing and i.attemptedAt is null
+             order by i.id asc
+             limit :limit
+            """)
+    List<Long> findRefundNotStartedIds(@Param("processing") OrderItemStatus processing,
+                                       @Param("limit") int limit);
+
     // 스케줄러용: 다른 파드가 잡은 주문상품은 기다리지 않고 빈 값을 받아 건너뛴다
     @Query(value = "select * from orders_item where id = :itemId for update skip locked", nativeQuery = true)
     Optional<OrdersItem> findByIdForUpdateSkipLocked(@Param("itemId") Long itemId);

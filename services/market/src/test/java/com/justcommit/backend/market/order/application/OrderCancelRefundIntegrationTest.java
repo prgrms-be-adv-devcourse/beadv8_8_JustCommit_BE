@@ -56,7 +56,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, OrderPaymentTransactions.class, OrderRecoveryService.class,
+@Import({JpaAuditingConfig.class, OrderPaymentTransactions.class, OrderRecoveryService.class, OrderReturnRefundTransactions.class, OrderReturnRefunder.class,
         OrderCancelTransactions.class, OrderCancelRefunder.class, ShipmentQueryService.class, SellerOrderCompletion.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED) // 요청, 선점, 반영이 각자 트랜잭션을 열고 커밋한다
