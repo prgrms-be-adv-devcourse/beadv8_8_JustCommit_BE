@@ -62,7 +62,7 @@ public abstract class GatewayIntegrationTest {
     values.put("jwt.public-key", () -> Base64.getEncoder().encodeToString(KEY_PAIR.getPublic().getEncoded()));
     values.put("spring.data.redis.host", REDIS::getHost);
     values.put("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
-    for (String service : new String[] {"MEMBER", "PRODUCT", "MARKET", "PAYMENT", "SETTLEMENT", "NOTIFICATION"}) {
+    for (String service : new String[] {"MEMBER", "PRODUCT", "MARKET", "PAYMENT", "SETTLEMENT", "NOTIFICATION", "AI"}) {
       values.put(service + "_SERVICE_URL", SERVICES::baseUrl);
     }
     values.putAll(overrides);

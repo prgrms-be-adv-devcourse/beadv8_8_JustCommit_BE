@@ -24,7 +24,7 @@
 | Gateway → 회원 탈퇴 (`POST users/me/withdrawal`) | 1초 / 20초 | 없음 | 504는 탈퇴 결과 불명 → 자동 재요청 안 함 (#407) |
 | Gateway → SSE | 타임아웃 끔 | 없음 | – |
 | Gateway → 택배 웹훅 | – / 5초 | 없음 | – |
-| Gateway → ai 챗봇 | 1초 / 20초 | 없음 | "잠시 후 다시" |
+| Gateway → ai 챗봇 (`/api/v1/chatbot/**`) | 1초 / 20초 | 없음 | 504 (질문 · 답변 저장 여부 불명, 프론트는 같은 질문을 다시 보내도 됨) |
 | Gateway → Redis (토큰 폐기 확인) | 명령 1초 | 없음 | Fail-closed: 503 (확인 못 한 토큰은 통과시키지 않음) |
 | Gateway → Redis (요청 수 제한) | 명령 1초 | 없음 | SCG 기본대로 통과 (제한 없이 진행) |
 | 내부 REST (기본) | 1초 / 3초 | 연결 실패만 1회 | 조회는 fallback, 돈 · 상태는 결과 불명 처리 |
@@ -36,8 +36,10 @@
 | market → ai 추천 | 1초 / 2초 | 연결 실패만 1회 (common-web 공통, 최악 약 4.2초) | 빈 목록 (장바구니 조회는 영향 없음, 화면은 최신 상품으로 대신 → [ADR 0029](../decisions/0029-cart-recommendation-latest-fallback-on-screen.md)) |
 | product → OpenSearch | 1초 / 2초 | 1회 | DB LIKE 검색으로 대신 (관련도 · 오타 허용 · 한국어 분석 없음) |
 | product → OpenAI Moderation · Claude Haiku (사진 검수) | 🟨 3초 / 20초 | 비동기 최대 3회 | 자동 통과 · 자동 반려 없이 관리자 확인 |
-| ai → OpenAI 임베딩 (품종 의미 검색) | 3초(연결 포함 전체, `custom.species-search.timeout`) | 없음 (Spring AI 기본 3회를 끔) | 503 `SEMANTIC_SEARCH_UNAVAILABLE`. 검색용 모델을 따로 만들어 추천 · 재임베딩과 설정을 나눔 |
+| ai → OpenAI 임베딩 (품종 의미 검색 · 🟨 챗봇 질문) | 3초(연결 포함 전체, `custom.species-search.timeout`) | 없음 (Spring AI 기본 3회를 끔) | 품종 의미 검색 503 `SEMANTIC_SEARCH_UNAVAILABLE`, 챗봇 503 `CHATBOT_UNAVAILABLE`. 검색용 모델(`QueryEmbedder`)을 따로 만들어 추천 · 재임베딩과 설정을 나눔 |
+| 🟨 ai → OpenAI 임베딩 (상품 문서, 상품 이벤트) | Spring AI 기본 (따로 설정 안 함) | Spring AI 기본 3회 | 1 · 2 · 4초 Kafka 재시도 후 DLT. 스냅샷은 저장됨, `target=PRODUCT` 재임베딩으로 맞춤 |
 | ai → OpenAI 임베딩 (재임베딩 운영 API) | ⬜ 미정 (따로 설정 안 함) | ⬜ 미정 | ⬜ 미정 |
+| 🟨 ai → Claude Haiku (챗봇 답변) | 10초 | 없음 | 200 고정 문장 + 상품 카드 (`answerGenerated=false`). 최악 임베딩 3초 + Haiku 10초로 Gateway 20초 안 |
 | payment → 토스페이먼츠 | 3초 / 60초 | 없음 | 결과 불명 → `PENDING` 유지, 결제 조회로 `APPROVED`, `FAILED`, `REVIEW_REQUIRED` 중 하나로 확정 → [스케줄러 표](../reference/schedulers.md) |
 | market → 모의 택배사 | 3초 / 5초 | 10초 큐 + 건별 백오프 10초 → 30초 → 1분 고정, **포기 없음** | 배송 `READY` · `CANCEL_PENDING` 유지. 서킷 없음 |
 | payment → 모의 은행 | 3초 / 5초 | 없음 | 인출 건 `PENDING` 유지 (잔액은 차감된 채로). 서킷 없음 |

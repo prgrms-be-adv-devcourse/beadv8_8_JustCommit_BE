@@ -31,7 +31,7 @@
 | 반송 | `RETURNING` · `RETURNED` (택배사) | 취소 반송 | 취소가 인정됐지만 택배사 장애로 이미 수거된 상품을 택배사가 판매자에게 돌려보내는 것 (택배사 비용). 구매자가 신청하는 반품과 다름 | [취소 · 환불](flows/cancel-refund.md) |
 | 택배사 | – | 404-express, 모의 택배사, courier | 배송을 맡는 외부 서비스 (지금은 모의 택배사 404-express) | [market](services/market.md) |
 | 웹훅 | – | webhook, 콜백 | 택배사가 배송 상태 · 취소 · 요금표 변경을 알려 주는 HTTP 요청 | [market 정책](services/market.md#정책) |
-| 배송비 요금표 | ⬜ 테이블 이름 미정 | 운임표 | 지역 구분(기본 + 제주 · 도서산간) 배송비 표. market이 버전과 함께 보관 | [market 정책](services/market.md#정책) |
+| 배송비 요금표 | `ShippingFeeTable` (`SHIPPING_FEE_TABLE`) | 운임표 | 지역 구분(기본 + 제주 · 도서산간) 배송비 표. market이 버전과 함께 보관 | [market 정책](services/market.md#정책) |
 | 구매 확정 | `PurchaseConfirmed` · `OrderItemAutoConfirmed` | 구매 완료, 거래 완료 | 구매자가 받았다고 확정 (직접 또는 자동). 정산의 시작점 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 취소 | `OrderItemCancelled` · `SellerOrderCancelled` | 주문 취소 | 수거 전에 구매자가 주문상품을 취소하는 것 | [취소 · 환불](flows/cancel-refund.md) |
 | 취소 사유 | `cancel_reason` (주문상품) · `CancelReason` (`BUYER`, `SELLER`, `AUTO`) | 취소 원인 | 주문상품이 취소 흐름에 들어간 이유 (구매자 취소, 판매자 거절, 자동 거절). 판매 재개 이벤트의 `reason` | [Kafka 토픽](reference/kafka-topics.md) |
@@ -83,8 +83,9 @@
 | 상품 버전 | `version` (`PRODUCT`) · `productVersion` (이벤트) | – | 상품 행을 바꿀 때마다 +1 하는 번호. 받는 쪽이 오래된 상품 이벤트를 버리는 기준 (봉투 `version` · 검수 버전과 다름) | [ADR 0021](decisions/0021-product-event-payload-ai-snapshot.md) |
 | 품종 · 별칭 | `SPECIES` · `SPECIES_ALIAS` | 식물 종류, 유통명 | 상품이 속한 식물 종류와 그 다른 이름 | [product](services/product.md) |
 | 판매 금지 품종 | `BANNED_SPECIES` | 금지 식물 | 법으로 사고팔 수 없는 품종. 품종 목록과 따로 관리 | [product 정책](services/product.md#정책) |
-| 상품 스냅샷 | `product_snapshot` | 상품 사본 (ai) | ai가 상품 이벤트로 채우는 상품 정보 사본 (상품 ID · 품종 ID · 판매자 ID · 상태 · 숨김 · 상품 버전, 모든 상태). 추천할 때 판매 중만 고름 | [ADR 0021](decisions/0021-product-event-payload-ai-snapshot.md) |
+| 상품 스냅샷 | `product_snapshot` | 상품 사본 (ai) | ai가 상품 이벤트로 채우는 상품 정보 사본 (상품 ID · 품종 ID · 판매자 ID · 상태 · 숨김 · 상품 버전, 챗봇용 제목 · 가격 · 대표 사진 · 설명 · 키우기 메모 · 크기, 모든 상태). 추천 · 챗봇은 판매 중만 고름 | [ADR 0021](decisions/0021-product-event-payload-ai-snapshot.md) |
 | 품종 의미 검색 | `SpeciesSearchService` · `speciesSearches` | 문장으로 찾기, 의미 검색, 벡터 검색 | 사용자가 쓴 문장을 임베딩해 품종 벡터에서 가까운 품종과 그 품종의 판매 중 상품을 찾는 것. 상품 의미 검색 · 챗봇과 다름 | [검색 · 추천](flows/search-recommend.md#의미-검색) |
+| 상품 문서 | `ProductDocumentFactory` · `product_vector_store` | 상품 임베딩 | 챗봇 의미 검색용으로 상품 하나를 글로 만든 것 (제목 · 품종 특징 · 설명 · 키우기 메모 · 크기). 임베딩해 상품 벡터로 저장 | [ADR 0031](decisions/0031-chatbot-rag-product-document-payload-v3.md) |
 | 추천 평가 세트 | `eval-pairs.csv` | 정답 쌍, 정답 조합 | 누가 봐도 같이 키우기 좋은 품종 짝과 근거. 장바구니 추천 Top-10에 정답 품종이 들어오는 수(적중 수)로 점수 규칙을 비교 | [검색 · 추천](flows/search-recommend.md) |
 
 ## 회원 · 인증

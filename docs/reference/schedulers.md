@@ -1,7 +1,7 @@
 # 스케줄러
 
 > 언제 읽나: 스케줄러(`@Scheduled`) 작업의 주기 · 역할, 재시도 간격, 중복 실행 방지(SKIP LOCKED · ShedLock)를 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro F-7, 노션 「정책 정리」 1.4 · 11.5
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: Miro F-7, 노션 「정책 정리」 1.4 · 11.5
 
 ## 작업 표
 
@@ -16,7 +16,7 @@
 | 택배 예약 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `READY` 배송(반품 포함) 택배 예약. 한 번 실행할 때 최대 20건을 한 건씩 확보(다음 시도 시각을 30초 뒤로 미루는 임대)하고, 택배사 호출은 임대 후 트랜잭션 밖에서 함. 실패하면 다음 시도까지 10초 → 30초 → 1분 고정 (건별 `next_attempt_at` · `attempt_count`, 마지막 실패 원인 `last_error`). 결제 · 수락 흐름은 `READY` 행만 만들고 택배사를 부르지 않음 |
 | 택배 취소 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `CANCEL_PENDING` 배송을 택배 예약 큐와 같은 방식(최대 20건을 한 건씩 확보 · 30초 임대 · 트랜잭션 밖 호출)으로 택배사에 주문번호 + 누른 시각으로 취소 요청. 결과는 배송 상태(`CANCELLED` · `CANCEL_LOCKED`) + `SHIPMENT_CANCEL_RESULT` 행 한 트랜잭션. 실패하면 10초 → 30초 → 1분 고정 (`next_attempt_at` · `attempt_count` · `last_error`) → [ADR 0026](../decisions/0026-courier-cancel-queue-and-distance-judgment.md) |
 | Saga 복구 | market | 1분 | 확인 후 포기 | SKIP LOCKED | 결과 불명 결제(orderId) · 취소 · 환불(orderItemId · sellerOrderId)을 같은 멱등 키로 다시 요청, 5회 안 되면 `REVIEW_REQUIRED`. 결제는 `attempted_at`에서 10초 지난 `PAYMENT_PROCESSING` 주문을 한 번에 최대 50건, 주문마다 선점(`attempt_no`, `attempt_count` +1 커밋) 후 트랜잭션 밖에서 재호출하고, 자기 `attempt_no`일 때만 결과 반영. 이어서 처리 전 택배 취소 결과(`SHIPMENT_CANCEL_RESULT`)를 최대 50건 SKIP LOCKED로 집어 취소됨이면 환불, 취소 불가면 주문상품을 되돌리고 `processed_at` 기록. 마지막으로 `attempted_at`에서 10초 지난 `CANCEL_PROCESSING` 주문상품을 최대 50건, 주문상품마다 선점(`attempt_count` +1 커밋) 후 트랜잭션 밖에서 환불 재요청. 결과 반영은 「취소 중」일 때만. 단계마다 실패해도 다음 단계는 돎. 실행이 끝나면 `REVIEW_REQUIRED` 주문 수 지표를 갱신 → [주문 · 결제](../flows/order-payment.md#멈춘-주문-복구) |
-| 요금표 버전 대사 | market | 매일 09:30 (EC2가 켜진 시간) | – | ShedLock | 택배사(404-express) 요금표 버전과 비교, 다르면 새로 받음 |
+| 요금표 버전 대사 | market | 매일 09:30 (EC2가 켜진 시간, `Asia/Seoul`) | – | ShedLock | 택배사(404-express) `GET /api/v1/shippingFees`의 버전과 지금 요금표(가장 높은 버전)를 비교해 다르면 저장(택배사 버전이 더 낮으면 무시). 택배사 호출 실패 · 404는 로그만 남기고 다음 날 다시. 잠금 이름 `shippingFeeReconcile`, 최소 1분 · 최대 5분 잠금(`SHEDLOCK`, DB 시각) |
 | 토스 결과 불명 조회 | payment | 5분 | 확인 후 포기 (조회 실패 3회 또는 충전 생성 60분 뒤 미확정 → `REVIEW_REQUIRED`) | SKIP LOCKED | PENDING 충전을 토스 orderId로 조회해 결과 확정. 실행당 최대 100건 처리, 결과에 따라 적립·실패·재조회·관리자 확인으로 분기. 승인 재호출 없음 → 충전 복구 상세 |
 | 검수 엔진 오류 재처리 | product | 5분 | 확인 후 포기 (3회 → 관리자 확인) | SKIP LOCKED | `IMAGE_REVIEW`가 `ENGINE_ERROR`인 건과 30분이 지나도 `REQUESTED`인 건(멈춘 검수 요청)을 같은 검수 버전으로 다시 검수, 3회 모두 실패하면 관리자 확인(`ENGINE_ERROR`) → [사진 검수](../flows/image-review.md#엔진-오류-재처리) |
 | 관리자 확인 지연 | product | 10분 | – | SKIP LOCKED | 관리자 확인으로 간 지 24시간 지난 건을 `REVIEW_EXPIRED`로 자동 반려(한 번에 최대 50건, 그사이 수정 · 삭제된 상품은 건너뜀). 엔진 오류 재처리 시간은 세지 않음 |

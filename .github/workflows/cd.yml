@@ -154,6 +154,30 @@ jobs:
           export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
           failed=""
 
+          # 배포 태그 파일 (#590): compose는 ~/replant/.env 의 {서비스}_TAG를 자동으로 읽는다.
+          # 배포에 성공한 서비스만 갱신해, 누가 태그 없이 up -d 해도 마지막으로 배포한 버전이 뜨게 한다
+          TAGS_FILE="$HOME/replant/.env"
+          COMPOSE_SERVICES="member product payment settlement notification"
+          tag_var() { echo "$(echo "$1" | tr '[:lower:]' '[:upper:]')_TAG"; }
+          # 한 줄만 바꾸고 나머지 줄은 그대로. 같은 폴더 임시 파일에 쓴 뒤 mv로 바꿔 끼워 중간에 깨진 파일이 보이지 않게 한다
+          set_tag() {
+            tmp=$(mktemp "$TAGS_FILE.XXXXXX")
+            { grep -v "^$1=" "$TAGS_FILE" 2>/dev/null || true; echo "$1=$2"; } > "$tmp"
+            chmod 644 "$tmp"
+            mv -f "$tmp" "$TAGS_FILE"
+          }
+          # 파일에 없는 서비스는 지금 떠 있는 컨테이너의 태그로 채운다 (처음 · 새 서비스). 컨테이너도 없으면 비워 둔다
+          for s in $COMPOSE_SERVICES; do
+            var=$(tag_var "$s")
+            if ! grep -q "^$var=" "$TAGS_FILE" 2>/dev/null; then
+              running=$(docker inspect -f '{{.Config.Image}}' "replant-$s" 2>/dev/null | sed -n 's/.*://p')
+              if [ -n "$running" ] && [ "$running" != "latest" ]; then
+                set_tag "$var" "$running"
+                echo "배포 태그 파일에 없던 $var=$running (지금 떠 있는 컨테이너)"
+              fi
+            fi
+          done
+
           # 실패 원인을 Actions 로그에 남긴다 (#555). 컨테이너를 다시 바꾸면 로그가 사라져서 실패한 그때 찍는다.
           # 레포가 공개라 Actions 로그도 공개 → 환경변수가 담긴 docker inspect 전체 · kubectl describe 전체는 찍지 않고,
           # 앱 로그도 password · secret · token · key = 값 모양과 URL 안의 비밀번호는 가린다
@@ -212,14 +236,16 @@ jobs:
                 ;;
               *)
                 # compose: {SERVICE}_TAG로 이 서비스만 새 이미지로 바꾼다 (Redis 등 다른 컨테이너는 그대로)
-                var="$(echo "$s" | tr '[:lower:]' '[:upper:]')_TAG"
+                var=$(tag_var "$s")
                 if [ -z "$(cd "$HOME/replant" && $COMPOSE ps -a -q "$s")" ]; then
                   echo "::warning::compose $s 컨테이너가 아직 없어 이미지만 받아 둠 (처음 올리기는 수동)"
                   (cd "$HOME/replant" && env "$var=$TAG" $COMPOSE pull "$s") || failed="$failed $s"
                 elif (cd "$HOME/replant" \
                   && env "$var=$TAG" $COMPOSE pull "$s" \
                   && env "$var=$TAG" $COMPOSE up -d --no-deps --wait --wait-timeout 180 "$s"); then
-                  echo "$s 배포 완료"
+                  # healthy까지 확인된 뒤에만 태그 파일을 바꾼다 (실패하면 옛 태그 그대로)
+                  set_tag "$var" "$TAG"
+                  echo "$s 배포 완료 ($var=$TAG 기록)"
                 else
                   echo "::error::$s 기동 실패 — 아래 상태 · 로그 확인"
                   compose_diag "$s"

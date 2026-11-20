@@ -1,7 +1,7 @@
 # 서버 배치 · 배포
 
 > 언제 읽나: 서버 구성이나 CI/CD를 바꿀 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 15, 노션 기획안 「배포 · 운영 변경」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: Miro 15, 노션 기획안 「배포 · 운영 변경」
 
 ## 서버 배치
 
@@ -44,6 +44,8 @@ Gateway는 K3s Service 이름으로 market에 보내고 K3s가 살아 있는 파
 | 서버 접속 | 앱 서버에 설치한 self-hosted 러너(라벨 `replant-app`)가 서버 안에서 실행. SSH 22번을 GitHub에 열지 않고, AWS 키 · SSH 키를 GitHub에 두지 않음 |
 | 켜고 끄기 | 레포 변수 `CD_DEPLOY`가 `true`일 때만 배포. 아니면 이미지만 올림 |
 | 대상 | 이미 떠 있는 서비스만 새 이미지로 바꿈. 처음 올리기는 수동 (`deploy/k3s/README.md`, `docker-compose.app.yml` 머리말) |
+| 배포 태그 파일 | compose 서비스는 앱 서버 `~/replant/.env`의 `{서비스}_TAG`로 뜸(compose가 같은 폴더 `.env`를 자동으로 읽음). CD가 배포에 성공한 서비스만 갱신하고, 파일에 없으면 지금 떠 있는 컨테이너 태그로 채움. `docker-compose.app.yml`에는 `:latest` 폴백이 없어 태그가 없으면 오류로 멈춤 → 태그 없이 `up -d`해도 마지막 배포 버전이 뜸 (#590) |
+| 수동 다시 적용 | compose는 `docker compose -f docker-compose.app.yml up -d [서비스]`(태그 파일대로). K3s 매니페스트는 `kubectl apply` 직접 금지(이미지가 `:latest`로 되돌아감) → `bash deploy/k3s/apply.sh <파일>`(지금 이미지 유지) |
 | GHCR 로그인 | 실행마다 `GITHUB_TOKEN`으로 임시 폴더에 로그인 · 끝나면 지움 (서버 `~/.docker` 설정은 그대로) |
 | 실패 | 빌드가 하나라도 실패하면 배포하지 않음. 롤아웃 실패 시 옛 파드가 계속 응답하고, 되돌리기는 `kubectl -n replant rollout undo` |
 | 기동 대기 | compose 서비스는 `--wait`로 healthy까지 기다림. 헬스체크 `start_period` 120초 + 10초 × 3번 실패 = 최대 약 150초 (`--wait-timeout 180`), K3s는 `rollout status --timeout=5m` |
