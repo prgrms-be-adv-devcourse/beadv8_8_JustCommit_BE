@@ -1,7 +1,7 @@
 # Kafka 토픽 · 이벤트 표
 
 > 언제 읽나: 어떤 이벤트를 누가 발행 · 구독하는지 정확히 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 9 · 10, 노션 기획안 「Kafka 이벤트」, 노션 「정책 정리」 3.10 · 8.7
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: Miro 9 · 10, 노션 기획안 「Kafka 이벤트」, 노션 「정책 정리」 3.10 · 8.7
 
 ## 토픽 목록
 
@@ -92,7 +92,7 @@
 | `ProductRejected` | `ProductApproved` 칸 + `reasonCode` (반려 사유 코드, 예: `HARMFUL_IMAGE`) · `reasonMessage` (판매자 문구, `OTHER`면 관리자 입력) | 검수 반려 알림용 (글 검사 반려 포함). 관리자 확인으로 넘어갈 때는 보내지 않음 |
 | `ImageReviewDelayed` | `delayedCount` (숫자, 이번에 묶은 건수), `checkedAt` (시각, 모은 시각) | 관리자 확인 12시간 지연 알림용 (#509). Key `image-review-delayed`(상품 하나에 묶이지 않음). 관리자 확인 지연 알림 스케줄러가 한국 시간 09~21시 매 정각에 확인해 새로 12시간을 넘긴 건(24시간 전)이 있을 때만 1개, 같은 건은 한 번만 ([사진 검수](../flows/image-review.md) 「관리자 수동 검수」). 시각은 product 서버 시간(서울)의 `LocalDateTime` |
 
-세 이벤트의 공통 payload (`version` 2, [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md)):
+세 이벤트의 공통 payload (`version` 3, [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md) · [ADR 0031](../decisions/0031-chatbot-rag-product-document-payload-v3.md)):
 
 | 칸 | 타입 | 내용 |
 |---|---|---|
@@ -102,8 +102,11 @@
 | `status` | 문자열 | 바뀐 뒤 상품 상태 (`REVIEW_PENDING` · `REJECTED` · `ACTIVE` · `PAYMENT_PENDING` · `SOLD_OUT` · `DELETED`) |
 | `hidden` | 참/거짓 | 숨김 여부 |
 | `productVersion` | 숫자 | 상품 버전. 상품 행을 바꾸는 모든 UPDATE에서 +1 (봉투 `version`과 다름). 받는 쪽은 저장된 값보다 클 때만 반영, 같으면 중복 |
+| `title` · `description` · `growNote` · `potSize` | 문자열 | 제목 · 설명 · 키우기 메모 · 화분 크기 (v3, ai 챗봇 상품 문서). 없으면 `null` |
+| `price` · `heightCm` | 숫자 | 가격 · 높이(cm) (v3, 챗봇 상품 카드 · 문서) |
+| `thumbnailUrl` | 문자열 | 대표 사진(순서 0) URL (v3, 챗봇 상품 카드). 사진이 없으면 `null` |
 
-가격 · 제목은 싣지 않습니다 (화면에 보일 값은 market이 상품 ID로 조회). payload 값은 발행하는 트랜잭션에서 상품을 다시 읽어 채우고(`ProductEventPublisher` 한 곳에서, 엔티티가 아니라 DB 값을 바로 읽음), 상태 · 숨김을 바꾸는 곳은 반드시 새 값이 담긴 이벤트를 보냅니다. 순서는 `productVersion`으로 판단하고 봉투 `occurredAt`은 로그용입니다. ai가 이 payload로 상품 스냅샷을 저장하고(#293), 칸 추가는 공통 매퍼의 `FAIL_ON_UNKNOWN_PROPERTIES` 비활성으로 호환됩니다.
+v3부터 제목 · 가격 · 대표 사진 · 설명 · 키우기 메모 · 크기를 싣습니다(ai 챗봇의 상품 문서 · 카드, ADR 0031). 장바구니 · 추천 카드는 지금처럼 market이 상품 ID로 조회합니다. ai는 version 2 · 3을 모두 받고, v2로 저장된 상품은 다음 이벤트 때 문서가 생깁니다. payload 값은 발행하는 트랜잭션에서 상품을 다시 읽어 채우고(`ProductEventPublisher` 한 곳에서, 엔티티가 아니라 DB 값을 바로 읽음), 상태 · 숨김을 바꾸는 곳은 반드시 새 값이 담긴 이벤트를 보냅니다. 순서는 `productVersion`으로 판단하고 봉투 `occurredAt`은 로그용입니다. ai가 이 payload로 상품 스냅샷을 저장하고(#293), 칸 추가는 공통 매퍼의 `FAIL_ON_UNKNOWN_PROPERTIES` 비활성으로 호환됩니다.
 
 `ProductApproved` · `ProductRejected`는 notification이 product를 조회하지 않고 payload만으로 알림을 만들도록 판매자 · 상품 이름 · 사유를 싣습니다. 상품 상태 동기화(ai 스냅샷)는 같은 트랜잭션에서 함께 보내는 `ProductStatusChanged`가 맡습니다.
 
