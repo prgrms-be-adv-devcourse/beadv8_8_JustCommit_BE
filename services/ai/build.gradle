@@ -42,6 +42,9 @@ dependencies {
     implementation 'org.springframework.ai:spring-ai-starter-model-openai'
     implementation 'org.springframework.ai:spring-ai-pgvector-store'
 
+    // 챗봇 답변 생성: Claude Haiku (product 사진 검수와 같은 SDK · 버전, ADR 0031)
+    implementation 'com.anthropic:anthropic-java:3.3.0'
+
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 

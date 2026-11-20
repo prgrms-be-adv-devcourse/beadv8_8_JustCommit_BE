@@ -144,6 +144,22 @@ spring:
                     redis-rate-limiter.requestedTokens: 6
                     key-resolver: "#{@clientIpKeyResolver}"
                     throw-on-limit: true
+            # 챗봇 (#297, ADR 0031): 질문 임베딩 + LLM 답변이라 응답 20초 (docs/conventions/resilience.md).
+            # 외부 AI 호출 비용 보호로 회원당 제한 (#303): 품종 의미 검색과 같은 값, 처음 10번 연속 가능 · 그 뒤 6초마다 1번
+            - id: ai-chatbot
+              uri: ${AI_SERVICE_URL:http://localhost:8087}
+              predicates:
+                - Path=/api/v1/chatbot/**
+              metadata:
+                response-timeout: 20000
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.burstCapacity: 60
+                    redis-rate-limiter.requestedTokens: 6
+                    key-resolver: "#{@memberKeyResolver}"
+                    throw-on-limit: true
             - id: notification-subscribe
               uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
               predicates:

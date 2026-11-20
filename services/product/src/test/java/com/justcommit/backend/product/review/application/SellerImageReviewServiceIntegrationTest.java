@@ -197,11 +197,14 @@ class SellerImageReviewServiceIntegrationTest {
         return productRepository.findById(product.getId()).orElseThrow();
     }
 
-    // payload v2 (#456): 반영 직후 DB 값(새 상태 · 새 상품 버전)이 그대로 담겨야 함
+    // payload v3 (#456, ADR 0031): 반영 직후 DB 값(새 상태 · 새 상품 버전 · 상품 문서 값)이 그대로 담겨야 함
+    // 대표 사진까지 읽으려고 사진을 함께 가져옴 (세션 밖에서 지연 로딩 안 됨)
     private ProductStatusChanged statusChangedOf(Product product) {
-        Product reloaded = reload(product);
+        Product reloaded = productRepository.findWithDetailById(product.getId()).orElseThrow();
         return new ProductStatusChanged(reloaded.getId(), reloaded.getSpecies().getId(), reloaded.getSellerId(),
-                reloaded.getStatus().name(), reloaded.isHidden(), reloaded.getVersion());
+                reloaded.getStatus().name(), reloaded.isHidden(), reloaded.getVersion(), reloaded.getTitle(),
+                reloaded.getPrice(), reloaded.getThumbnailUrl(), reloaded.getDescription(), reloaded.getGrowNote(),
+                reloaded.getHeightCm(), reloaded.getPotSize());
     }
 
     private ImageReview reviewOf(Product product, int version) {

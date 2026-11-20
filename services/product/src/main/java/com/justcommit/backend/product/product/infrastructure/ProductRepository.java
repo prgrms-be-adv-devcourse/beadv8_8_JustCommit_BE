@@ -153,10 +153,13 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     // 같은 orderId로 다시 온 예약인지 확인: 이 주문이 잡고 있는 결제 대기 상품 수
     long countByReservedOrderIdAndStatusAndIdIn(Long reservedOrderId, ProductStatus status, Collection<Long> ids);
 
-    // 상품 이벤트 payload (ADR 0021): 엔티티가 아니라 DB 값을 바로 읽어, 같은 트랜잭션의 일괄 UPDATE · 엔티티 수정 뒤 새 값이 나옴
+    // 상품 이벤트 payload (ADR 0021 · 0030, 대표 사진은 sortOrder 0): 엔티티가 아니라 DB 값을 바로 읽어, 같은 트랜잭션의 일괄 UPDATE · 엔티티 수정 뒤 새 값이 나옴
     @Query("""
             SELECT new com.justcommit.backend.product.product.event.ProductEventSource(
-                p.id, p.species.id, p.sellerId, p.status, p.hidden, p.version)
+                p.id, p.species.id, p.sellerId, p.status, p.hidden, p.version,
+                p.title, p.price,
+                (SELECT i.s3Url FROM ProductImage i WHERE i.product = p AND i.sortOrder = 0),
+                p.description, p.growNote, p.heightCm, p.potSize)
             FROM Product p
             WHERE p.id IN :ids
             ORDER BY p.id

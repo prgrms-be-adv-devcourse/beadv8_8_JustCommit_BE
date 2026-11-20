@@ -16,7 +16,7 @@
 |---|---|---|
 | `gateway-env` | `~/secrets/gateway.env` | `JWT_PUBLIC_KEY` · `REDIS_PASSWORD` · `CORS_ALLOWED_ORIGINS` |
 | `market-env` | `~/secrets/market.env` | `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` · `KAFKA_BOOTSTRAP_SERVERS` · `JWT_PUBLIC_KEY` · `INTERNAL_API_KEY` · `MEMBER_ADDRESS_EVENT_KEY` · `COURIER_BASE_URL` · `COURIER_API_KEY` · `WEBHOOK_API_KEY` |
-| `ai-env` | `~/secrets/ai.env` | `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` · `KAFKA_BOOTSTRAP_SERVERS` · `JWT_PUBLIC_KEY` · `INTERNAL_API_KEY` · `OPENAI_API_KEY` |
+| `ai-env` | `~/secrets/ai.env` | `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` · `KAFKA_BOOTSTRAP_SERVERS` · `JWT_PUBLIC_KEY` · `INTERNAL_API_KEY` · `OPENAI_API_KEY` · `ANTHROPIC_API_KEY` |
 | `ghcr-pull` | GHCR `read:packages` 토큰 | – |
 
 - env 파일은 한 줄에 `이름=값` 하나. `JWT_PUBLIC_KEY`는 PEM 머리말을 뺀 한 줄 Base64로 넣습니다.

@@ -146,7 +146,7 @@ class ProductOutboxIntegrationTest {
         EventEnvelope envelope = mapper.fromJson(record.value());
         assertThat(envelope.eventType()).isEqualTo("ProductStatusChanged");
         assertThat(envelope.aggregateId()).isEqualTo(String.valueOf(productId));
-        assertThat(envelope.version()).isEqualTo(2);
+        assertThat(envelope.version()).isEqualTo(3);
         JsonNode payload = envelope.payload();
         assertThat(payload.get("productId").asLong()).isEqualTo(productId);
         assertThat(payload.get("speciesId").asLong()).isEqualTo(species.getId());

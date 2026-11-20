@@ -1,6 +1,7 @@
 package com.justcommit.backend.ai.product.infrastructure;
 
 import com.justcommit.backend.ai.product.domain.ProductSnapshot;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -10,6 +11,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 @RequiredArgsConstructor
 public class ProductSnapshotRepository {
+
+    private static final String COLUMNS = """
+            product_id, species_id, seller_id, status, hidden, product_version,
+            title, price, thumbnail_url, description, grow_note, height_cm, pot_size""";
 
     private final JdbcClient jdbcClient;
 
@@ -22,31 +27,45 @@ public class ProductSnapshotRepository {
      */
     public boolean upsertIfNewer(ProductSnapshot snapshot) {
         int changed = jdbcClient.sql("""
-                        INSERT INTO product_snapshot
-                            (product_id, species_id, seller_id, status, hidden, product_version, updated_at)
-                        VALUES (:productId, :speciesId, :sellerId, :status, :hidden, :productVersion, now())
+                        INSERT INTO product_snapshot (%s, updated_at)
+                        VALUES (:productId, :speciesId, :sellerId, :status, :hidden, :productVersion,
+                                :title, :price, :thumbnailUrl, :description, :growNote, :heightCm, :potSize, now())
                         ON CONFLICT (product_id) DO UPDATE SET
                             species_id      = EXCLUDED.species_id,
                             seller_id       = EXCLUDED.seller_id,
                             status          = EXCLUDED.status,
                             hidden          = EXCLUDED.hidden,
                             product_version = EXCLUDED.product_version,
+                            title           = EXCLUDED.title,
+                            price           = EXCLUDED.price,
+                            thumbnail_url   = EXCLUDED.thumbnail_url,
+                            description     = EXCLUDED.description,
+                            grow_note       = EXCLUDED.grow_note,
+                            height_cm       = EXCLUDED.height_cm,
+                            pot_size        = EXCLUDED.pot_size,
                             updated_at      = now()
                         WHERE product_snapshot.product_version < EXCLUDED.product_version
-                        """)
+                        """.formatted(COLUMNS))
                 .paramSource(snapshot)
                 .update();
         return changed == 1;
     }
 
     public Optional<ProductSnapshot> findById(long productId) {
-        return jdbcClient.sql("""
-                        SELECT product_id, species_id, seller_id, status, hidden, product_version
-                        FROM product_snapshot
-                        WHERE product_id = :productId
-                        """)
+        return jdbcClient.sql("SELECT " + COLUMNS + " FROM product_snapshot WHERE product_id = :productId")
                 .param("productId", productId)
                 .query(ProductSnapshot.class)
                 .optional();
+    }
+
+    /** 상품 문서를 만들 수 있는 상품 ID (payload v3 값이 있고 삭제되지 않음). 상품 재임베딩용 */
+    public List<Long> findIdsWithDocument() {
+        return jdbcClient.sql("""
+                        SELECT product_id FROM product_snapshot
+                        WHERE title IS NOT NULL AND status <> 'DELETED'
+                        ORDER BY product_id
+                        """)
+                .query(Long.class)
+                .list();
     }
 }
