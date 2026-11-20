@@ -16,7 +16,7 @@
 |---|---|---|
 | `gateway-env` | `~/secrets/gateway.env` | `JWT_PUBLIC_KEY` · `REDIS_PASSWORD` · `CORS_ALLOWED_ORIGINS` |
 | `market-env` | `~/secrets/market.env` | `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` · `KAFKA_BOOTSTRAP_SERVERS` · `JWT_PUBLIC_KEY` · `INTERNAL_API_KEY` · `MEMBER_ADDRESS_EVENT_KEY` · `COURIER_BASE_URL` · `COURIER_API_KEY` · `WEBHOOK_API_KEY` |
-| `ai-env` | `~/secrets/ai.env` | `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` · `KAFKA_BOOTSTRAP_SERVERS` · `JWT_PUBLIC_KEY` · `INTERNAL_API_KEY` · `OPENAI_API_KEY` |
+| `ai-env` | `~/secrets/ai.env` | `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` · `KAFKA_BOOTSTRAP_SERVERS` · `JWT_PUBLIC_KEY` · `INTERNAL_API_KEY` · `OPENAI_API_KEY` · `ANTHROPIC_API_KEY` |
 | `ghcr-pull` | GHCR `read:packages` 토큰 | – |
 
 - env 파일은 한 줄에 `이름=값` 하나. `JWT_PUBLIC_KEY`는 PEM 머리말을 뺀 한 줄 Base64로 넣습니다.
@@ -34,6 +34,15 @@ kubectl -n replant get pods
 
 `ghcr-pull`은 토큰이 셸 기록에 남지 않게 명령 앞에 공백을 하나 두고 실행합니다.
 
+## 다시 적용할 때 — `kubectl apply -f gateway.yaml · market.yaml · ai.yaml` 직접 금지
+
+매니페스트의 `image`는 처음 올리기용 `:latest`입니다. 이미 떠 있는 Deployment에 그대로 `kubectl apply`를 하면 CD가 배포한 커밋 태그가 옛 `:latest`로 되돌아갑니다 (#590). 설정(환경변수 · 리소스 등)을 바꿔 다시 적용할 때는 지금 이미지를 유지하는 스크립트를 씁니다.
+
+```bash
+bash deploy/k3s/apply.sh deploy/k3s/market.yaml        # 하나
+bash deploy/k3s/apply.sh deploy/k3s/*.yaml              # 전부 (ConfigMap · Namespace는 그대로 적용)
+```
+
 ## 자주 쓰는 명령
 
 | 할 일 | 명령 |
@@ -44,4 +53,5 @@ kubectl -n replant get pods
 | 배포 진행 보기 | `kubectl -n replant rollout status deploy/market` |
 | ai 개수 · CPU 보기 | `kubectl -n replant get hpa ai` |
 | 되돌리기 | `kubectl -n replant rollout undo deploy/market` |
-| Secret 값 바꾼 뒤 반영 | `bash ~/make-env.sh` 뒤 `kubectl -n replant rollout restart deploy/market` |
+| Secret 값 바꾼 뒤 반영 | `bash ~/make-env.sh` 뒤 `kubectl -n replant rollout restart deploy/market` (이미지 그대로) |
+| 매니페스트 다시 적용 | `bash deploy/k3s/apply.sh deploy/k3s/market.yaml` (이미지 그대로) |

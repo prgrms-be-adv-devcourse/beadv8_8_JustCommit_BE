@@ -20,6 +20,7 @@ import reactor.core.publisher.Mono;
  * Gateway 1차 토큰 검사. 공개 경로가 아니면
  * ① Access 토큰의 서명 · 만료 · type → ② Redis 폐기 여부(로그아웃 · 회원 단위) → ③ ADMIN 경로 권한 순서로 본다.
  * 통과하면 토큰을 바꾸지 않고 그대로 서비스로 넘긴다 (서비스가 2차 검사).
+ * 확인한 회원 ID는 요청 속성 {@link #MEMBER_ID_ATTRIBUTE}에 남긴다 (회원당 요청 수 제한 키, 챗봇 #303).
  */
 @Component
 public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
@@ -27,6 +28,7 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
   private static final String BEARER_PREFIX = "Bearer ";
   private static final PathPattern ADMIN_PATH = PathPatternParser.defaultInstance.parse("/api/v1/admin/**");
   private static final String ADMIN_ROLE = "ADMIN";
+  public static final String MEMBER_ID_ATTRIBUTE = JwtAuthenticationFilter.class.getName() + ".memberId";
 
   private final JwtVerifier jwtVerifier;
   private final TokenRevocationChecker revocationChecker;
@@ -64,9 +66,13 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
           // 로그아웃 · 회원 단위 폐기된 토큰: 재발급으로 살릴 수 없으니 INVALID_TOKEN (다시 로그인)
           case REVOKED -> reject(exchange, GatewayErrorCode.INVALID_TOKEN);
           case REDIS_UNAVAILABLE -> reject(exchange, GatewayErrorCode.SERVICE_UNAVAILABLE);
-          case OK -> isAdminPath(exchange) && !ADMIN_ROLE.equals(verified.member().role())
-              ? reject(exchange, GatewayErrorCode.FORBIDDEN)
-              : chain.filter(exchange);
+          case OK -> {
+            if (isAdminPath(exchange) && !ADMIN_ROLE.equals(verified.member().role())) {
+              yield reject(exchange, GatewayErrorCode.FORBIDDEN);
+            }
+            exchange.getAttributes().put(MEMBER_ID_ATTRIBUTE, verified.member().memberId());
+            yield chain.filter(exchange);
+          }
         });
   }
 

@@ -10,7 +10,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient.ResponseSpec;
 
-/** 요청 수 제한(docs/services/gateway.md, IP당 1분 5회)과 CORS(Gateway에서만) */
+/** 요청 수 제한(docs/services/gateway.md, IP당 1분 5회 · 챗봇은 회원당 1분 10회)과 CORS(Gateway에서만) */
 class RateLimitAndCorsIntegrationTest extends GatewayIntegrationTest {
 
   private static final String ALLOWED_ORIGIN = "http://localhost:5173";
@@ -66,6 +66,22 @@ class RateLimitAndCorsIntegrationTest extends GatewayIntegrationTest {
   }
 
   @Test
+  @DisplayName("챗봇은 회원당 연속 10회까지 통과, 11번째 429. 같은 IP여도 다른 회원은 따로 셈 (#303)")
+  void chatbotLimitPerMember() {
+    String memberA = accessToken(101L, "MEMBER");
+    String memberB = accessToken(102L, "MEMBER");
+    for (int i = 0; i < 10; i++) {
+      chatbot(memberA, "10.0.0.7").expectStatus().isOk();
+    }
+    chatbot(memberA, "10.0.0.7")
+        .expectStatus().isEqualTo(429)
+        .expectBody()
+        .jsonPath("$.code").isEqualTo("TOO_MANY_REQUESTS");
+
+    chatbot(memberB, "10.0.0.7").expectStatus().isOk();
+  }
+
+  @Test
   @DisplayName("CORS preflight: 허용 출처는 200 + 쿠키 허용 헤더, 허용 안 된 출처는 403")
   void corsPreflight() {
     preflight(ALLOWED_ORIGIN)
@@ -88,6 +104,13 @@ class RateLimitAndCorsIntegrationTest extends GatewayIntegrationTest {
 
   private ResponseSpec post(String path, String clientIp) {
     return client.post().uri(path).header("X-Forwarded-For", clientIp).exchange();
+  }
+
+  private ResponseSpec chatbot(String accessToken, String clientIp) {
+    return client.post().uri("/api/v1/chatbot/messages")
+        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+        .header("X-Forwarded-For", clientIp)
+        .exchange();
   }
 
   private ResponseSpec preflight(String origin) {

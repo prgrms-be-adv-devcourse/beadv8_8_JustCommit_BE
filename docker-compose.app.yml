@@ -2,10 +2,15 @@
 # Gateway · market · ai는 K3s(deploy/k3s/), Nginx는 서버에 직접 설치, 404-express는 자기 레포의 compose.
 # 세미 운영(docker-compose.prod.yml)과는 다른 서버 · 다른 파일이다.
 #
+# 배포 태그 파일 (#590): 서비스 이미지 태그는 서버 ~/replant/.env 의 {서비스}_TAG=<커밋7자리>에서 읽는다.
+#   compose는 이 파일과 같은 폴더의 .env를 옵션 없이 자동으로 읽는다 → 태그 없이 up -d 해도 CD가 마지막으로 배포한 버전이 뜬다
+#   CD가 배포에 성공한 서비스만 갱신한다. 손으로 고치지 않는다 (되돌리기: 그 줄만 원하는 커밋 태그로 바꾸고 그 서비스만 up -d)
+#   태그가 없으면 :latest로 뜨지 않고 오류로 멈춘다 (11/20 :latest 되돌림 사고)
+#
 # 실행 (서버 ~/replant 에서):
-#   docker compose -f docker-compose.app.yml pull
-#   docker compose -f docker-compose.app.yml up -d
-# 한 서비스만 새 이미지로 (CD): MEMBER_TAG=a1b2c3d docker compose -f docker-compose.app.yml up -d member
+#   docker compose -f docker-compose.app.yml up -d            # .env 태그대로
+#   docker compose -f docker-compose.app.yml up -d member     # 한 서비스만 (env만 바꿨을 때 --force-recreate)
+# 새 이미지 배포는 CD가 한다: MEMBER_TAG=a1b2c3d docker compose ... up -d member 후 .env 갱신
 #
 # 비밀값은 서버 ~/secrets/{이름}.env 에만 둔다 (레포 · 채팅에 올리지 않음). 변수 설명: docs/reference/env-vars.md
 #   redis.env · member.env · product.env · payment.env · settlement.env · notification.env
@@ -62,7 +67,7 @@ services:
 
   member:
     <<: *service
-    image: ghcr.io/prgrms-be-adv-devcourse/replant-member:${MEMBER_TAG:-latest}
+    image: ghcr.io/prgrms-be-adv-devcourse/replant-member:${MEMBER_TAG:?MEMBER_TAG가 없음 - ~/replant/.env 배포 태그 파일 확인 (docs/infra/deploy.md)}
     container_name: replant-member
     env_file: ${HOME}/secrets/member.env
     environment:
@@ -81,7 +86,7 @@ services:
 
   product:
     <<: *service
-    image: ghcr.io/prgrms-be-adv-devcourse/replant-product:${PRODUCT_TAG:-latest}
+    image: ghcr.io/prgrms-be-adv-devcourse/replant-product:${PRODUCT_TAG:?PRODUCT_TAG가 없음 - ~/replant/.env 배포 태그 파일 확인 (docs/infra/deploy.md)}
     container_name: replant-product
     # S3는 EC2 IAM 역할로 접속한다. S3_ENDPOINT · S3_ACCESS_KEY · S3_SECRET_KEY(로컬 RustFS용)는 넣지 않는다
     env_file: ${HOME}/secrets/product.env
@@ -92,7 +97,7 @@ services:
 
   payment:
     <<: *service
-    image: ghcr.io/prgrms-be-adv-devcourse/replant-payment:${PAYMENT_TAG:-latest}
+    image: ghcr.io/prgrms-be-adv-devcourse/replant-payment:${PAYMENT_TAG:?PAYMENT_TAG가 없음 - ~/replant/.env 배포 태그 파일 확인 (docs/infra/deploy.md)}
     container_name: replant-payment
     env_file: ${HOME}/secrets/payment.env
     environment:
@@ -104,7 +109,7 @@ services:
 
   settlement:
     <<: *service
-    image: ghcr.io/prgrms-be-adv-devcourse/replant-settlement:${SETTLEMENT_TAG:-latest}
+    image: ghcr.io/prgrms-be-adv-devcourse/replant-settlement:${SETTLEMENT_TAG:?SETTLEMENT_TAG가 없음 - ~/replant/.env 배포 태그 파일 확인 (docs/infra/deploy.md)}
     container_name: replant-settlement
     env_file: ${HOME}/secrets/settlement.env
     environment:
@@ -116,7 +121,7 @@ services:
 
   notification:
     <<: *service
-    image: ghcr.io/prgrms-be-adv-devcourse/replant-notification:${NOTIFICATION_TAG:-latest}
+    image: ghcr.io/prgrms-be-adv-devcourse/replant-notification:${NOTIFICATION_TAG:?NOTIFICATION_TAG가 없음 - ~/replant/.env 배포 태그 파일 확인 (docs/infra/deploy.md)}
     container_name: replant-notification
     env_file: ${HOME}/secrets/notification.env
     environment: *tracing-env
