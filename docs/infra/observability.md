@@ -36,7 +36,7 @@
 | 추적 | Micrometer Tracing(OTel 브리지) traceId를 REST · Kafka 헤더 `traceparent`로 전파해 로그에 `[traceId-spanId]`로 기록, span은 OTLP HTTP로 앱 서버 Alloy(`10.0.7.76:4318`) → Tempo. Kafka는 Outbox가 저장 때 traceparent를 남기고 받는 쪽 리스너 관측(`spring.kafka.listener.observation-enabled`)이 이어받음. Grafana에서 로그의 traceId → Tempo, 추적 → 같은 traceId 로그로 이동 |
 | MDC | 인증 필터(`UserIdMdcFilter`)가 memberId를 넣고, `common-logging`은 형식 · 키 이름만 정함 |
 | 메시지 | 한국어 한 문장 + 값은 key-value (`log.atInfo().addKeyValue(...)`), 객체 통째 출력 금지 |
-| 금지 | 이름 · 전화 · 주소 · 이메일 · 계좌 · 비밀번호 · 토큰 · 결제 키 · 쿼리스트링을 로그에 남기지 않음 |
+| 금지 | 이름 · 전화 · 주소 · 이메일 · 계좌 · 비밀번호 · 토큰 · 결제 키 · 쿼리스트링을 로그에 남기지 않음. 예외: 인증된 카카오 연결 해제 웹훅의 **수신 저장 실패 로그**에만 검증을 통과한 카카오 회원번호 · 사유 · 수신 시각을 복구 단서로 남김(카카오가 다시 보내지 않아서) → [대응](../flows/signup-and-replica.md#운영-알림과-대응) |
 | 디스크 | Docker 로그 `max-size: 20m`, `max-file: 5` |
 | 재시도 로그 | 몇 번째 재시도인지 한 줄씩, 최종 실패는 ERROR 1줄 |
 | 정상 상황 | SSE 끊김(`AsyncRequestNotUsableException`) 등은 DEBUG |
@@ -54,6 +54,8 @@
 | 배송 예약 · 취소 지연 | `replant_shipment_stuck{status="READY"}`(만든 지 10분 넘게 택배 예약 안 됨) 또는 `{status="CANCEL_PENDING"}`(취소를 누른 지 10분 넘게 택배사 결과 없음) 1 이상. market이 수집 때마다 DB에서 셈, 원인은 배송 `last_error` | 상태 기준 1번, 반복 1시간 |
 | 정산 지급 지연 | 10분 넘게 미지급(`PENDING`, `FAILED`)인 정산 1건 이상 (`max(settlement_payouts_delayed) > 0`) | 상태 기준 1번, 반복 1시간 |
 | `REVIEW_REQUIRED` | 결제 확인 필요 주문 1건 이상 (`max(market_orders_review_required) > 0`) → [처리 순서](payment-review-runbook.md) | 상태 기준 1번, 반복 1시간 |
+| 카카오 연결 해제 웹훅 저장 실패 | 5분 동안 수신 기록 저장 실패 1건 이상 (`sum by (service) (increase(replant_kakao_unlink_receive_failures_total[5m])) > 0`). 200으로 응답해 5xx 알림에 안 잡히고 카카오가 다시 보내지 않음 → [대응](../flows/signup-and-replica.md#운영-알림과-대응) | 즉시 |
+| 카카오 연결 해제 웹훅 처리 멈춤 | 재시도를 다 쓴 `FAILED` 기록 1건 이상 (`max by (service) (replant_kakao_unlink_failed) > 0`). member가 수집 때마다 DB에서 세고, 여러 인스턴스가 같은 DB를 보므로 `max`. DB를 못 읽으면 NaN(배송 지연 지표와 같은 방식, `noDataState: OK`). NaN은 데이터 없음으로 보지 않을 수 있어 이미 울린 알림이 해소로 바뀔 수 있음(한계) → [대응](../flows/signup-and-replica.md#운영-알림과-대응) | 상태 기준 1번, 반복 1시간 |
 
 규칙 · 보내는 곳 · 반복 간격은 파일로 등록합니다: `deploy/observability/grafana/provisioning/alerting/` (`rules.yml` · `contact-points.yml` · `policies.yml`). 같은 알림 · 같은 서비스는 한 메시지로 묶고, 해소되지 않으면 1시간마다 다시 보냅니다.
 

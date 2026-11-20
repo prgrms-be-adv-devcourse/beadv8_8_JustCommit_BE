@@ -15,8 +15,27 @@ public interface ProductSearchIndex {
 
     void delete(Long productId, long version);
 
-    // 전체 색인: 여러 건을 한 요청으로. 실패한 건이 있어도 나머지는 반영하고 결과로 알려 줌
+    // 전체 색인: 여러 건을 alias에 한 요청으로. 실패한 건이 있어도 나머지는 반영하고 결과로 알려 줌
     BulkResult bulk(List<Write> writes);
+
+    // 무중단 재색인 (#487) ---------------------------------------------------------------
+
+    // alias가 지금 가리키는 실제 인덱스 이름. alias가 없으면 IllegalStateException
+    String currentIndex();
+
+    // 지금 매핑으로 다음 번호의 인덱스를 alias 없이 만들고 이름을 돌려줌 (products_v1 → products_v2)
+    String createNextIndex(String current);
+
+    // alias가 아닌 특정 인덱스에 bulk (재색인 중 새 인덱스를 채울 때)
+    BulkResult bulkInto(String index, List<Write> writes);
+
+    // 쓴 문서가 바로 검색되게 (기본은 1초마다). alias를 옮기기 전에 새 인덱스를 다 보이게 하려고
+    void refresh(String index);
+
+    // alias를 from에서 to로 한 번에 옮김
+    void switchAlias(String from, String to);
+
+    void deleteIndex(String index);
 
     // 한 건의 쓰기. document가 null이면 삭제
     record Write(Long productId, ProductDocument document, long version) {

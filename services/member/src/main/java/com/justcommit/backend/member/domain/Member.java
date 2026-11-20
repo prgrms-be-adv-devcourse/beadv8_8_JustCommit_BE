@@ -163,4 +163,20 @@ public class Member extends BaseTimeEntity  {
           this.accountUpdatedAt = null;
           this.status = MemberStatus.DELETED;
         }
+
+        // 카카오 연결 해제 (#422): ACTIVE에서만 INACTIVE로. 인증 버전은 토큰 폐기(revoke)가 올린다
+        public void markSocialUnlinked() {
+          if (this.status != MemberStatus.ACTIVE) {
+            throw new IllegalStateException("ACTIVE 회원만 연결 해제 상태로 바꿀 수 있습니다: " + this.status);
+          }
+          this.status = MemberStatus.INACTIVE;
+        }
+
+        // 카카오 재로그인 복구 (#422): INACTIVE에서만 ACTIVE로
+        public void restoreActive() {
+          if (this.status != MemberStatus.INACTIVE) {
+            throw new IllegalStateException("INACTIVE 회원만 복구할 수 있습니다: " + this.status);
+          }
+          this.status = MemberStatus.ACTIVE;
+        }
 }

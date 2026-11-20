@@ -38,7 +38,7 @@ public class SellerProfileService {
   @Transactional
   public SellerResult changeIntro(Long memberId, String intro) {
     Member member = memberLocker.lockById(memberId)
-        .filter(m -> m.getStatus() != MemberStatus.DELETED)
+        .filter(m -> m.getStatus() == MemberStatus.ACTIVE) // 탈퇴 · 카카오 연결 해제(INACTIVE, #422) 회원은 404
         .orElseThrow(() -> new BusinessException(MemberErrorCode.MEMBER_NOT_FOUND));
     Seller seller = sellerRepository.findById(memberId)
         .orElseThrow(() -> new BusinessException(MemberErrorCode.NOT_SELLER));

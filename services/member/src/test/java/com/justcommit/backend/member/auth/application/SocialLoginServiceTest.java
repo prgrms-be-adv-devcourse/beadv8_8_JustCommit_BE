@@ -9,6 +9,7 @@ import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
+import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,9 @@ class SocialLoginServiceTest {
 
   @Mock
   private DatabaseClock databaseClock;
+
+  @Mock
+  private KakaoUnlinkReceiptRepository unlinkReceiptRepository;
 
   @InjectMocks
   private SocialLoginService socialLoginService;
