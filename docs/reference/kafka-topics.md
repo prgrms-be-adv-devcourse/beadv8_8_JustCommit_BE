@@ -33,7 +33,7 @@
 | `market.events.v1` | `SellerOrderRejected` (상품 전부 거절, `reason`: `SELLER` · `AUTO`) | notification | `SELLER`: 구매자에게 판매자 거절 알림. `AUTO`: 구매자에게 자동 취소 · 판매자에게 24시간 자동 거절 알림 |
 | `market.events.v1` | `SellerOrderCancelled` · `OrderItemCancelled` (구매자 취소) | notification | 판매자에게만 취소 알림 (본인 취소는 구매자에게 안 보냄) |
 | `market.events.v1` | `PurchaseConfirmed` (판매자 주문이 끝나고 구매 확정 상품이 있으면, 수동, 자동 확정, 반품 거절 모두) | settlement · notification | 정산 생성(배송비 포함, 판매자 부담금 차감), 구매 확정 알림 |
-| `market.events.v1` | `SellerOrderReturned` (판매자 주문이 끝났는데 전부 반품) | settlement (⬜ #432) | 판매자 부담금만큼 음수 정산 생성. settlement 구독 전이라 지금은 받지 않고 건너뜀 (반품 완료는 #384부터 생겨 그 전에는 발행되지 않음) |
+| `market.events.v1` | `SellerOrderReturned` (판매자 주문이 끝났는데 전부 반품) | settlement (⬜ #432) | 판매자 부담금만큼 음수 정산 생성. settlement 구독 전이라 지금은 받지 않고 건너뜀. 반품 완료는 #384부터 생기므로 #432를 먼저 배포 |
 | `market.events.v1` | `OrderItemAutoConfirmed` (주문상품 단위) | notification | 자동 구매 확정 알림 (정산은 받지 않음) |
 | `market.events.v1` | `ReturnRequested` · `ReturnApproved`(자동 승인 포함) · `ReturnRejected` · `OrderItemReturned`(반품 환불 뒤) | notification | 반품 신청 · 자동 승인 · 거절 · 환불 완료 알림 |
 | `market.events.v1` | `ShipmentStatusChanged` | notification | 가는 길 배송의 상태 알림. 반품 배송은 발행하지 않음 (반품 알림은 반품 이벤트로) |
@@ -70,7 +70,7 @@
 | `ReturnRequested` | `returnRequestId`, `orderItemId`, `orderId`, `sellerOrderId`, `buyerId`, `sellerId` (숫자), `productName` (문자열), `reason` (`DAMAGED`, `NOT_AS_DESCRIBED`, `OTHER`), `requestedAt` (시각) | 구매자 반품 신청 (#382). 주문상품당 1건. 직접 작성 내용은 싣지 않음 |
 | `ReturnApproved` | `returnRequestId`, `orderItemId`, `orderId`, `sellerOrderId`, `buyerId`, `sellerId` (숫자), `productName` (문자열), `decidedBy` (`SELLER`, `AUTO`), `decidedAt` (시각) | 반품 승인 (#383). 판매자 승인이면 `SELLER`, 48시간 자동 승인이면 `AUTO`. 반품 신청당 1건, 409나 건너뛴 자동 승인은 발행 안 함 |
 | `ReturnRejected` | `ReturnApproved`와 같은 칸 (`decidedBy`는 `SELLER`) | 판매자 반품 거절 (#383). 그 주문상품은 바로 구매 확정 |
-| `OrderItemReturned` | ⬜ | #384 |
+| `OrderItemReturned` | `returnRequestId`, `orderItemId`, `orderId`, `sellerOrderId`, `buyerId`, `sellerId` (숫자), `productName` (문자열), `refundAmount` (금액), `returnedAt` (시각) | 반품 완료 (#384). 반품 환불이 확정된 트랜잭션에서 주문상품당 1건. `refundAmount`는 이 주문상품으로 구매자에게 환불한 상품 금액 (배송비 제외). product용 판매 재개(`market.order-item-returned.v1`)와 이름은 같고 토픽이 다름 |
 
 시각 칸은 market 서버 시간(서울)의 `LocalDateTime`입니다.
 
@@ -82,7 +82,7 @@
 | `market.order-expired.v1` | `OrderExpired` | `orderId` (숫자) | |
 | `market.order-failed.v1` | `OrderFailed` | `orderId` (숫자) | 결제 결과를 모르는 동안은 발행 안 함 |
 | `market.order-item-cancelled.v1` | `OrderItemCancelled` | `orderId` · `orderItemId` · `productId` (숫자), `reason` (`BUYER` · `SELLER` · `AUTO`) | 환불 성공 뒤, 전체 취소도 주문상품마다. 네 칸 모두 필수 |
-| `market.order-item-returned.v1` | ⬜ | ⬜ | 반품 기능 때 |
+| `market.order-item-returned.v1` | `OrderItemReturned` | `orderId`, `orderItemId`, `productId` (숫자) | 반품 환불 확정 뒤 주문상품마다 (#384). 세 칸 모두 필수 |
 
 ### product 상품 이벤트 (`product.events.v1`, Key `productId`, #338)
 

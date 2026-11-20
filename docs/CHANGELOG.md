@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-20 · glossary.md · flows/cancel-refund.md · flows/order-payment.md · reference/kafka-topics.md · reference/schedulers.md · services/market.md · testing/scenarios.md · 반품 도착, 환불 구현: Saga 복구에 「반품 도착 처리」(반품 배송 `DELIVERED`를 읽어 `RETURN_PROCESSING`, 상태만, 택배 웹훅은 주문을 부르지 않음)와 「반품 환불」(조건부 UPDATE 선점 후 트랜잭션 밖 환불, 결과 불명 10초 뒤 같은 키, 4xx나 5회면 `REVIEW_REQUIRED`) 단계 추가, 전부 반품이면 선점 때마다 다시 판단해 원래 배송비도 같은 키(sellerOrderId)로 환불, 환불 확정 때 `RETURNED`, 반품 신청 `COMPLETED`, 판매자 주문 종료 판정, `OrderItemReturned` payload(`refundAmount` 포함, Key `sellerOrderId`)와 `market.order-item-returned.v1` 발행, 배포는 settlement #432 먼저, 용어 「반품 도착 처리」 「반품 환불」 추가 (#384)
 - 2026-11-20 · glossary.md · 취소 완료(환불 확정)도 판매자 주문 종료 판정을 부름: 취소 중 상품이 마지막 미완료 상품이면 그때 정산 이벤트를 보내고, 다른 판매자 주문이 먼저 끝났어도 주문이 `PAID`에 남지 않음 (#383) (#593)
 - 2026-11-20 · flows/cancel-refund.md · 반품 배송비를 3,000원 고정에서 그 판매자 주문의 배송비(주문 때 요금표로 계산해 저장한 값, #592 지역 할증 포함)로 바꿈 (#383) (#593)
 - 2026-11-20 · reference/kafka-topics.md · `SellerOrderReturned` 구독자 settlement를 ⬜ #432로 표시 (settlement 리스너가 아직 받지 않음) (#383) (#593)

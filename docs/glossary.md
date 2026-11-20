@@ -47,6 +47,8 @@
 | 반품 사유 | `ReturnReason` (`DAMAGED`, `NOT_AS_DESCRIBED`, `OTHER`) | 반품 원인 | 반품 신청 때 고르는 판매자 귀책 사유 (상품 파손, 설명과 다름, 기타). 기타면 직접 작성 내용 필수 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 반품 배송 중 | `RETURN_IN_TRANSIT` (주문상품) | 반품 수거 중 | 반품이 승인돼 반품 택배가 판매자에게 가는 중인 주문상품 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 반품 환불 중 | `RETURN_PROCESSING` (주문상품) | 반품 도착, 반품 환불 확인 중 | 반품 택배가 판매자에게 도착했고 환불 결과를 기다리는 주문상품 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 도착 처리 | `recoverReturnArrivals` (Saga 복구 단계) | 반품 도착 감지 | Saga 복구가 반품 배송의 배송 완료(`DELIVERED`)를 읽어 반품 배송 중 주문상품을 반품 환불 중으로 바꾸는 단계. 상태만 바꾸고 환불은 부르지 않음 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 환불 | `recoverReturnRefunds` · `OrderReturnRefunder` | 반품 환불 요청 | 반품 환불 중 주문상품을 선점해 트랜잭션 밖에서 상품 금액(전부 반품이면 원래 배송비도)을 환불하는 Saga 복구 단계. 환불이 확정되면 반품 완료 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 반품 완료 | `RETURNED` (주문상품) · `OrderItemReturned` (반품 환불 뒤 발행) | – | 반품 환불이 확정돼 반품이 끝난 것. 택배사 `RETURNED`(반송)와 다름 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 전부 반품 | `SellerOrderReturned` | 전체 반품 | 판매자 주문에서 취소되지 않은 주문상품이 모두 반품 완료된 것 (수거 전 일부 취소와 나머지 반품도 포함). 구매 확정 상품이 없어 판매자 부담금만큼 음수 정산 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 판매자 부담금 | `sellerBurdenAmount` | 반품비, 왕복 택배비 | 반품 때 판매자가 내는 배송비. 반품 배송비 합이고, 전부 반품이면 원래 배송비도 더함. 전부 반품 = 취소되지 않은 상품이 모두 반품 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
