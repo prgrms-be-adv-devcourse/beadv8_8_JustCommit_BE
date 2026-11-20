@@ -90,7 +90,7 @@ public class ChatbotService {
         if (answerGenerator.isConfigured()) {
             llmCalls = 1;
             try {
-                answer = answerGenerator.answer(promptFactory.create(question, history, result));
+                answer = plainText(answerGenerator.answer(promptFactory.create(question, history, result)));
             } catch (RuntimeException e) {
                 log.warn("챗봇 답변 생성 실패, 고정 문장으로 답함: conversationId={}, error={}", id, e.toString());
             }
@@ -127,6 +127,14 @@ public class ChatbotService {
             }
         }
         return question;
+    }
+
+    /**
+     * 화면은 답변을 글자 그대로 보여 주므로 마크다운 강조(**굵게**, __굵게__)를 지운다.
+     * 프롬프트에 「마크다운 금지」가 있어도 가끔 섞여 나온다 (#303 품질 점검)
+     */
+    static String plainText(String answer) {
+        return answer.replace("**", "").replace("__", "").strip();
     }
 
     // 대화 주인 확인: 없는 대화 404, 다른 회원 403
