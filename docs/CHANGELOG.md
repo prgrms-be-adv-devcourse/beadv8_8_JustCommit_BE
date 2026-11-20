@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-20 · reference/kafka-topics.md · product 색인 리스너(`ProductSearchIndexListener`, #485)가 구현돼 「product 색인 리스너는 develop 기준 아직 없음」 문구 삭제
 - 2026-11-19 · reference/kafka-topics.md · services/market.md · 판매자 수락, 거절 이벤트 발행: `SellerOrderAccepted`(`rejectedItemCount`, 전체 수락 0, 일부 거절은 이번에 거절한 수), `SellerOrderRejected`(`reason` `SELLER` · `AUTO`)를 수락, 거절, 자동 거절 트랜잭션 마지막에 판매자 주문당 1건 `market.events.v1`로, payload 표 추가. 409와 건너뛴 자동 거절은 발행 안 함, `SellerOrderCancelled`는 구매자 취소 전용 유지 (#288) (#568)
 - 2026-11-19 · flows/signup-and-replica.md · services/member.md · conventions/auth.md · reference/external-apis.md · reference/schedulers.md · reference/env-vars.md · reference/redis-keys.md · infra/observability.md · infra/kakao-unlink-runbook.md · glossary.md · open-questions.md · testing/scenarios.md · 카카오 연결 해제 웹훅 구현: `GET · POST webhooks/kakao/unlink` 수신은 어드민 키 확인 후 항상 200 · 수신 기록(`member_kakao_unlink_receipt`)만 동기 저장, 10초 스케줄러가 카카오 연결을 다시 조회해 끊겼으면 `SOCIAL_UNLINKED` 폐기 + `INACTIVE` → 자동 탈퇴 사유는 3곳 확인 후 자동 탈퇴 · 막히면 가입 이메일 안내, 관리자 해제는 `INACTIVE`까지만, 결과 반영은 회원 → 기록 잠금 안에서 처리권 · 단계 · 연결 해제 버전 확인, 5회 실패 시 `FAILED`. 카카오 재로그인은 미처리 기록 무효화 + `ACTIVE` 복구, `INACTIVE`는 재발급 401 · 본인 기능 404. 운영 알림 2개(수신 저장 실패 · `FAILED`)와 저장 실패 복구 로그(로그 금지 목록의 범위 있는 예외), 멈춘 기록 재개 · 종료 SQL과 운영 절차 문서, Gateway 전용 라우트. 같은 초 재연결 Access는 재현만, 해결은 #546 (#566)
 - 2026-11-19 · reference/schedulers.md · market `@Scheduled` 스레드를 1개에서 4개로(`spring.task.scheduling.pool.size`): 자동 거절 환불이 길어져도 결제 대기 만료, Saga 복구, 택배 예약이 밀리지 않게 (#285)
