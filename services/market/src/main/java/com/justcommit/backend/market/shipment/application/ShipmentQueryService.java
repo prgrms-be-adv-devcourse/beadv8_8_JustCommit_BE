@@ -46,6 +46,16 @@ public class ShipmentQueryService implements ShipmentQuery {
                 .collect(Collectors.toMap(Shipment::getSellerOrderId, this::toResult));
     }
 
+    // 배송 id로 조회 (방향 무관, 반품 도착 처리용 #384)
+    @Override
+    public Map<Long, ShipmentResult> findByShipmentIds(List<Long> shipmentIds) {
+        if (shipmentIds.isEmpty()) {
+            return Map.of();
+        }
+        return shipmentRepository.findAllById(shipmentIds).stream()
+                .collect(Collectors.toMap(Shipment::getId, this::toResult));
+    }
+
     @Override
     public List<Long> findUnprocessedCancelResultIds(int limit) {
         return cancelResultRepository.findUnprocessedIds(limit);

@@ -3,6 +3,7 @@ package com.justcommit.backend.market.order.infrastructure.kafka;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
 import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
 import com.justcommit.backend.market.OrderItemCancelledEvent;
+import com.justcommit.backend.market.OrderItemReturnedEvent;
 import com.justcommit.backend.market.ReturnApprovedEvent;
 import com.justcommit.backend.market.ReturnRejectedEvent;
 import com.justcommit.backend.market.ReturnRequestedEvent;
@@ -58,6 +59,10 @@ public class SellerOrderEventPublisher {
     }
 
     public void publishAfterCommit(SellerOrderReturnedEvent event) {
+        outboxPublisher.publish(event);
+    }
+
+    public void publishAfterCommit(OrderItemReturnedEvent event) {
         outboxPublisher.publish(event);
     }
 }

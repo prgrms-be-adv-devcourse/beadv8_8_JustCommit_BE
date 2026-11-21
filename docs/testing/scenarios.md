@@ -85,7 +85,7 @@
 | S-E03 | 수거 후 취소 → 거부 | 규칙 | 단위 | PR |  |  |
 | S-E04 | 취소 두 번 → 환불 1번, 택배 취소 호출 1번 | 중복 | 통합 | PR |  | 완료 (11/18): `OrderCancelRefundIntegrationTest`(같은 취소 두 번, 복구 두 번) |
 | S-E05 | 택배사 취소 실패 → 재시도(10초 → 30초 → 1분)로 취소 완료 | 장애 | 통합 | PR |  |  |
-| S-E06 | 반품 신청(배송 완료 72시간 안, 판매자 귀책) → 판매자 알림 · 자동 구매 확정 제외 → 승인 → 반품 배송 → 도착 → 환불 → 구매자 알림 | 정상 | 통합 | PR |  |  |
+| S-E06 | 반품 신청(배송 완료 72시간 안, 판매자 귀책) → 판매자 알림 · 자동 구매 확정 제외 → 승인 → 반품 배송 → 도착 → 환불 → 구매자 알림 | 정상 | 통합 | PR |  || 부분 검증 (11/20): market의 반품 도착 → 반품 환불 → `RETURNED`, 반품 신청 `COMPLETED`, `OrderItemReturned`(구매자 알림용)와 판매 재개 Outbox 행(`OrderReturnRefundIntegrationTest`). 신청, 승인은 #382, #383 테스트. product 숨김과 알림 수신은 서비스를 이은 검증 전 |
 | S-E07 | `BOOKED` 취소 → 택배사 취소 먼저, 응답 없음 → `CANCEL_PENDING` · 환불 안 함 → 취소 큐로 확정 | 결과 불명 | 통합 | PR |  | 부분 검증 (11/18): 택배 결과 전에는 환불 안 함(`OrderCancelRefundIntegrationTest`). 취소 큐 재시도는 `ShipmentCancelQueueIntegrationTest` |
 | S-E08 | 택배사 「이미 수거」 → 수거가 요청보다 늦으면 취소 인정 + 반품 자동 접수, 빠르면 거절 · `PICKED_UP` | 경계 | 통합 | PR |  |  |
 | S-E09 | 반품 신청 48시간 무응답 → 자동 승인 → 반품 도착 → 환불 · 상품 `ACTIVE` + 숨김 | 규칙 | 통합 | PR |  |  |

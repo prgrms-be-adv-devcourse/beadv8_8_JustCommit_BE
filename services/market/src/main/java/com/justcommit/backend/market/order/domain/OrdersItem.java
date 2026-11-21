@@ -103,6 +103,18 @@ public class OrdersItem extends BaseTimeEntity {
         }
     }
 
+    // 반품 도착: 반품 배송 중 → 반품 환불 중 (#384). 환불 시도 기록을 비워 두어 반품 환불 단계가 첫 환불로 집는다.
+    // 호출 전에 주문 → 판매자 주문을 잠그고 상태를 확인한다
+    public void arriveReturn() {
+        if (this.status != OrderItemStatus.RETURN_IN_TRANSIT) {
+            throw new IllegalStateException("반품 배송 중인 주문 상품만 반품 도착 처리할 수 있습니다. 현재 상태: " + this.status);
+        }
+        this.status = OrderItemStatus.RETURN_PROCESSING;
+        this.attemptCount = 0;
+        this.attemptedAt = null;
+        this.lastError = null;
+    }
+
     // 반품 흐름(신청, 배송 중, 환불 중, 완료)에 들어간 주문상품
     public boolean isInReturn() {
         return status == OrderItemStatus.RETURN_REQUESTED || status == OrderItemStatus.RETURN_IN_TRANSIT
