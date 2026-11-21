@@ -121,6 +121,30 @@ public class Settlement extends BaseTimeEntity {
         );
     }
 
+    // 전부 반품 정산 (#432): 구매 확정 상품이 없어 판매액, 수수료, 배송비가 0이고 정산금 = -판매자 부담금.
+    // 원래 배송비는 market이 구매자에게 이미 환불해 정산 지급 때 REVENUE로 옮길 배송비가 없다.
+    // 배송비가 0원인 판매자 주문이면 부담금도 0이라 정산금 0인 정산이 된다
+    public static Settlement createReturnedSettlement(
+            Long sellerOrderId,
+            Long sellerId,
+            BigDecimal sellerBurdenAmount,
+            LocalDateTime requestedAt,
+            String itemSummary
+    ) {
+        validateSellerBurdenAmount(sellerBurdenAmount);
+
+        return new Settlement(
+                sellerOrderId,
+                sellerId,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                sellerBurdenAmount,
+                requestedAt,
+                itemSummary
+        );
+    }
+
     // 정산 지급 스케줄러가 이 건을 확보: leasedUntil까지 다른 실행이 다시 잡지 않게 다음 시도 시각을 미룬다 (#429)
     public void lease(LocalDateTime leasedUntil) {
         if (isCompleted()) {

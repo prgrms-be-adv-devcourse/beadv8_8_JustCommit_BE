@@ -6,6 +6,7 @@ import com.justcommit.backend.settlement.domain.Settlement;
 import com.justcommit.backend.settlement.domain.exception.SettlementErrorCode;
 import com.justcommit.backend.settlement.infrastructure.repository.SettlementRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +17,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class SettlementService {
@@ -53,6 +55,30 @@ public class SettlementService {
                         now(),
                         itemSummary
                 )
+        );
+
+        return toResult(settlement);
+    }
+
+    // 전부 반품 (#432): 판매액 0, 정산금 = -판매자 부담금인 정산을 PENDING으로 저장만 한다
+    @Transactional
+    public SettlementResult settleReturned(Long sellerOrderId, Long sellerId, BigDecimal sellerBurdenAmount,
+                                           String itemSummary) {
+        validateRequest(sellerOrderId, sellerId);
+
+        // 이미 있는 판매자 주문이면 아무것도 바꾸지 않고 기존 결과 반환 (구매 확정 정산이 먼저 있는 경우도 같음)
+        Optional<Settlement> existing = settlementRepository.findBySellerOrderId(sellerOrderId);
+        if (existing.isPresent()) {
+            Settlement settlement = existing.get();
+            if (settlement.getSaleAmount().signum() > 0) {
+                log.warn("구매 확정 정산이 이미 있는 판매자 주문에 전부 반품 이벤트가 와서 무시함: sellerOrderId={}, settlementId={}",
+                        sellerOrderId, settlement.getId());
+            }
+            return toResult(settlement);
+        }
+
+        Settlement settlement = settlementRepository.save(
+                Settlement.createReturnedSettlement(sellerOrderId, sellerId, sellerBurdenAmount, now(), itemSummary)
         );
 
         return toResult(settlement);

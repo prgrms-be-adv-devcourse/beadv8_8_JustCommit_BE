@@ -166,6 +166,56 @@ class PurchaseConfirmedKafkaIntegrationTest {
         verify(settlementService, never()).settle(any(), any(), any(), any(), any(), any());
     }
 
+    @Test
+    @DisplayName("market.events.v1의 SellerOrderReturned를 받으면 판매액, 수수료, 배송비 0, 정산금 -부담금인 PENDING 정산 1건이 생긴다")
+    void createsReturnedSettlement() {
+        kafkaTemplate.send(KafkaTopics.MARKET_EVENTS, "7001", sellerOrderReturnedEnvelope(7001L, "9000"));
+
+        Settlement settlement = awaitSettlement(7001L);
+        assertThat(settlement.getSaleAmount()).isEqualByComparingTo("0");
+        assertThat(settlement.getFee()).isEqualByComparingTo("0");
+        assertThat(settlement.getShippingFee()).isEqualByComparingTo("0");
+        assertThat(settlement.getSellerBurdenAmount()).isEqualByComparingTo("9000");
+        assertThat(settlement.getPayoutAmount()).isEqualByComparingTo("-9000");
+        assertThat(settlement.getStatus()).isEqualTo(SettlementStatus.PENDING);
+        assertThat(settlement.getItemSummary()).isEqualTo("몬스테라 외 1건");
+        assertThat(settlement.getCompletedAt()).isNull();
+        verify(settlementPayoutClient, never()).distributeSettlement(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("같은 전부 반품 이벤트를 두 번 받아도 정산은 1건이다")
+    void sameReturnedEventTwiceSettlesOnce() {
+        String event = sellerOrderReturnedEnvelope(7002L, "9000");
+        kafkaTemplate.send(KafkaTopics.MARKET_EVENTS, "7002", event);
+        kafkaTemplate.send(KafkaTopics.MARKET_EVENTS, "7002", event);
+
+        awaitSettlement(7002L);
+        verify(settlementService, timeout(20_000).times(2)).settleReturned(eq(7002L), anyLong(), any(), any());
+        assertThat(settlementRepository.findAll())
+                .filteredOn(s -> s.getSellerOrderId().equals(7002L))
+                .hasSize(1);
+    }
+
+    @Test
+    @DisplayName("sellerBurdenAmount가 없는 SellerOrderReturned는 정산을 부르지 않고 재시도 없이 DLT로 간다")
+    void returnedWithoutBurdenGoesToDltWithoutRetry() {
+        kafkaTemplate.send(KafkaTopics.MARKET_EVENTS, "7003", envelope("SellerOrderReturned", 7003L,
+                Map.of("sellerOrderId", 7003L, "sellerId", 7L)));
+
+        assertThat(pollDlt("7003", Duration.ofSeconds(30))).hasSize(1);
+        verify(settlementService, never()).settleReturned(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("부담금이 음수인 SellerOrderReturned는 정산을 부르지 않고 재시도 없이 DLT로 간다")
+    void returnedWithNegativeBurdenGoesToDltWithoutRetry() {
+        kafkaTemplate.send(KafkaTopics.MARKET_EVENTS, "7004", sellerOrderReturnedEnvelope(7004L, "-1"));
+
+        assertThat(pollDlt("7004", Duration.ofSeconds(30))).hasSize(1);
+        verify(settlementService, never()).settleReturned(any(), any(), any(), any());
+    }
+
     private Settlement awaitSettlement(Long sellerOrderId) {
         long deadline = System.currentTimeMillis() + 20_000;
         while (System.currentTimeMillis() < deadline) {
@@ -220,6 +270,16 @@ class PurchaseConfirmedKafkaIntegrationTest {
         payload.put("confirmedAt", "2026-11-12T10:00:00");
         payload.put("itemSummary", "몬스테라 외 1건");
         return envelope("PurchaseConfirmed", sellerOrderId, payload);
+    }
+
+    private static String sellerOrderReturnedEnvelope(Long sellerOrderId, String sellerBurdenAmount) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("sellerOrderId", sellerOrderId);
+        payload.put("sellerId", 7L);
+        payload.put("sellerBurdenAmount", new BigDecimal(sellerBurdenAmount));
+        payload.put("returnedAt", "2026-11-12T10:00:00");
+        payload.put("itemSummary", "몬스테라 외 1건");
+        return envelope("SellerOrderReturned", sellerOrderId, payload);
     }
 
     private static String envelope(String eventType, Long sellerOrderId, Map<String, ?> payload) {

@@ -50,7 +50,7 @@
 | 반품 도착 처리 | `recoverReturnArrivals` (Saga 복구 단계) | 반품 도착 감지 | Saga 복구가 반품 배송의 배송 완료(`DELIVERED`)를 읽어 반품 배송 중 주문상품을 반품 환불 중으로 바꾸는 단계. 상태만 바꾸고 환불은 부르지 않음 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 반품 환불 | `recoverReturnRefunds` · `OrderReturnRefunder` | 반품 환불 요청 | 반품 환불 중 주문상품을 선점해 트랜잭션 밖에서 상품 금액(전부 반품이면 원래 배송비도)을 환불하는 Saga 복구 단계. 환불이 확정되면 반품 완료 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 반품 완료 | `RETURNED` (주문상품) · `OrderItemReturned` (반품 환불 뒤 발행) | – | 반품 환불이 확정돼 반품이 끝난 것. 택배사 `RETURNED`(반송)와 다름 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
-| 전부 반품 | `SellerOrderReturned` | 전체 반품 | 판매자 주문에서 취소되지 않은 주문상품이 모두 반품 완료된 것 (수거 전 일부 취소와 나머지 반품도 포함). 구매 확정 상품이 없어 판매자 부담금만큼 음수 정산 | [구매 확정 → 정산](flows/confirm-settlement.md) |
+| 전부 반품 | `SellerOrderReturned` | 전체 반품 | 판매자 주문에서 취소되지 않은 주문상품이 모두 반품 완료된 것 (수거 전 일부 취소와 나머지 반품도 포함). 구매 확정 상품이 없어 판매액, 수수료, 배송비가 0이고 정산금 = −판매자 부담금인 정산을 만듦 (부담금이 0이면 정산금도 0) | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 판매자 부담금 | `sellerBurdenAmount` | 반품비, 왕복 택배비 | 반품 때 판매자가 내는 배송비. 반품 배송비 합이고, 전부 반품이면 원래 배송비도 더함. 전부 반품 = 취소되지 않은 상품이 모두 반품 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 
 ## 돈
@@ -64,7 +64,7 @@
 | 홀딩 지갑 | `HOLDING` | 보관 계좌, 에스크로 | 결제된 돈을 정산 전까지 맡아 두는 시스템 지갑 | [payment](services/payment.md) |
 | 매출 지갑 | `REVENUE` | 수익 계좌, 플랫폼 계좌 | 수수료 · 배송비 · 판매자 부담금이 쌓이는 시스템 지갑 | [payment](services/payment.md) |
 | 정산 | `SETTLEMENT` | 정산금 지급 | 판매자 주문이 끝나면 판매액에서 수수료 · 부담금을 빼 판매자에게 줄 돈 | [구매 확정 → 정산](flows/confirm-settlement.md) |
-| 음수 정산 | – | 조정 정산, 마이너스 정산 | 부담금이 판매액보다 커서 0보다 작은 정산 | [구매 확정 → 정산](flows/confirm-settlement.md) |
+| 음수 정산 | – | 조정 정산, 마이너스 정산 | 정산금(판매액 − 수수료 − 판매자 부담금)이 0보다 작은 정산 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 미수금 | – | 빚, 미납금 | 음수 정산을 회수하지 못한 금액. 남아 있으면 인출 · 탈퇴 불가 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 미수금 차감 | `RECEIVABLE_COLLECTION` | 미수금 상환, 미수금 납부, 빚 갚기 | 회원 지갑에 입금(충전, 정산금, 환불)되면 입금액 안에서 미수금을 먼저 빼 `REVENUE`로 옮기는 것. 입금 1건당 한 번 | [payment 정책](services/payment.md#정책) |
 | 결과 불명 | `InternalApiResultUnknownException` | 타임아웃, 알 수 없음 | 응답이 없어 상대가 처리했는지 모르는 상태. 바로 되돌리지 않고 같은 멱등 키로 확인 | [장애 처리](conventions/resilience.md#결과-불명-처리) |
