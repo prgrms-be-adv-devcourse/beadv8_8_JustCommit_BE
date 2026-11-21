@@ -1,7 +1,6 @@
 package com.justcommit.backend.market.order.application;
 
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.market.PurchaseConfirmedEvent;
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
 import com.justcommit.backend.market.OrderStatus;
@@ -14,14 +13,12 @@ import com.justcommit.backend.market.order.domain.SellerOrder;
 import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
-import com.justcommit.backend.market.order.infrastructure.kafka.PurchaseConfirmedEventPublisher;
 import com.justcommit.backend.market.order.infrastructure.kafka.SellerOrderEventPublisher;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -33,7 +30,7 @@ public class OrderItemConfirmationService {
     private final OrdersItemRepository ordersItemRepository;
     private final SellerOrderRepository sellerOrderRepository;
     private final ShipmentQuery shipmentQuery;
-    private final PurchaseConfirmedEventPublisher purchaseConfirmedEventPublisher;
+    private final SellerOrderCompletion sellerOrderCompletion;
     private final SellerOrderEventPublisher sellerOrderEventPublisher;
 
     @Transactional
@@ -103,64 +100,10 @@ public class OrderItemConfirmationService {
         }
 
         item.confirm();
-        checkAndRequestSettlement(sellerOrder);
-        updateOrderStatus(order);
+        sellerOrderCompletion.complete(order, sellerOrder);
         if (automatic) {
             sellerOrderEventPublisher.publishAfterCommit(new OrderItemAutoConfirmedEvent(
                     item.getId(), order.getId(), sellerOrder.getId(), order.getBuyerId(), LocalDateTime.now()));
-        }
-    }
-
-    private void checkAndRequestSettlement(SellerOrder sellerOrder) {
-        if (sellerOrder.getConfirmedAt() != null) {
-            return;
-        }
-        if (sellerOrder.getSettlementBaseAmount().compareTo(BigDecimal.ZERO) < 1) {
-            //미정산대상
-            return;
-        }
-
-        if (!sellerOrder.getItems().stream().anyMatch(OrderItemConfirmationService::isUnfinished)) {
-            sellerOrder.confirmed();
-            purchaseConfirmedEventPublisher.publishAfterCommit(new PurchaseConfirmedEvent(
-                    sellerOrder.getId(), sellerOrder.getSellerId(), sellerOrder.getSettlementBaseAmount(), sellerOrder.getShippingFee(),
-                    sellerOrder.getConfirmedAt(), itemSummary(sellerOrder)));
-        }
-    }
-
-    private String itemSummary(SellerOrder sellerOrder) {
-        List<String> names = sellerOrder.getItems().stream()
-                .filter(i -> i.getStatus() == OrderItemStatus.CONFIRMED)
-                .map(OrdersItem::getProductName)
-                .toList();
-        if (names.isEmpty()) return "";
-        return names.size() == 1 ? names.get(0) : names.get(0) + " 외 " + (names.size() - 1) + "건";
-    }
-
-    // 아직 끝나지 않은 주문상품: 수락 대기, 일반, 환불 결과를 기다리는 취소 중, 확인 필요 (#282, #284),
-    // 반품 진행 중(신청, 배송 중, 환불 중, #382). 반품 완료는 끝난 상태다.
-    // 취소 중은 택배 취소가 거절되면 일반으로 돌아오므로 판매자 주문, 주문을 끝내지 않는다
-    private static boolean isUnfinished(OrdersItem item) {
-        return item.getStatus() == OrderItemStatus.ACCEPT_PENDING || item.getStatus() == OrderItemStatus.NORMAL
-                || item.getStatus() == OrderItemStatus.CANCEL_PROCESSING || item.getStatus() == OrderItemStatus.REVIEW_REQUIRED
-                || item.getStatus() == OrderItemStatus.RETURN_REQUESTED || item.getStatus() == OrderItemStatus.RETURN_IN_TRANSIT
-                || item.getStatus() == OrderItemStatus.RETURN_PROCESSING;
-    }
-
-    private void updateOrderStatus(Orders orders) {
-        if (orders.getSellerOrders().stream().flatMap(s -> s.getItems().stream())
-                .anyMatch(i -> i.getStatus() == OrderItemStatus.CANCEL_PROCESSING
-                        || i.getStatus() == OrderItemStatus.REVIEW_REQUIRED)) {
-            return;
-        }
-        if (orders.getSellerOrders().stream().anyMatch(s -> s.getConfirmedAt() == null && s.getSettlementBaseAmount().compareTo(BigDecimal.ZERO) > 0)) {
-            return;
-        }
-        if (orders.getSellerOrders().stream()
-                .allMatch(s -> s.getSettlementBaseAmount().compareTo(BigDecimal.ZERO) == 0)) {
-            orders.cancel();
-        } else {
-            orders.confirm();
         }
     }
 }

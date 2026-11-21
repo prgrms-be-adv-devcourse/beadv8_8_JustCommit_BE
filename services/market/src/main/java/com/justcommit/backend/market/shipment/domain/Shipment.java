@@ -75,11 +75,25 @@ public class Shipment extends BaseTimeEntity {
     // 그 밖의 주문 정보(구매자·판매자·받는 사람·택배비)는 결제 후 바뀌지 않아 복사하지 않고 seller_order_id로 조회한다.
     private String itemSummary;
 
+    // 가는 길 배송 (판매자 수락 흐름)
     public Shipment(Long sellerOrderId, String itemSummary) {
+        this(sellerOrderId, itemSummary, ShipmentDirection.OUTBOUND);
+    }
+
+    private Shipment(Long sellerOrderId, String itemSummary, ShipmentDirection direction) {
         this.sellerOrderId = sellerOrderId;
         this.itemSummary = itemSummary;
-        this.direction = ShipmentDirection.OUTBOUND;
+        this.direction = direction;
         this.status = ShipmentStatus.READY;
+    }
+
+    // 반품 배송: 구매자 → 판매자 (#383). 반품 승인마다 새 배송 행을 만든다
+    public static Shipment returnOf(Long sellerOrderId, String itemSummary) {
+        return new Shipment(sellerOrderId, itemSummary, ShipmentDirection.RETURN);
+    }
+
+    public boolean isReturn() {
+        return direction == ShipmentDirection.RETURN;
     }
 
     // 수거 이후 상태(수거·출발·완료)인지. 수거되면 더 이상 취소할 수 없다.

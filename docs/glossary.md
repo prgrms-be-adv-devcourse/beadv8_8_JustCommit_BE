@@ -23,6 +23,7 @@
 | 배송 | `Shipment` | 택배, 배송 건 | 판매자 주문 하나의 택배. 반품은 방향이 다른 새 배송 | [market](services/market.md) |
 | 배송 방향 | `direction` (`ShipmentDirection`) | – | 배송이 가는 길인지 반품인지. 판매자 주문 하나에 가는 길 배송은 1개, 반품 배송은 여러 개 | [market](services/market.md) |
 | 가는 길 | `OUTBOUND` (배송 방향) | 정방향, 원래 배송 | 판매자 → 구매자로 가는 배송. 구매 확정 · 취소 · 반품 기간은 가는 길 배송으로 판정 | [market](services/market.md) |
+| 반품 배송 | `RETURN` (배송 방향) · `Shipment.returnOf` | 반품 택배, 역방향 | 반품 승인 때 주문상품마다 새로 만드는 배송 (구매자 → 판매자). 배송 상태 알림(`ShipmentStatusChanged`)은 발행하지 않음 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 택배 예약 | `BOOKED` | 접수, 택배 접수, 픽업 대기 (화면 표시) | 택배사에 수거를 예약한 상태. 상품 「예약」과 구분해 항상 「택배 예약」으로 씀 | [market 정책](services/market.md#정책) |
 | 수거 | `PICKED_UP` | 픽업, 가져감, 집하 | 택배사가 상품을 가져간 상태. 이후에는 취소 대신 반품 | [market 정책](services/market.md#정책) |
 | 배송 완료 | `DELIVERED` | 도착 | 구매자에게 도착한 상태. 자동 구매 확정 · 반품 기간의 기준 시점 | [market 정책](services/market.md#정책) |
@@ -33,18 +34,24 @@
 | 웹훅 | – | webhook, 콜백 | 택배사가 배송 상태 · 취소 · 요금표 변경을 알려 주는 HTTP 요청 | [market 정책](services/market.md#정책) |
 | 배송비 요금표 | `ShippingFeeTable` (`SHIPPING_FEE_TABLE`) | 운임표 | 지역 구분(기본 + 제주 · 도서산간) 배송비 표. market이 버전과 함께 보관 | [market 정책](services/market.md#정책) |
 | 구매 확정 | `PurchaseConfirmed` · `OrderItemAutoConfirmed` | 구매 완료, 거래 완료 | 구매자가 받았다고 확정 (직접 또는 자동). 정산의 시작점 | [구매 확정 → 정산](flows/confirm-settlement.md) |
+| 판매자 주문 종료 판정 | `SellerOrderCompletion` | 정산 판정, 종료 체크 | 판매자 주문의 주문상품이 모두 끝났는지(구매 확정, 취소 완료, 반품 완료) 보고, 끝났으면 정산 이벤트를 한 번 발행하는 판정. 구매 확정, 반품 거절, 취소 완료(환불 확정), 반품 완료 뒤에 부름. 종료 기록은 `seller_order.confirmed_at` | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 취소 | `OrderItemCancelled` · `SellerOrderCancelled` | 주문 취소 | 수거 전에 구매자가 주문상품을 취소하는 것 | [취소 · 환불](flows/cancel-refund.md) |
 | 취소 사유 | `cancel_reason` (주문상품) · `CancelReason` (`BUYER`, `SELLER`, `AUTO`) | 취소 원인 | 주문상품이 취소 흐름에 들어간 이유 (구매자 취소, 판매자 거절, 자동 거절). 판매 재개 이벤트의 `reason` | [Kafka 토픽](reference/kafka-topics.md) |
 | 취소 중 | `CANCEL_PROCESSING` (주문상품) | 환불 확인 중 | 환불 결과를 모르는 주문상품. 환불이 확정되면 취소 완료 | [취소 · 환불](flows/cancel-refund.md#실패와-재시도) |
 | 환불 | `refunds/*` (payment) | 돈 돌려주기, 결제 취소 | **돈**이 주체. 결제한 돈을 구매자에게 돌려주는 것. 원인은 수거 전 취소 · 판매자 거절 · 자동 거절 · 반품 완료 | [payment](services/payment.md#정책) |
 | 반품 | `Return*` · `OrderItemReturned` | 환불 요청, 반품 요청, 교환 | **물건(택배)**이 주체. 받은 상품을 판매자에게 택배로 돌려보내는 절차. 끝나면 그 결과로 환불 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 반품 신청 | `ReturnRequest` (`return_request`) · `RETURN_REQUESTED` (주문상품) · `ReturnRequested` | 환불 요청 | 배송 완료 후 판매자 귀책으로 상품을 돌려보내겠다는 요청 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
-| 승인 · 거절 (반품) | `ReturnApproved` · `ReturnRejected` | 수락 (반품에는 안 씀) | 판매자가 반품을 받아들이거나 거절. 거절하면 그 주문상품은 바로 구매 확정 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 승인 · 거절 (반품) | `ReturnApproved` · `ReturnRejected` · `RETURN_NOT_DECIDABLE` (이미 처리됨, 409) | 수락 (반품에는 안 씀) | 판매자가 반품을 받아들이거나 거절. 거절하면 그 주문상품은 바로 구매 확정 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 응답 마감 | `returnDeadlineAt` (`ReturnRequest.RESPONSE_PERIOD`) | 반품 응답 기한 | 판매자가 반품 신청을 승인하거나 거절해야 하는 시각. 지나면 자동 승인. 응답 전 반품 신청에만 있음 | [market 정책](services/market.md#정책) |
+| 자동 승인 (반품) | `ReturnDecidedBy.AUTO` (`decided_by`) | 반품 자동 수락 | 반품 응답 마감까지 판매자가 응답하지 않아 승인된 반품 신청. 판매자가 직접 승인, 거절하면 `SELLER` | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 반품 사유 | `ReturnReason` (`DAMAGED`, `NOT_AS_DESCRIBED`, `OTHER`) | 반품 원인 | 반품 신청 때 고르는 판매자 귀책 사유 (상품 파손, 설명과 다름, 기타). 기타면 직접 작성 내용 필수 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 반품 배송 중 | `RETURN_IN_TRANSIT` (주문상품) | 반품 수거 중 | 반품이 승인돼 반품 택배가 판매자에게 가는 중인 주문상품 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 반품 환불 중 | `RETURN_PROCESSING` (주문상품) | 반품 도착, 반품 환불 확인 중 | 반품 택배가 판매자에게 도착했고 환불 결과를 기다리는 주문상품 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 도착 처리 | `recoverReturnArrivals` (Saga 복구 단계) | 반품 도착 감지 | Saga 복구가 반품 배송의 배송 완료(`DELIVERED`)를 읽어 반품 배송 중 주문상품을 반품 환불 중으로 바꾸는 단계. 상태만 바꾸고 환불은 부르지 않음 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 반품 환불 | `recoverReturnRefunds` · `OrderReturnRefunder` | 반품 환불 요청 | 반품 환불 중 주문상품을 선점해 트랜잭션 밖에서 상품 금액(전부 반품이면 원래 배송비도)을 환불하는 Saga 복구 단계. 환불이 확정되면 반품 완료 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 | 반품 완료 | `RETURNED` (주문상품) · `OrderItemReturned` (반품 환불 뒤 발행) | – | 반품 환불이 확정돼 반품이 끝난 것. 택배사 `RETURNED`(반송)와 다름 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
-| 판매자 부담금 | – | 반품비, 왕복 택배비 | 반품 때 판매자가 내는 배송비 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
+| 전부 반품 | `SellerOrderReturned` | 전체 반품 | 판매자 주문에서 취소되지 않은 주문상품이 모두 반품 완료된 것 (수거 전 일부 취소와 나머지 반품도 포함). 구매 확정 상품이 없어 판매액, 수수료, 배송비가 0이고 정산금 = −판매자 부담금인 정산을 만듦 (부담금이 0이면 정산금도 0) | [구매 확정 → 정산](flows/confirm-settlement.md) |
+| 판매자 부담금 | `sellerBurdenAmount` | 반품비, 왕복 택배비 | 반품 때 판매자가 내는 배송비. 반품 배송비 합이고, 전부 반품이면 원래 배송비도 더함. 전부 반품 = 취소되지 않은 상품이 모두 반품 | [취소 · 환불](flows/cancel-refund.md#반품-환불) |
 
 ## 돈
 
@@ -57,7 +64,7 @@
 | 홀딩 지갑 | `HOLDING` | 보관 계좌, 에스크로 | 결제된 돈을 정산 전까지 맡아 두는 시스템 지갑 | [payment](services/payment.md) |
 | 매출 지갑 | `REVENUE` | 수익 계좌, 플랫폼 계좌 | 수수료 · 배송비 · 판매자 부담금이 쌓이는 시스템 지갑 | [payment](services/payment.md) |
 | 정산 | `SETTLEMENT` | 정산금 지급 | 판매자 주문이 끝나면 판매액에서 수수료 · 부담금을 빼 판매자에게 줄 돈 | [구매 확정 → 정산](flows/confirm-settlement.md) |
-| 음수 정산 | – | 조정 정산, 마이너스 정산 | 부담금이 판매액보다 커서 0보다 작은 정산 | [구매 확정 → 정산](flows/confirm-settlement.md) |
+| 음수 정산 | – | 조정 정산, 마이너스 정산 | 정산금(판매액 − 수수료 − 판매자 부담금)이 0보다 작은 정산 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 미수금 | – | 빚, 미납금 | 음수 정산을 회수하지 못한 금액. 남아 있으면 인출 · 탈퇴 불가 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 미수금 차감 | `RECEIVABLE_COLLECTION` | 미수금 상환, 미수금 납부, 빚 갚기 | 회원 지갑에 입금(충전, 정산금, 환불)되면 입금액 안에서 미수금을 먼저 빼 `REVENUE`로 옮기는 것. 입금 1건당 한 번 | [payment 정책](services/payment.md#정책) |
 | 결과 불명 | `InternalApiResultUnknownException` | 타임아웃, 알 수 없음 | 응답이 없어 상대가 처리했는지 모르는 상태. 바로 되돌리지 않고 같은 멱등 키로 확인 | [장애 처리](conventions/resilience.md#결과-불명-처리) |

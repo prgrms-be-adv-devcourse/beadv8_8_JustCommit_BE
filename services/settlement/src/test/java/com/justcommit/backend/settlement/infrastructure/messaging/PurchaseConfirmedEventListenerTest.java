@@ -9,15 +9,12 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
 
-import tools.jackson.databind.json.JsonMapper;
-
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -71,17 +68,54 @@ class PurchaseConfirmedEventListenerTest {
     }
 
     @Test
-    @DisplayName("옛 토픽 JSON(shippingFee · sellerBurdenAmount 칸 없음)은 배송비 null, 부담금 0으로 정산한다")
-    void legacyPurchaseConfirmed() {
-        // 옛 market이 market.purchase-confirmed.v1로 보내던 JSON을 옛 토픽 리스너 변환기처럼 Jackson으로 읽는다
-        PurchaseConfirmedEvent event = JsonMapper.builder().build().readValue("""
-                {"sellerOrderId":10,"sellerId":7,"saleAmount":30000,"confirmedAt":"2026-11-12T10:00:00","itemSummary":"몬스테라"}
-                """, PurchaseConfirmedEvent.class);
+    @DisplayName("SellerOrderReturned 봉투를 받으면 부담금과 상품 요약을 넘겨 전부 반품 정산을 만든다 (모르는 칸은 무시)")
+    void sellerOrderReturned() {
+        listener.on(envelope("SellerOrderReturned", sellerOrderReturnedPayload().put("newField", "x")));
 
-        listener.onLegacyPurchaseConfirmed(event);
+        verify(settlementService).settleReturned(10L, 7L, new BigDecimal("9000"), "몬스테라 외 1건");
+    }
 
-        verify(settlementService).settle(eq(10L), eq(7L), argThat(sale -> sale.compareTo(new BigDecimal("30000")) == 0),
-                isNull(), argThat(burden -> burden.signum() == 0), eq("몬스테라"));
+    @Test
+    @DisplayName("SellerOrderReturned의 부담금이 0이면 그대로 넘긴다 (배송비 0원인 판매자 주문)")
+    void sellerOrderReturnedWithZeroBurden() {
+        listener.on(envelope("SellerOrderReturned", sellerOrderReturnedPayload().put("sellerBurdenAmount",
+                BigDecimal.ZERO)));
+
+        verify(settlementService).settleReturned(eq(10L), eq(7L), argThat(burden -> burden.signum() == 0),
+                eq("몬스테라 외 1건"));
+    }
+
+    @Test
+    @DisplayName("SellerOrderReturned에 sellerOrderId, sellerId, sellerBurdenAmount가 없으면 Jackson 예외라 재시도 없이 DLT로 간다")
+    void rejectsSellerOrderReturnedWithoutRequiredFields() {
+        for (String field : new String[]{"sellerOrderId", "sellerId", "sellerBurdenAmount"}) {
+            ObjectNode payload = sellerOrderReturnedPayload();
+            payload.remove(field);
+
+            assertThatThrownBy(() -> listener.on(envelope("SellerOrderReturned", payload)))
+                    .as(field)
+                    .isInstanceOf(JacksonException.class);
+        }
+        verifyNoInteractions(settlementService);
+    }
+
+    @Test
+    @DisplayName("SellerOrderReturned의 부담금이 음수면 Jackson 예외라 재시도 없이 DLT로 간다")
+    void rejectsSellerOrderReturnedWithNegativeBurden() {
+        ObjectNode payload = sellerOrderReturnedPayload().put("sellerBurdenAmount", new BigDecimal("-1"));
+
+        assertThatThrownBy(() -> listener.on(envelope("SellerOrderReturned", payload)))
+                .isInstanceOf(JacksonException.class);
+        verifyNoInteractions(settlementService);
+    }
+
+    private static ObjectNode sellerOrderReturnedPayload() {
+        return JsonNodeFactory.instance.objectNode()
+                .put("sellerOrderId", 10L)
+                .put("sellerId", 7L)
+                .put("sellerBurdenAmount", new BigDecimal("9000"))
+                .put("returnedAt", "2026-11-12T10:00:00")
+                .put("itemSummary", "몬스테라 외 1건");
     }
 
     private static ObjectNode purchaseConfirmedPayload() {

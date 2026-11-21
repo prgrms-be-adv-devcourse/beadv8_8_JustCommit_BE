@@ -1,5 +1,9 @@
 package com.justcommit.backend.market.order.application;
 
+import com.justcommit.backend.market.ReturnReason;
+import com.justcommit.backend.market.ReturnDecidedBy;
+import com.justcommit.backend.market.order.domain.ReturnRequest;
+import com.justcommit.backend.market.order.infrastructure.ReturnRequestRepository;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.ShipmentQuery;
@@ -30,6 +34,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -39,6 +44,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -51,6 +57,7 @@ class OrderReadServiceTest {
     @Mock ShipmentQuery shipmentQuery;
     @Mock SettlementQuery settlementQuery;
     @Mock ProductQuery productQuery;
+    @Mock ReturnRequestRepository returnRequestRepository;
     @InjectMocks OrderReadService orderReadService;
 
     @Test
@@ -333,5 +340,111 @@ class OrderReadServiceTest {
         sellerOrder.setShippingFee(new BigDecimal("3000"));
         order.addSellerOrders(List.of(sellerOrder));
         return item;
+    }
+
+    @Test
+    @DisplayName("판매 목록: 반품 신청 상품이 있으면 returnRequested, 응답 전 반품 중 가장 이른 마감과 그 신청 시각 (#383)")
+    void sellerListShowsEarliestPendingReturn() {
+        Orders order = order(10L);
+        SellerOrder sellerOrder = sellerOrderWith(order, OrderItemStatus.RETURN_REQUESTED,
+                OrderItemStatus.RETURN_REQUESTED, OrderItemStatus.RETURN_IN_TRANSIT);
+        List<OrdersItem> items = sellerOrder.getItems();
+        LocalDateTime earlier = LocalDateTime.of(2026, 11, 18, 9, 0);
+        LocalDateTime later = LocalDateTime.of(2026, 11, 19, 9, 0);
+        ReturnRequest approved = returnRequest(items.get(2), LocalDateTime.of(2026, 11, 17, 9, 0));
+        approved.approve(ReturnDecidedBy.SELLER, LocalDateTime.of(2026, 11, 17, 10, 0), new BigDecimal("3000"), 50L);
+        when(sellerOrderRepository.findBySellerId(eq(20L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(sellerOrder), PageRequest.of(0, 20), 1));
+        when(ordersItemRepository.findBySellerOrderIds(List.of(7L))).thenReturn(items);
+        when(returnRequestRepository.findBySellerOrderIdIn(List.of(7L))).thenReturn(List.of(
+                returnRequest(items.get(1), later), approved, returnRequest(items.get(0), earlier)));
+
+        var response = orderReadService.sellerOrders(20L, new OrderListRequest(0, 20));
+
+        assertThat(response.content()).singleElement().satisfies(summary -> {
+            assertThat(summary.returnRequested()).isTrue();
+            // 승인된 반품은 더 오래됐어도 마감 계산에서 빠진다
+            assertThat(summary.returnRequestedAt()).isEqualTo(earlier);
+            assertThat(summary.returnDeadlineAt()).isEqualTo(earlier.plusHours(48));
+        });
+        verify(returnRequestRepository, times(1)).findBySellerOrderIdIn(any());
+    }
+
+    @Test
+    @DisplayName("판매 목록: 응답 전 반품이 없으면 returnRequested false, 신청 시각과 마감은 null (#383)")
+    void sellerListWithoutPendingReturn() {
+        Orders order = order(10L);
+        SellerOrder sellerOrder = sellerOrderWith(order, OrderItemStatus.CONFIRMED);
+        ReturnRequest rejected = returnRequest(sellerOrder.getItems().getFirst(), LocalDateTime.of(2026, 11, 18, 9, 0));
+        rejected.reject(ReturnDecidedBy.SELLER, LocalDateTime.of(2026, 11, 18, 10, 0));
+        when(sellerOrderRepository.findBySellerId(eq(20L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(sellerOrder), PageRequest.of(0, 20), 1));
+        when(ordersItemRepository.findBySellerOrderIds(List.of(7L))).thenReturn(sellerOrder.getItems());
+        when(returnRequestRepository.findBySellerOrderIdIn(List.of(7L))).thenReturn(List.of(rejected));
+
+        var response = orderReadService.sellerOrders(20L, new OrderListRequest(0, 20));
+
+        assertThat(response.content()).singleElement().satisfies(summary -> {
+            assertThat(summary.returnRequested()).isFalse();
+            assertThat(summary.returnRequestedAt()).isNull();
+            assertThat(summary.returnDeadlineAt()).isNull();
+        });
+    }
+
+    @Test
+    @DisplayName("판매 상세: 주문상품마다 반품 사유, 직접 작성 내용, 신청 시각, 응답 마감(응답 전에만) (#383)")
+    void sellerDetailShowsReturnPerItem() {
+        Orders order = order(10L);
+        SellerOrder sellerOrder = sellerOrderWith(order, OrderItemStatus.RETURN_REQUESTED,
+                OrderItemStatus.RETURN_IN_TRANSIT, OrderItemStatus.NORMAL);
+        List<OrdersItem> items = sellerOrder.getItems();
+        LocalDateTime requestedAt = LocalDateTime.of(2026, 11, 18, 9, 0);
+        LocalDateTime approvedRequestedAt = LocalDateTime.of(2026, 11, 17, 9, 0);
+        ReturnRequest pending = new ReturnRequest(items.get(0).getId(), 7L, ReturnReason.OTHER, "잎이 다 시들었어요", requestedAt);
+        ReturnRequest approved = new ReturnRequest(items.get(1).getId(), 7L, ReturnReason.DAMAGED, null, approvedRequestedAt);
+        approved.approve(ReturnDecidedBy.AUTO, approvedRequestedAt.plusHours(48), new BigDecimal("3000"), 50L);
+        when(sellerOrderRepository.findByIdAndSellerId(7L, 20L)).thenReturn(Optional.of(sellerOrder));
+        when(ordersItemRepository.findBySellerOrderIds(List.of(7L))).thenReturn(items);
+        when(returnRequestRepository.findBySellerOrderIdIn(List.of(7L))).thenReturn(List.of(pending, approved));
+        when(settlementQuery.getSettlement(7L)).thenReturn(SellerOrderSettlement.of(null));
+
+        var response = orderReadService.sellerOrder(20L, 7L);
+
+        assertThat(response.items()).hasSize(3);
+        var pendingItem = response.items().get(0);
+        assertThat(pendingItem.returnReason()).isEqualTo(ReturnReason.OTHER);
+        assertThat(pendingItem.returnDetail()).isEqualTo("잎이 다 시들었어요");
+        assertThat(pendingItem.returnRequestedAt()).isEqualTo(requestedAt);
+        assertThat(pendingItem.returnDeadlineAt()).isEqualTo(requestedAt.plusHours(48));
+        var approvedItem = response.items().get(1);
+        assertThat(approvedItem.returnReason()).isEqualTo(ReturnReason.DAMAGED);
+        assertThat(approvedItem.returnRequestedAt()).isEqualTo(approvedRequestedAt);
+        assertThat(approvedItem.returnDeadlineAt()).isNull(); // 승인 뒤에는 마감 없음
+        var plainItem = response.items().get(2);
+        assertThat(plainItem.returnReason()).isNull();
+        assertThat(plainItem.returnDetail()).isNull();
+        assertThat(plainItem.returnRequestedAt()).isNull();
+        assertThat(plainItem.returnDeadlineAt()).isNull();
+    }
+
+    // 판매자 20의 판매자 주문 7. 주문상품 i번째는 id 5 + i, 상태 statuses[i]
+    private static SellerOrder sellerOrderWith(Orders order, OrderItemStatus... statuses) {
+        SellerOrder sellerOrder = new SellerOrder(order, 20L);
+        ReflectionTestUtils.setField(sellerOrder, "id", 7L);
+        List<OrdersItem> items = new ArrayList<>();
+        for (int i = 0; i < statuses.length; i++) {
+            OrdersItem item = new OrdersItem(sellerOrder, 101L + i, "상품" + (i + 1), new BigDecimal("10000"));
+            ReflectionTestUtils.setField(item, "id", 5L + i);
+            ReflectionTestUtils.setField(item, "status", statuses[i]);
+            items.add(item);
+        }
+        sellerOrder.addItems(items);
+        sellerOrder.setShippingFee(new BigDecimal("3000"));
+        order.addSellerOrders(List.of(sellerOrder));
+        return sellerOrder;
+    }
+
+    private static ReturnRequest returnRequest(OrdersItem item, LocalDateTime requestedAt) {
+        return new ReturnRequest(item.getId(), 7L, ReturnReason.DAMAGED, null, requestedAt);
     }
 }

@@ -58,6 +58,9 @@ public interface SellerOrderRepository extends JpaRepository<SellerOrder, Long> 
     @EntityGraph(attributePaths = "order")
     Optional<SellerOrder> findByIdAndSellerId(Long sellerOrderId, Long sellerId);
 
+    // 판매자 본인 판매자 주문인지 (행을 읽지 않고 확인만). 잠그기 전에 남의 요청을 걸러낸다 (#383)
+    boolean existsByIdAndSellerId(Long sellerOrderId, Long sellerId);
+
     List<SellerOrder> findByOrder_Id(Long orderId);
 
     List<SellerOrder> findBySellerId(Long sellerId);

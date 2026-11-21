@@ -42,7 +42,7 @@ market 서비스가 소유하는 테이블입니다 (market DB).
 
 market 서비스가 제공하는 외부 API입니다 (경로 앞 `/api/v1` 생략).
 
-`cart` · `cart/items` · `cart/items/{productId}` · `cart/recommendations` · `orders/cart` · `orders/{id}/pay` · `orders/{id}/cancel` · `orders/items/{id}/cancel` · `orders/items/{id}/confirm` · `orders` · `orders/{id}` · `orders/seller` · `orders/seller/{id}` · `orders/seller/{id}/accept` · `orders/seller/{id}/reject` · `orders/items/{id}/return` · `webhooks/courier` + ⬜ 반품 승인 · 거절 · 리뷰 → [외부 API 목록](../reference/external-apis.md)
+`cart` · `cart/items` · `cart/items/{productId}` · `cart/recommendations` · `orders/cart` · `orders/{id}/pay` · `orders/{id}/cancel` · `orders/items/{id}/cancel` · `orders/items/{id}/confirm` · `orders` · `orders/{id}` · `orders/seller` · `orders/seller/{id}` · `orders/seller/{id}/accept` · `orders/seller/{id}/reject` · `orders/items/{id}/return` · `orders/items/{id}/return/approve` · `orders/items/{id}/return/reject` · `webhooks/courier` + ⬜ 리뷰 → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 
@@ -73,9 +73,9 @@ market 서비스가 발행하는 Kafka 이벤트입니다. 모두 Outbox로 발�
 
 | 토픽 | 이벤트 | 발행 방식 |
 |---|---|---|
-| `market.events.v1` | `SellerOrderPaid` · `SellerOrderAccepted` · `SellerOrderRejected` · `SellerOrderCancelled` · `OrderItemCancelled` · `PurchaseConfirmed` · `OrderItemAutoConfirmed` · `ShipmentStatusChanged` · `ReturnRequested` · `ReturnApproved` · `ReturnRejected` · `OrderItemReturned` | ✅ Outbox (#277 B). `ShipmentPickedUp`은 삭제 (배송비는 `PurchaseConfirmed.shippingFee`로). `SellerOrderAccepted` · `SellerOrderRejected`는 수락, 거절, 자동 거절 트랜잭션에서 판매자 주문당 1건 (#288). `ReturnRequested`는 반품 신청 트랜잭션에서 1건 (#382), 나머지 반품 이벤트는 #383, #384 |
+| `market.events.v1` | `SellerOrderPaid` · `SellerOrderAccepted` · `SellerOrderRejected` · `SellerOrderCancelled` · `OrderItemCancelled` · `PurchaseConfirmed` · `OrderItemAutoConfirmed` · `ShipmentStatusChanged` · `ReturnRequested` · `ReturnApproved` · `ReturnRejected` · `SellerOrderReturned` · `OrderItemReturned` | ✅ Outbox (#277 B). `ShipmentPickedUp`은 삭제 (배송비는 `PurchaseConfirmed.shippingFee`로). `SellerOrderAccepted` · `SellerOrderRejected`는 수락, 거절, 자동 거절 트랜잭션에서 판매자 주문당 1건 (#288). `ReturnRequested`는 반품 신청 트랜잭션에서 1건 (#382). `ReturnApproved`, `ReturnRejected`는 반품 승인(자동 승인 포함), 거절 트랜잭션에서 1건, `PurchaseConfirmed`, `SellerOrderReturned`는 판매자 주문 종료 판정에서 판매자 주문당 1건 (#383). `OrderItemReturned`는 반품 환불 확정 트랜잭션에서 주문상품당 1건 (#384) |
 | `market.order-paid.v1` · `market.order-expired.v1` · `market.order-failed.v1` · `market.order-item-cancelled.v1` | product에 판매 완료 · 결제 전 예약 해제 · 판매 재개 (키 `orderId`). 판매 재개는 환불 성공 뒤, 전체 취소도 주문상품마다, `reason`은 `BUYER`, `SELLER`(판매자 거절), `AUTO`(자동 거절) | ✅ Outbox (#277 A) |
-| `market.order-item-returned.v1` | 반품 환불 뒤 판매 재개 | ⬜ 반품 기능 때 |
+| `market.order-item-returned.v1` | 반품 환불 뒤 판매 재개 | ✅ Outbox (#384) |
 
 상세 → [Kafka 토픽 표](../reference/kafka-topics.md)
 

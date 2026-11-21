@@ -1,7 +1,7 @@
 # settlement 서비스
 
 > 언제 읽나: settlement 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 5, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: Miro 5, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -15,9 +15,9 @@
 
 | 테이블 | 설명 |
 |---|---|
-| `SETTLEMENT` | 정산 (`sellerOrderId` UK, `PENDING` / `COMPLETED` / `FAILED`, 음수 가능, `shipping_fee` 배송비: 옛 토픽으로만 받은 정산은 null, 같은 판매자 주문이 새 토픽으로 오면 채움) |
+| `SETTLEMENT` | 정산 (`sellerOrderId` UK, `PENDING` / `COMPLETED` / `FAILED`, 음수 가능, `shipping_fee` 배송비: 옛 토픽 `market.purchase-confirmed.v1`로 만든 예전 정산은 null) |
 | `MEMBER_REPLICA` | 회원 복제본 |
-| `OUTBOX` | 발행 대기 이벤트 |
+| `OUTBOX_EVENT` | 발행 대기 이벤트 (`common-messaging-outbox`, Flyway V5) |
 
 ## 외부 API
 
@@ -51,8 +51,8 @@
 | 이벤트 | 받아서 하는 일 | 멱등 처리 |
 |---|---|---|
 | `market.events.v1` `PurchaseConfirmed` | 판매자 주문이 끝나면(수동 · 자동 확정 모두) 정산 생성. `shippingFee`로 배송비도 정산 때 옮김 | 정산 UK (`uk_settlement_seller_order_id`) |
+| `market.events.v1` `SellerOrderReturned` | 전부 반품이면 판매액, 수수료, 배송비 0이고 정산금 = −`sellerBurdenAmount`인 정산 생성 (부담금 0이면 정산금 0). 형식 오류(필수 값 없음, 부담금 음수)는 재시도 없이 DLT | 정산 UK. 이미 정산이 있으면(구매 확정 정산 포함) 바꾸지 않음 |
 | `member.events.v1` | `MEMBER_REPLICA` 저장 · 갱신 | memberId upsert |
-| `market.purchase-confirmed.v1` (전환 중) | 옛 형식 구매 확정으로 정산 생성 (`shipping_fee` null). market 전환이 끝나면 삭제 | 정산 UK |
 
 ## 스케줄러
 
@@ -65,11 +65,11 @@
 | 주제 | 규칙 |
 |---|---|
 | 수수료 | 5%, 판매액에만 (배송비 제외), 원 단위 미만 버림 |
-| 생성 | 판매자 주문이 끝나면 1번. 반품 진행 중이면 만들지 않음, 모두 수거 전 취소면 만들지 않음, 모두 반품이면 부담금만큼 음수 정산 |
+| 생성 | 판매자 주문이 끝나면 1번. 반품 진행 중이면 만들지 않음, 모두 수거 전 취소면 만들지 않음, 모두 반품이면 판매액 0, 정산금 = −부담금 (부담금 0이면 정산금 0) |
 | 상태 | `PENDING` · `COMPLETED` · `FAILED` (`HOLD` 없음), 실패하면 재시도 |
 | 지급 | 건별, `settlementId` 멱등. 0 이상이면 판매자 잔액으로, 음수면 판매자 잔액에서 회수하고 못 받은 금액은 미수금 |
 | 돈의 이동 | 정산금 → 판매자 지갑, 수수료 · 배송비 · 판매자 부담금 → `REVENUE` |
-| 탈퇴 | 미지급 정산(대기 · 실패)이 있으면 불가. 미수금은 payment가 확인 |
+| 탈퇴 | 판매자로서 완료되지 않은 정산(`PENDING`, `FAILED`)이 있으면 불가 (0원 정산, 음수 정산 포함: 음수 정산은 회수 전이라 막음). 정산 기록이 없으면 차단 없음. 미수금은 payment가 확인 |
 | 대사 | 구매 확정된 판매자 주문 ↔ 정산 기록, 완료 정산 ↔ 판매자 지갑 입금 |
 
 ## 테스트 시나리오

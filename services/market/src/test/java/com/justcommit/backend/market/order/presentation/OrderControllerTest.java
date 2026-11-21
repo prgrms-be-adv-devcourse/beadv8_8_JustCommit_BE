@@ -1,5 +1,6 @@
 package com.justcommit.backend.market.order.presentation;
 
+import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.exception.GlobalExceptionHandler;
 import com.justcommit.backend.common.security.AuthMember;
 import com.justcommit.backend.common.response.PagingResponse;
@@ -7,7 +8,9 @@ import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.ReturnReason;
 import com.justcommit.backend.market.order.application.OrderReadService;
+import com.justcommit.backend.market.order.domain.OrderErrorCode;
 import com.justcommit.backend.market.order.application.OrderService;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,11 +31,13 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -307,5 +312,29 @@ class OrderControllerTest {
                 .andExpect(status().isUnauthorized());
 
         verify(orderService, never()).requestReturn(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("판매자 반품 승인, 거절은 본문 없이 200이고 로그인한 회원 id와 주문상품 id를 넘긴다 (#383)")
+    void approvesAndRejectsReturn() throws Exception {
+        mockMvc.perform(post("/api/v1/orders/items/11/return/approve"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(""));
+        mockMvc.perform(post("/api/v1/orders/items/12/return/reject"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(""));
+
+        verify(orderService).approveReturn(10L, 11L);
+        verify(orderService).rejectReturn(10L, 12L);
+    }
+
+    @Test
+    @DisplayName("판매자 반품 승인, 거절이 처리되지 않으면 409 RETURN_NOT_DECIDABLE (#383)")
+    void returnDecisionConflict() throws Exception {
+        doThrow(new BusinessException(OrderErrorCode.RETURN_NOT_DECIDABLE)).when(orderService).approveReturn(10L, 11L);
+
+        mockMvc.perform(post("/api/v1/orders/items/11/return/approve"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("RETURN_NOT_DECIDABLE"));
     }
 }

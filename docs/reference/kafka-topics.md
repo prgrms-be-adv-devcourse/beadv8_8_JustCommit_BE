@@ -22,8 +22,6 @@
 
 도메인 토픽 7개 + market → product 토픽 5개 = 12개 (`species.events.v1`은 발행하지 않고, 상수 정리는 common 담당과 정함 ⬜). 주문 · 배송 이벤트는 `market.events.v1` 하나입니다 → [ADR 0018](../decisions/0018-market-events-single-topic.md). market → product 토픽은 이벤트마다 하나(`market.<이름>.v1`)입니다 → [ADR 0016](../decisions/0016-product-sale-events-from-market.md). 계좌는 이벤트로 복제하지 않고 payment가 member 내부 API로 조회합니다 → [ADR 0015](../decisions/0015-member-topics-two-account-api.md). 파티션 3은 브로커 기본값 `KAFKA_NUM_PARTITIONS: 3`(`docker-compose.yml` · `docker-compose.prod.yml`)으로 적용 (✅ 확정, 자동 생성되는 새 토픽 · DLT에만 적용되고 이미 있는 토픽은 그대로). concurrency 3 · 보관 7일 (🟨 제안), 복제 1. 다음 단계(⬜ 미정): 토픽을 코드로 선언(common-messaging `NewTopic`), 운영 자동 생성 끄기. 규칙 → [이벤트 규칙](../conventions/events.md)
 
-전환 중: market이 구매 확정을 `market.events.v1`로 옮기는 동안 settlement는 옛 토픽 `market.purchase-confirmed.v1`(봉투 없는 JSON, `shippingFee` 없음)도 함께 받습니다. 옛 토픽에 남은 메시지가 없으면 settlement의 옛 토픽 리스너를 지웁니다 (#364)
-
 ## 이벤트 목록
 
 | 토픽 | 이벤트 | 구독 | 받아서 하는 일 |
@@ -34,10 +32,11 @@
 | `market.events.v1` | `SellerOrderAccepted` (판매자 수락, `rejectedItemCount` 포함) | notification | 구매자에게 수락 알림. `rejectedItemCount`가 1 이상이면 일부 거절 알림 1건으로 |
 | `market.events.v1` | `SellerOrderRejected` (상품 전부 거절, `reason`: `SELLER` · `AUTO`) | notification | `SELLER`: 구매자에게 판매자 거절 알림. `AUTO`: 구매자에게 자동 취소 · 판매자에게 24시간 자동 거절 알림 |
 | `market.events.v1` | `SellerOrderCancelled` · `OrderItemCancelled` (구매자 취소) | notification | 판매자에게만 취소 알림 (본인 취소는 구매자에게 안 보냄) |
-| `market.events.v1` | `PurchaseConfirmed` (판매자 주문이 끝나면, 수동 · 자동 확정 모두) | settlement · notification | 정산 생성(배송비 포함), 구매 확정 알림 |
+| `market.events.v1` | `PurchaseConfirmed` (판매자 주문이 끝나고 구매 확정 상품이 있으면, 수동, 자동 확정, 반품 거절 모두) | settlement · notification | 정산 생성(배송비 포함, 판매자 부담금 차감), 구매 확정 알림 |
+| `market.events.v1` | `SellerOrderReturned` (판매자 주문이 끝났는데 전부 반품) | settlement | 판매액 0, 정산금 = −판매자 부담금인 정산 생성 (부담금 0이면 정산금 0, #432) |
 | `market.events.v1` | `OrderItemAutoConfirmed` (주문상품 단위) | notification | 자동 구매 확정 알림 (정산은 받지 않음) |
 | `market.events.v1` | `ReturnRequested` · `ReturnApproved`(자동 승인 포함) · `ReturnRejected` · `OrderItemReturned`(반품 환불 뒤) | notification | 반품 신청 · 자동 승인 · 거절 · 환불 완료 알림 |
-| `market.events.v1` | `ShipmentStatusChanged` | notification | 배송 상태 · 반품 수거 알림 |
+| `market.events.v1` | `ShipmentStatusChanged` | notification | 가는 길 배송의 상태 알림. 반품 배송은 발행하지 않음 (반품 알림은 반품 이벤트로) |
 | `market.order-paid.v1` | 판매 완료 (`orderId`) | product | 이 주문이 잡은 `PAYMENT_PENDING` 상품만 `SOLD_OUT`. 0건이면 정상(로그만, DLT 아님) |
 | `market.order-expired.v1` · `market.order-failed.v1` | 결제 전 예약 해제 (`orderId`) | product | `PAYMENT_PENDING` → `ACTIVE`, `product_reservation`을 `RELEASED`로 (0건이어도). 만료 · 결제 확정 실패(예약 응답 타임아웃 · 지갑 없음 등) 때만, 결제 결과를 모르는 동안은 발행 안 함 |
 | `market.order-item-cancelled.v1` | 판매 재개 (`orderId` · `orderItemId` · `productId` · `reason`: `BUYER` · `SELLER` · `AUTO`) | product | 환불 성공 뒤 발행. `BUYER`면 `ACTIVE`, `SELLER` · `AUTO`면 `ACTIVE` + 숨김. 주문 전체 취소도 주문상품마다 |
@@ -47,7 +46,7 @@
 | `product.events.v1` | `ProductRejected` | notification | 판매자에게 반려 사유와 함께 알림 |
 | `product.events.v1` | `ImageReviewDelayed` | notification | 관리자에게 「검수 지연 N건」 알림. 관리자 역할(ADMIN)로 알림 1건(`member_id` 없음, `recipient_role = ADMIN`)을 만들어 관리자끼리 읽음을 공유, `event_key`는 `ADMIN_REVIEW_DELAYED:{eventId}`(봉투 `eventId`), 새로 지연된 건만 1번, payload 추가 없음 (notification 담당 합의 11/19, 구독 #561). product 색인 리스너 · ai는 건너뜀 |
 | `product.review.v1` | `ProductReviewRequested` (`review_version` 포함) | product | 사진 검수 (비동기) |
-| `settlement.events.v1` | `SettlementCompleted` | notification | 정산 알림 |
+| `settlement.events.v1` | `SettlementCompleted` | notification | 정산 알림. 정산이 `COMPLETED`가 될 때 정산당 1번, `payoutAmount`가 음수(음수 정산)면 회수 알림 |
 
 `ShipmentPickedUp`은 만들지 않습니다. 배송비 이동이 정산 지급 때로 바뀌어 받는 곳이 없고, 수거 알림은 `ShipmentStatusChanged`로 보냅니다 (노션 8.7). market → product 토픽은 서로 달라 도착 순서가 바뀔 수 있으므로, product는 "이 주문이 잡은 상품만, 바뀐 상품 0건이면 정상"으로 순서와 상관없이 처리합니다 → [product 정책](../services/product.md#정책)
 
@@ -63,12 +62,15 @@
 | `SellerOrderCancelled` | `orderId` · `sellerOrderId` · `sellerId` · `buyerId` (숫자), `cancelledAt` (시각) | 판매자 주문 전부 취소 |
 | `OrderItemCancelled` | `orderItemId` · `orderId` · `sellerOrderId` · `sellerId` (숫자), `productName` (문자열), `cancelledAt` (시각) | 일부 취소. product용 판매 재개(`market.order-item-cancelled.v1`)와 이름은 같고 토픽이 다름 |
 | `OrderItemAutoConfirmed` | `orderItemId` · `orderId` · `sellerOrderId` · `buyerId` (숫자), `confirmedAt` (시각) | |
-| `PurchaseConfirmed` | `sellerOrderId` · `sellerId` (숫자), `saleAmount` · `shippingFee` · `sellerBurdenAmount` (금액), `confirmedAt` (시각), `itemSummary` (문자열) | 정산은 `saleAmount`에만 수수료, `shippingFee`는 `REVENUE`로. `sellerBurdenAmount`(판매자 부담금)는 없으면 0, 정산금 = 판매액 − 수수료 − 판매자 부담금 |
-| `ShipmentStatusChanged` | `shipmentId` · `orderId` · `sellerOrderId` · `buyerId` · `sellerId` (숫자), `status` (`BOOKED` · `PICKED_UP` · `IN_TRANSIT` · `DELIVERED`), `occurredAt` (시각), `itemSummary` (문자열) | `occurredAt`은 배송 단계가 일어난 시각 |
+| `PurchaseConfirmed` | `sellerOrderId` · `sellerId` (숫자), `saleAmount` · `shippingFee` · `sellerBurdenAmount` (금액), `confirmedAt` (시각), `itemSummary` (문자열) | 정산은 `saleAmount`에만 수수료, `shippingFee`는 `REVENUE`로. `sellerBurdenAmount`(판매자 부담금) = 반품 완료된 반품 배송비 합, 없으면 0. 정산금 = 판매액 − 수수료 − 판매자 부담금. 판매자 주문 종료 판정이 구매 확정 상품이 있을 때 판매자 주문당 1번 (반품 거절로 끝나도, #383) |
+| `SellerOrderReturned` | `sellerOrderId` · `sellerId` (숫자), `sellerBurdenAmount` (금액), `returnedAt` (시각), `itemSummary` (문자열) | 전부 반품 (#383). 판매자 주문 종료 판정이 구매 확정 상품 없이 반품 완료가 있을 때 판매자 주문당 1번. `sellerBurdenAmount` = 반품 완료된 반품 배송비 합 + 원래 배송비, `itemSummary`는 반품된 상품 요약. 모두 취소면 정산 이벤트 없음 |
+| `ShipmentStatusChanged` | `shipmentId` · `orderId` · `sellerOrderId` · `buyerId` · `sellerId` (숫자), `status` (`BOOKED` · `PICKED_UP` · `IN_TRANSIT` · `DELIVERED`), `occurredAt` (시각), `itemSummary` (문자열) | `occurredAt`은 배송 단계가 일어난 시각. 가는 길 배송만 발행 (반품 배송은 발행 안 함, #383) |
 | `SellerOrderAccepted` | `orderId` · `sellerOrderId` · `sellerId` · `buyerId` (숫자), `rejectedItemCount` (숫자), `acceptedAt` (시각) | 판매자 수락 (#288). 판매자 주문당 1건, 수락 또는 거절 뒤 수락된 주문상품이 하나라도 남으면 발행 (남지 않으면 `SellerOrderRejected`). 전체 수락이면 `rejectedItemCount` 0, 일부 거절(수락된 상품이 남음)이면 이번에 거절한 주문상품 수 (구매자가 먼저 취소한 상품은 세지 않음) |
 | `SellerOrderRejected` | `orderId` · `sellerOrderId` · `sellerId` · `buyerId` (숫자), `reason` (`SELLER` · `AUTO`), `rejectedAt` (시각) | 판매자 주문의 남은 상품 전부 거절 (#288). 판매자 거절이면 `SELLER`, 24시간 자동 거절이면 `AUTO`. 결정 시점에 발행하므로 환불이 나중에 `REVIEW_REQUIRED`가 되어도 이미 나간 상태. 판매자 거절, 자동 거절은 `SellerOrderCancelled`를 보내지 않음 |
 | `ReturnRequested` | `returnRequestId`, `orderItemId`, `orderId`, `sellerOrderId`, `buyerId`, `sellerId` (숫자), `productName` (문자열), `reason` (`DAMAGED`, `NOT_AS_DESCRIBED`, `OTHER`), `requestedAt` (시각) | 구매자 반품 신청 (#382). 주문상품당 1건. 직접 작성 내용은 싣지 않음 |
-| `ReturnApproved`, `ReturnRejected`, `OrderItemReturned` | ⬜ | #383, #384 |
+| `ReturnApproved` | `returnRequestId`, `orderItemId`, `orderId`, `sellerOrderId`, `buyerId`, `sellerId` (숫자), `productName` (문자열), `decidedBy` (`SELLER`, `AUTO`), `decidedAt` (시각) | 반품 승인 (#383). 판매자 승인이면 `SELLER`, 48시간 자동 승인이면 `AUTO`. 반품 신청당 1건, 409나 건너뛴 자동 승인은 발행 안 함 |
+| `ReturnRejected` | `ReturnApproved`와 같은 칸 (`decidedBy`는 `SELLER`) | 판매자 반품 거절 (#383). 그 주문상품은 바로 구매 확정 |
+| `OrderItemReturned` | `returnRequestId`, `orderItemId`, `orderId`, `sellerOrderId`, `buyerId`, `sellerId` (숫자), `productName` (문자열), `refundAmount` (금액), `returnedAt` (시각) | 반품 완료 (#384). 반품 환불이 확정된 트랜잭션에서 주문상품당 1건. `refundAmount`는 이 주문상품으로 구매자에게 환불한 상품 금액 (배송비 제외). product용 판매 재개(`market.order-item-returned.v1`)와 이름은 같고 토픽이 다름 |
 
 시각 칸은 market 서버 시간(서울)의 `LocalDateTime`입니다.
 
@@ -80,7 +82,7 @@
 | `market.order-expired.v1` | `OrderExpired` | `orderId` (숫자) | |
 | `market.order-failed.v1` | `OrderFailed` | `orderId` (숫자) | 결제 결과를 모르는 동안은 발행 안 함 |
 | `market.order-item-cancelled.v1` | `OrderItemCancelled` | `orderId` · `orderItemId` · `productId` (숫자), `reason` (`BUYER` · `SELLER` · `AUTO`) | 환불 성공 뒤, 전체 취소도 주문상품마다. 네 칸 모두 필수 |
-| `market.order-item-returned.v1` | ⬜ | ⬜ | 반품 기능 때 |
+| `market.order-item-returned.v1` | `OrderItemReturned` | `orderId`, `orderItemId`, `productId` (숫자) | 반품 환불 확정 뒤 주문상품마다 (#384). 세 칸 모두 필수 |
 
 ### product 상품 이벤트 (`product.events.v1`, Key `productId`, #338)
 
@@ -164,3 +166,13 @@ product 색인 리스너는 상품 ID로 DB에서 최신 상품을 다시 읽습
   ]
 }
 ```
+
+### settlement 정산 이벤트 (`settlement.events.v1`, Key `sellerId`, #438)
+
+정산 지급 스케줄러가 정산을 `COMPLETED`로 바꾸는 트랜잭션에서 Outbox로 기록합니다. 정산당 1번이고, 지급 실패에는 보내지 않습니다.
+
+| eventType | payload | 비고 |
+|---|---|---|
+| `SettlementCompleted` | `settlementId` · `sellerOrderId` · `sellerId` (숫자), `saleAmount` · `fee` · `sellerBurdenAmount` · `payoutAmount` (금액), `itemSummary` (문자열), `completedAt` (시각) | `payoutAmount` = `saleAmount` − `fee` − `sellerBurdenAmount`. 음수 정산도 같은 이벤트로 보내고 `payoutAmount` 부호로 구분 (구분용 칸 없음). 배송비는 싣지 않음. 회수하지 못해 미수금으로 남은 금액은 payment만 알아 싣지 않음. 받는 쪽 멱등 키는 `settlementId` |
+
+시각 칸은 settlement 서버 시간(서울)의 `LocalDateTime`입니다.
