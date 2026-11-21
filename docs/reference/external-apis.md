@@ -142,7 +142,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | DELETE | `products/{id}` | 삭제 | SELLER |
 | PATCH | `products/{id}/hidden` | 숨김 | SELLER |
 | GET | `products/me` · `products/me/counts` | 내 상품 (지금 검수 버전의 표시 상태 `reviewStatus` · 반려 사유 `rejectReason`와 문구 `rejectMessage` · 판정 주체 `decidedBy`, 검수 기록이 없으면 null) · 상태별 개수 (+ 오늘 등록 수 `todayRegistered` / 한도 `dailyRegisterLimit` 20 · 오늘 사진 검수 수 `todayPhotoReviews` / 한도 `dailyPhotoReviewLimit` 30, 세는 기준은 등록 제한 · 하루 사진 검수 제한과 같음) | SELLER |
-| POST | `products/images/uploadUrls` | 사진 Presigned URL | SELLER |
+| POST | `products/images/uploadUrls` | 사진 Presigned URL. jpg · png · webp, 7.5MB 이하 (아니면 400 `INVALID_IMAGE_FILE`) | SELLER |
 | GET | `products/{id}/imageReviews` | 내 상품 검수 기록 (상태 · 반려 사유 · 관리자 확인 기한 `expiresAt` · 남은 재검수 횟수 · 이의 신청 · 재요청 가능 여부) | SELLER |
 | POST | `products/{id}/imageReviews` | 기한 초과(`REVIEW_EXPIRED`) 상품 같은 내용으로 다시 검수 요청 | SELLER |
 | POST | `products/{id}/appeals` | 자동 반려 이의 신청 (`memo` 필수, 200자). 409 `APPEAL_NOT_ALLOWED` · `APPEAL_ALREADY_USED` · `REVIEW_PENDING_LIMIT_EXCEEDED` | SELLER |

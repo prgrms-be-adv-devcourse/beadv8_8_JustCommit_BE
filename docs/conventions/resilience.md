@@ -35,7 +35,7 @@
 | member → 카카오 연결 해제 (탈퇴) | 1초 / 3초 | 없음 | 탈퇴 막음(503 `SOCIAL_UNLINK_FAILED`). 탈퇴 토큰은 이미 소모돼 재인증 후 다시 시도. 이미 해제된 회원의 `-101`은 성공으로 처리 (DB의 `provider_id`로 부른 연결 해제 응답에만) |
 | market → ai 추천 | 1초 / 2초 | 연결 실패만 1회 (common-web 공통, 최악 약 4.2초) | 빈 목록 (장바구니 조회는 영향 없음, 화면은 최신 상품으로 대신 → [ADR 0029](../decisions/0029-cart-recommendation-latest-fallback-on-screen.md)) |
 | product → OpenSearch | 1초 / 2초 | 1회 | DB LIKE 검색으로 대신 (관련도 · 오타 허용 · 한국어 분석 없음) |
-| product → OpenAI Moderation · Claude Haiku (사진 검수) | 🟨 3초 / 20초 | 비동기 최대 3회 | 자동 통과 · 자동 반려 없이 관리자 확인 |
+| product → OpenAI Moderation · Claude Haiku (사진 검수) | 🟨 3초 / 20초 | 비동기 최대 3회 (4xx는 408 · 429만 재처리) | 자동 통과 · 자동 반려 없이 관리자 확인 |
 | ai → OpenAI 임베딩 (품종 의미 검색 · 🟨 챗봇 질문) | 3초(연결 포함 전체, `custom.species-search.timeout`) | 없음 (Spring AI 기본 3회를 끔) | 품종 의미 검색 503 `SEMANTIC_SEARCH_UNAVAILABLE`, 챗봇 503 `CHATBOT_UNAVAILABLE`. 검색용 모델(`QueryEmbedder`)을 따로 만들어 추천 · 재임베딩과 설정을 나눔 |
 | 🟨 ai → OpenAI 임베딩 (상품 문서, 상품 이벤트) | Spring AI 기본 (따로 설정 안 함) | Spring AI 기본 3회 | 1 · 2 · 4초 Kafka 재시도 후 DLT. 스냅샷은 저장됨, `target=PRODUCT` 재임베딩으로 맞춤 |
 | ai → OpenAI 임베딩 (재임베딩 운영 API) | ⬜ 미정 (따로 설정 안 함) | ⬜ 미정 | ⬜ 미정 |
