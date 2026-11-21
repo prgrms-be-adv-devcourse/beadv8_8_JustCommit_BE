@@ -33,4 +33,16 @@ class ShippingFeeTableTest {
     void feeFor(String zipcode, long expected, String description) {
         assertThat(table.feeFor(zipcode)).isEqualByComparingTo(BigDecimal.valueOf(expected));
     }
+
+    @ParameterizedTest(name = "{0} → {1}")
+    @DisplayName("배송지 우편번호가 어느 할증 구간인지 알려 준다 (도서산간 → 제주 순)")
+    @CsvSource({
+            "06236, GENERAL",
+            "63100, JEJU",
+            "40200, REMOTE",
+            "63000, REMOTE"
+    })
+    void regionOf(String zipcode, ShippingRegion expected) {
+        assertThat(table.regionOf(zipcode)).isEqualTo(expected);
+    }
 }

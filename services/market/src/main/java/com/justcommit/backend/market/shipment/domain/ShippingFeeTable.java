@@ -60,15 +60,28 @@ public class ShippingFeeTable extends BaseTimeEntity {
         this.remoteZipcodes = List.copyOf(remoteZipcodes);
     }
 
-    // 배송비 = 기본 + 지역 할증 하나. 도서산간 구간을 먼저 보고, 아니면 제주 구간, 아니면 할증 0.
-    // 제주 안 섬(추자도 · 우도)은 도서산간 구간에 들어 있어 도서산간 할증만 붙는다 (404-express docs/design.md 「배송비 요금표」)
+    // 배송비 = 기본 + 지역 할증 하나. 주문 생성과 배송비 미리 계산 조회가 함께 쓴다
     public BigDecimal feeFor(String zipcode) {
+        return baseFee.add(surchargeFor(regionOf(zipcode)));
+    }
+
+    // 도서산간 구간을 먼저 보고, 아니면 제주 구간, 아니면 일반.
+    // 제주 안 섬(추자도 · 우도)은 도서산간 구간에 들어 있어 도서산간 할증만 붙는다 (404-express docs/design.md 「배송비 요금표」)
+    public ShippingRegion regionOf(String zipcode) {
         if (remoteZipcodes.stream().anyMatch(range -> range.contains(zipcode))) {
-            return baseFee.add(remoteSurcharge);
+            return ShippingRegion.REMOTE;
         }
         if (jejuZipcodes.stream().anyMatch(range -> range.contains(zipcode))) {
-            return baseFee.add(jejuSurcharge);
+            return ShippingRegion.JEJU;
         }
-        return baseFee;
+        return ShippingRegion.GENERAL;
+    }
+
+    public BigDecimal surchargeFor(ShippingRegion region) {
+        return switch (region) {
+            case REMOTE -> remoteSurcharge;
+            case JEJU -> jejuSurcharge;
+            case GENERAL -> BigDecimal.ZERO;
+        };
     }
 }
