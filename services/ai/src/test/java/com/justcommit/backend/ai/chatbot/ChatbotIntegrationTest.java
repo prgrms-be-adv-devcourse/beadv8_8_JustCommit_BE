@@ -176,6 +176,32 @@ class ChatbotIntegrationTest {
     }
 
     @Test
+    @DisplayName("맞는 상품이 없는 상황 질문은 가장 가까운 판매 중 상품을 대안으로 넣고, 답변에 나온 대안만 카드로 준다")
+    void addsAlternativesWhenNoProductMatches() throws Exception {
+        // 「개업 선물」은 스텁 축에 없는 낱말이라 모든 상품과 유사도가 0.28 미만 → 맞는 상품 0개
+        HttpResponse<String> response = send(MEMBER_A, null, "개업 선물로 뭐가 좋아?");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        // 가짜 LLM 답변 「그늘 몬스테라를 추천해요.」에 나온 대안만 카드로
+        assertThat(productIds(data(response))).containsExactly(1L);
+        assertThat(answerGenerator.prompts.getFirst().userMessage())
+                .contains("질문과 비슷한 판매 중 상품이 없습니다.",
+                        "<alternative title=\"그늘 몬스테라\"", "<alternative title=\"선인장 모음\"")
+                .doesNotContain("그늘 스킨답서스", "그늘 고사리");
+    }
+
+    @Test
+    @DisplayName("맞는 상품이 없는데 LLM이 실패하면 대안 카드 없이 고정 문장만 준다")
+    void llmFailureWithoutProductsHasNoAlternativeCards() throws Exception {
+        answerGenerator.failing.set(true);
+
+        JsonNode data = data(send(MEMBER_A, null, "개업 선물로 뭐가 좋아?"));
+
+        assertThat(data.get("answer").asString()).isEqualTo("지금은 답변을 만들지 못했어요. 잠시 후 다시 물어봐 주세요.");
+        assertThat(productIds(data)).isEmpty();
+    }
+
+    @Test
     @DisplayName("다른 회원의 대화는 403, 없는 대화는 404이고 LLM을 부르지 않는다")
     void rejectsOthersConversation() throws Exception {
         String conversationId = data(send(MEMBER_A, null, "어두운 방 식물")).get("conversationId").asString();

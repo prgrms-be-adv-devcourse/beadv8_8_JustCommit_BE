@@ -1,5 +1,6 @@
 package com.justcommit.backend.ai.chatbot.application;
 
+import com.justcommit.backend.ai.chatbot.application.ChatSearchResult.ProductHit;
 import com.justcommit.backend.ai.chatbot.application.ChatSearchResult.SpeciesHit;
 import com.justcommit.backend.ai.chatbot.infrastructure.ChatSearchRepository;
 import com.justcommit.backend.ai.chatbot.infrastructure.ConversationRepository;
@@ -16,7 +17,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 챗봇 메시지 (#300 · #302): 대화 주인 확인 → 질문 임베딩(이어 묻기는 직전 질문 + 이번 질문) → 상품 · 품종 의미 검색 → LLM 답변 → 대화 기록 저장.
+ * 챗봇 메시지 (#300 · #302): 대화 주인 확인 → 질문 임베딩(이어 묻기는 직전 질문 + 이번 질문) → 상품 · 품종 의미 검색
+ * (맞는 상품이 없으면 가장 가까운 판매 중 상품을 대안으로) → LLM 답변 → 대화 기록 저장.
  * 질문 임베딩과 품종 찾기는 품종 의미 검색(#570)의 QueryEmbedder(3초 · 재시도 없음) · SpeciesSearchQueryRepository · 최소 유사도를 같이 쓴다.
  * 외부 호출(임베딩 · LLM)은 트랜잭션 밖에서 하고, 저장만 짧은 트랜잭션으로 묶는다.
  * - 임베딩 실패: 검색을 못 하므로 503 CHATBOT_UNAVAILABLE (대화 기록도 남기지 않음)
@@ -37,6 +39,7 @@ public class ChatbotService {
     private final ChatPromptFactory promptFactory;
     private final TransactionTemplate transactionTemplate;
     private final int productTopK;
+    private final int alternativeTopK;
     private final int speciesTopK;
     private final double productMinSimilarity;
     private final double speciesMinSimilarity;
@@ -51,6 +54,7 @@ public class ChatbotService {
             ChatPromptFactory promptFactory,
             TransactionTemplate transactionTemplate,
             @Value("${custom.chatbot.product-top-k:6}") int productTopK,
+            @Value("${custom.chatbot.alternative-top-k:3}") int alternativeTopK,
             @Value("${custom.chatbot.species-top-k:3}") int speciesTopK,
             @Value("${custom.chatbot.product-min-similarity:0.28}") double productMinSimilarity,
             @Value("${custom.species-search.min-similarity:0.35}") double speciesMinSimilarity,
@@ -63,13 +67,16 @@ public class ChatbotService {
         this.promptFactory = promptFactory;
         this.transactionTemplate = transactionTemplate;
         this.productTopK = productTopK;
+        this.alternativeTopK = alternativeTopK;
         this.speciesTopK = speciesTopK;
         this.productMinSimilarity = productMinSimilarity;
         this.speciesMinSimilarity = speciesMinSimilarity;
         this.historySize = historySize;
     }
 
-    public record ChatReply(UUID conversationId, String answer, boolean answerGenerated, ChatSearchResult result) {
+    // cards: 화면 상품 카드. 맞는 상품이 있으면 그 상품, 없으면 답변에 제목이 나온 대안 상품만
+    public record ChatReply(UUID conversationId, String answer, boolean answerGenerated, ChatSearchResult result,
+            List<ProductHit> cards) {
     }
 
     public ChatReply send(long memberId, UUID conversationId, String message) {
@@ -81,9 +88,8 @@ public class ChatbotService {
         List<ChatTurn> history = isNew ? List.of() : loadHistory(memberId, id);
 
         float[] queryVector = embed(searchText(history, question));
-        ChatSearchResult result = new ChatSearchResult(
-                searchRepository.findProducts(queryVector, productTopK, productMinSimilarity),
-                findSpecies(queryVector));
+        List<ProductHit> products = searchRepository.findProducts(queryVector, productTopK, productMinSimilarity);
+        ChatSearchResult result = new ChatSearchResult(products, findSpecies(queryVector), alternatives(queryVector, products));
 
         String answer = null;
         int llmCalls = 0;
@@ -109,10 +115,10 @@ public class ChatbotService {
         });
 
         log.info("챗봇 메시지: conversationId={}, memberId={}, elapsedMs={}, embeddingCalls=1, llmCalls={}, "
-                        + "answerGenerated={}, products={}, species={}",
+                        + "answerGenerated={}, products={}, alternatives={}, species={}",
                 id, memberId, (System.nanoTime() - startedAt) / 1_000_000, llmCalls, generated,
-                result.products().size(), result.species().size());
-        return new ChatReply(id, answer, generated, result);
+                result.products().size(), result.alternatives().size(), result.species().size());
+        return new ChatReply(id, answer, generated, result, cards(result, generated ? answer : null));
     }
 
     /**
@@ -127,6 +133,34 @@ public class ChatbotService {
             }
         }
         return question;
+    }
+
+    /**
+     * 질문과 맞는 판매 중 상품(유사도 하한 이상)이 0개일 때만, 하한 없이 가장 가까운 판매 중 상품을 대안으로 찾는다.
+     * 「개업 선물」처럼 상황을 묻는 질문은 상품 문서와 유사도가 낮아 0개가 되기 쉬운데, 그때도 LLM이 대신 권할 상품이 있게 한다.
+     * 외부 호출 없이 DB 쿼리만 한 번 더 한다
+     */
+    private List<ProductHit> alternatives(float[] queryVector, List<ProductHit> products) {
+        if (!products.isEmpty()) {
+            return List.of();
+        }
+        return searchRepository.findProducts(queryVector, alternativeTopK, -1.0);
+    }
+
+    /**
+     * 화면 카드. 대안 상품은 날씨처럼 관계없는 질문에도 찾아지므로 모두 붙이지 않고, LLM 답변에 제목이 나온 것만 붙인다.
+     * 답변을 만들지 못했으면(answer null) 대안 카드는 없다
+     */
+    static List<ProductHit> cards(ChatSearchResult result, String answer) {
+        if (!result.products().isEmpty()) {
+            return result.products();
+        }
+        if (answer == null) {
+            return List.of();
+        }
+        return result.alternatives().stream()
+                .filter(p -> p.title() != null && !p.title().isBlank() && answer.contains(p.title()))
+                .toList();
     }
 
     /**
