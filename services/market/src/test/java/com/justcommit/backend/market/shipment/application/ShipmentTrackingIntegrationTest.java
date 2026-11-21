@@ -118,8 +118,60 @@ class ShipmentTrackingIntegrationTest {
         assertThat(trackingService.track(999L)).isEmpty();
     }
 
+    // ---- 반품 택배 (#617) ----
+
+    @Test
+    @DisplayName("반품 배송은 배송 id로 찾아 DB 트랜잭션 밖에서 택배사를 불러 기사님 거리 · 지점을 보탠다")
+    void returnShipmentAddsCourierViewOutsideTransaction() {
+        Shipment shipment = book(Shipment.returnOf(201L, "몬스테라"));
+        AtomicBoolean calledInTransaction = new AtomicBoolean(true);
+        when(courierClient.track(shipment.getCourierOrderNo())).thenAnswer(invocation -> {
+            calledInTransaction.set(TransactionSynchronizationManager.isActualTransactionActive());
+            return Optional.of(new CourierShipmentView("404000000001", shipment.getCourierOrderNo(),
+                    "NEAR_2KM", 1500, "서초우체국"));
+        });
+
+        ShipmentTracking tracking = trackingService.trackReturn(shipment.getId()).orElseThrow();
+
+        assertThat(calledInTransaction).isFalse();
+        assertThat(tracking.status()).isEqualTo("BOOKED");
+        assertThat(tracking.bookedAt()).isEqualTo(BOOKED_AT);
+        assertThat(tracking.courierStatus()).isEqualTo("NEAR_2KM");
+        assertThat(tracking.remainingDistanceMeters()).isEqualTo(1500);
+        assertThat(tracking.locationName()).isEqualTo("서초우체국");
+        assertThat(tracking.checkedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("반품 배송도 택배사 조회가 실패하면 거리 · 지점만 비운다")
+    void returnShipmentCourierFailureLeavesCourierFieldsEmpty() {
+        Shipment shipment = book(Shipment.returnOf(202L, "몬스테라"));
+        when(courierClient.track(anyString())).thenReturn(Optional.empty());
+
+        ShipmentTracking tracking = trackingService.trackReturn(shipment.getId()).orElseThrow();
+
+        assertThat(tracking.status()).isEqualTo("BOOKED");
+        assertThat(tracking.remainingDistanceMeters()).isNull();
+        assertThat(tracking.locationName()).isNull();
+        assertThat(tracking.checkedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("반품 조회에 가는 배송 id나 없는 id를 주면 빈 값이고 택배사를 부르지 않는다")
+    void trackReturnIgnoresOutboundOrMissingShipment() {
+        Shipment outbound = bookedShipment(203L);
+
+        assertThat(trackingService.trackReturn(outbound.getId())).isEmpty();
+        assertThat(trackingService.trackReturn(999_999L)).isEmpty();
+        verify(courierClient, never()).track(anyString());
+    }
+
     private Shipment bookedShipment(Long sellerOrderId) {
-        Shipment shipment = shipmentRepository.save(new Shipment(sellerOrderId, "몬스테라"));
+        return book(new Shipment(sellerOrderId, "몬스테라"));
+    }
+
+    private Shipment book(Shipment newShipment) {
+        Shipment shipment = shipmentRepository.save(newShipment);
         shipment.assignCourierOrderNo(LocalDate.of(2026, 11, 20));
         shipment.book("404000000001", BOOKED_AT);
         return shipmentRepository.save(shipment);

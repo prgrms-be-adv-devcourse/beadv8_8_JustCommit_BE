@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-// 배송 조회 (#588): 배송 단계 · 시각 + 택배사의 남은 거리 · 지점. 본인 주문만, 남의 것은 404
+// 배송 조회 (#588) · 반품 택배 조회 (#617): 배송 단계 · 시각 + 택배사의 남은 거리 · 지점. 본인 주문만, 남의 것은 404
 @RestController
 @RequestMapping("/api/v1/orders")
 @RequiredArgsConstructor
@@ -34,6 +34,23 @@ public class ShipmentTrackingController {
         Long memberId = requireMember(member);
         return ResponseEntity.ok(ShipmentTrackingResponse.of(sellerOrderId,
                 trackingService.buyerShipment(memberId, orderId, sellerOrderId)));
+    }
+
+    // 반품 택배 (#617): 주문상품 단위
+    @GetMapping("/seller/{sellerOrderId}/items/{orderItemId}/returnShipment")
+    public ResponseEntity<ReturnShipmentTrackingResponse> sellerReturnShipment(
+            @AuthenticationPrincipal AuthMember member, @PathVariable Long sellerOrderId, @PathVariable Long orderItemId) {
+        Long memberId = requireMember(member);
+        return ResponseEntity.ok(ReturnShipmentTrackingResponse.of(orderItemId,
+                trackingService.sellerReturnShipment(memberId, sellerOrderId, orderItemId)));
+    }
+
+    @GetMapping("/{orderId}/items/{orderItemId}/returnShipment")
+    public ResponseEntity<ReturnShipmentTrackingResponse> buyerReturnShipment(
+            @AuthenticationPrincipal AuthMember member, @PathVariable Long orderId, @PathVariable Long orderItemId) {
+        Long memberId = requireMember(member);
+        return ResponseEntity.ok(ReturnShipmentTrackingResponse.of(orderItemId,
+                trackingService.buyerReturnShipment(memberId, orderId, orderItemId)));
     }
 
     private Long requireMember(AuthMember member) {
