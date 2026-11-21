@@ -1,7 +1,7 @@
 # 외부 API 목록
 
 > 언제 읽나: 외부 API의 경로 · 담당 서비스를 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-21 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
 
 ## 서비스별 목록
 
@@ -167,6 +167,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | POST | `orders/items/{id}/confirm` | 구매 확정 | 로그인 |
 | POST | `orders/items/{id}/return` | 반품 신청: 본문 `reason`(`DAMAGED`, `NOT_AS_DESCRIBED`, `OTHER`), `reasonDetail`(최대 500자, `OTHER`면 필수, 그 밖에는 선택). 가는 길 배송 완료 후 반품 기간 안의 일반 주문상품만. 이미 신청함 409 `RETURN_ALREADY_REQUESTED`, 반품 불가 상태 409 `RETURN_NOT_REQUESTABLE`, 기간 지남 409 `RETURN_PERIOD_EXPIRED`, 남의 주문상품 404 | 로그인 |
 | GET | `orders` · `orders/{id}` | 구매 내역 · 상세 | 로그인 |
+| GET | `orders/seller/{sellerOrderId}/shipment` · `orders/{orderId}/sellerOrders/{sellerOrderId}/shipment` | 배송 조회 (판매자 · 구매자, 본인 주문만): `sellerOrderId`, 배송 상태 `status`, `trackingNo`, 단계별 시각 `bookedAt` · `pickedUpAt` · `inTransitAt` · `deliveredAt` · `cancelledAt`(market 값, 안 된 단계는 null) + 택배사 값 `courierStatus`(예: `NEAR_5KM`), `driverDistanceKm`(지금 이동 구간의 남은 거리 km = 택배사 m ÷ 1000, 반올림 없음. 수거 전이면 기사 → 판매자(수거지)), `locationName`(우체국 지점), `driverCheckedAt`(택배사에서 받은 시각). 택배사 값은 예약 뒤 · 배송 완료와 취소 전에만 조회하고, 실패 · 시간 초과면 null로 200. 남은 거리는 안내용이고 취소 가능 여부는 누른 시각에 택배사가 판정([ADR 0026](../decisions/0026-courier-cancel-queue-and-distance-judgment.md)). 배송 전(수락 전) 404 `SHIPMENT_TRACKING_NOT_FOUND`, 남의 주문 · 다른 주문의 판매자 주문 404 | 로그인 |
 | GET | `orders/seller` · `orders/seller/{id}` | 판매 내역 · 상세 (목록 `acceptPending`, 목록과 상세 `acceptDeadline` 수락 마감: 수락 대기가 남았을 때만, 상세 상품별 `status`). 반품 신청 정보: 목록 `returnRequested`(응답 전 반품 신청 상품이 있음), `returnRequestedAt`, `returnDeadlineAt`(응답 전 반품 중 반품 응답 마감이 가장 이른 것), 상세 상품별 `returnReason`, `returnDetail`, `returnRequestedAt`, `returnDeadlineAt`(응답 전에만, 승인, 거절 뒤에는 null). 반품 신청이 없으면 null | SELLER |
 | POST | `orders/seller/{id}/accept` | 판매자 수락: 남은 수락 대기 주문상품을 모두 수락, 배송 생성. 수락 대기가 없으면 409 `SELLER_ORDER_NOT_ACCEPTABLE`, 남의 판매자 주문은 404 | SELLER |
 | POST | `orders/seller/{id}/reject` | 판매자 거절 (`orderItemIds` 필수, 사유 없음): 고른 주문상품은 환불, 나머지는 수락. 이 판매자 주문에 없는 상품은 400 `INVALID_REJECT_ITEMS`, 고른 상품이 수락 대기가 아니면 409 `SELLER_ORDER_NOT_ACCEPTABLE` | SELLER |
