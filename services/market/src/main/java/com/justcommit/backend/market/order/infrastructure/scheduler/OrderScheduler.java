@@ -25,7 +25,8 @@ public class OrderScheduler {
     }
 
     // Saga 복구: 결과 불명 결제를 같은 orderId로 다시 불러 확정하고, 택배 취소 결과를 읽어 환불, 되돌림,
-    // 결과 불명 환불을 같은 키로 다시 요청한다 (주기 → docs/reference/schedulers.md).
+    // 결과 불명 환불을 같은 키로 다시 요청한다. 이어서 반품 배송이 도착한 주문상품을 반품 환불 중으로 바꾸고(상태만),
+    // 반품 환불을 선점해 트랜잭션 밖에서 요청한다 (#384, 같은 실행에서 이어짐) (주기 → docs/reference/schedulers.md).
     // 한 단계가 실패해도 다음 단계는 돈다. 끝나면 확인 필요 주문 수 지표를 갱신한다. 복구가 실패해도 지표는 센다
     @Scheduled(fixedDelay = 60_000, initialDelay = 30_000)
     public void recoverProcessingPayments() {
@@ -33,6 +34,8 @@ public class OrderScheduler {
             runStep(orderRecoveryService::recoverProcessingPayments, "결제 복구");
             runStep(orderRecoveryService::recoverCancelResults, "택배 취소 결과 처리");
             runStep(orderRecoveryService::recoverProcessingRefunds, "환불 복구");
+            runStep(orderRecoveryService::recoverReturnArrivals, "반품 도착 처리");
+            runStep(orderRecoveryService::recoverReturnRefunds, "반품 환불");
         } finally {
             reviewRequiredOrderMetrics.refresh();
         }

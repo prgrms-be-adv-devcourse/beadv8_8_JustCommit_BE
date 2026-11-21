@@ -45,7 +45,19 @@ class OrderSchedulerTest {
         order.verify(orderRecoveryService).recoverProcessingPayments();
         order.verify(orderRecoveryService).recoverCancelResults();
         order.verify(orderRecoveryService).recoverProcessingRefunds();
+        order.verify(orderRecoveryService).recoverReturnArrivals();
+        order.verify(orderRecoveryService).recoverReturnRefunds();
         order.verify(reviewRequiredOrderMetrics).refresh();
+    }
+
+    @Test
+    void runsReturnRefundEvenWhenReturnArrivalFails() {
+        doThrow(new IllegalStateException("db down")).when(orderRecoveryService).recoverReturnArrivals();
+
+        orderScheduler.recoverProcessingPayments();
+
+        verify(orderRecoveryService).recoverReturnRefunds();
+        verify(reviewRequiredOrderMetrics).refresh();
     }
 
     @Test

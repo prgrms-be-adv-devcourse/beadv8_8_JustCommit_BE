@@ -146,6 +146,19 @@ class SettlementPayoutServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("전부 반품 정산은 판매액 0이라 정산금 -부담금, 수수료 0, 배송비 0, 부담금으로 지급 요청한다")
+    void requestsReturnedSettlement() {
+        Settlement settlement = save(Settlement.createReturnedSettlement(1L, SELLER_ID, new BigDecimal("9000"),
+                LocalDateTime.now().minusMinutes(1), "몬스테라 외 1건"));
+
+        assertThat(payoutService.payoutDue()).isEqualTo(1);
+
+        verify(payoutClient).distributeSettlement(eq(settlement.getId()), eq(SELLER_ID), eq(1L),
+                amount("-9000"), amount("0"), amount("0"), amount("9000"));
+        assertThat(reload(settlement).getStatus()).isEqualTo(SettlementStatus.COMPLETED);
+    }
+
+    @Test
     @DisplayName("배송비가 없는 정산(옛 토픽으로만 받음)은 배송비 0으로 지급 요청한다")
     void requestsZeroShippingFeeWhenAbsent() {
         Settlement settlement = save(Settlement.createSettlement(1L, SELLER_ID, new BigDecimal("30000"), null,

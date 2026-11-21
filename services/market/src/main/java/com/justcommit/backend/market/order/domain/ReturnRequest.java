@@ -88,6 +88,14 @@ public class ReturnRequest extends BaseTimeEntity {
         this.decidedAt = decidedAt;
     }
 
+    // 반품 환불 확정 (#384). 주문상품이 반품 완료로 바뀌는 트랜잭션에서 부른다
+    public void complete() {
+        if (this.status != ReturnRequestStatus.APPROVED) {
+            throw new IllegalStateException("승인된 반품 신청만 완료할 수 있습니다. 현재 상태: " + this.status);
+        }
+        this.status = ReturnRequestStatus.COMPLETED;
+    }
+
     public boolean isRequested() {
         return status == ReturnRequestStatus.REQUESTED;
     }

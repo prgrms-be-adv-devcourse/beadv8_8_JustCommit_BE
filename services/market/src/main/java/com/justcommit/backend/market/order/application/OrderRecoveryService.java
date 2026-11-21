@@ -3,6 +3,11 @@ package com.justcommit.backend.market.order.application;
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.ShipmentQuery;
+import com.justcommit.backend.market.ShipmentResult;
+import com.justcommit.backend.market.order.domain.ReturnRequest;
+import com.justcommit.backend.market.order.domain.ReturnRequestStatus;
+import com.justcommit.backend.market.order.infrastructure.ReturnRequestRepository;
+import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.client.payment.PaymentOutcome;
 import com.justcommit.backend.market.client.payment.PaymentUseCase;
@@ -14,13 +19,18 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
-// Saga 복구: 결제 결과를 모르는 주문(PAYMENT_PROCESSING)을 같은 orderId로 다시 결제해 확정한다 (ADR 0023, 정책 4.4)
+// Saga 복구: 결제 결과를 모르는 주문(PAYMENT_PROCESSING)을 같은 orderId로 다시 결제해 확정한다 (ADR 0023, 정책 4.4).
+// 택배 취소 결과 처리, 환불 복구(#282)와 반품 도착 처리, 반품 환불(#384)도 여기서 한다
 // market 파드 2개가 함께 돌아도 주문마다 SKIP LOCKED 선점 + 시도 번호로 한 시도만 결과를 반영한다
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderRecoveryService {
+
+    // 반품 도착 처리가 한 번에 읽는 최대 반품 신청 수 (#384). 배송 상태는 한 번에 읽고, 건마다 짧은 트랜잭션이다
+    static final int RETURN_ARRIVAL_BATCH_SIZE = 100;
 
     // 한 번 실행에 집는 최대 주문 수. 결제가 계속 타임아웃이면 주문당 약 8초라 최악 약 7분
     static final int RECOVERY_BATCH_SIZE = 50;
@@ -32,6 +42,9 @@ public class OrderRecoveryService {
     private final ShipmentQuery shipmentQuery;
     private final OrderCancelTransactions orderCancelTransactions;
     private final OrderCancelRefunder orderCancelRefunder;
+    private final ReturnRequestRepository returnRequestRepository;
+    private final OrderReturnRefundTransactions orderReturnRefundTransactions;
+    private final OrderReturnRefunder orderReturnRefunder;
 
     // 후보는 잠그지 않고 읽고, 주문마다 선점 → (트랜잭션 밖) 결제 재호출 → 결과 반영. 한 주문이 실패해도 다음 주문은 계속한다
     public void recoverProcessingPayments() {
@@ -71,6 +84,54 @@ public class OrderRecoveryService {
                 });
             } catch (RuntimeException e) {
                 log.error("환불 복구 실패, 다음 주기에 다시 시도: orderItemId={}", orderItemId, e);
+            }
+        }
+    }
+
+    // 반품 도착 처리 (#384): 반품 배송 중인 반품 신청을 잠그지 않고 읽고, 반품 배송 상태를 한 번에 조회해
+    // 도착(DELIVERED)한 건만 건마다 반품 환불 중으로 바꾼다. payment는 부르지 않는다 (다음 단계 「반품 환불」이 이어받음)
+    public void recoverReturnArrivals() {
+        List<ReturnRequest> candidates = returnRequestRepository.findArrivalCandidates(ReturnRequestStatus.APPROVED,
+                OrderItemStatus.RETURN_IN_TRANSIT, RETURN_ARRIVAL_BATCH_SIZE);
+        if (candidates.isEmpty()) {
+            return;
+        }
+        Map<Long, ShipmentResult> shipments = shipmentQuery.findByShipmentIds(
+                candidates.stream().map(ReturnRequest::getShipmentId).toList());
+        for (ReturnRequest candidate : candidates) {
+            ShipmentResult shipment = shipments.get(candidate.getShipmentId());
+            if (shipment == null || !ShipmentStatus.DELIVERED.name().equals(shipment.status())) {
+                continue;
+            }
+            try {
+                orderReturnRefundTransactions.markArrived(candidate.getId());
+            } catch (RuntimeException e) {
+                log.error("반품 도착 처리 실패, 다음 주기에 다시 시도: returnRequestId={}", candidate.getId(), e);
+            }
+        }
+    }
+
+    // 반품 환불 (#384): 도착 처리된 건은 첫 환불로, 결과를 모르는 건(유예 경과)은 같은 키로 다시 요청한다.
+    // 선점 뒤 트랜잭션 밖에서 payment를 부른다. 5번 안 되거나 4xx면 확인 필요 (취소 환불과 같은 정책)
+    public void recoverReturnRefunds() {
+        for (Long orderItemId : ordersItemRepository.findRefundNotStartedIds(OrderItemStatus.RETURN_PROCESSING,
+                RECOVERY_BATCH_SIZE)) {
+            try {
+                orderReturnRefundTransactions.claimFirst(orderItemId).ifPresent(orderReturnRefunder::refund);
+            } catch (RuntimeException e) {
+                log.error("반품 환불 실패, 다음 주기에 다시 시도: orderItemId={}", orderItemId, e);
+            }
+        }
+        List<Long> retries = ordersItemRepository.findRefundRecoveryCandidateIds(OrderItemStatus.RETURN_PROCESSING,
+                LocalDateTime.now().minus(OrderCancelTransactions.RECOVERY_GRACE), RECOVERY_BATCH_SIZE);
+        for (Long orderItemId : retries) {
+            try {
+                orderReturnRefundTransactions.claimRetry(orderItemId).ifPresent(claim -> {
+                    log.info("반품 환불 복구 재요청: orderItemId={}, attemptCount={}", orderItemId, claim.attemptCount());
+                    orderReturnRefunder.refund(claim);
+                });
+            } catch (RuntimeException e) {
+                log.error("반품 환불 복구 실패, 다음 주기에 다시 시도: orderItemId={}", orderItemId, e);
             }
         }
     }

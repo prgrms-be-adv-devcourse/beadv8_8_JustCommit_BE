@@ -87,6 +87,9 @@ class OrderRecoveryIntegrationTest {
     @MockitoBean ShipmentQuery shipmentQuery;
     @MockitoBean OrderCancelTransactions orderCancelTransactions;
     @MockitoBean OrderCancelRefunder orderCancelRefunder;
+    // 반품 도착, 반품 환불은 OrderReturnRefundIntegrationTest에서 본다
+    @MockitoBean OrderReturnRefundTransactions orderReturnRefundTransactions;
+    @MockitoBean OrderReturnRefunder orderReturnRefunder;
 
     @Autowired OrderRecoveryService recoveryService;
     @Autowired OrderPaymentTransactions transactions;
