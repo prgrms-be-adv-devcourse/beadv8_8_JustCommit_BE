@@ -131,6 +131,8 @@ write() { cat > "$S/$1.env"; chmod 600 "$S/$1.env"; echo "  작성: $1.env"; }
   echo "TOSS_SECRET_KEY=$(ext TOSS_SECRET_KEY)"
   echo "PAYMENT_KEY_ENCRYPTION_KEY=$(sh_ PAYMENT_KEY_ENCRYPTION_KEY)"
   echo "CASH_OUT_ACCOUNT_ENCRYPTION_KEY=$(sh_ CASH_OUT_ACCOUNT_ENCRYPTION_KEY)"
+  # 모의 은행 서버 503-bank(~/503-bank, 3001)로 인출 지급 (#624). 503-bank 볼륨은 지우지 않음(down -v 금지): 지급 기록이 사라지면 이중 지급 위험
+  echo "BANK_MODE=http"
   echo "BANK_BASE_URL=http://$APP_IP:3001"
   echo "BANK_API_KEY=$(sh_ BANK_API_KEY)"
 } | write payment
@@ -158,4 +160,4 @@ for s in gateway market ai; do
   echo "  K3s Secret: $s-env"
 done
 
-echo "✅ 끝. 404-express의 .env에는 shared.env의 COURIER_API_KEY · WEBHOOK_API_KEY와 같은 값을, bank의 .env에는 shared.env의 BANK_API_KEY와 같은 값을 넣어야 해요."
+echo "✅ 끝. 404-express의 .env에는 shared.env의 COURIER_API_KEY · WEBHOOK_API_KEY와 같은 값을, 503-bank의 .env(~/503-bank/.env)에는 shared.env의 BANK_API_KEY와 같은 값을 넣어야 해요."
