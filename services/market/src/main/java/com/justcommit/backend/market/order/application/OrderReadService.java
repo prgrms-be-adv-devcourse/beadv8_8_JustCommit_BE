@@ -45,6 +45,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -277,6 +278,28 @@ public class OrderReadService implements OrderQuery {
             result.computeIfAbsent(item.getSellerOrder().getId(), ignored -> new ArrayList<>())
                     .add(new OrdersItemResult(item.getId(), item.getProductId(), item.getProductName(),
                             item.getPrice(), item.getStatus()));
+        }
+        return result;
+    }
+
+    // 주문상품 id → 반품 정보 (#606). 반품 신청 1번 + 반품 배송 1번으로 읽는다 (N+1 없음). 반품 신청이 없는 주문상품은 빠진다
+    Map<Long, ReturnTimeline> returnTimelinesByItem(List<Long> sellerOrderIds) {
+        if (sellerOrderIds.isEmpty()) {
+            return Map.of();
+        }
+        List<ReturnRequest> returnRequests = returnRequestRepository.findBySellerOrderIdIn(sellerOrderIds);
+        if (returnRequests.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> shipmentIds = returnRequests.stream().map(ReturnRequest::getShipmentId)
+                .filter(Objects::nonNull).toList();
+        Map<Long, ShipmentResult> returnShipments = shipmentIds.isEmpty()
+                ? Map.of() : shipmentQuery.findByShipmentIds(shipmentIds);
+        Map<Long, ReturnTimeline> result = new HashMap<>();
+        for (ReturnRequest returnRequest : returnRequests) {
+            ShipmentResult returnShipment = returnRequest.getShipmentId() == null
+                    ? null : returnShipments.get(returnRequest.getShipmentId());
+            result.put(returnRequest.getOrderItemId(), ReturnTimeline.of(returnRequest, returnShipment));
         }
         return result;
     }

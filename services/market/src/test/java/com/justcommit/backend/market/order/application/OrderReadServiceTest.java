@@ -432,6 +432,67 @@ class OrderReadServiceTest {
         assertThat(plainItem.returnDeadlineAt()).isNull();
     }
 
+    @Test
+    @DisplayName("반품 정보: 반품 신청 1번 + 반품 배송 1번으로 단계 시각을 모은다, 환불 완료 시각은 완료된 신청의 updated_at (#606)")
+    void returnTimelinesCollectStepTimesInTwoQueries() {
+        LocalDateTime requestedAt = LocalDateTime.of(2026, 11, 17, 9, 0);
+        LocalDateTime decidedAt = requestedAt.plusHours(2);
+        ReturnRequest pending = new ReturnRequest(1L, 7L, ReturnReason.OTHER, "잎이 시들었어요", requestedAt);
+        ReturnRequest inTransit = new ReturnRequest(2L, 7L, ReturnReason.DAMAGED, null, requestedAt);
+        inTransit.approve(ReturnDecidedBy.SELLER, decidedAt, new BigDecimal("3000"), 50L);
+        ReturnRequest completed = new ReturnRequest(3L, 8L, ReturnReason.NOT_AS_DESCRIBED, null, requestedAt);
+        completed.approve(ReturnDecidedBy.AUTO, decidedAt, new BigDecimal("3000"), 51L);
+        completed.complete();
+        LocalDateTime completedAt = LocalDateTime.of(2026, 11, 20, 15, 0);
+        ReflectionTestUtils.setField(completed, "updatedAt", completedAt);
+        ReturnRequest rejected = new ReturnRequest(4L, 8L, ReturnReason.OTHER, "향이 달라요", requestedAt);
+        rejected.reject(ReturnDecidedBy.SELLER, decidedAt);
+        LocalDateTime pickedUpAt = LocalDateTime.of(2026, 11, 18, 10, 0);
+        LocalDateTime inTransitAt = LocalDateTime.of(2026, 11, 18, 14, 0);
+        LocalDateTime arrivedAt = LocalDateTime.of(2026, 11, 19, 11, 0);
+        when(returnRequestRepository.findBySellerOrderIdIn(List.of(7L, 8L)))
+                .thenReturn(List.of(pending, inTransit, completed, rejected));
+        when(shipmentQuery.findByShipmentIds(List.of(50L, 51L))).thenReturn(Map.of(
+                50L, new ShipmentResult(50L, "IN_TRANSIT", null, "404000000050", null, pickedUpAt, inTransitAt),
+                51L, new ShipmentResult(51L, "DELIVERED", arrivedAt, "404000000051", null, pickedUpAt, inTransitAt)));
+
+        Map<Long, ReturnTimeline> timelines = orderReadService.returnTimelinesByItem(List.of(7L, 8L));
+
+        assertThat(timelines).hasSize(4);
+        ReturnTimeline pendingTimeline = timelines.get(1L);
+        assertThat(pendingTimeline.requestedAt()).isEqualTo(requestedAt);
+        assertThat(pendingTimeline.deadlineAt()).isEqualTo(requestedAt.plusHours(48));
+        assertThat(pendingTimeline.decidedAt()).isNull();
+        assertThat(pendingTimeline.shipmentStatus()).isNull();
+        assertThat(pendingTimeline.returnedAt()).isNull();
+        ReturnTimeline inTransitTimeline = timelines.get(2L);
+        assertThat(inTransitTimeline.decidedAt()).isEqualTo(decidedAt);
+        assertThat(inTransitTimeline.deadlineAt()).isNull();
+        assertThat(inTransitTimeline.shipmentStatus()).isEqualTo("IN_TRANSIT");
+        assertThat(inTransitTimeline.trackingNo()).isEqualTo("404000000050");
+        assertThat(inTransitTimeline.pickedUpAt()).isEqualTo(pickedUpAt);
+        assertThat(inTransitTimeline.inTransitAt()).isEqualTo(inTransitAt);
+        assertThat(inTransitTimeline.arrivedAt()).isNull();
+        assertThat(inTransitTimeline.returnedAt()).isNull();
+        ReturnTimeline completedTimeline = timelines.get(3L);
+        assertThat(completedTimeline.arrivedAt()).isEqualTo(arrivedAt);
+        assertThat(completedTimeline.returnedAt()).isEqualTo(completedAt);
+        ReturnTimeline rejectedTimeline = timelines.get(4L);
+        assertThat(rejectedTimeline.decidedAt()).isEqualTo(decidedAt); // 거절 시각
+        assertThat(rejectedTimeline.shipmentStatus()).isNull();
+        assertThat(rejectedTimeline.returnedAt()).isNull();
+        verify(shipmentQuery, times(1)).findByShipmentIds(any());
+    }
+
+    @Test
+    @DisplayName("반품 정보: 반품 신청이 없으면 반품 배송을 조회하지 않는다 (#606)")
+    void returnTimelinesSkipShipmentQueryWithoutReturns() {
+        when(returnRequestRepository.findBySellerOrderIdIn(List.of(7L))).thenReturn(List.of());
+
+        assertThat(orderReadService.returnTimelinesByItem(List.of(7L))).isEmpty();
+        verify(shipmentQuery, never()).findByShipmentIds(any());
+    }
+
     // 판매자 20의 판매자 주문 7. 주문상품 i번째는 id 5 + i, 상태 statuses[i]
     private static SellerOrder sellerOrderWith(Orders order, OrderItemStatus... statuses) {
         SellerOrder sellerOrder = new SellerOrder(order, 20L);
