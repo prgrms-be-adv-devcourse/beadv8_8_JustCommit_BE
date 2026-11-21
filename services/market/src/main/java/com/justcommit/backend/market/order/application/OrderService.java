@@ -122,12 +122,19 @@ public class OrderService {
             throw new BusinessException(CHECKOUT_DATA_MISMATCH);
         }
 
+        // 배송비는 판매자 주문 1건당 1번, 배송지가 같으니 모든 판매자 주문이 같은 금액이다.
+        // 주문서가 본 금액과 다르면(그사이 요금표가 바뀜 · 조작) 주문을 만들지 않는다
+        BigDecimal shippingFee = shippingFeeTableService.feeFor(request.zipcode());
+        if (request.expectedShippingFee() != null && request.expectedShippingFee().compareTo(shippingFee) != 0) {
+            log.info("배송비가 주문서와 달라 주문을 만들지 않습니다: memberId={}, zipcode={}, 주문서={}, 서버={}",
+                    memberId, request.zipcode(), request.expectedShippingFee(), shippingFee);
+            throw new BusinessException(OrderErrorCode.SHIPPING_FEE_CHANGED);
+        }
+
         String orderNo = generateOrderNo();
         Orders order = new Orders(orderNo, memberId, request.recipientName(), request.recipientPhone(),
                 request.zipcode(), request.address1(), request.address2(), selectedItems.size());
 
-        // 배송비는 판매자 주문 1건당 1번, 배송지가 같으니 모든 판매자 주문이 같은 금액이다
-        BigDecimal shippingFee = shippingFeeTableService.feeFor(request.zipcode());
         List<SellerOrder> sellerOrders = new ArrayList<>();
         productsBySeller.forEach((sellerId, sellerProducts) -> {
             SellerOrder sellerOrder = new SellerOrder(order, sellerId);
