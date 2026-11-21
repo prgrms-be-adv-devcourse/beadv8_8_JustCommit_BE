@@ -13,6 +13,8 @@ public enum OrderErrorCode implements ErrorCode {
     PRODUCT_UNAVAILABLE(HttpStatus.CONFLICT, "구매할 수 없는 상품이 포함되어 있습니다."),
     OWN_PRODUCT(HttpStatus.BAD_REQUEST, "본인이 판매하는 상품은 구매할 수 없습니다."),
     PRICE_CHANGED(HttpStatus.CONFLICT, "장바구니에 담은 후 상품 가격이 변경되었습니다."),
+    // 주문서에 보여 준 배송비(expectedShippingFee)가 지금 요금표 계산과 다름 (#618)
+    SHIPPING_FEE_CHANGED(HttpStatus.CONFLICT, "배송비가 변경되었습니다. 주문서를 다시 확인해 주세요."),
     ORDER_NOT_FOUND(HttpStatus.NOT_FOUND, "주문을 찾을 수 없습니다."),
     SELLER_ORDER_NOT_FOUND(HttpStatus.NOT_FOUND, "판매자 주문을 찾을 수 없습니다."),
     ORDER_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "주문 아이템을 찾을 수 없습니다."),

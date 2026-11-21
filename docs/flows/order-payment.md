@@ -1,7 +1,7 @@
 # 주문 · 결제 Saga
 
 > 언제 읽나: 주문 · 결제 · 예약 · 판매 완료 코드를 고칠 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: Miro 13, 노션 기획안 「결제 시퀀스」, 노션 「정책 정리」 1.3 · 3.10 · 4.4 · 11
+> 상태: ✅ 확정 · 마지막 수정 2026-11-21 · 관련: Miro 13, 노션 기획안 「결제 시퀀스」, 노션 「정책 정리」 1.3 · 3.10 · 4.4 · 11
 
 ## 시퀀스
 
@@ -16,7 +16,8 @@ sequenceDiagram
     participant SL as 판매자
     participant K as Kafka
     participant N as notification
-    U->>M: POST /api/v1/orders/cart (expectedShippingFee)
+    U->>M: GET /api/v1/orders/shippingFees (배송지 고를 때 배송비 미리 계산)
+    U->>M: POST /api/v1/orders/cart (expectedShippingFee, 선택)
     M->>M: 배송비를 배송지로 직접 계산, 다르면 SHIPPING_FEE_CHANGED
     M->>M: TX1 주문 생성 커밋 (PAYMENT_PENDING, 배송비 저장)
     M->>PR: 상품 예약 (orderId, expectedPrice, Idempotency-Key orderId)

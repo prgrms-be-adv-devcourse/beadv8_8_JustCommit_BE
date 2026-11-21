@@ -1,6 +1,7 @@
 package com.justcommit.backend.market.shipment.application;
 
 import com.justcommit.backend.market.shipment.domain.ShippingFeeTable;
+import com.justcommit.backend.market.shipment.domain.ShippingRegion;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShippingFeeTableRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,11 +24,20 @@ public class ShippingFeeTableService {
     // 배송지 우편번호의 배송비를 지금 요금표(가장 높은 버전)로 계산한다. 주문을 만들 때 판매자 주문마다 저장하므로
     // 새 요금표는 받은 뒤 생성되는 주문부터 쓰인다
     public BigDecimal feeFor(String zipcode) {
+        return quote(zipcode).fee();
+    }
+
+    // 배송비를 기본 · 지역 할증으로 나눠 계산한다. 주문서의 배송비 미리 계산 조회와 주문 생성(feeFor)이 같은 계산을 쓴다.
+    // 요금표가 없으면 일반 지역 · 기본 배송비 3,000원 · 할증 0
+    public ShippingFeeQuote quote(String zipcode) {
         return shippingFeeTableRepository.findTopByOrderByVersionDesc()
-                .map(table -> table.feeFor(zipcode))
+                .map(table -> {
+                    ShippingRegion region = table.regionOf(zipcode);
+                    return new ShippingFeeQuote(region, table.getBaseFee(), table.surchargeFor(region));
+                })
                 .orElseGet(() -> {
                     log.warn("배송비 요금표가 아직 없어 기본 배송비 {}원을 씁니다: zipcode={}", DEFAULT_SHIPPING_FEE, zipcode);
-                    return DEFAULT_SHIPPING_FEE;
+                    return new ShippingFeeQuote(ShippingRegion.GENERAL, DEFAULT_SHIPPING_FEE, BigDecimal.ZERO);
                 });
     }
 

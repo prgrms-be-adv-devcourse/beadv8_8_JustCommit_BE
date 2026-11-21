@@ -42,7 +42,7 @@ market 서비스가 소유하는 테이블입니다 (market DB).
 
 market 서비스가 제공하는 외부 API입니다 (경로 앞 `/api/v1` 생략).
 
-`cart` · `cart/items` · `cart/items/{productId}` · `cart/recommendations` · `orders/cart` · `orders/{id}/pay` · `orders/{id}/cancel` · `orders/items/{id}/cancel` · `orders/items/{id}/confirm` · `orders` · `orders/{id}` · `orders/seller` · `orders/seller/{id}` · `orders/seller/{id}/accept` · `orders/seller/{id}/reject` · `orders/seller/{sellerOrderId}/shipment` · `orders/{orderId}/sellerOrders/{sellerOrderId}/shipment` · `orders/seller/{sellerOrderId}/items/{orderItemId}/returnShipment` · `orders/{orderId}/items/{orderItemId}/returnShipment` · `orders/items/{id}/return` · `orders/items/{id}/return/approve` · `orders/items/{id}/return/reject` · `webhooks/courier` + ⬜ 리뷰 → [외부 API 목록](../reference/external-apis.md)
+`cart` · `cart/items` · `cart/items/{productId}` · `cart/recommendations` · `orders/shippingFees` · `orders/cart` · `orders/{id}/pay` · `orders/{id}/cancel` · `orders/items/{id}/cancel` · `orders/items/{id}/confirm` · `orders` · `orders/{id}` · `orders/seller` · `orders/seller/{id}` · `orders/seller/{id}/accept` · `orders/seller/{id}/reject` · `orders/seller/{sellerOrderId}/shipment` · `orders/{orderId}/sellerOrders/{sellerOrderId}/shipment` · `orders/seller/{sellerOrderId}/items/{orderItemId}/returnShipment` · `orders/{orderId}/items/{orderItemId}/returnShipment` · `orders/items/{id}/return` · `orders/items/{id}/return/approve` · `orders/items/{id}/return/reject` · `webhooks/courier` + ⬜ 리뷰 → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 
@@ -99,7 +99,7 @@ market 서비스의 업무 규칙입니다. 노션 「정책 정리」 6 · 7 ·
 | 주제 | 규칙 |
 |---|---|
 | 배송비 | 판매자 주문 1건당 1회. 지역 구분 요금(크기 무시): 기본 + 지역 할증 하나, 배송지 우편번호가 도서산간 구간이면 도서산간 할증, 아니고 제주 구간이면 제주 할증, 아니면 0(구간 양끝 포함, 제주 안 섬은 도서산간 할증만). 요금표는 market 안에 두고 가장 높은 버전으로 계산, 404-express가 바꾸면 웹훅 → 새 요금표를 버전과 함께 저장(같거나 낮은 버전은 무시) + 버전 대사(주기 → [스케줄러 표](../reference/schedulers.md)). 새 요금표는 받은 뒤 생성되는 주문부터. 요금표를 한 번도 받지 못했으면 3,000원 + 경고 로그 |
-| 배송비 조작 방지 | 서버가 배송지로 직접 계산, 프론트가 본 금액(`expectedShippingFee`)과 다르면 `SHIPPING_FEE_CHANGED`. 저장한 배송비는 결제 대기(`PAYMENT_PENDING`) 중 안 바뀜 |
+| 배송비 조작 방지 | 주문서는 배송비 미리 계산(`orders/shippingFees`)으로 주문 생성과 같은 계산 값을 받아 보여 줌. 주문 생성 때 서버가 배송지로 직접 계산하고, 프론트가 본 금액(`expectedShippingFee`, 선택 · 없으면 비교 안 함)과 다르면 409 `SHIPPING_FEE_CHANGED`(주문 안 만듦). 저장한 배송비는 결제 대기(`PAYMENT_PENDING`) 중 안 바뀜 |
 | 회원 정보 | 닉네임 · 탈퇴 여부는 member를 부르지 않고 `MEMBER_REPLICA`에서 읽음. 탈퇴 표시면 「탈퇴한 회원」, 복제본이 아직 없으면 「알 수 없는 회원」(임시 문구, 장바구니 · 주문을 막지 않음). 탈퇴한 회원의 주문 생성은 403 `WITHDRAWN_MEMBER` (2차 방어, 1차는 Gateway 토큰 폐기). 복제본이 없는 회원은 탈퇴로 보지 않음 |
 | 판매자 배송지 | 택배 보내는 사람 주소는 member를 부르지 않고 `MEMBER_REPLICA`의 판매자 배송지 암호문을 쓸 때만 복호화해 읽음 (평문을 DB에 저장하지 않음). 탈퇴 이벤트 반영 후에는 회원 복제본에 주소 암호문이 남지 않으며, 늦게 도착한 주소 이벤트로 다시 저장되지 않는다 |
 | 결제 대기 (`PAYMENT_PENDING`) | 주문 생성 시각부터 10분. 예치금이 충분하면 바로 결제, 부족하면 결제 대기. 결제할 때 market이 만료 시각을 직접 확인해 지났으면 거절(`PAYMENT_WINDOW_EXPIRED`), 만료 스케줄러는 지난 주문 만료 · 예약 해제 뒷정리만. 결제를 부른 뒤 결과를 반영하기 전까지는 결제 처리 중(`PAYMENT_PROCESSING`)이라 만료하지 않음 |

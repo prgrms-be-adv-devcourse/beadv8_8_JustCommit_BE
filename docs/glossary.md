@@ -34,6 +34,8 @@
 | 웹훅 | – | webhook, 콜백 | 택배사가 배송 상태 · 취소 · 요금표 변경을 알려 주는 HTTP 요청 | [market 정책](services/market.md#정책) |
 | 배송 조회 | `ShipmentTracking` | 배송 추적, 기사 위치 | 판매자 · 구매자가 한 배송의 단계 · 시각과 택배사의 남은 거리 · 지점을 보는 조회. 남은 거리는 안내용 | [외부 API](reference/external-apis.md#market) |
 | 배송비 요금표 | `ShippingFeeTable` (`SHIPPING_FEE_TABLE`) | 운임표 | 지역 구분(기본 + 제주 · 도서산간) 배송비 표. market이 버전과 함께 보관 | [market 정책](services/market.md#정책) |
+| 배송 지역 | `ShippingRegion` (`GENERAL` · `JEJU` · `REMOTE`) | 도서산간 여부, 지역 할증 구분 | 배송지 우편번호가 요금표의 어느 할증 구간인지 (일반 · 제주 · 도서산간). 도서산간 → 제주 순으로 보고 할증은 하나만 | [market 정책](services/market.md#정책) |
+| 배송비 미리 계산 | `ShippingFeeQuote` | 배송비 견적, 예상 배송비 | 주문서에서 배송지를 고르면 결제 전에 보여 주는 판매자별 배송비. 주문 생성과 같은 계산 | [외부 API](reference/external-apis.md#market) |
 | 구매 확정 | `PurchaseConfirmed` · `OrderItemAutoConfirmed` | 구매 완료, 거래 완료 | 구매자가 받았다고 확정 (직접 또는 자동). 정산의 시작점 | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 판매자 주문 종료 판정 | `SellerOrderCompletion` | 정산 판정, 종료 체크 | 판매자 주문의 주문상품이 모두 끝났는지(구매 확정, 취소 완료, 반품 완료) 보고, 끝났으면 정산 이벤트를 한 번 발행하는 판정. 구매 확정, 반품 거절, 취소 완료(환불 확정), 반품 완료 뒤에 부름. 종료 기록은 `seller_order.confirmed_at` | [구매 확정 → 정산](flows/confirm-settlement.md) |
 | 취소 | `OrderItemCancelled` · `SellerOrderCancelled` | 주문 취소 | 수거 전에 구매자가 주문상품을 취소하는 것 | [취소 · 환불](flows/cancel-refund.md) |

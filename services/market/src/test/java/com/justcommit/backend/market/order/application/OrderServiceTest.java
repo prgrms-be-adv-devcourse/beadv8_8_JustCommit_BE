@@ -256,6 +256,35 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("주문서가 본 배송비(expectedShippingFee)가 서버 계산과 다르면 SHIPPING_FEE_CHANGED, 주문 · 예약 · 장바구니 삭제 없음 (#618)")
+    void rejectsChangedShippingFee() {
+        when(shippingFeeTableService.feeFor("12345")).thenReturn(BigDecimal.valueOf(6_000));
+        stubLookup(List.of(selected(1L, 101L, "10000")),
+                List.of(product(101L, 20L, "몬스테라", "10000", true)));
+
+        assertThatThrownBy(() -> orderService.create(10L, requestExpecting(BigDecimal.valueOf(3_000), 1L)))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.getErrorCode()).isEqualTo(OrderErrorCode.SHIPPING_FEE_CHANGED));
+        verify(ordersRepository, never()).saveAndFlush(any());
+        verify(productUseCase, never()).reserve(any(), any());
+        verify(cartService, never()).removeSelectedItems(any(Long.class), any());
+    }
+
+    @Test
+    @DisplayName("주문서가 본 배송비가 서버 계산과 같으면(소수점 표기만 달라도) 주문을 만든다 (#618)")
+    void acceptsSameShippingFee() {
+        when(shippingFeeTableService.feeFor("12345")).thenReturn(BigDecimal.valueOf(6_000));
+        stubLookup(List.of(selected(1L, 101L, "10000")),
+                List.of(product(101L, 20L, "몬스테라", "10000", true)));
+        stubSavedOrder();
+        stubInsufficientBalance();
+
+        OrderCreateResponse response = orderService.create(10L, requestExpecting(new BigDecimal("6000.00"), 1L));
+
+        assertThat(response.totalAmount()).isEqualByComparingTo("16000");
+    }
+
+    @Test
     void generatesDifferentOrderNumbersForSeparateOrders() {
         stubLookup(List.of(selected(1L, 101L, "10000")),
                 List.of(product(101L, 20L, "몬스테라", "10000", true)));
@@ -1089,7 +1118,12 @@ class OrderServiceTest {
     }
 
     private static CartOrderCreateRequest request(Long... cartItemIds) {
-        return new CartOrderCreateRequest(List.of(cartItemIds), "구매자", "01012345678", "12345", "서울시", "101호");
+        return requestExpecting(null, cartItemIds);
+    }
+
+    private static CartOrderCreateRequest requestExpecting(BigDecimal expectedShippingFee, Long... cartItemIds) {
+        return new CartOrderCreateRequest(List.of(cartItemIds), "구매자", "01012345678", "12345", "서울시", "101호",
+                expectedShippingFee);
     }
 
     private void stubLookup(List<CartItem> selectedItems, List<ProductResult> products) {
