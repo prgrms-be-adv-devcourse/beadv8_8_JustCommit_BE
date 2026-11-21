@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-21 · services/ai.md · flows/search-recommend.md · 🟨 챗봇 상황 질문: 선물 · 인테리어 · 키울 장소 질문을 식물 질문으로 보고, 흔히 고르는 품종을 말하는 일반 상식 한 문장 → 판매 중이 아니면 「replant에는 판매되고 있지 않다」 → 대안 상품 추천. 관리법 · 효능 · 독성 · 가격은 계속 근거 안에서만. 상품 유사도 0.28 이상이 0개면 하한 없이 가장 가까운 판매 중 상품 3개를 「대안」으로 프롬프트에 넣고, 카드는 답변에 제목이 나온 대안만 (#614)
 - 2026-11-21 · reference/external-apis.md · services/market.md · 구매 · 판매 상세 주문상품에 반품 단계 시각 추가: `returnDecidedAt`, 반품 배송의 `returnShipmentStatus` · `returnTrackingNo` · `returnPickedUpAt` · `returnInTransitAt` · `returnArrivedAt`, `returnedAt`(완료된 반품 신청의 `updated_at`, 새 칼럼 없음). 구매 상세에도 `returnReason` · `returnDetail` · `returnRequestedAt` · `returnDeadlineAt` (#606)
 - 2026-11-21 · reference/external-apis.md · 품종 목록 `GET species` 정렬을 적음: 품종명 가나다순(쿼리에 `ko-x-icu` 지정, DB 기본 규칙 `en_US.utf8`은 한글을 자모 단위로 비교해 짧은 이름이 먼저 왔음), 「기타」(id 218)는 맨 뒤 (#608)
 - 2026-11-21 · services/market.md · reference/external-apis.md · 판매 내역 · 상세를 결제 완료 이후 주문(`PAID`, `CANCELLED`, `COMPLETED`)만으로, 그 밖은 목록에서 빼고 상세 404 `SELLER_ORDER_NOT_FOUND`, 판매 상세에 `buyerNickname`(회원 복제본 기준), 정책 「판매 내역」 행 추가 (#599) (#604)

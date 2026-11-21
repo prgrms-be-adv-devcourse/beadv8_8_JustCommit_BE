@@ -8,7 +8,8 @@ import java.util.UUID;
 
 /**
  * answerGenerated가 false면 answer는 고정 문장(LLM 실패 · 키 없음)이고 상품 카드는 그대로 온다.
- * products는 판매 중 상품만 (유사도 높은 순), species는 답변 근거로 쓴 품종
+ * products는 판매 중 상품만 (유사도 높은 순). 질문과 맞는 상품이 없으면 답변이 대신 권한 대안 상품만 온다.
+ * species는 답변 근거로 쓴 품종
  */
 public record ChatbotMessageResponse(
         UUID conversationId,
@@ -30,7 +31,7 @@ public record ChatbotMessageResponse(
                 reply.conversationId(),
                 reply.answer(),
                 reply.answerGenerated(),
-                result.products().stream()
+                reply.cards().stream()
                         .map(p -> new ProductCard(p.productId(), p.title(), p.price(), p.thumbnailUrl(),
                                 p.speciesId(), p.speciesName()))
                         .toList(),
