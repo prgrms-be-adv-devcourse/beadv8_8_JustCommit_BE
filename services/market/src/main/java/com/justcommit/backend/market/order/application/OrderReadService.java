@@ -25,6 +25,7 @@ import com.justcommit.backend.market.order.presentation.OrderListRequest;
 import com.justcommit.backend.market.order.presentation.OrderResponse;
 import com.justcommit.backend.market.order.presentation.SellerOrderDetailResponse;
 import com.justcommit.backend.market.order.presentation.SellerOrderResponse;
+import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.market.client.product.ProductQuery;
 import com.justcommit.backend.market.client.product.ProductResult;
 import com.justcommit.backend.market.client.settlement.SellerOrderSettlement;
@@ -56,6 +57,7 @@ public class OrderReadService implements OrderQuery {
     private final OrdersRepository ordersRepository;
     private final SellerOrderRepository sellerOrderRepository;
     private final OrdersItemRepository ordersItemRepository;
+    private final MemberQuery memberQuery;
     private final ShipmentQuery shipmentQuery;
     private final SettlementQuery settlementQuery;
     private final ProductQuery productQuery;
@@ -192,6 +194,7 @@ public class OrderReadService implements OrderQuery {
                 shipment == null ? null : shipment.inTransitAt(),
                 shipment == null ? null : shipment.deliveredAt(),
                 settlement.status(), settlement.settledAt(), sellerOrder.getCreatedAt(),
+                memberQuery.getNicknames(List.of(order.getBuyerId())).get(order.getBuyerId()),
                 order.getRecipientName(), order.getRecipientPhone(),
                 order.getZipcode(), order.getShipAddress1(), order.getShipAddress2(), items,
                 sellerOrder.acceptDeadline());

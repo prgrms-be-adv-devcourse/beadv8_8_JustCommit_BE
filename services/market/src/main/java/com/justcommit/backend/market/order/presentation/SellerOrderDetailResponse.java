@@ -26,6 +26,8 @@ public record SellerOrderDetailResponse(
         String settlementStatus,
         LocalDateTime settledAt,
         LocalDateTime createdAt,
+        // 구매자 닉네임 (#599). 회원 복제본 기준: 탈퇴면 「탈퇴한 회원」, 복제본이 없으면 「알 수 없는 회원」
+        String buyerNickname,
         String recipientName,
         String recipientPhone,
         String zipcode,
@@ -40,7 +42,7 @@ public record SellerOrderDetailResponse(
                                      String recipientName, String recipientPhone, String zipcode, String address1,
                                      String address2, List<Item> items) {
         this(sellerOrderId, orderId, orderNo, totalAmount, shippingFee, status, null, null,
-                null, null, null, null, "NOT_SETTLED", null, createdAt,
+                null, null, null, null, "NOT_SETTLED", null, createdAt, null,
                 recipientName, recipientPhone, zipcode, address1, address2, items, null);
     }
 

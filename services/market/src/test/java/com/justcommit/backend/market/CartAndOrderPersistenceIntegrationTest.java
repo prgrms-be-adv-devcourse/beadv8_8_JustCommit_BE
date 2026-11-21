@@ -80,6 +80,7 @@ class CartAndOrderPersistenceIntegrationTest {
         SellerOrder firstSeller = new SellerOrder(first, 201L);
         firstSeller.addItems(List.of(new OrdersItem(firstSeller, 1001L, "몬스테라", new BigDecimal("10000"))));
         first.addSellerOrders(List.of(firstSeller));
+        first.paid();
 
         Orders other = new Orders("ORD-read-other", 102L, "다른 구매자", "010", "12345", "서울", null, 1);
         SellerOrder otherSeller = new SellerOrder(other, 202L);
@@ -104,6 +105,48 @@ class CartAndOrderPersistenceIntegrationTest {
                 .extracting(OrdersItem::getProductName).containsExactly("몬스테라");
         assertThat(ordersItemRepository.findBySellerOrderIds(List.of(firstSellerId)))
                 .extracting(OrdersItem::getProductName).containsExactly("몬스테라");
+    }
+
+    @Test
+    void sellerSeesOnlyOrdersAfterPayment() {
+        // 판매 내역 · 상세는 결제 완료 이후 주문만 (#599): PAID · CANCELLED · COMPLETED는 보이고 나머지는 안 보인다
+        Long paid = persistSellerOrder("ORD-seller-paid", Orders::paid);
+        Long cancelled = persistSellerOrder("ORD-seller-cancelled", order -> {
+            order.paid();
+            order.cancel();
+        });
+        Long completed = persistSellerOrder("ORD-seller-completed", order -> {
+            order.paid();
+            order.confirm();
+        });
+        Long pending = persistSellerOrder("ORD-seller-pending", order -> { });
+        Long failed = persistSellerOrder("ORD-seller-failed", Orders::fail);
+        Long expired = persistSellerOrder("ORD-seller-expired", Orders::expire);
+        Long processing = persistSellerOrder("ORD-seller-processing",
+                order -> ReflectionTestUtils.setField(order, "status", OrderStatus.PAYMENT_PROCESSING));
+        Long reviewRequired = persistSellerOrder("ORD-seller-review",
+                order -> ReflectionTestUtils.setField(order, "status", OrderStatus.REVIEW_REQUIRED));
+        entityManager.flush();
+        entityManager.clear();
+
+        var page = sellerOrderRepository.findBySellerId(301L, PageRequest.of(0, 20, Sort.by(Sort.Order.asc("id"))));
+
+        assertThat(page.getContent()).extracting(SellerOrder::getId).containsExactly(paid, cancelled, completed);
+        assertThat(page.getTotalElements()).isEqualTo(3);
+        assertThat(sellerOrderRepository.findByIdAndSellerId(paid, 301L)).isPresent();
+        for (Long hidden : List.of(pending, failed, expired, processing, reviewRequired)) {
+            assertThat(sellerOrderRepository.findByIdAndSellerId(hidden, 301L)).isEmpty();
+        }
+    }
+
+    private Long persistSellerOrder(String orderNo, java.util.function.Consumer<Orders> toStatus) {
+        Orders order = order(orderNo);
+        SellerOrder sellerOrder = new SellerOrder(order, 301L);
+        sellerOrder.addItems(List.of(new OrdersItem(sellerOrder, 1001L, "몬스테라", new BigDecimal("10000"))));
+        order.addSellerOrders(List.of(sellerOrder));
+        toStatus.accept(order);
+        entityManager.persist(order);
+        return sellerOrder.getId();
     }
 
     @Test
