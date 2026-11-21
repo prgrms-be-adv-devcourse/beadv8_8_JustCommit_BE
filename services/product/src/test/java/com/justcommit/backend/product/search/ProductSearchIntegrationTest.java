@@ -30,6 +30,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -119,6 +122,14 @@ class ProductSearchIntegrationTest {
         return config.openSearchClient(config.openSearchTransport());
     }
 
+    private static OpenSearchClient client(Duration readTimeout, int maxConnections, Duration connectionRequestTimeout)
+            throws URISyntaxException {
+        OpenSearchConfig config = new OpenSearchConfig(
+                "http://" + OPENSEARCH.getHost() + ":" + OPENSEARCH.getMappedPort(9200),
+                Duration.ofSeconds(1), readTimeout, maxConnections, connectionRequestTimeout);
+        return config.openSearchClient(config.openSearchTransport());
+    }
+
     @Autowired OpenSearchClient client;
     @Autowired ProductSearchService searchService;
     @Autowired ProductIndexService indexService;
@@ -183,7 +194,7 @@ class ProductSearchIntegrationTest {
     }
 
     @Test
-    @DisplayName("[#486 완료 기준 3] OpenSearch를 내려도 같은 API가 DB LIKE 검색 결과로 응답 (재시도 1회 뒤 대체)")
+    @DisplayName("[#486 완료 기준 3] OpenSearch가 응답 없이 멈춰도 같은 API가 DB LIKE 검색 결과로 응답 (읽기 시간 초과는 재시도 없이 대체, #574)")
     void fallsBackToLikeWhenOpenSearchIsDown() throws Exception {
         Product active = save(MONSTERA_ID, SELLER_ID, "몬스테라 판매 중", "설명", ProductStatus.ACTIVE);
         Product hidden = save(MONSTERA_ID, SELLER_ID, "몬스테라 숨김", "설명", ProductStatus.ACTIVE);
@@ -201,9 +212,44 @@ class ProductSearchIntegrationTest {
 
             // 인덱스는 비어 있지만 DB LIKE로 찾음 (숨김 제외 규칙은 같음)
             assertThat(ids(page)).containsExactly(active.getId());
-            // 2초 × 2번 시도 뒤 대체 (넉넉히 10초 안)
-            assertThat(System.currentTimeMillis() - started).isLessThan(10_000);
+            // 읽기 2초 1번 뒤 대체. 예전처럼 2번 기다리면(4초 이상) 실패 (느린 CI를 위해 3.5초)
+            assertThat(System.currentTimeMillis() - started).isLessThan(3_500);
         } finally {
+            docker.unpauseContainerCmd(OPENSEARCH.getContainerId()).exec();
+        }
+    }
+
+    @Test
+    @DisplayName("[#574] 응답 없는 OpenSearch에 동시에 몰리면 연결 풀 밖의 요청은 줄 서지 않고 빌리기 대기(0.2초) 뒤 바로 LIKE로")
+    void fallsBackQuicklyWhenConnectionPoolIsExhausted() throws Exception {
+        Product active = save(MONSTERA_ID, SELLER_ID, "몬스테라 판매 중", "설명", ProductStatus.ACTIVE);
+        // 연결 풀 · 동시 검색 상한 2개 · 빌리기 대기 0.2초 · 읽기 2초 (운영은 20개)
+        ProductSearchService smallPool = new ProductSearchService(productRepository,
+                new OpenSearchProductSearch(client(Duration.ofSeconds(2), 2, Duration.ofMillis(200)), 2, Duration.ofMillis(200)),
+                transactionManager);
+
+        var docker = OPENSEARCH.getDockerClient();
+        docker.pauseContainerCmd(OPENSEARCH.getContainerId()).exec();
+        ExecutorService pool = Executors.newFixedThreadPool(8);
+        try {
+            List<Future<Long>> elapsed = new ArrayList<>();
+            for (int i = 0; i < 8; i++) {
+                elapsed.add(pool.submit(() -> {
+                    long started = System.currentTimeMillis();
+                    Page<ProductSearchResponse> page = smallPool.search(request("몬스테라", null, null, null, null));
+                    assertThat(ids(page)).containsExactly(active.getId());
+                    return System.currentTimeMillis() - started;
+                }));
+            }
+            List<Long> millis = new ArrayList<>();
+            for (Future<Long> future : elapsed) {
+                millis.add(future.get());
+            }
+            // 8개 모두 LIKE로 응답 · 풀을 얻은 2개만 읽기 2초를 기다리고 나머지 6개는 빠르게 (예전엔 줄 서서 2초씩 차례로)
+            assertThat(millis).allSatisfy(ms -> assertThat(ms).isLessThan(3_500));
+            assertThat(millis.stream().filter(ms -> ms < 1_500).count()).isGreaterThanOrEqualTo(6);
+        } finally {
+            pool.shutdownNow();
             docker.unpauseContainerCmd(OPENSEARCH.getContainerId()).exec();
         }
     }
