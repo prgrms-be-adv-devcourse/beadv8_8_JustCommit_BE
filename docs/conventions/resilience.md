@@ -2,7 +2,7 @@
 
 > 언제 읽나: 외부 호출이나 서비스 간 호출의 실패 처리를 정할 때
 
-> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: Miro 14, 노션 기획안 「장애 처리」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-21 · 관련: Miro 14, 노션 기획안 「장애 처리」
 
 ## 공통값
 
@@ -35,13 +35,14 @@
 | member → 카카오 연결 해제 (탈퇴) | 1초 / 3초 | 없음 | 탈퇴 막음(503 `SOCIAL_UNLINK_FAILED`). 탈퇴 토큰은 이미 소모돼 재인증 후 다시 시도. 이미 해제된 회원의 `-101`은 성공으로 처리 (DB의 `provider_id`로 부른 연결 해제 응답에만) |
 | market → ai 추천 | 1초 / 2초 | 연결 실패만 1회 (common-web 공통, 최악 약 4.2초) | 빈 목록 (장바구니 조회는 영향 없음, 화면은 최신 상품으로 대신 → [ADR 0029](../decisions/0029-cart-recommendation-latest-fallback-on-screen.md)) |
 | product → OpenSearch | 1초 / 2초, 연결 풀 · 동시 검색 상한 20, 자리 대기 0.2초 | 연결 실패만 1회 | DB LIKE 검색으로 대신 (관련도 · 오타 허용 · 한국어 분석 없음). 응답 없이 멈춰도 최대 약 2초, 상한이 차면 0.2초 뒤 대신 (#574) |
-| product → OpenAI Moderation · Claude Haiku (사진 검수) | 🟨 3초 / 20초 | 비동기 최대 3회 | 자동 통과 · 자동 반려 없이 관리자 확인 |
+| product → OpenAI Moderation · Claude Haiku (사진 검수) | 🟨 3초 / 20초 | 비동기 최대 3회 (4xx는 408 · 429만 재처리) | 자동 통과 · 자동 반려 없이 관리자 확인 |
 | ai → OpenAI 임베딩 (품종 의미 검색 · 🟨 챗봇 질문) | 3초(연결 포함 전체, `custom.species-search.timeout`) | 없음 (Spring AI 기본 3회를 끔) | 품종 의미 검색 503 `SEMANTIC_SEARCH_UNAVAILABLE`, 챗봇 503 `CHATBOT_UNAVAILABLE`. 검색용 모델(`QueryEmbedder`)을 따로 만들어 추천 · 재임베딩과 설정을 나눔 |
 | 🟨 ai → OpenAI 임베딩 (상품 문서, 상품 이벤트) | Spring AI 기본 (따로 설정 안 함) | Spring AI 기본 3회 | 1 · 2 · 4초 Kafka 재시도 후 DLT. 스냅샷은 저장됨, `target=PRODUCT` 재임베딩으로 맞춤 |
 | ai → OpenAI 임베딩 (재임베딩 운영 API) | ⬜ 미정 (따로 설정 안 함) | ⬜ 미정 | ⬜ 미정 |
 | 🟨 ai → Claude Haiku (챗봇 답변) | 10초 | 없음 | 200 고정 문장 + 상품 카드 (`answerGenerated=false`). 최악 임베딩 3초 + Haiku 10초로 Gateway 20초 안 |
 | payment → 토스페이먼츠 | 3초 / 60초 | 없음 | 결과 불명 → `PENDING` 유지, 결제 조회로 `APPROVED`, `FAILED`, `REVIEW_REQUIRED` 중 하나로 확정 → [스케줄러 표](../reference/schedulers.md) |
 | market → 모의 택배사 | 3초 / 5초 | 10초 큐 + 건별 백오프 10초 → 30초 → 1분 고정, **포기 없음** | 배송 `READY` · `CANCEL_PENDING` 유지. 서킷 없음 |
+| market → 모의 택배사 (배송 조회) | 1초 / 2초 | 없음 | 남은 거리 · 지점 · 세부 단계만 null, 응답은 200 (DB 트랜잭션 밖에서 호출). 서킷 없음 |
 | payment → 모의 은행 | 3초 / 5초 | 없음 | 인출 건 `PENDING` 유지 (잔액은 차감된 채로). 서킷 없음 |
 | member → Gmail SMTP | 연결 · 응답 · 쓰기 각 5초 | 없음 (사용자가 재발송) | 메일 전용 실행기에서 비동기 발송(응답은 SMTP를 기다리지 않음). SMTP 실패는 메일 스레드가 그 요청의 예약을 정리하고, 정리가 끝나면 다시 요청 가능. 메일 작업 제출 거절 시에만 가입 · 계좌 변경 `EMAIL_SEND_FAILED` → [메일 발송](../reference/external-apis.md#메일-발송) |
 

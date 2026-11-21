@@ -120,4 +120,32 @@ class SellerOrderDecisionSecurityTest {
 
         verify(orderService, never()).acceptSellerOrder(any(), any());
     }
+
+    @Test
+    @DisplayName("MEMBER 토큰으로 반품 승인, 거절하면 403, 서비스를 부르지 않음 (#383)")
+    void memberCannotDecideReturn() throws Exception {
+        mockMvc.perform(post("/api/v1/orders/items/11/return/approve")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + MEMBER_TOKEN))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/orders/items/11/return/reject")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + MEMBER_TOKEN))
+                .andExpect(status().isForbidden());
+
+        verify(orderService, never()).approveReturn(any(), any());
+        verify(orderService, never()).rejectReturn(any(), any());
+    }
+
+    @Test
+    @DisplayName("SELLER 토큰이면 반품 승인, 거절이 서비스까지 간다 (#383)")
+    void sellerCanDecideReturn() throws Exception {
+        mockMvc.perform(post("/api/v1/orders/items/11/return/approve")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + SELLER_TOKEN))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/orders/items/11/return/reject")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + SELLER_TOKEN))
+                .andExpect(status().isOk());
+
+        verify(orderService).approveReturn(MEMBER_ID, 11L);
+        verify(orderService).rejectReturn(MEMBER_ID, 11L);
+    }
 }

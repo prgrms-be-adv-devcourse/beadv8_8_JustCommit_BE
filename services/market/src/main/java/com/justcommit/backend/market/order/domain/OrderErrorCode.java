@@ -20,6 +20,8 @@ public enum OrderErrorCode implements ErrorCode {
     ORDER_ITEM_NOT_CONFIRMABLE(HttpStatus.CONFLICT, "구매확정할 수 없는 주문 상품입니다."),
     ORDER_ITEM_NOT_CANCELABLE(HttpStatus.CONFLICT, "취소할 수 없는 주문 상품입니다."),
     SHIPMENT_NOT_FOUND(HttpStatus.CONFLICT, "배송 정보를 확인할 수 없습니다."),
+    // 배송 조회(#588): 판매자 수락 전이라 배송이 아직 없음
+    SHIPMENT_TRACKING_NOT_FOUND(HttpStatus.NOT_FOUND, "배송이 아직 시작되지 않았습니다."),
     SHIPMENT_NOT_CANCELABLE(HttpStatus.CONFLICT, "배송이 시작되어 주문 상품을 취소할 수 없습니다."),
     SHIPMENT_NOT_DELIVERED(HttpStatus.CONFLICT, "배송이 완료된 후 구매확정할 수 있습니다."),
     ORDER_NOT_PAYABLE(HttpStatus.CONFLICT, "결제 대기 중인 주문만 결제할 수 있습니다."),
@@ -31,7 +33,8 @@ public enum OrderErrorCode implements ErrorCode {
     INVALID_REJECT_ITEMS(HttpStatus.BAD_REQUEST, "거절할 주문 상품이 이 판매자 주문에 없습니다."),
     RETURN_NOT_REQUESTABLE(HttpStatus.CONFLICT, "반품을 신청할 수 없는 주문 상품입니다."),
     RETURN_PERIOD_EXPIRED(HttpStatus.CONFLICT, "반품 신청 기간이 지났습니다."),
-    RETURN_ALREADY_REQUESTED(HttpStatus.CONFLICT, "이미 반품을 신청한 주문 상품입니다.");
+    RETURN_ALREADY_REQUESTED(HttpStatus.CONFLICT, "이미 반품을 신청한 주문 상품입니다."),
+    RETURN_NOT_DECIDABLE(HttpStatus.CONFLICT, "승인, 거절할 수 있는 반품 신청이 없거나 이미 처리되었습니다.");
 
     private final HttpStatus status;
     private final String message;

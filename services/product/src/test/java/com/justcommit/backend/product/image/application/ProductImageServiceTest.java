@@ -28,7 +28,7 @@ public class ProductImageServiceTest {
 
     private static final String BASE_URL = "https://bucket.example.com";
     private static final Long SELLER_ID = 7L;
-    private static final long MAX_SIZE = 10L * 1024 * 1024;
+    private static final long MAX_SIZE = 7_864_320L;   // 7.5MB (#594)
 
     @Mock
     private ImageUploadUrlIssuer uploadUrlIssuer;
@@ -116,16 +116,16 @@ public class ProductImageServiceTest {
     }
 
     @Test
-    @DisplayName("10MB를 넘으면 INVALID_IMAGE_FILE")
+    @DisplayName("7.5MB를 넘으면 INVALID_IMAGE_FILE (Haiku base64 한도 10MB)")
     void tooLarge() {
         given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
 
         assertInvalidFile(new ImageFile("image/jpeg", MAX_SIZE + 1));
     }
 
-    // 크기가 정확히 10 MB 인 경우->경계가 정확하게 지켜지는지 확인하기 위함. 경계에서 버그가 많이 생겨서 경계 테스트 진행
+    // 크기가 정확히 7.5MB인 경우->경계가 정확하게 지켜지는지 확인하기 위함. 경계에서 버그가 많이 생겨서 경계 테스트 진행
     @Test
-    @DisplayName("정확히 10MB는 허용")
+    @DisplayName("정확히 7.5MB는 허용")
     void exactlyMaxSize() {
         given(memberQuery.isSeller(SELLER_ID)).willReturn(true);
         given(uploadUrlIssuer.issue(anyString(), anyString(), anyLong())).willReturn("https://signed-url");

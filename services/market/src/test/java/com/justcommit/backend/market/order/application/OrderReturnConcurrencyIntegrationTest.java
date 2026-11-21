@@ -1,5 +1,6 @@
 package com.justcommit.backend.market.order.application;
 
+import com.justcommit.backend.market.shipment.application.ShipmentService;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import com.justcommit.backend.market.OrderItemAutoConfirmedEvent;
@@ -55,7 +56,7 @@ import static org.mockito.Mockito.when;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, OrderReturnService.class, OrderItemConfirmationService.class})
+@Import({JpaAuditingConfig.class, OrderReturnService.class, OrderItemConfirmationService.class, SellerOrderCompletion.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class OrderReturnConcurrencyIntegrationTest {
@@ -73,6 +74,7 @@ class OrderReturnConcurrencyIntegrationTest {
     @MockitoBean ShipmentQuery shipmentQuery;
     @MockitoBean SellerOrderEventPublisher sellerOrderEventPublisher;
     @MockitoBean PurchaseConfirmedEventPublisher purchaseConfirmedEventPublisher;
+    @MockitoBean ShipmentService shipmentService;
 
     @Autowired OrderReturnService orderReturnService;
     @Autowired OrderItemConfirmationService confirmationService;

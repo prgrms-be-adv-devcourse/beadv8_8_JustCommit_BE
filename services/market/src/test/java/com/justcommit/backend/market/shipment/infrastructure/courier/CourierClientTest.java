@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
@@ -147,6 +148,52 @@ class CourierClientTest {
         assertThatThrownBy(() -> courierClient.cancelByCourierOrderNo("shipment-20261012-000046",
                 OffsetDateTime.parse("2026-11-17T10:00:00+09:00")))
                 .isInstanceOf(CourierCancelException.class);
+    }
+
+    @Test
+    @DisplayName("화면용 배송 조회는 남은 거리 · 지점 · 세부 단계를 돌려준다")
+    void trackSuccess() {
+        wireMock.stubFor(get(urlEqualTo(BOOKING_PATH + "/byOrderNo/" + COURIER_ORDER_NO))
+                .willReturn(aResponse().withStatus(200).withHeader("Content-Type", "application/json")
+                        .withBody("""
+                                {"status":200,"message":"",
+                                 "data":{"trackingNo":"404000000001","courierOrderNo":"shipment-20261012-000045",
+                                         "status":"NEAR_5KM","remainingDistanceMeters":4321,
+                                         "locationName":"강남우체국","itemSummary":"몬스테라"}}
+                                """)));
+
+        CourierShipmentView view = courierClient.track(COURIER_ORDER_NO).orElseThrow();
+
+        assertThat(view.status()).isEqualTo("NEAR_5KM");
+        assertThat(view.remainingDistanceMeters()).isEqualTo(4321);
+        assertThat(view.locationName()).isEqualTo("강남우체국");
+    }
+
+    @Test
+    @DisplayName("화면용 배송 조회는 택배사 404 · 500이면 예외 없이 빈 값")
+    void trackNotFoundOrServerErrorIsEmpty() {
+        wireMock.stubFor(get(urlEqualTo(BOOKING_PATH + "/byOrderNo/" + COURIER_ORDER_NO))
+                .willReturn(aResponse().withStatus(404)));
+        wireMock.stubFor(get(urlEqualTo(BOOKING_PATH + "/byOrderNo/shipment-20261012-000046"))
+                .willReturn(aResponse().withStatus(500)));
+
+        assertThat(courierClient.track(COURIER_ORDER_NO)).isEmpty();
+        assertThat(courierClient.track("shipment-20261012-000046")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("화면용 배송 조회는 택배사가 2초 넘게 답하지 않으면 기다리지 않고 빈 값")
+    void trackTimeoutIsEmpty() {
+        wireMock.stubFor(get(urlEqualTo(BOOKING_PATH + "/byOrderNo/" + COURIER_ORDER_NO))
+                .willReturn(aResponse().withStatus(200).withFixedDelay(4_000)
+                        .withHeader("Content-Type", "application/json").withBody("{\"status\":200,\"data\":null}")));
+
+        long started = System.nanoTime();
+        assertThat(courierClient.track(COURIER_ORDER_NO)).isEmpty();
+        long elapsedMillis = Duration.ofNanos(System.nanoTime() - started).toMillis();
+
+        // 응답 타임아웃 2초 (예약 · 취소의 5초가 아님)
+        assertThat(elapsedMillis).isBetween(1_500L, 3_500L);
     }
 
     private CourierBookingRequest request() {

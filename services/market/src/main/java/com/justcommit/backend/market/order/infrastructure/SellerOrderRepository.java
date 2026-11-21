@@ -52,11 +52,32 @@ public interface SellerOrderRepository extends JpaRepository<SellerOrder, Long> 
     @Query("update SellerOrder s set s.paidAt = :paidAt, s.updatedAt = :paidAt where s.order.id = :orderId")
     int markPaid(@Param("orderId") Long orderId, @Param("paidAt") LocalDateTime paidAt);
 
+    // 판매 내역 (#599): 결제 완료 이후 주문(PAID · CANCELLED · COMPLETED)만. CANCELLED는 PAID에서만 간다.
+    // 결제 대기 · 처리 중 · 실패 · 만료 · 확인 필요 주문은 판매자에게 보이지 않는다
     @EntityGraph(attributePaths = "order")
-    Page<SellerOrder> findBySellerId(Long sellerId, Pageable pageable);
+    @Query("""
+            select s from SellerOrder s
+             where s.sellerId = :sellerId
+               and s.order.status in (com.justcommit.backend.market.OrderStatus.PAID,
+                                      com.justcommit.backend.market.OrderStatus.CANCELLED,
+                                      com.justcommit.backend.market.OrderStatus.COMPLETED)
+            """)
+    Page<SellerOrder> findBySellerId(@Param("sellerId") Long sellerId, Pageable pageable);
 
+    // 판매 상세 (#599): 목록과 같은 기준. 결제 완료 이후가 아니면 없는 것으로 본다(404)
     @EntityGraph(attributePaths = "order")
-    Optional<SellerOrder> findByIdAndSellerId(Long sellerOrderId, Long sellerId);
+    @Query("""
+            select s from SellerOrder s
+             where s.id = :sellerOrderId and s.sellerId = :sellerId
+               and s.order.status in (com.justcommit.backend.market.OrderStatus.PAID,
+                                      com.justcommit.backend.market.OrderStatus.CANCELLED,
+                                      com.justcommit.backend.market.OrderStatus.COMPLETED)
+            """)
+    Optional<SellerOrder> findByIdAndSellerId(@Param("sellerOrderId") Long sellerOrderId,
+                                              @Param("sellerId") Long sellerId);
+
+    // 판매자 본인 판매자 주문인지 (행을 읽지 않고 확인만). 잠그기 전에 남의 요청을 걸러낸다 (#383)
+    boolean existsByIdAndSellerId(Long sellerOrderId, Long sellerId);
 
     List<SellerOrder> findByOrder_Id(Long orderId);
 

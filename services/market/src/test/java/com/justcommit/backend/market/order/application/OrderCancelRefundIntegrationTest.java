@@ -1,5 +1,8 @@
 package com.justcommit.backend.market.order.application;
 
+import org.mockito.ArgumentCaptor;
+import com.justcommit.backend.market.order.infrastructure.kafka.PurchaseConfirmedEventPublisher;
+import com.justcommit.backend.market.PurchaseConfirmedEvent;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -53,8 +56,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, OrderPaymentTransactions.class, OrderRecoveryService.class,
-        OrderCancelTransactions.class, OrderCancelRefunder.class, ShipmentQueryService.class})
+@Import({JpaAuditingConfig.class, OrderPaymentTransactions.class, OrderRecoveryService.class, OrderReturnRefundTransactions.class, OrderReturnRefunder.class,
+        OrderCancelTransactions.class, OrderCancelRefunder.class, ShipmentQueryService.class, SellerOrderCompletion.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED) // 요청, 선점, 반영이 각자 트랜잭션을 열고 커밋한다
 class OrderCancelRefundIntegrationTest {
@@ -75,6 +78,7 @@ class OrderCancelRefundIntegrationTest {
     @MockitoBean ShipmentService shipmentService;
     @MockitoBean OrderQuery orderQuery;
     @MockitoBean CartService cartService;
+    @MockitoBean PurchaseConfirmedEventPublisher purchaseConfirmedEventPublisher;
 
     @Autowired OrderCancelTransactions cancelTransactions;
     @Autowired OrderCancelRefunder refunder;
@@ -374,6 +378,57 @@ class OrderCancelRefundIntegrationTest {
     }
 
     // OrderService.itemCancel과 같은 순서: 취소 중 커밋 → (트랜잭션 밖) 바로 환불
+    @Test
+    @DisplayName("취소 중인 상품의 환불이 확정되면 판매자 주문 종료 판정: 남은 상품이 구매 확정이면 그때 정산 이벤트를 보내고 주문 완료 (#383 리뷰)")
+    void cancelCompletionSettlesSellerOrder() {
+        Fixture fixture = paidOrder(2);
+        Long cancelled = fixture.itemIds().getFirst();
+        Long confirmed = fixture.itemIds().get(1);
+        when(paymentUseCase.refundCancelledItem(eq(cancelled), eq(fixture.orderId()), eq(BUYER_ID), any()))
+                .thenReturn(RefundOutcome.unknown("TIMEOUT"), RefundOutcome.refunded());
+        itemCancel(cancelled);
+        // 환불 결과를 기다리는 동안 남은 상품이 구매 확정됨. 그때는 취소 중 상품 때문에 정산하지 않았다
+        jdbcTemplate.update("update orders_item set status = 'CONFIRMED' where id = ?", confirmed);
+
+        passGrace(cancelled);
+        recoveryService.recoverProcessingRefunds();
+
+        assertThat(item(cancelled)).containsEntry("status", "CANCELLED");
+        ArgumentCaptor<PurchaseConfirmedEvent> event = ArgumentCaptor.forClass(PurchaseConfirmedEvent.class);
+        verify(purchaseConfirmedEventPublisher).publishAfterCommit(event.capture());
+        assertThat(event.getValue().sellerOrderId()).isEqualTo(fixture.sellerOrderId());
+        assertThat(event.getValue().saleAmount()).isEqualByComparingTo(PRICE); // 취소된 상품은 빠짐
+        assertThat(jdbcTemplate.queryForObject("select confirmed_at from seller_order where id = ?",
+                LocalDateTime.class, fixture.sellerOrderId())).isNotNull();
+        assertThat(orderStatus(fixture.orderId())).isEqualTo("COMPLETED");
+    }
+
+    @Test
+    @DisplayName("다른 판매자 주문이 먼저 끝났어도, 마지막 취소 중 상품의 환불이 확정되면 주문이 PAID에 남지 않고 완료 (#383 리뷰)")
+    void cancelCompletionCompletesOrderAfterOtherSellerOrderFinished() {
+        Fixture fixture = paidOrder(2);
+        Long cancelled = fixture.itemIds().getFirst();
+        when(paymentUseCase.refundCancelledItem(eq(cancelled), eq(fixture.orderId()), eq(BUYER_ID), any()))
+                .thenReturn(RefundOutcome.unknown("TIMEOUT"), RefundOutcome.refunded());
+        itemCancel(cancelled);
+        jdbcTemplate.update("update orders_item set status = 'CONFIRMED' where id = ?", fixture.itemIds().get(1));
+        // 같은 주문의 다른 판매자 주문은 이미 구매 확정으로 끝나 정산까지 됨
+        Long otherSellerOrderId = jdbcTemplate.queryForObject("""
+                insert into seller_order (order_id, seller_id, total_amount, settlement_base_amount, shipping_fee,
+                                          confirmed_at, created_at, updated_at)
+                values (?, 30, 5000, 5000, 3000, now(), now(), now()) returning id""", Long.class, fixture.orderId());
+        jdbcTemplate.update("""
+                insert into orders_item (seller_order_id, product_id, product_name, price, status, attempt_count,
+                                         created_at, updated_at)
+                values (?, 900, '다른 판매자 상품', 5000, 'CONFIRMED', 0, now(), now())""", otherSellerOrderId);
+
+        passGrace(cancelled);
+        recoveryService.recoverProcessingRefunds();
+
+        verify(purchaseConfirmedEventPublisher, times(1)).publishAfterCommit(any()); // 이 판매자 주문만, 다른 판매자 주문은 다시 보내지 않음
+        assertThat(orderStatus(fixture.orderId())).isEqualTo("COMPLETED");
+    }
+
     private void itemCancel(Long itemId) {
         cancelTransactions.requestItemCancel(BUYER_ID, itemId).ifPresent(claim -> refunder.refund(List.of(claim)));
     }

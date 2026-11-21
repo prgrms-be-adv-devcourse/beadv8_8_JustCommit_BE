@@ -1,6 +1,13 @@
 package com.justcommit.backend.product.review.infrastructure;
 
+import com.anthropic.client.AnthropicClient;
+import com.anthropic.core.JsonValue;
+import com.anthropic.core.http.Headers;
+import com.anthropic.errors.AnthropicServiceException;
+import com.anthropic.errors.BadRequestException;
+import com.anthropic.errors.InternalServerException;
 import com.anthropic.models.messages.OutputConfig;
+import com.anthropic.models.messages.StructuredMessageCreateParams;
 import com.justcommit.backend.product.image.application.ImageData;
 import com.justcommit.backend.product.review.application.ReviewEngineException;
 import com.justcommit.backend.product.review.domain.PlantIdentification;
@@ -14,6 +21,10 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
+import static org.mockito.Mockito.mock;
 
 // 실제 API는 부르지 않음 (요청 모양 · 응답 변환 · 키 없음만)
 class HaikuPlantIdentifierTest {
@@ -74,5 +85,34 @@ class HaikuPlantIdentifierTest {
     void missingSaleForm() {
         assertThatThrownBy(() -> HaikuPlantIdentifier.toDomain(new Answer(true, null, List.of())))
                 .isInstanceOf(ReviewEngineException.class);
+    }
+
+    @Test
+    @DisplayName("#594 4xx(예: 사진이 base64 10MB 한도를 넘어 400)는 재처리하지 않는 ReviewEngineException")
+    void clientErrorIsNotRetryable() {
+        AnthropicServiceException badRequest = BadRequestException.builder()
+                .headers(Headers.builder().build()).body(JsonValue.from(java.util.Map.of())).build();
+
+        assertThatThrownBy(() -> identifierThrowing(badRequest).identify(images, List.of()))
+                .isInstanceOfSatisfying(ReviewEngineException.class, e -> {
+                    assertThat(e.isRetryable()).isFalse();
+                    assertThat(e.getMessage()).contains("400");
+                });
+    }
+
+    @Test
+    @DisplayName("#594 5xx는 SDK 재시도 후에도 실패하면 엔진 오류 재처리 대상")
+    void serverErrorIsRetryable() {
+        AnthropicServiceException serverError = InternalServerException.builder()
+                .statusCode(500).headers(Headers.builder().build()).body(JsonValue.from(java.util.Map.of())).build();
+
+        assertThatThrownBy(() -> identifierThrowing(serverError).identify(images, List.of()))
+                .isInstanceOfSatisfying(ReviewEngineException.class, e -> assertThat(e.isRetryable()).isTrue());
+    }
+
+    private static HaikuPlantIdentifier identifierThrowing(RuntimeException error) {
+        AnthropicClient client = mock(AnthropicClient.class, RETURNS_DEEP_STUBS);
+        given(client.messages().create(any(StructuredMessageCreateParams.class))).willThrow(error);
+        return new HaikuPlantIdentifier(client);
     }
 }

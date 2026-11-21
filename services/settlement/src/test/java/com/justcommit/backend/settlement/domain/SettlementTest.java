@@ -79,9 +79,62 @@ class SettlementTest {
                             assertThat(e.getErrorCode()).isEqualTo(SettlementErrorCode.INVALID_SELLER_BURDEN_AMOUNT));
         }
 
+        @Test
+        @DisplayName("구매 확정 정산은 판매액이 0이면 여전히 거절한다 (전부 반품은 createReturnedSettlement로만)")
+        void rejectsZeroSaleAmount() {
+            assertThatThrownBy(() -> withBurden("0", "0"))
+                    .isInstanceOfSatisfying(BusinessException.class, e ->
+                            assertThat(e.getErrorCode()).isEqualTo(SettlementErrorCode.INVALID_AMOUNT));
+        }
+
         private static Settlement withBurden(String saleAmount, String sellerBurdenAmount) {
             return Settlement.createSettlement(10L, 7L, new BigDecimal(saleAmount), new BigDecimal("3000"),
                     new BigDecimal(sellerBurdenAmount), REQUESTED_AT, "몬스테라");
+        }
+    }
+
+    @Nested
+    @DisplayName("전부 반품 정산")
+    class ReturnedSettlement {
+
+        @Test
+        @DisplayName("판매액, 수수료, 배송비는 0이고 정산금은 -부담금인 PENDING 정산을 요청 시각부터 지급 대상으로 만든다")
+        void createsNegativeSettlement() {
+            Settlement settlement = Settlement.createReturnedSettlement(10L, 7L, new BigDecimal("9000"),
+                    REQUESTED_AT, "몬스테라 외 1건");
+
+            assertThat(settlement.getSaleAmount()).isEqualByComparingTo("0");
+            assertThat(settlement.getFee()).isEqualByComparingTo("0");
+            assertThat(settlement.getShippingFee()).isEqualByComparingTo("0");
+            assertThat(settlement.getSellerBurdenAmount()).isEqualByComparingTo("9000");
+            assertThat(settlement.getPayoutAmount()).isEqualByComparingTo("-9000");
+            assertThat(settlement.getStatus()).isEqualTo(SettlementStatus.PENDING);
+            assertThat(settlement.getAttemptCount()).isZero();
+            assertThat(settlement.getNextAttemptAt()).isEqualTo(REQUESTED_AT);
+            assertThat(settlement.getItemSummary()).isEqualTo("몬스테라 외 1건");
+        }
+
+        @Test
+        @DisplayName("배송비가 0원인 판매자 주문이라 부담금이 0이면 정산금 0인 정산을 만든다")
+        void zeroBurdenMakesZeroPayout() {
+            Settlement settlement = Settlement.createReturnedSettlement(10L, 7L, BigDecimal.ZERO,
+                    REQUESTED_AT, "몬스테라");
+
+            assertThat(settlement.getSellerBurdenAmount()).isEqualByComparingTo("0");
+            assertThat(settlement.getPayoutAmount()).isEqualByComparingTo("0");
+            assertThat(settlement.getStatus()).isEqualTo(SettlementStatus.PENDING);
+        }
+
+        @Test
+        @DisplayName("부담금이 음수나 null이면 거절한다")
+        void rejectsInvalidBurden() {
+            assertThatThrownBy(() -> Settlement.createReturnedSettlement(10L, 7L, new BigDecimal("-1"),
+                    REQUESTED_AT, "몬스테라"))
+                    .isInstanceOfSatisfying(BusinessException.class, e ->
+                            assertThat(e.getErrorCode()).isEqualTo(SettlementErrorCode.INVALID_SELLER_BURDEN_AMOUNT));
+            assertThatThrownBy(() -> Settlement.createReturnedSettlement(10L, 7L, null, REQUESTED_AT, "몬스테라"))
+                    .isInstanceOfSatisfying(BusinessException.class, e ->
+                            assertThat(e.getErrorCode()).isEqualTo(SettlementErrorCode.INVALID_SELLER_BURDEN_AMOUNT));
         }
     }
 

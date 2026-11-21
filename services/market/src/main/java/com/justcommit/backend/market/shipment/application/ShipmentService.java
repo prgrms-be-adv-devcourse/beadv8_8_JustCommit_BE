@@ -52,6 +52,14 @@ public class ShipmentService {
         shipmentRepository.save(shipment);
     }
 
+    // 반품 승인 트랜잭션 안에서 호출된다 (#383). createShipment처럼 배송 행(READY + courierOrderNo)만 만들고
+    // 택배사는 부르지 않는다. 예약은 예약 큐가 맡는다. 반품 승인이 반품 신청과 연결할 배송 ID를 돌려준다
+    public Long createReturnShipment(Long sellerOrderId, String itemSummary) {
+        Shipment shipment = shipmentRepository.save(Shipment.returnOf(sellerOrderId, itemSummary));
+        shipment.assignCourierOrderNo(LocalDate.now());
+        return shipmentRepository.save(shipment).getId();
+    }
+
     // 예약 큐: 시도할 때가 된 READY 배송을 한 건씩 확보해 예약한다. 한 번 실행에 최대 BOOKING_BATCH_SIZE건.
     // 한 건씩 짧은 트랜잭션으로 집고(잠금 + 30초 임대) 바로 커밋한 뒤, 트랜잭션 밖에서 택배사를 부른다.
     // 택배사를 기다리는 동안 DB 커넥션을 잡지 않는다 (#351 커넥션 교착의 원인).
@@ -166,17 +174,19 @@ public class ShipmentService {
         shipmentRepository.save(shipment);
     }
 
+    // 가는 길: 판매자 기본 배송지 → 주문 배송지. 반품(#383): 주문 배송지(구매자) → 판매자 기본 배송지
     private CourierBookingRequest bookingRequest(Shipment shipment, OrderShippingInfo orderInfo) {
         MemberAddress seller = memberQuery.getDefaultAddress(orderInfo.sellerId());
-        return new CourierBookingRequest(
-                new CourierBookingRequest.Party(seller.recipientName(),
-                        seller.recipientPhone(),
-                        fullAddress(seller.address1(), seller.address2())),
-                new CourierBookingRequest.Party(orderInfo.recipientName(),
-                        orderInfo.recipientPhone(),
-                        fullAddress(orderInfo.address1(), orderInfo.address2())),
-                shipment.getItemSummary()
-        );
+        CourierBookingRequest.Party sellerParty = new CourierBookingRequest.Party(seller.recipientName(),
+                seller.recipientPhone(),
+                fullAddress(seller.address1(), seller.address2()));
+        CourierBookingRequest.Party buyerParty = new CourierBookingRequest.Party(orderInfo.recipientName(),
+                orderInfo.recipientPhone(),
+                fullAddress(orderInfo.address1(), orderInfo.address2()));
+        if (shipment.isReturn()) {
+            return new CourierBookingRequest(buyerParty, sellerParty, shipment.getItemSummary());
+        }
+        return new CourierBookingRequest(sellerParty, buyerParty, shipment.getItemSummary());
     }
 
     private String itemSummary(List<String> productNames) {
