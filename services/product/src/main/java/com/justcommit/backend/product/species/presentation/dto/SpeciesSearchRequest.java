@@ -2,7 +2,6 @@ package com.justcommit.backend.product.species.presentation.dto;
 
 import com.justcommit.backend.common.request.PagingRequest;
 import com.justcommit.backend.product.species.domain.enums.SpeciesCategory;
-import org.springframework.data.domain.Sort;
 
 public record SpeciesSearchRequest(
         String keyword,
@@ -25,8 +24,6 @@ public record SpeciesSearchRequest(
         return SPECIES_PAGE_SIZE;
     }
 
-    @Override
-    public Sort defaultSort() {
-        return Sort.by(Sort.Direction.ASC, "name");
-    }
+    // 정렬(가나다순, 「기타」는 맨 뒤)은 SpeciesSpecifications.searchCondition이 정한다.
+    // 여기서 Sort를 주면 Spring Data가 그 정렬로 덮어쓰므로 defaultSort()는 두지 않는다
 }

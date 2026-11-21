@@ -15,7 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
-import org.springframework.data.domain.Sort;
+import com.justcommit.backend.product.species.presentation.dto.SpeciesSearchRequest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -105,9 +105,50 @@ class SpeciesSpecificationsTest {
         assertThat(search("돈나무", SpeciesCategory.SUCCULENT)).isEmpty();
     }
 
+    @Test
+    @DisplayName("키워드 없이 찾으면 글자 수와 상관없이 가나다순")
+    void koreanOrderWithoutKeyword() {
+        species("호야", null, SpeciesCategory.FOLIAGE);
+        species("개운죽", null, SpeciesCategory.FOLIAGE);
+        species("남천", null, SpeciesCategory.FOLIAGE);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(search(null, null)).containsExactly(
+                "개운죽", "금전수", "남천", "돈나무", "드라세나 '자바'", "톨미아", "호야");
+    }
+
+    @Test
+    @DisplayName("「기타」는 가나다순과 상관없이 맨 뒤")
+    void otherSpeciesLast() {
+        insertOtherSpecies();
+
+        assertThat(search(null, null)).containsExactly(
+                "금전수", "돈나무", "드라세나 '자바'", "톨미아", "기타");
+    }
+
+    @Test
+    @DisplayName("목록 API 페이지 요청(sort 없음)에서도 가나다순 · 「기타」 맨 뒤 정렬이 유지됨")
+    void orderKeptWithPageRequest() {
+        insertOtherSpecies();
+        SpeciesSearchRequest request = new SpeciesSearchRequest(null, null, null, null);
+
+        List<String> names = speciesRepository.findAll(
+                        SpeciesSpecifications.searchCondition(null, null), request.toPageable())
+                .map(Species::getName).getContent();
+
+        assertThat(names).containsExactly("금전수", "돈나무", "드라세나 '자바'", "톨미아", "기타");
+    }
+
+    private void insertOtherSpecies() {
+        entityManager.createNativeQuery(
+                        "INSERT INTO species (id, name, created_at, updated_at) VALUES (:id, '기타', now(), now())")
+                .setParameter("id", Species.OTHER_ID)
+                .executeUpdate();
+    }
+
     private List<String> search(String keyword, SpeciesCategory category) {
-        return speciesRepository.findAll(
-                        SpeciesSpecifications.searchCondition(keyword, category), Sort.by("name"))
+        return speciesRepository.findAll(SpeciesSpecifications.searchCondition(keyword, category))
                 .stream().map(Species::getName).toList();
     }
 
