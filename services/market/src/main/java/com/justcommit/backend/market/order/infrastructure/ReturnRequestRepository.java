@@ -1,5 +1,6 @@
 package com.justcommit.backend.market.order.infrastructure;
 
+import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.order.domain.ReturnRequest;
 import com.justcommit.backend.market.order.domain.ReturnRequestStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -34,6 +35,21 @@ public interface ReturnRequestRepository extends JpaRepository<ReturnRequest, Lo
     List<Long> findAutoApproveCandidateIds(@Param("requested") ReturnRequestStatus requested,
                                            @Param("requestedBefore") LocalDateTime requestedBefore,
                                            @Param("limit") int limit);
+
+    // 반품 도착 처리 후보 (#384): 승인됐고 반품 배송이 연결됐으며 주문상품이 아직 반품 배송 중인 반품 신청, 오래된 신청부터.
+    // 주문상품 상태로 걸러, 이미 도착 처리된 건(환불 중, 확인 필요)이 다시 집혀 새 도착을 밀어내지 않게 한다.
+    // 잠그지 않는다. 잠금은 건마다 OrderReturnRefundTransactions.markArrived에서 주문 → 판매자 주문 순으로 한다
+    @Query("""
+            select r from ReturnRequest r, OrdersItem i
+             where i.id = r.orderItemId
+               and r.status = :approved and r.shipmentId is not null
+               and i.status = :inTransit
+             order by r.id asc
+             limit :limit
+            """)
+    List<ReturnRequest> findArrivalCandidates(@Param("approved") ReturnRequestStatus approved,
+                                              @Param("inTransit") OrderItemStatus inTransit,
+                                              @Param("limit") int limit);
 
     // 판매자 주문의 반품 배송비 합 (판매자 부담금). 해당 상태의 반품이 없으면 0
     @Query("""
