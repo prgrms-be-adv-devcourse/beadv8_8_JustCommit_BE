@@ -160,7 +160,8 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | POST | `cart/items` | 담기 | 로그인 |
 | DELETE | `cart/items/{productId}` | 빼기 | 로그인 |
 | GET | `cart/recommendations` | 장바구니 추천 | 로그인 |
-| POST | `orders/cart` | 장바구니 주문 | 로그인 |
+| GET | `orders/shippingFees?zipcode&sellerIds` | 배송비 미리 계산 (주문서에서 배송지를 고를 때): 응답 `region`(`GENERAL` · `JEJU` · `REMOTE`) · `regionLabel`(일반 · 제주 · 도서산간) · `sellers[{sellerId, fee, baseFee, extraFee}]`(`fee` = `baseFee` + `extraFee`, 배송비는 우편번호로만 정해져 판매자마다 같음, 같은 판매자는 한 번). 주문 생성과 같은 계산(가장 높은 버전 요금표, 없으면 일반 · 3,000원)이고 택배사를 부르지 않음. `zipcode` · `sellerIds`가 없으면 400 | 로그인 |
+| POST | `orders/cart` | 장바구니 주문. `expectedShippingFee`(선택, 주문서에 보여 준 판매자 주문 1건의 배송비)가 서버 계산과 다르면 409 `SHIPPING_FEE_CHANGED`, 주문 안 만듦 | 로그인 |
 | POST | `orders/{id}/pay` | 결제 | 로그인 |
 | POST | `orders/{id}/cancel` | 전체 취소 | 로그인 |
 | POST | `orders/items/{id}/cancel` | 상품 취소 | 로그인 |
