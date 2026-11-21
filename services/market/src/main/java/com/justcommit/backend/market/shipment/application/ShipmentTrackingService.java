@@ -36,6 +36,14 @@ public class ShipmentTrackingService implements ShipmentTrackingQuery {
                 .map(this::withCourierView);
     }
 
+    // 반품 배송 (#617): 예약 때 보내는 쪽이 구매자라, 수거 전 남은 거리는 기사님 → 구매자다
+    @Override
+    public Optional<ShipmentTracking> trackReturn(Long shipmentId) {
+        return shipmentRepository.findById(shipmentId)
+                .filter(Shipment::isReturn)
+                .map(this::withCourierView);
+    }
+
     private ShipmentTracking withCourierView(Shipment shipment) {
         Optional<CourierShipmentView> view = Optional.empty();
         LocalDateTime checkedAt = null;

@@ -107,6 +107,65 @@ class ShipmentTrackingControllerTest {
         verify(trackingService, never()).buyerShipment(anyLong(), anyLong(), anyLong());
     }
 
+    // ---- 반품 택배 (#617) ----
+
+    @Test
+    @DisplayName("구매자 반품 택배 조회: 주문상품 id와 기사님 거리 · 지점을 돌려준다")
+    void buyerReturnShipment() throws Exception {
+        login(10L);
+        when(trackingService.buyerReturnShipment(10L, 7L, 70L)).thenReturn(new ShipmentTracking("BOOKED", "404000000004",
+                BOOKED_AT, null, null, null, null, "NEAR_2KM", 1500, "서초우체국", BOOKED_AT.plusMinutes(5)));
+
+        mockMvc.perform(get("/api/v1/orders/7/items/70/returnShipment"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.orderItemId").value(70))
+                .andExpect(jsonPath("$.status").value("BOOKED"))
+                .andExpect(jsonPath("$.trackingNo").value("404000000004"))
+                .andExpect(jsonPath("$.bookedAt").value("2026-11-20T10:00:00"))
+                .andExpect(jsonPath("$.courierStatus").value("NEAR_2KM"))
+                .andExpect(jsonPath("$.driverDistanceKm").value(1.5))
+                .andExpect(jsonPath("$.locationName").value("서초우체국"))
+                .andExpect(jsonPath("$.driverCheckedAt").value("2026-11-20T10:05:00"));
+    }
+
+    @Test
+    @DisplayName("판매자 반품 택배 조회: 택배사 조회가 실패해도 200, 택배사 칸만 null")
+    void sellerReturnShipmentWithoutCourierView() throws Exception {
+        login(20L);
+        when(trackingService.sellerReturnShipment(20L, 8L, 80L)).thenReturn(new ShipmentTracking("IN_TRANSIT",
+                "404000000006", BOOKED_AT, BOOKED_AT.plusHours(1), BOOKED_AT.plusHours(2), null, null,
+                null, null, null, null));
+
+        mockMvc.perform(get("/api/v1/orders/seller/8/items/80/returnShipment"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.orderItemId").value(80))
+                .andExpect(jsonPath("$.status").value("IN_TRANSIT"))
+                .andExpect(jsonPath("$.inTransitAt").value("2026-11-20T12:00:00"))
+                .andExpect(jsonPath("$.driverDistanceKm").isEmpty())
+                .andExpect(jsonPath("$.locationName").isEmpty())
+                .andExpect(jsonPath("$.driverCheckedAt").isEmpty());
+    }
+
+    @Test
+    @DisplayName("반품 택배가 없으면 404 SHIPMENT_TRACKING_NOT_FOUND")
+    void noReturnShipment() throws Exception {
+        login(10L);
+        when(trackingService.buyerReturnShipment(10L, 7L, 70L))
+                .thenThrow(new BusinessException(OrderErrorCode.SHIPMENT_TRACKING_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/orders/7/items/70/returnShipment"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("SHIPMENT_TRACKING_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("반품 택배 조회도 로그인하지 않으면 401, 서비스를 부르지 않는다")
+    void returnShipmentRequiresLogin() throws Exception {
+        mockMvc.perform(get("/api/v1/orders/seller/8/items/80/returnShipment"))
+                .andExpect(status().isUnauthorized());
+        verify(trackingService, never()).sellerReturnShipment(anyLong(), anyLong(), anyLong());
+    }
+
     private void login(Long memberId) {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(new AuthMember(memberId, "MEMBER"), null, List.of()));
