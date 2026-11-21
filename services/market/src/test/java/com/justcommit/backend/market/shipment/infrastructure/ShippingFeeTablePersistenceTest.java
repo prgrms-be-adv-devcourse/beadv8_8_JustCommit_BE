@@ -3,7 +3,9 @@ package com.justcommit.backend.market.shipment.infrastructure;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import com.justcommit.backend.market.config.JpaAuditingConfig;
 import com.justcommit.backend.market.shipment.application.ShippingFeeTableService;
+import com.justcommit.backend.market.shipment.application.ShippingFeeQuote;
 import com.justcommit.backend.market.shipment.domain.ShippingFeeTable;
+import com.justcommit.backend.market.shipment.domain.ShippingRegion;
 import com.justcommit.backend.market.shipment.domain.ZipcodeRange;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShippingFeeTableRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -107,6 +109,31 @@ class ShippingFeeTablePersistenceTest {
 
         assertThat(shippingFeeTableService.feeFor("06236")).isEqualByComparingTo("4000");
         assertThat(shippingFeeTableService.feeFor("40200")).isEqualByComparingTo("9000");
+    }
+
+    @Test
+    @DisplayName("미리 계산(quote)은 일반 · 제주 · 도서산간을 기본 + 할증으로 나눠 주고, 합계는 주문 생성(feeFor) 값과 같다")
+    void quoteMatchesOrderFee() {
+        shippingFeeTableService.save(table(1, 3_000));
+
+        assertQuote("06236", ShippingRegion.GENERAL, 3_000, 0);
+        assertQuote("63100", ShippingRegion.JEJU, 3_000, 3_000);
+        assertQuote("40200", ShippingRegion.REMOTE, 3_000, 5_000);
+        assertQuote("63000", ShippingRegion.REMOTE, 3_000, 5_000);
+    }
+
+    @Test
+    @DisplayName("요금표를 아직 못 받았으면 미리 계산도 일반 · 기본 3,000원 · 할증 0")
+    void quoteWithoutTable() {
+        assertQuote("63100", ShippingRegion.GENERAL, 3_000, 0);
+    }
+
+    private void assertQuote(String zipcode, ShippingRegion region, long baseFee, long extraFee) {
+        ShippingFeeQuote quote = shippingFeeTableService.quote(zipcode);
+        assertThat(quote.region()).isEqualTo(region);
+        assertThat(quote.baseFee()).isEqualByComparingTo(BigDecimal.valueOf(baseFee));
+        assertThat(quote.extraFee()).isEqualByComparingTo(BigDecimal.valueOf(extraFee));
+        assertThat(quote.fee()).isEqualByComparingTo(shippingFeeTableService.feeFor(zipcode));
     }
 
     private static ShippingFeeTable table(int version, long baseFee) {
