@@ -151,6 +151,55 @@ class OrderReadServiceTest {
     }
 
     @Test
+    @DisplayName("구매자 상세: 주문상품마다 반품 사유, 설명, 반품 송장번호와 단계 시각, 반품 신청 없는 상품은 null (#606)")
+    void buyerDetailShowsReturnTimelinePerItem() {
+        Orders order = order(10L);
+        order.paid();
+        SellerOrder sellerOrder = sellerOrderWith(order, OrderItemStatus.RETURNED, OrderItemStatus.NORMAL);
+        List<OrdersItem> items = sellerOrder.getItems();
+        LocalDateTime requestedAt = LocalDateTime.of(2026, 11, 17, 9, 0);
+        ReturnRequest completed = new ReturnRequest(items.get(0).getId(), 7L, ReturnReason.DAMAGED, "잎이 찢어졌어요",
+                requestedAt);
+        completed.approve(ReturnDecidedBy.SELLER, requestedAt.plusHours(3), new BigDecimal("3000"), 50L);
+        completed.complete();
+        LocalDateTime completedAt = LocalDateTime.of(2026, 11, 20, 15, 0);
+        ReflectionTestUtils.setField(completed, "updatedAt", completedAt);
+        LocalDateTime arrivedAt = LocalDateTime.of(2026, 11, 19, 11, 0);
+        when(ordersRepository.findByIdAndBuyerId(9L, 10L)).thenReturn(Optional.of(order));
+        when(sellerOrderRepository.findByOrder_Id(9L)).thenReturn(List.of(sellerOrder));
+        when(ordersItemRepository.findBySellerOrderIds(List.of(7L))).thenReturn(items);
+        when(shipmentQuery.findBySellerOrderIds(List.of(7L))).thenReturn(Map.of(
+                7L, new ShipmentResult(30L, "DELIVERED", LocalDateTime.of(2026, 11, 15, 13, 0))));
+        when(returnRequestRepository.findBySellerOrderIdIn(List.of(7L))).thenReturn(List.of(completed));
+        when(shipmentQuery.findByShipmentIds(List.of(50L))).thenReturn(Map.of(50L,
+                new ShipmentResult(50L, "DELIVERED", arrivedAt, "404000000050", null,
+                        LocalDateTime.of(2026, 11, 18, 10, 0), LocalDateTime.of(2026, 11, 18, 14, 0))));
+
+        var response = orderReadService.buyerOrder(10L, 9L);
+
+        var returnedItem = response.sellerOrders().getFirst().items().get(0);
+        assertThat(returnedItem.status()).isEqualTo(OrderItemStatus.RETURNED);
+        assertThat(returnedItem.returnReason()).isEqualTo(ReturnReason.DAMAGED);
+        assertThat(returnedItem.returnDetail()).isEqualTo("잎이 찢어졌어요");
+        assertThat(returnedItem.returnRequestedAt()).isEqualTo(requestedAt);
+        assertThat(returnedItem.returnDeadlineAt()).isNull();
+        assertThat(returnedItem.returnDecidedAt()).isEqualTo(requestedAt.plusHours(3));
+        assertThat(returnedItem.returnShipmentStatus()).isEqualTo("DELIVERED");
+        assertThat(returnedItem.returnTrackingNo()).isEqualTo("404000000050");
+        assertThat(returnedItem.returnPickedUpAt()).isEqualTo(LocalDateTime.of(2026, 11, 18, 10, 0));
+        assertThat(returnedItem.returnInTransitAt()).isEqualTo(LocalDateTime.of(2026, 11, 18, 14, 0));
+        assertThat(returnedItem.returnArrivedAt()).isEqualTo(arrivedAt);
+        assertThat(returnedItem.returnedAt()).isEqualTo(completedAt);
+        assertThat(returnedItem.purchaseConfirmable()).isFalse();
+        var plainItem = response.sellerOrders().getFirst().items().get(1);
+        assertThat(plainItem.returnReason()).isNull();
+        assertThat(plainItem.returnRequestedAt()).isNull();
+        assertThat(plainItem.returnShipmentStatus()).isNull();
+        assertThat(plainItem.returnedAt()).isNull();
+        assertThat(plainItem.purchaseConfirmable()).isTrue();
+    }
+
+    @Test
     void cancelledItemIsNotConfirmableEvenAfterDelivery() {
         Orders order = order(10L);
         order.paid();

@@ -90,11 +90,12 @@ public class OrderReadService implements OrderQuery {
         List<Long> sellerOrderIds = sellerOrderEntities.stream().map(SellerOrder::getId).toList();
         Map<Long, List<OrdersItemResult>> items = itemsBySellerOrder(sellerOrderIds);
         Map<Long, ShipmentResult> shipments = shipmentsBySellerOrder(sellerOrderIds);
+        Map<Long, ReturnTimeline> returns = returnTimelinesByItem(sellerOrderIds);
         Map<Long, String> thumbnails = thumbnailsByProduct(items.values().stream()
                 .flatMap(List::stream).map(OrdersItemResult::productId).toList());
         List<OrderDetailResponse.SellerOrderDetail> sellerOrders = sellerOrderEntities.stream()
                 .map(sellerOrder -> toBuyerDetail(toResult(sellerOrder, items, shipments), order.getStatus(),
-                        shipments.get(sellerOrder.getId()), thumbnails))
+                        shipments.get(sellerOrder.getId()), thumbnails, returns))
                 .toList();
         return new OrderDetailResponse(order.getId(), order.getOrderNo(), order.getTotalAmount(),
                 order.getItemCount(), order.getStatus(), order.getCreatedAt(), order.getRecipientName(),
@@ -314,13 +315,13 @@ public class OrderReadService implements OrderQuery {
     }
 
     private OrderDetailResponse.SellerOrderDetail toBuyerDetail(SellerOrderResult seller, OrderStatus orderStatus,
-                                                                ShipmentResult shipment, Map<Long, String> thumbnails) {
+                                                                ShipmentResult shipment, Map<Long, String> thumbnails,
+                                                                Map<Long, ReturnTimeline> returns) {
         boolean delivered = "DELIVERED".equals(seller.shipmentStatus());
         List<OrderDetailResponse.OrderItemDetail> items = seller.items().stream()
-                .map(item -> new OrderDetailResponse.OrderItemDetail(item.id(), item.productId(),
-                        item.productName(), item.price(), item.status(),
+                .map(item -> OrderDetailResponse.OrderItemDetail.of(item,
                         orderStatus == OrderStatus.PAID && delivered && item.status() == OrderItemStatus.NORMAL,
-                        thumbnails.get(item.productId())))
+                        thumbnails.get(item.productId()), returns.get(item.id())))
                 .toList();
         return new OrderDetailResponse.SellerOrderDetail(seller.id(), seller.sellerId(), items,
                 seller.totalAmount(), seller.confirmedAt(), seller.shippingFee(), seller.shipmentId(),

@@ -6,6 +6,7 @@ import com.justcommit.backend.common.security.AuthMember;
 import com.justcommit.backend.common.response.PagingResponse;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.OrderItemStatus;
+import com.justcommit.backend.market.OrdersItemResult;
 import com.justcommit.backend.market.ReturnReason;
 import com.justcommit.backend.market.order.application.OrderReadService;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
@@ -199,8 +200,9 @@ class OrderControllerTest {
                         OrderStatus.PAID, LocalDateTime.of(2026, 10, 9, 12, 0), "구매자",
                         "01012345678", "12345", "서울시", null,
                         List.of(new OrderDetailResponse.SellerOrderDetail(7L, 20L,
-                                List.of(new OrderDetailResponse.OrderItemDetail(5L, 101L, "몬스테라",
-                                        new BigDecimal("10000"), OrderItemStatus.NORMAL, true, "https://img/monstera.jpg")),
+                                List.of(OrderDetailResponse.OrderItemDetail.of(new OrdersItemResult(5L, 101L, "몬스테라",
+                                        new BigDecimal("10000"), OrderItemStatus.NORMAL), true,
+                                        "https://img/monstera.jpg", null)),
                                 new BigDecimal("10000"), null, new BigDecimal("3000"),
                                 30L, "DELIVERED", LocalDateTime.of(2026, 10, 12, 10, 0),
                                 LocalDateTime.of(2026, 10, 12, 10, 3), LocalDateTime.of(2026, 10, 12, 10, 5),
