@@ -16,6 +16,7 @@ import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.presentation.OrderListRequest;
+import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.market.client.product.ProductQuery;
 import com.justcommit.backend.market.client.product.ProductResult;
 import com.justcommit.backend.market.client.product.ProductStatus;
@@ -54,6 +55,7 @@ class OrderReadServiceTest {
     @Mock OrdersRepository ordersRepository;
     @Mock SellerOrderRepository sellerOrderRepository;
     @Mock OrdersItemRepository ordersItemRepository;
+    @Mock MemberQuery memberQuery;
     @Mock ShipmentQuery shipmentQuery;
     @Mock SettlementQuery settlementQuery;
     @Mock ProductQuery productQuery;
@@ -221,10 +223,13 @@ class OrderReadServiceTest {
 
         when(settlementQuery.getSettlement(7L)).thenReturn(SellerOrderSettlement.of(null));
         when(productQuery.getProducts(List.of(101L))).thenReturn(List.of(product(101L, "https://img/monstera.jpg")));
+        when(memberQuery.getNicknames(List.of(10L))).thenReturn(Map.of(10L, "초록손"));
 
         var response = orderReadService.sellerOrder(20L, 7L);
 
         assertThat(response.orderId()).isEqualTo(9L);
+        assertThat(response.buyerNickname()).isEqualTo("초록손"); // 주문의 구매자(10L) 닉네임 (#599)
+        assertThat(response.recipientName()).isEqualTo("구매자"); // 받는 사람 이름은 그대로 따로
         assertThat(response.totalAmount()).isEqualByComparingTo("10000");
         assertThat(response.shippingFee()).isEqualByComparingTo("3000");
         assertThat(response.items()).singleElement().satisfies(detail -> {

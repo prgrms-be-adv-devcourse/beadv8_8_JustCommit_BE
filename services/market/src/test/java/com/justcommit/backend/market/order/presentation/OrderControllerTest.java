@@ -238,7 +238,8 @@ class OrderControllerTest {
 
         mockMvc.perform(get("/api/v1/orders/seller/7"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.sellerOrderId").value(7));
+                .andExpect(jsonPath("$.sellerOrderId").value(7))
+                .andExpect(jsonPath("$.buyerNickname").hasJsonPath()); // 응답에 칸이 있음 (#599)
 
         verify(orderReadService).sellerOrder(10L, 7L);
     }
