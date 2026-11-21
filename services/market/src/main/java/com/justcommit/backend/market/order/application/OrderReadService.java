@@ -45,6 +45,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -89,11 +90,12 @@ public class OrderReadService implements OrderQuery {
         List<Long> sellerOrderIds = sellerOrderEntities.stream().map(SellerOrder::getId).toList();
         Map<Long, List<OrdersItemResult>> items = itemsBySellerOrder(sellerOrderIds);
         Map<Long, ShipmentResult> shipments = shipmentsBySellerOrder(sellerOrderIds);
+        Map<Long, ReturnTimeline> returns = returnTimelinesByItem(sellerOrderIds);
         Map<Long, String> thumbnails = thumbnailsByProduct(items.values().stream()
                 .flatMap(List::stream).map(OrdersItemResult::productId).toList());
         List<OrderDetailResponse.SellerOrderDetail> sellerOrders = sellerOrderEntities.stream()
                 .map(sellerOrder -> toBuyerDetail(toResult(sellerOrder, items, shipments), order.getStatus(),
-                        shipments.get(sellerOrder.getId()), thumbnails))
+                        shipments.get(sellerOrder.getId()), thumbnails, returns))
                 .toList();
         return new OrderDetailResponse(order.getId(), order.getOrderNo(), order.getTotalAmount(),
                 order.getItemCount(), order.getStatus(), order.getCreatedAt(), order.getRecipientName(),
@@ -162,15 +164,6 @@ public class OrderReadService implements OrderQuery {
         return result;
     }
 
-    private static SellerOrderDetailResponse.Item toSellerItem(OrdersItemResult item, String thumbnailUrl,
-                                                               ReturnRequest returnRequest) {
-        if (returnRequest == null) {
-            return SellerOrderDetailResponse.Item.of(item, thumbnailUrl);
-        }
-        return SellerOrderDetailResponse.Item.of(item, thumbnailUrl, returnRequest.getReason(),
-                returnRequest.getReasonDetail(), returnRequest.getRequestedAt(), returnRequest.responseDeadline());
-    }
-
     public SellerOrderDetailResponse sellerOrder(Long sellerId, Long sellerOrderId) {
         SellerOrder sellerOrder = sellerOrderRepository.findByIdAndSellerId(sellerOrderId, sellerId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.SELLER_ORDER_NOT_FOUND));
@@ -178,10 +171,10 @@ public class OrderReadService implements OrderQuery {
         List<OrdersItemResult> orderItems = itemsBySellerOrder(List.of(sellerOrderId))
                 .getOrDefault(sellerOrderId, List.of());
         Map<Long, String> thumbnails = thumbnailsByProduct(orderItems.stream().map(OrdersItemResult::productId).toList());
-        Map<Long, ReturnRequest> returns = returnRequestRepository.findBySellerOrderIdIn(List.of(sellerOrderId)).stream()
-                .collect(Collectors.toMap(ReturnRequest::getOrderItemId, r -> r));
+        Map<Long, ReturnTimeline> returns = returnTimelinesByItem(List.of(sellerOrderId));
         List<SellerOrderDetailResponse.Item> items = orderItems.stream()
-                .map(item -> toSellerItem(item, thumbnails.get(item.productId()), returns.get(item.id())))
+                .map(item -> SellerOrderDetailResponse.Item.of(item, thumbnails.get(item.productId()),
+                        returns.get(item.id())))
                 .toList();
         ShipmentResult shipment = shipmentQuery.findBySellerOrderId(sellerOrderId);
         SellerOrderSettlement settlement = settlementQuery.getSettlement(sellerOrderId);
@@ -281,6 +274,28 @@ public class OrderReadService implements OrderQuery {
         return result;
     }
 
+    // 주문상품 id → 반품 정보 (#606). 반품 신청 1번 + 반품 배송 1번으로 읽는다 (N+1 없음). 반품 신청이 없는 주문상품은 빠진다
+    Map<Long, ReturnTimeline> returnTimelinesByItem(List<Long> sellerOrderIds) {
+        if (sellerOrderIds.isEmpty()) {
+            return Map.of();
+        }
+        List<ReturnRequest> returnRequests = returnRequestRepository.findBySellerOrderIdIn(sellerOrderIds);
+        if (returnRequests.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> shipmentIds = returnRequests.stream().map(ReturnRequest::getShipmentId)
+                .filter(Objects::nonNull).toList();
+        Map<Long, ShipmentResult> returnShipments = shipmentIds.isEmpty()
+                ? Map.of() : shipmentQuery.findByShipmentIds(shipmentIds);
+        Map<Long, ReturnTimeline> result = new HashMap<>();
+        for (ReturnRequest returnRequest : returnRequests) {
+            ShipmentResult returnShipment = returnRequest.getShipmentId() == null
+                    ? null : returnShipments.get(returnRequest.getShipmentId());
+            result.put(returnRequest.getOrderItemId(), ReturnTimeline.of(returnRequest, returnShipment));
+        }
+        return result;
+    }
+
     private Map<Long, ShipmentResult> shipmentsBySellerOrder(List<Long> sellerOrderIds) {
         if (sellerOrderIds.isEmpty()) {
             return Map.of();
@@ -300,13 +315,13 @@ public class OrderReadService implements OrderQuery {
     }
 
     private OrderDetailResponse.SellerOrderDetail toBuyerDetail(SellerOrderResult seller, OrderStatus orderStatus,
-                                                                ShipmentResult shipment, Map<Long, String> thumbnails) {
+                                                                ShipmentResult shipment, Map<Long, String> thumbnails,
+                                                                Map<Long, ReturnTimeline> returns) {
         boolean delivered = "DELIVERED".equals(seller.shipmentStatus());
         List<OrderDetailResponse.OrderItemDetail> items = seller.items().stream()
-                .map(item -> new OrderDetailResponse.OrderItemDetail(item.id(), item.productId(),
-                        item.productName(), item.price(), item.status(),
+                .map(item -> OrderDetailResponse.OrderItemDetail.of(item,
                         orderStatus == OrderStatus.PAID && delivered && item.status() == OrderItemStatus.NORMAL,
-                        thumbnails.get(item.productId())))
+                        thumbnails.get(item.productId()), returns.get(item.id())))
                 .toList();
         return new OrderDetailResponse.SellerOrderDetail(seller.id(), seller.sellerId(), items,
                 seller.totalAmount(), seller.confirmedAt(), seller.shippingFee(), seller.shipmentId(),
