@@ -18,7 +18,7 @@ ProductErrorCode implements ErrorCode {
     NOT_PRODUCT_OWNER(HttpStatus.FORBIDDEN, "본인이 등록한 상품만 변경할 수 있습니다."),
     PRODUCT_NOT_HIDEABLE(HttpStatus.CONFLICT,  "삭제된 상품은 숨기거나 숨김을 해제할 수 없습니다."),
     INVALID_IMAGE_URL(HttpStatus.BAD_REQUEST, "업로드한 이미지만 등록할 수 있습니다."),
-    INVALID_IMAGE_FILE(HttpStatus.BAD_REQUEST, "jpg, png, webp 형식의 10MB 이하 이미지만 업로드할 수 있습니다."),
+    INVALID_IMAGE_FILE(HttpStatus.BAD_REQUEST, "jpg, png, webp 형식의 7.5MB 이하 이미지만 업로드할 수 있습니다."),
     PRODUCT_NOT_RESERVABLE(HttpStatus.CONFLICT, "구매할 수 없는 상품이 있어 예약하지 못했습니다."),
     PRICE_CHANGED(HttpStatus.CONFLICT, "주문서의 가격과 현재 가격이 다른 상품이 있습니다."),
     PRODUCT_NOT_EDITABLE(HttpStatus.CONFLICT, "판매 중 · 검수 중 · 반려된 상품만 수정할 수 있습니다."),

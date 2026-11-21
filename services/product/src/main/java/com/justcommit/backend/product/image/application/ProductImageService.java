@@ -19,7 +19,8 @@ public class ProductImageService {
             "image/jpeg", "jpg",
             "image/png", "png",
             "image/webp", "webp");
-    private static final long MAX_SIZE = 10L * 1024 * 1024;   // 10MB
+    // 7.5MB: 검수 때 Haiku에 base64(원본의 4/3)로 보내므로 Anthropic 이미지 한도 10MB 안에 들게 (#594)
+    static final long MAX_SIZE = 7_864_320L;
 
     private final ImageUploadUrlIssuer uploadUrlIssuer;
     private final MemberQuery memberQuery;

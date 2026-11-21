@@ -42,7 +42,7 @@ market 서비스가 소유하는 테이블입니다 (market DB).
 
 market 서비스가 제공하는 외부 API입니다 (경로 앞 `/api/v1` 생략).
 
-`cart` · `cart/items` · `cart/items/{productId}` · `cart/recommendations` · `orders/cart` · `orders/{id}/pay` · `orders/{id}/cancel` · `orders/items/{id}/cancel` · `orders/items/{id}/confirm` · `orders` · `orders/{id}` · `orders/seller` · `orders/seller/{id}` · `orders/seller/{id}/accept` · `orders/seller/{id}/reject` · `orders/items/{id}/return` · `orders/items/{id}/return/approve` · `orders/items/{id}/return/reject` · `webhooks/courier` + ⬜ 리뷰 → [외부 API 목록](../reference/external-apis.md)
+`cart` · `cart/items` · `cart/items/{productId}` · `cart/recommendations` · `orders/cart` · `orders/{id}/pay` · `orders/{id}/cancel` · `orders/items/{id}/cancel` · `orders/items/{id}/confirm` · `orders` · `orders/{id}` · `orders/seller` · `orders/seller/{id}` · `orders/seller/{id}/accept` · `orders/seller/{id}/reject` · `orders/seller/{sellerOrderId}/shipment` · `orders/{orderId}/sellerOrders/{sellerOrderId}/shipment` · `orders/items/{id}/return` · `orders/items/{id}/return/approve` · `orders/items/{id}/return/reject` · `webhooks/courier` + ⬜ 리뷰 → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 
@@ -65,7 +65,7 @@ market 서비스가 부르는 다른 서비스의 API입니다.
 | payment | 결제(잔액 차감) · 상품 환불 · 배송비 환불 | orderId / orderItemId / sellerOrderId |
 | settlement | 정산 완료 시각 조회 (🟨 제안) | – |
 | ai-service | 장바구니 추천 (실패 · 타임아웃이면 빈 목록 → [타임아웃 · 재시도](../conventions/resilience.md)) | – |
-| 택배사 (404-express) | 택배 예약 · 취소 · 요금표 조회 (외부 그룹, 서킷 없음) | `courierOrderNo` |
+| 택배사 (404-express) | 택배 예약 · 취소 · 요금표 조회 · 배송 조회 (외부 그룹, 서킷 없음) | `courierOrderNo` |
 
 ## 발행 이벤트
 
