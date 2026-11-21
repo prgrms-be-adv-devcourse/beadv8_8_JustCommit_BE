@@ -33,6 +33,7 @@ public final class ProductSpecifications {
         // 항상 적용: 검색 노출 상태만, 숨김 제외
         specs.add((root, query, cb) -> root.get("status").in(SEARCHABLE_STATUSES));
         specs.add((root, query, cb) -> cb.isFalse(root.get("hidden")));
+        specs.add((root, query, cb) -> cb.isFalse(root.get("adminHidden")));
         // 제목 또는 품종명에 키워드가 포함된 상품
         if (StringUtils.hasText(keyword)) {
             String pattern = "%" + keyword.trim() + "%";
@@ -75,6 +76,27 @@ public final class ProductSpecifications {
             specs.add((root, query, cb) -> root.get("status").in(statuses));
         }
 
+        return Specification.allOf(specs);
+    }
+
+    // 관리자 상품 목록 (#623): 삭제 제외, 숨긴 상품(판매자 · 관리자)도 포함
+    public static Specification<Product> adminCondition(String keyword, Long sellerId, ProductStatus status,
+                                                        Boolean adminHidden) {
+        List<Specification<Product>> specs = new ArrayList<>();
+        specs.add((root, query, cb) -> cb.notEqual(root.get("status"), ProductStatus.DELETED));
+        if (StringUtils.hasText(keyword)) {
+            String pattern = "%" + keyword.trim() + "%";
+            specs.add((root, query, cb) -> cb.like(root.get("title"), pattern));
+        }
+        if (sellerId != null) {
+            specs.add((root, query, cb) -> cb.equal(root.get("sellerId"), sellerId));
+        }
+        if (status != null) {
+            specs.add((root, query, cb) -> cb.equal(root.get("status"), status));
+        }
+        if (adminHidden != null) {
+            specs.add((root, query, cb) -> cb.equal(root.get("adminHidden"), adminHidden));
+        }
         return Specification.allOf(specs);
     }
 

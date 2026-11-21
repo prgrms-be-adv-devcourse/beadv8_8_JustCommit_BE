@@ -1,7 +1,7 @@
 # Kafka 토픽 · 이벤트 표
 
 > 언제 읽나: 어떤 이벤트를 누가 발행 · 구독하는지 정확히 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: Miro 9 · 10, 노션 기획안 「Kafka 이벤트」, 노션 「정책 정리」 3.10 · 8.7
+> 상태: ✅ 확정 · 마지막 수정 2026-11-21 · 관련: Miro 9 · 10, 노션 기획안 「Kafka 이벤트」, 노션 「정책 정리」 3.10 · 8.7
 
 ## 토픽 목록
 
@@ -44,6 +44,7 @@
 | `product.events.v1` | 상품 변경 — `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged` | product(색인 리스너) · ai | product: DB에서 최신 상품을 읽어 OpenSearch 문서를 덮어씀. ai: payload로 상품 스냅샷 upsert (`productVersion`이 저장값보다 클 때만) → [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md) |
 | `product.events.v1` | `ProductApproved` | notification | 판매자에게 통과 알림 (색인 리스너는 건너뜀, 상태는 함께 나가는 `ProductStatusChanged`로 색인) |
 | `product.events.v1` | `ProductRejected` | notification | 판매자에게 반려 사유와 함께 알림 |
+| `product.events.v1` | `ProductAdminHidden` | notification | 판매자에게 관리자 강제 숨김 사유와 함께 알림 (#623). 상태 동기화는 함께 나가는 `ProductStatusChanged`(`hidden=true`), 색인 리스너 · ai는 건너뜀 |
 | `product.events.v1` | `ImageReviewDelayed` | notification | 관리자에게 「검수 지연 N건」 알림. 관리자 역할(ADMIN)로 알림 1건(`member_id` 없음, `recipient_role = ADMIN`)을 만들어 관리자끼리 읽음을 공유, `event_key`는 `ADMIN_REVIEW_DELAYED:{eventId}`(봉투 `eventId`), 새로 지연된 건만 1번, payload 추가 없음 (notification 담당 합의 11/19, 구독 #561). product 색인 리스너 · ai는 건너뜀 |
 | `product.review.v1` | `ProductReviewRequested` (`review_version` 포함) | product | 사진 검수 (비동기) |
 | `settlement.events.v1` | `SettlementCompleted` | notification | 정산 알림. 정산이 `COMPLETED`가 될 때 정산당 1번, `payoutAmount`가 음수(음수 정산)면 회수 알림 |
@@ -90,9 +91,10 @@
 |---|---|---|
 | `ProductRegistered` | 아래 공통 칸 | 상품 등록 |
 | `ProductUpdated` | 아래 공통 칸 | 제목 · 가격 · 사진 · 품종 등 수정 |
-| `ProductStatusChanged` | 아래 공통 칸 | 예약 · 판매 완료 · 예약 해제 · 판매 재개 · 숨김 · 삭제 · 판매자 탈퇴 정리 · 검수 결과(통과 · 반려 · 판매 중 → 관리자 확인) · 이의 신청 · 기한 초과 재요청 |
+| `ProductStatusChanged` | 아래 공통 칸 | 예약 · 판매 완료 · 예약 해제 · 판매 재개 · 숨김 · 관리자 강제 숨김 · 해제 · 삭제 · 판매자 탈퇴 정리 · 검수 결과(통과 · 반려 · 판매 중 → 관리자 확인) · 이의 신청 · 기한 초과 재요청 |
 | `ProductApproved` | `productId` · `sellerId` · `reviewVersion` (숫자), `productTitle` (문자열) | 검수 통과 알림용. 검수 중 → 판매 중으로 바뀔 때만 (판매 중 상품의 글 검사 통과는 보내지 않음) |
 | `ProductRejected` | `ProductApproved` 칸 + `reasonCode` (반려 사유 코드, 예: `HARMFUL_IMAGE`) · `reasonMessage` (판매자 문구, `OTHER`면 관리자 입력) | 검수 반려 알림용 (글 검사 반려 포함). 관리자 확인으로 넘어갈 때는 보내지 않음 |
+| `ProductAdminHidden` | `productId` · `sellerId` (숫자), `productTitle` · `reason` (문자열, 관리자 입력 사유), `hiddenAt` (시각, 숨긴 시각 · 알림 중복 키) | 관리자 강제 숨김 알림용 (#623). 새로 숨길 때만(이미 숨긴 상품 · 해제는 보내지 않음). 시각은 product 서버 시간(서울)의 `LocalDateTime` |
 | `ImageReviewDelayed` | `delayedCount` (숫자, 이번에 묶은 건수), `checkedAt` (시각, 모은 시각) | 관리자 확인 12시간 지연 알림용 (#509). Key `image-review-delayed`(상품 하나에 묶이지 않음). 관리자 확인 지연 알림 스케줄러가 한국 시간 09~21시 매 정각에 확인해 새로 12시간을 넘긴 건(24시간 전)이 있을 때만 1개, 같은 건은 한 번만 ([사진 검수](../flows/image-review.md) 「관리자 수동 검수」). 시각은 product 서버 시간(서울)의 `LocalDateTime` |
 
 세 이벤트의 공통 payload (`version` 3, [ADR 0021](../decisions/0021-product-event-payload-ai-snapshot.md) · [ADR 0031](../decisions/0031-chatbot-rag-product-document-payload-v3.md)):
@@ -103,7 +105,7 @@
 | `speciesId` | 숫자 | 품종 ID |
 | `sellerId` | 숫자 | 판매자 회원 ID |
 | `status` | 문자열 | 바뀐 뒤 상품 상태 (`REVIEW_PENDING` · `REJECTED` · `ACTIVE` · `PAYMENT_PENDING` · `SOLD_OUT` · `DELETED`) |
-| `hidden` | 참/거짓 | 숨김 여부 |
+| `hidden` | 참/거짓 | 숨김 여부 (판매자 숨김 또는 관리자 강제 숨김, #623) |
 | `productVersion` | 숫자 | 상품 버전. 상품 행을 바꾸는 모든 UPDATE에서 +1 (봉투 `version`과 다름). 받는 쪽은 저장된 값보다 클 때만 반영, 같으면 중복 |
 | `title` · `description` · `growNote` · `potSize` | 문자열 | 제목 · 설명 · 키우기 메모 · 화분 크기 (v3, ai 챗봇 상품 문서). 없으면 `null` |
 | `price` · `heightCm` | 숫자 | 가격 · 높이(cm) (v3, 챗봇 상품 카드 · 문서) |

@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
  * @param title        상품 제목 (ORDERS_ITEM.product_name으로 복사)
  * @param price        가격 (CART_ITEM.price, ORDERS_ITEM.price로 복사)
  * @param status       판매 상태
- * @param hidden       판매자가 숨김 처리했는지 여부
+ * @param hidden       구매자에게 숨겨졌는지 (판매자 숨김 또는 관리자 강제 숨김)
  * @param thumbnailUrl 대표 사진 URL (없으면 null)
  * @param speciesName  품종 이름 (장바구니 등 화면 표시용)
  * @param createdAt    상품 등록 시각 (장바구니 추천 카드의 「3일 전」 표시용)

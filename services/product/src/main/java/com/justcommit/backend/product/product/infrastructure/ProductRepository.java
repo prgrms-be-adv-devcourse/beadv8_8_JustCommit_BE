@@ -32,6 +32,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             WHERE p.id IN :productIds
               AND p.status = com.justcommit.backend.product.ProductStatus.ACTIVE
               AND p.hidden = false
+              AND p.adminHidden = false
             """)
     int reserve(@Param("orderId") Long orderId, @Param("productIds") List<Long> productIds);
 
@@ -156,7 +157,8 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     // 상품 이벤트 payload (ADR 0021 · 0030, 대표 사진은 sortOrder 0): 엔티티가 아니라 DB 값을 바로 읽어, 같은 트랜잭션의 일괄 UPDATE · 엔티티 수정 뒤 새 값이 나옴
     @Query("""
             SELECT new com.justcommit.backend.product.product.event.ProductEventSource(
-                p.id, p.species.id, p.sellerId, p.status, p.hidden, p.version,
+                p.id, p.species.id, p.sellerId, p.status,
+                CASE WHEN p.hidden = true OR p.adminHidden = true THEN true ELSE false END, p.version,
                 p.title, p.price,
                 (SELECT i.s3Url FROM ProductImage i WHERE i.product = p AND i.sortOrder = 0),
                 p.description, p.growNote, p.heightCm, p.potSize)

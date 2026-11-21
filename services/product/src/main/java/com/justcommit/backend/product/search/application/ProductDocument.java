@@ -47,7 +47,7 @@ public record ProductDocument(
                 nameOf(species.getDifficulty()),
                 product.getPrice().longValue(),
                 product.getStatus().name(),
-                product.isHidden(),
+                product.isHiddenFromBuyers(),
                 // DB 시각은 한국 시간(LocalDateTime)이라 시간대를 붙여야 OpenSearch가 UTC로 잘못 읽지 않음
                 product.getCreatedAt() == null ? null
                         : product.getCreatedAt().atZone(ClockConfig.SEOUL).toOffsetDateTime().toString());

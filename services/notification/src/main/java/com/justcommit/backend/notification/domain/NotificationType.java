@@ -19,6 +19,8 @@ public enum NotificationType {
     PRODUCT_APPROVED("검수를 통과해 상품 판매가 시작됐어요."),
     // 반려 사유는 이벤트마다 달라 알림을 만들 때 뒤에 붙인다 (NotificationService)
     PRODUCT_REJECTED("검수에서 반려됐어요."),
+    // 관리자 강제 숨김 (#623). 사유는 알림을 만들 때 뒤에 붙인다
+    PRODUCT_ADMIN_HIDDEN("운영 정책에 따라 관리자가 상품을 숨겼어요. 구매자에게 보이지 않아요."),
 
     // 구매자
     SHIPMENT_PICKED_UP("택배 수거가 완료됐어요. 상품 확인 후 배송이 시작되며, 이제 주문을 취소할 수 없어요."),

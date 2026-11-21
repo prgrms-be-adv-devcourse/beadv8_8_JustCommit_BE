@@ -7,6 +7,7 @@ import com.justcommit.backend.notification.infrastructure.messaging.event.OrderI
 import com.justcommit.backend.notification.infrastructure.messaging.event.ImageReviewDelayedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.OrderItemCancelledEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.ProductApprovedEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.ProductAdminHiddenEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.ProductRejectedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.PurchaseConfirmedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderAcceptedEvent;
@@ -57,6 +58,7 @@ public class NotificationEventListener {
         switch (envelope.eventType()) {
             case "ProductApproved" -> onProductApproved(read(envelope, ProductApprovedEvent.class));
             case "ProductRejected" -> onProductRejected(read(envelope, ProductRejectedEvent.class));
+            case "ProductAdminHidden" -> onProductAdminHidden(read(envelope, ProductAdminHiddenEvent.class));
             case "ImageReviewDelayed" ->
                     onImageReviewDelayed(read(envelope, ImageReviewDelayedEvent.class), envelope.eventId());
             // 상품 등록 · 수정 · 상태 동기화(색인용)는 알림과 상관없어 건너뜀
@@ -166,6 +168,13 @@ public class NotificationEventListener {
         notificationService.createForProduct(event.sellerId(), NotificationType.PRODUCT_REJECTED,
                 event.reasonMessage(), event.productId(), event.productTitle(),
                 "PRODUCT_REJECTED:" + event.productId() + ":" + event.reviewVersion());
+    }
+
+    // 관리자 강제 숨김: 판매자에게 사유와 함께 (#623). 해제했다가 다시 숨기면 숨긴 시각이 달라 새 알림
+    public void onProductAdminHidden(ProductAdminHiddenEvent event) {
+        notificationService.createForProduct(event.sellerId(), NotificationType.PRODUCT_ADMIN_HIDDEN,
+                event.reason(), event.productId(), event.productTitle(),
+                "PRODUCT_ADMIN_HIDDEN:" + event.productId() + ":" + event.hiddenAt());
     }
 
     // 관리자 검수 지연: 관리자 목록을 묻지 않고 ADMIN 역할 알림 1건 (#561, #509). 반복 알림 없음

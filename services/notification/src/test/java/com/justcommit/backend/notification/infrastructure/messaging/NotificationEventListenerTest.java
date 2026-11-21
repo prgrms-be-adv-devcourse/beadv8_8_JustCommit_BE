@@ -4,6 +4,7 @@ import com.justcommit.backend.notification.infrastructure.messaging.event.Purcha
 import com.justcommit.backend.notification.infrastructure.messaging.event.OrderItemAutoConfirmedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.ImageReviewDelayedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.OrderItemCancelledEvent;
+import com.justcommit.backend.notification.infrastructure.messaging.event.ProductAdminHiddenEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.ProductApprovedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.ProductRejectedEvent;
 import com.justcommit.backend.notification.infrastructure.messaging.event.SellerOrderAcceptedEvent;
@@ -189,6 +190,16 @@ class NotificationEventListenerTest {
 
         verify(notificationService).createForProduct(SELLER, NotificationType.PRODUCT_REJECTED,
                 "사진이 정책에 맞지 않아요.", 30L, "몬스테라 알보", "PRODUCT_REJECTED:30:1");
+    }
+
+    @Test
+    @DisplayName("관리자 강제 숨김은 판매자에게 사유를 넘겨 알림을 만들고, 키는 상품 · 숨긴 시각 (#623)")
+    void notifiesSellerOnProductAdminHidden() {
+        listener.onProductAdminHidden(new ProductAdminHiddenEvent(30L, SELLER, "몬스테라 알보", "허위 매물",
+                LocalDateTime.of(2026, 11, 21, 15, 0)));
+
+        verify(notificationService).createForProduct(SELLER, NotificationType.PRODUCT_ADMIN_HIDDEN,
+                "허위 매물", 30L, "몬스테라 알보", "PRODUCT_ADMIN_HIDDEN:30:2026-11-21T15:00");
     }
 
     @Test

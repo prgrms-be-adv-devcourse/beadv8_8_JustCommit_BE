@@ -137,17 +137,19 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 |---|---|---|---|
 | GET | `products` | 목록 · 검색 · 필터. `keyword`가 있으면 OpenSearch(관련도순 기본), 없거나 `sellerId`가 있으면 DB(최신순 기본), `sort` `relevance` · `latest` · `priceAsc` · `priceDesc`. 판매자 상점 조건 `sellerId` · `status`(`ACTIVE` · `PAYMENT_PENDING` · `SOLD_OUT` 중 하나 이상, 여러 개는 `status=ACTIVE&status=PAYMENT_PENDING`, 하나라도 그 밖이면 400 `INVALID_SEARCH_STATUS`), 판매 완료 개수는 `sellerId` + `status=SOLD_OUT`의 `totalElements`. 응답 항목에 `sellerId` → [검색 · 추천](../flows/search-recommend.md) | 공개 |
 | POST | `products` | 등록 | SELLER |
-| GET | `products/{id}` | 상세 | 공개 |
+| GET | `products/{id}` | 상세 (판매자 본인에게는 강제 숨김 `adminHidden` · `adminHiddenReason`도, 남에게는 강제 숨김이면 403 `PRODUCT_ADMIN_HIDDEN`) | 공개 |
 | PUT | `products/{id}` | 수정 | SELLER |
 | DELETE | `products/{id}` | 삭제 | SELLER |
 | PATCH | `products/{id}/hidden` | 숨김 | SELLER |
-| GET | `products/me` · `products/me/counts` | 내 상품 (지금 검수 버전의 표시 상태 `reviewStatus` · 반려 사유 `rejectReason`와 문구 `rejectMessage` · 판정 주체 `decidedBy`, 검수 기록이 없으면 null) · 상태별 개수 (+ 오늘 등록 수 `todayRegistered` / 한도 `dailyRegisterLimit` 20 · 오늘 사진 검수 수 `todayPhotoReviews` / 한도 `dailyPhotoReviewLimit` 30, 세는 기준은 등록 제한 · 하루 사진 검수 제한과 같음) | SELLER |
+| GET | `products/me` · `products/me/counts` | 내 상품 (지금 검수 버전의 표시 상태 `reviewStatus` · 반려 사유 `rejectReason`와 문구 `rejectMessage` · 판정 주체 `decidedBy`, 검수 기록이 없으면 null, 관리자 강제 숨김 `adminHidden` · 사유 `adminHiddenReason`) · 상태별 개수 (+ 오늘 등록 수 `todayRegistered` / 한도 `dailyRegisterLimit` 20 · 오늘 사진 검수 수 `todayPhotoReviews` / 한도 `dailyPhotoReviewLimit` 30, 세는 기준은 등록 제한 · 하루 사진 검수 제한과 같음) | SELLER |
 | POST | `products/images/uploadUrls` | 사진 Presigned URL. jpg · png · webp, 7.5MB 이하 (아니면 400 `INVALID_IMAGE_FILE`) | SELLER |
 | GET | `products/{id}/imageReviews` | 내 상품 검수 기록 (상태 · 반려 사유 · 관리자 확인 기한 `expiresAt` · 남은 재검수 횟수 · 이의 신청 · 재요청 가능 여부) | SELLER |
 | POST | `products/{id}/imageReviews` | 기한 초과(`REVIEW_EXPIRED`) 상품 같은 내용으로 다시 검수 요청 | SELLER |
 | POST | `products/{id}/appeals` | 자동 반려 이의 신청 (`memo` 필수, 200자). 409 `APPEAL_NOT_ALLOWED` · `APPEAL_ALREADY_USED` · `REVIEW_PENDING_LIMIT_EXCEEDED` | SELLER |
 | GET | `species` · `species/{id}` | 품종 목록 · 상세 (학명 · 별칭). 목록은 품종명 가나다순(한국어 정렬 규칙 `ko-x-icu`), 「기타」는 맨 뒤 | 공개 |
 | GET | `admin/imageReviews?status=MANUAL&page&size` | 관리자 확인 대기 목록, 오래된 순 (사진 · 엔진 결과 · 판매자 품종 · 판매자 닉네임 `sellerNickname`(회원 복제본, 없으면 「알 수 없는 회원」) · 가격 `price` · 검수 요청 시각 `requestedAt` · 관리자 확인 사유 · 기한 `expiresAt` · 12시간 지연 `delayed`) | ADMIN |
+| GET | `admin/products?keyword&sellerId&status&adminHidden&page&size` | 관리자 상품 목록 (#623): 삭제 제외 전체 상품(숨긴 상품 포함), 최신 등록 순, 기본 20 · 최대 50. `keyword`는 제목 포함. 응답 `productId` · `title` · `price` · `thumbnailUrl` · `speciesName` · `status` · `sellerId` · `sellerNickname`(회원 복제본, 없으면 「알 수 없는 회원」) · `hidden`(판매자 숨김) · `adminHidden` · `adminHiddenReason` · `adminHiddenAt` · `createdAt` | ADMIN |
+| PATCH | `admin/products/{id}/hidden` | 강제 숨김 · 해제 (#623): `{hidden, reason}`. 숨김은 `reason` 필수(1~200자, 판매자에게 보임, 아니면 400 `INVALID_ADMIN_HIDE_REASON`), 숨기면 판매자 알림. 판매자 숨김은 건드리지 않음, 이미 같은 상태면 그대로 200, 삭제 상품 409 `PRODUCT_NOT_HIDEABLE`, 없는 상품 404 → [product 정책](../services/product.md#정책) | ADMIN |
 | PATCH | `admin/imageReviews/{id}` | 관리자 처리 `decision`(`APPROVED` · `REJECTED`) · `rejectReason` · `memo`(`OTHER`면 필수 200자, 다른 사유 · 통과면 저장하지 않음). 409 `REVIEW_ALREADY_PROCESSED` · `REVIEW_OUTDATED`, 400 `INVALID_REJECT_REASON` | ADMIN |
 | POST | `admin/products/searchIndex` | 상품 전체 색인: DB의 모든 상품을 OpenSearch에 다시 씀(삭제 상품은 문서 삭제). 응답 `indexed` · `deleted` · `skipped`(같거나 더 새 버전이 이미 있음) · `failed`, 여러 번 실행해도 결과가 같음. 재색인 중이면 409 `SEARCH_INDEXING_IN_PROGRESS` → [검색 · 추천](../flows/search-recommend.md) | ADMIN |
 | POST | `admin/products/searchIndex/rebuilds` | 상품 검색 무중단 재색인: 지금 매핑으로 `products_v{n+1}`을 채운 뒤 alias를 옮기고 옛 인덱스 삭제(그동안 검색은 옛 인덱스로 응답). 응답 `previousIndex` · `currentIndex` · `filled` · `caughtUp`(전체 색인과 같은 모양) · `previousDeleted`. 채우다 실패하면 새 인덱스를 지우고 500, 따라잡기 색인에 실패한 건이 있으면 옛 인덱스를 남김(`previousDeleted=false`), 전체 색인 · 재색인이 진행 중이면 409 `SEARCH_INDEXING_IN_PROGRESS` → [검색 · 추천](../flows/search-recommend.md) | ADMIN |

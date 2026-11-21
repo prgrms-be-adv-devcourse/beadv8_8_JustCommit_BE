@@ -24,6 +24,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.BatchSize;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashSet;
@@ -80,8 +81,19 @@ public class Product extends BaseTimeEntity {
     @Column(nullable = false, length = 20)
     private ProductStatus status;
 
+    // 판매자 숨김. 관리자 숨김(adminHidden)과 따로: 판매자만 켜고 끔
     @Column(name = "is_hidden", nullable = false)
     private boolean hidden;
+
+    // 관리자 강제 숨김 (#623). 관리자만 켜고 끄며 판매자 숨김은 건드리지 않음. 사유는 판매자에게 보임
+    @Column(name = "is_admin_hidden", nullable = false)
+    private boolean adminHidden;
+
+    @Column(name = "admin_hidden_reason", length = 200)
+    private String adminHiddenReason;
+
+    @Column(name = "admin_hidden_at")
+    private LocalDateTime adminHiddenAt;
 
     @Column(name = "reserved_order_id")
     private Long reservedOrderId;
@@ -143,7 +155,12 @@ public class Product extends BaseTimeEntity {
     }
 
     public boolean isPurchasable() {
-        return status == ProductStatus.ACTIVE && !hidden;
+        return status == ProductStatus.ACTIVE && !isHiddenFromBuyers();
+    }
+
+    // 구매자에게 보이지 않는지: 판매자 숨김 또는 관리자 숨김. 목록 · 검색 · 구매 · 이벤트의 hidden은 이 값
+    public boolean isHiddenFromBuyers() {
+        return hidden || adminHidden;
     }
 
     // 반환값: 다시 할 검수 범위 (검수 요청 · image_review에 기록)
@@ -231,6 +248,9 @@ public class Product extends BaseTimeEntity {
             throw new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND);
         }
         // 삭제와 숨김을 구분해서 프론트가 비공개 안내를 띄울 수 있게 함
+        if (adminHidden) {
+            throw new BusinessException(ProductErrorCode.PRODUCT_ADMIN_HIDDEN);
+        }
         if (hidden) {
             throw new BusinessException(ProductErrorCode.PRODUCT_HIDDEN);
         }
@@ -241,6 +261,34 @@ public class Product extends BaseTimeEntity {
             throw new BusinessException(ProductErrorCode.PRODUCT_NOT_HIDEABLE);
         }
         this.hidden = hidden;
+    }
+
+    // 관리자 강제 숨김. 이미 숨겼으면 바꾸지 않고 false (사유 · 시각 · 알림도 처음 그대로)
+    public boolean hideByAdmin(String reason, LocalDateTime now) {
+        if (status == ProductStatus.DELETED) {
+            throw new BusinessException(ProductErrorCode.PRODUCT_NOT_HIDEABLE);
+        }
+        if (adminHidden) {
+            return false;
+        }
+        this.adminHidden = true;
+        this.adminHiddenReason = reason;
+        this.adminHiddenAt = now;
+        return true;
+    }
+
+    // 관리자 숨김 해제. 판매자 숨김은 그대로 둠. 숨기지 않았으면 false
+    public boolean unhideByAdmin() {
+        if (status == ProductStatus.DELETED) {
+            throw new BusinessException(ProductErrorCode.PRODUCT_NOT_HIDEABLE);
+        }
+        if (!adminHidden) {
+            return false;
+        }
+        this.adminHidden = false;
+        this.adminHiddenReason = null;
+        this.adminHiddenAt = null;
+        return true;
     }
 
 

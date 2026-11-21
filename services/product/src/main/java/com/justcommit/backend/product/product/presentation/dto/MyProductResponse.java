@@ -15,7 +15,9 @@ public record MyProductResponse (
         Long speciesId,
         String speciesName,
         String status,
-        boolean hidden,
+        boolean hidden,             // 판매자 숨김
+        boolean adminHidden,        // 관리자 강제 숨김 (#623, 판매자는 풀 수 없음)
+        String adminHiddenReason,   // 강제 숨김 사유 (숨기지 않았으면 null)
         LocalDateTime createdAt,
         // 지금 검수 버전의 검수 결과 (검수 기록이 없으면 모두 null). 값의 뜻은 GET products/{id}/imageReviews와 같음
         String reviewStatus,        // IN_REVIEW · ADMIN_CHECK · ADMIN_CHECK_DELAYED · APPROVED · REJECTED
@@ -30,7 +32,8 @@ public record MyProductResponse (
         return new MyProductResponse(
                 product.getId(), product.getTitle(), product.getPrice(), product.getThumbnailUrl(),
                 species.getId(), species.getName(),
-                product.getStatus().name(), product.isHidden(), product.getCreatedAt(),
+                product.getStatus().name(), product.isHidden(),
+                product.isAdminHidden(), product.getAdminHiddenReason(), product.getCreatedAt(),
                 review == null ? null : review.status(),
                 review == null ? null : review.rejectReason(),
                 review == null ? null : review.rejectMessage(),

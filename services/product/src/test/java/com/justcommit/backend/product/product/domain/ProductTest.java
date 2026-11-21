@@ -12,6 +12,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
@@ -237,5 +238,82 @@ class ProductTest {
         assertThatThrownBy(() -> hiddenInReview.checkViewableBy(2L))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("관리자 강제 숨김: 구매자에게 숨겨지고 구매할 수 없으며, 판매자 숨김 값은 그대로 (#623)")
+    void hideByAdmin() {
+        Product product = create(species());
+        ReflectionTestUtils.setField(product, "status", ProductStatus.ACTIVE);
+        LocalDateTime now = LocalDateTime.of(2026, 11, 21, 15, 0);
+
+        boolean changed = product.hideByAdmin("허위 매물", now);
+
+        assertThat(changed).isTrue();
+        assertThat(product.isAdminHidden()).isTrue();
+        assertThat(product.isHidden()).isFalse();
+        assertThat(product.isHiddenFromBuyers()).isTrue();
+        assertThat(product.isPurchasable()).isFalse();
+        assertThat(product.getAdminHiddenReason()).isEqualTo("허위 매물");
+        assertThat(product.getAdminHiddenAt()).isEqualTo(now);
+    }
+
+    @Test
+    @DisplayName("이미 강제 숨김한 상품을 다시 숨기면 바뀌지 않음 (사유 · 시각 처음 그대로)")
+    void hideByAdminTwice() {
+        Product product = create(species());
+        LocalDateTime first = LocalDateTime.of(2026, 11, 21, 15, 0);
+        product.hideByAdmin("허위 매물", first);
+
+        boolean changed = product.hideByAdmin("다른 사유", first.plusHours(1));
+
+        assertThat(changed).isFalse();
+        assertThat(product.getAdminHiddenReason()).isEqualTo("허위 매물");
+        assertThat(product.getAdminHiddenAt()).isEqualTo(first);
+    }
+
+    @Test
+    @DisplayName("판매자가 숨김을 풀어도 관리자 숨김은 남고, 관리자가 풀어도 판매자 숨김은 남음")
+    void sellerAndAdminHiddenAreIndependent() {
+        Product product = create(species());
+        ReflectionTestUtils.setField(product, "status", ProductStatus.ACTIVE);
+        product.changeHidden(true);
+        product.hideByAdmin("허위 매물", LocalDateTime.of(2026, 11, 21, 15, 0));
+
+        product.changeHidden(false);
+        assertThat(product.isHiddenFromBuyers()).isTrue();
+
+        product.changeHidden(true);
+        product.unhideByAdmin();
+        assertThat(product.isAdminHidden()).isFalse();
+        assertThat(product.getAdminHiddenReason()).isNull();
+        assertThat(product.isHidden()).isTrue();
+        assertThat(product.isHiddenFromBuyers()).isTrue();
+    }
+
+    @Test
+    @DisplayName("강제 숨김한 상품을 다른 회원이 보면 403 PRODUCT_ADMIN_HIDDEN, 판매자 본인은 볼 수 있음")
+    void adminHiddenProductNotViewable() {
+        Product product = create(species());
+        ReflectionTestUtils.setField(product, "status", ProductStatus.ACTIVE);
+        product.hideByAdmin("허위 매물", LocalDateTime.of(2026, 11, 21, 15, 0));
+
+        assertThatThrownBy(() -> product.checkViewableBy(99L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ProductErrorCode.PRODUCT_ADMIN_HIDDEN);
+        product.checkViewableBy(1L);
+    }
+
+    @Test
+    @DisplayName("삭제된 상품은 강제 숨김 · 해제할 수 없음 (PRODUCT_NOT_HIDEABLE)")
+    void hideDeletedProductByAdmin() {
+        Product product = create(species());
+        ReflectionTestUtils.setField(product, "status", ProductStatus.DELETED);
+
+        assertThatThrownBy(() -> product.hideByAdmin("허위 매물", LocalDateTime.of(2026, 11, 21, 15, 0)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ProductErrorCode.PRODUCT_NOT_HIDEABLE);
     }
 }

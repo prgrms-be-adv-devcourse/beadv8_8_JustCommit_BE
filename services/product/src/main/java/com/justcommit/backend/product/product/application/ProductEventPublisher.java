@@ -2,6 +2,7 @@ package com.justcommit.backend.product.product.application;
 
 import com.justcommit.backend.common.messaging.IntegrationEvent;
 import com.justcommit.backend.common.messaging.outbox.OutboxPublisher;
+import com.justcommit.backend.product.product.event.ProductAdminHidden;
 import com.justcommit.backend.product.product.event.ProductEventSource;
 import com.justcommit.backend.product.product.event.ProductRegistered;
 import com.justcommit.backend.product.product.event.ProductStatusChanged;
@@ -50,6 +51,12 @@ public class ProductEventPublisher {
     @Transactional(propagation = Propagation.MANDATORY)
     public void statusChanged(Collection<Long> productIds) {
         publish(productIds, ProductStatusChanged::from);
+    }
+
+    // 관리자 강제 숨김 판매자 알림 (#623). 상태 동기화는 호출 쪽이 statusChanged로 함께 보냄
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void adminHidden(ProductAdminHidden event) {
+        outboxPublisher.publish(event);
     }
 
     private void publish(Collection<Long> productIds, Function<ProductEventSource, IntegrationEvent> toEvent) {
