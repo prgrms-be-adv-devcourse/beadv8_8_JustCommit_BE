@@ -17,14 +17,17 @@ public record ShipmentTrackingResponse(
         LocalDateTime deliveredAt,
         LocalDateTime cancelledAt,
         String courierStatus,             // 택배사 세부 단계 (예: NEAR_5KM, ARRIVED_ORIGIN, OUT_FOR_DELIVERY)
-        Integer remainingDistanceMeters,  // 지금 이동 중인 구간의 남은 거리(m). 수거 전이면 기사님 → 판매자(수거지)
+        // 지금 이동 중인 구간의 남은 거리(km, 택배사 m ÷ 1000, 반올림 없음). 수거 전이면 기사님 → 판매자(수거지),
+        // 수거 뒤에는 간선 · 배송 구간. 지점 대기 중이면 null. 이름은 FE가 읽는 칸에 맞춤
+        Double driverDistanceKm,
         String locationName,              // 지금 단계의 우체국 지점 이름
-        LocalDateTime checkedAt           // 택배사에서 받은 시각
+        LocalDateTime driverCheckedAt     // 택배사에서 받은 시각
 ) {
     public static ShipmentTrackingResponse of(Long sellerOrderId, ShipmentTracking tracking) {
+        Integer meters = tracking.remainingDistanceMeters();
         return new ShipmentTrackingResponse(sellerOrderId, tracking.status(), tracking.trackingNo(),
                 tracking.bookedAt(), tracking.pickedUpAt(), tracking.inTransitAt(), tracking.deliveredAt(),
-                tracking.cancelledAt(), tracking.courierStatus(), tracking.remainingDistanceMeters(),
+                tracking.cancelledAt(), tracking.courierStatus(), meters == null ? null : meters / 1000.0,
                 tracking.locationName(), tracking.checkedAt());
     }
 }

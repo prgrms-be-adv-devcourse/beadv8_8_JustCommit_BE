@@ -66,9 +66,9 @@ class ShipmentTrackingControllerTest {
                 .andExpect(jsonPath("$.bookedAt").value("2026-11-20T10:00:00"))
                 .andExpect(jsonPath("$.pickedUpAt").isEmpty())
                 .andExpect(jsonPath("$.courierStatus").value("NEAR_5KM"))
-                .andExpect(jsonPath("$.remainingDistanceMeters").value(4321))
+                .andExpect(jsonPath("$.driverDistanceKm").value(4.321))
                 .andExpect(jsonPath("$.locationName").value("강남우체국"))
-                .andExpect(jsonPath("$.checkedAt").value("2026-11-20T10:03:00"));
+                .andExpect(jsonPath("$.driverCheckedAt").value("2026-11-20T10:03:00"));
     }
 
     @Test
@@ -82,9 +82,9 @@ class ShipmentTrackingControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sellerOrderId").value(7))
                 .andExpect(jsonPath("$.bookedAt").value("2026-11-20T10:00:00"))
-                .andExpect(jsonPath("$.remainingDistanceMeters").isEmpty())
+                .andExpect(jsonPath("$.driverDistanceKm").isEmpty())
                 .andExpect(jsonPath("$.locationName").isEmpty())
-                .andExpect(jsonPath("$.checkedAt").isEmpty());
+                .andExpect(jsonPath("$.driverCheckedAt").isEmpty());
     }
 
     @Test
