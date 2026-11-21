@@ -163,15 +163,6 @@ public class OrderReadService implements OrderQuery {
         return result;
     }
 
-    private static SellerOrderDetailResponse.Item toSellerItem(OrdersItemResult item, String thumbnailUrl,
-                                                               ReturnRequest returnRequest) {
-        if (returnRequest == null) {
-            return SellerOrderDetailResponse.Item.of(item, thumbnailUrl);
-        }
-        return SellerOrderDetailResponse.Item.of(item, thumbnailUrl, returnRequest.getReason(),
-                returnRequest.getReasonDetail(), returnRequest.getRequestedAt(), returnRequest.responseDeadline());
-    }
-
     public SellerOrderDetailResponse sellerOrder(Long sellerId, Long sellerOrderId) {
         SellerOrder sellerOrder = sellerOrderRepository.findByIdAndSellerId(sellerOrderId, sellerId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.SELLER_ORDER_NOT_FOUND));
@@ -179,10 +170,10 @@ public class OrderReadService implements OrderQuery {
         List<OrdersItemResult> orderItems = itemsBySellerOrder(List.of(sellerOrderId))
                 .getOrDefault(sellerOrderId, List.of());
         Map<Long, String> thumbnails = thumbnailsByProduct(orderItems.stream().map(OrdersItemResult::productId).toList());
-        Map<Long, ReturnRequest> returns = returnRequestRepository.findBySellerOrderIdIn(List.of(sellerOrderId)).stream()
-                .collect(Collectors.toMap(ReturnRequest::getOrderItemId, r -> r));
+        Map<Long, ReturnTimeline> returns = returnTimelinesByItem(List.of(sellerOrderId));
         List<SellerOrderDetailResponse.Item> items = orderItems.stream()
-                .map(item -> toSellerItem(item, thumbnails.get(item.productId()), returns.get(item.id())))
+                .map(item -> SellerOrderDetailResponse.Item.of(item, thumbnails.get(item.productId()),
+                        returns.get(item.id())))
                 .toList();
         ShipmentResult shipment = shipmentQuery.findBySellerOrderId(sellerOrderId);
         SellerOrderSettlement settlement = settlementQuery.getSettlement(sellerOrderId);

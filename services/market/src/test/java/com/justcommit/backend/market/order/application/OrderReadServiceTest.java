@@ -411,6 +411,9 @@ class OrderReadServiceTest {
         when(sellerOrderRepository.findByIdAndSellerId(7L, 20L)).thenReturn(Optional.of(sellerOrder));
         when(ordersItemRepository.findBySellerOrderIds(List.of(7L))).thenReturn(items);
         when(returnRequestRepository.findBySellerOrderIdIn(List.of(7L))).thenReturn(List.of(pending, approved));
+        LocalDateTime pickedUpAt = LocalDateTime.of(2026, 11, 19, 10, 0);
+        when(shipmentQuery.findByShipmentIds(List.of(50L))).thenReturn(Map.of(50L,
+                new ShipmentResult(50L, "PICKED_UP", null, "404000000050", null, pickedUpAt, null)));
         when(settlementQuery.getSettlement(7L)).thenReturn(SellerOrderSettlement.of(null));
 
         var response = orderReadService.sellerOrder(20L, 7L);
@@ -425,6 +428,16 @@ class OrderReadServiceTest {
         assertThat(approvedItem.returnReason()).isEqualTo(ReturnReason.DAMAGED);
         assertThat(approvedItem.returnRequestedAt()).isEqualTo(approvedRequestedAt);
         assertThat(approvedItem.returnDeadlineAt()).isNull(); // 승인 뒤에는 마감 없음
+        // 반품 타임라인 (#606): 승인 시각, 반품 택배 상태, 수거 시각. 아직 안 된 단계는 null
+        assertThat(approvedItem.returnDecidedAt()).isEqualTo(approvedRequestedAt.plusHours(48));
+        assertThat(approvedItem.returnShipmentStatus()).isEqualTo("PICKED_UP");
+        assertThat(approvedItem.returnTrackingNo()).isEqualTo("404000000050");
+        assertThat(approvedItem.returnPickedUpAt()).isEqualTo(pickedUpAt);
+        assertThat(approvedItem.returnInTransitAt()).isNull();
+        assertThat(approvedItem.returnArrivedAt()).isNull();
+        assertThat(approvedItem.returnedAt()).isNull();
+        assertThat(pendingItem.returnDecidedAt()).isNull();
+        assertThat(pendingItem.returnShipmentStatus()).isNull();
         var plainItem = response.items().get(2);
         assertThat(plainItem.returnReason()).isNull();
         assertThat(plainItem.returnDetail()).isNull();
