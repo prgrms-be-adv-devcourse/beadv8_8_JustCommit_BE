@@ -1,13 +1,15 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-21 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
 - 2026-11-21 · services/market.md · reference/external-apis.md · 판매 내역 · 상세를 결제 완료 이후 주문(`PAID`, `CANCELLED`, `COMPLETED`)만으로, 그 밖은 목록에서 빼고 상세 404 `SELLER_ORDER_NOT_FOUND`, 판매 상세에 `buyerNickname`(회원 복제본 기준), 정책 「판매 내역」 행 추가 (#599) (#604)
+- 2026-11-21 · reference/external-apis.md · services/market.md · conventions/resilience.md · glossary.md · 배송 조회 추가: 판매자 `GET orders/seller/{sellerOrderId}/shipment` · 구매자 `GET orders/{orderId}/sellerOrders/{sellerOrderId}/shipment`(본인 주문만, 배송 전 404 `SHIPMENT_TRACKING_NOT_FOUND`), market이 404-express 주문번호 조회를 대신 불러 `courierStatus` · `driverDistanceKm`(m ÷ 1000, 반올림 없음) · `locationName` · `driverCheckedAt`을 보태고 단계별 시각은 market 값. 조회 전용 타임아웃 1초 / 2초 · 재시도 없음 · 실패하면 택배사 값만 null로 200, DB 트랜잭션 밖 호출. 웹훅 거리 저장은 하지 않음, 용어 「배송 조회」 추가 (#588)
+- 2026-11-20 · flows/image-review.md · services/product.md · infra/aws.md · reference/external-apis.md · conventions/resilience.md · 사진 업로드 제한 10MB → 7.5MB(7,864,320B, Haiku base64 4/3배가 Anthropic 이미지 한도 10MB 안에 들게, 넘으면 400 `INVALID_IMAGE_FILE`), 검수 외부 API 4xx(408 · 429 제외)는 엔진 오류 재처리 없이 바로 관리자 확인 `ENGINE_ERROR` (5xx · 429 · 시간 초과 · 연결 실패는 그대로 5분 × 3회), 허용 형식에 코드와 같게 webp 표기 추가 (#594)
 - 2026-11-20 · services/settlement.md · reference/internal-apis.md · settlement 탈퇴 확인 내부 API 구현: `GET /internal/v1/settlements/members/{memberId}/withdrawalCheck`, 판매자의 `PENDING`, `FAILED` 정산 수로 `INCOMPLETE_SETTLEMENT` 판정(0원 정산, 음수 정산 포함, 읽기 전용, 잠그지 않음), `details.incompleteSettlementCount`, 정산 기록이 없는 회원은 차단 없음, 정책 「탈퇴」 행을 구현과 맞춤 (#441) (#603)
 - 2026-11-20 · glossary.md · services/settlement.md · reference/kafka-topics.md · flows/confirm-settlement.md · settlement가 `SellerOrderReturned`(전부 반품) 구독: 판매액, 수수료, 배송비 0이고 정산금 = −판매자 부담금인 `PENDING` 정산 생성, 배송비 0원 판매자 주문이라 부담금 0이면 정산금 0, 필수 값 없음이나 부담금 음수는 재시도 없이 DLT, 정산 UK로 1건(구매 확정 정산이 있으면 그대로), 「전부 반품」 뜻을 0원 경우까지, 「음수 정산」 뜻을 정산금 기준으로 고침 (#432) (#602)
 - 2026-11-20 · glossary.md · flows/cancel-refund.md · flows/order-payment.md · reference/kafka-topics.md · reference/schedulers.md · services/market.md · testing/scenarios.md · 반품 도착, 환불 구현: Saga 복구에 「반품 도착 처리」(반품 배송 `DELIVERED`를 읽어 `RETURN_PROCESSING`, 상태만, 택배 웹훅은 주문을 부르지 않음)와 「반품 환불」(조건부 UPDATE 선점 후 트랜잭션 밖 환불, 결과 불명 10초 뒤 같은 키, 4xx나 5회면 `REVIEW_REQUIRED`) 단계 추가, 전부 반품이면 선점 때마다 다시 판단해 원래 배송비도 같은 키(sellerOrderId)로 환불, 환불 확정 때 `RETURNED`, 반품 신청 `COMPLETED`, 판매자 주문 종료 판정, `OrderItemReturned` payload(`refundAmount` 포함, Key `sellerOrderId`)와 `market.order-item-returned.v1` 발행, 배포는 settlement #432 먼저, 용어 「반품 도착 처리」 「반품 환불」 추가 (#384) (#601)

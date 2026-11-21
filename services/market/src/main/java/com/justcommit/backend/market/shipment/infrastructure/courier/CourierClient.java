@@ -1,5 +1,6 @@
 package com.justcommit.backend.market.shipment.infrastructure.courier;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
@@ -7,6 +8,7 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.time.Duration;
@@ -15,9 +17,11 @@ import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.Optional;
 
+@Slf4j
 @Component
 public class CourierClient {
     private final RestClient restClient;
+    private final RestClient trackingClient;
     private static final String BOOKING_PATH = "/api/v1/shipments";
 
     public CourierClient(
@@ -36,6 +40,32 @@ public class CourierClient {
                 .baseUrl(baseUrl)
                 .defaultHeader("X-Api-Key", apiKey)
                 .build();
+
+        // 화면용 배송 조회는 사용자가 기다리므로 짧게: 연결 1초 · 응답 2초 (docs/conventions/resilience.md)
+        SimpleClientHttpRequestFactory trackingFactory = new SimpleClientHttpRequestFactory();
+        trackingFactory.setConnectTimeout(Duration.ofSeconds(1));
+        trackingFactory.setReadTimeout(Duration.ofSeconds(2));
+
+        this.trackingClient = RestClient.builder()
+                .requestFactory(trackingFactory)
+                .baseUrl(baseUrl)
+                .defaultHeader("X-Api-Key", apiKey)
+                .build();
+    }
+
+    // 화면용 배송 조회 (#588): 남은 거리 · 지점 · 세부 단계. 택배사가 없다고 하거나(404) 실패 · 시간 초과면 빈 값.
+    // 안내용이라 다시 시도하지 않고, 화면은 market이 가진 단계 시각만으로 그린다.
+    public Optional<CourierShipmentView> track(String courierOrderNo) {
+        try {
+            CourierApiResponse<CourierShipmentView> response = trackingClient.get()
+                    .uri(BOOKING_PATH + "/byOrderNo/{courierOrderNo}", courierOrderNo)
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<>() {});
+            return Optional.ofNullable(response).map(CourierApiResponse::data);
+        } catch (RestClientException e) {
+            log.warn("택배사 배송 조회 실패, 거리 없이 응답: courierOrderNo={}, reason={}", courierOrderNo, e.getMessage());
+            return Optional.empty();
+        }
     }
 
     public CourierBookingResponse book(String courierOrderNo, CourierBookingRequest request) {

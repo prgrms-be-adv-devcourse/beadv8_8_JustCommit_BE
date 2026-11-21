@@ -20,6 +20,8 @@ public enum OrderErrorCode implements ErrorCode {
     ORDER_ITEM_NOT_CONFIRMABLE(HttpStatus.CONFLICT, "구매확정할 수 없는 주문 상품입니다."),
     ORDER_ITEM_NOT_CANCELABLE(HttpStatus.CONFLICT, "취소할 수 없는 주문 상품입니다."),
     SHIPMENT_NOT_FOUND(HttpStatus.CONFLICT, "배송 정보를 확인할 수 없습니다."),
+    // 배송 조회(#588): 판매자 수락 전이라 배송이 아직 없음
+    SHIPMENT_TRACKING_NOT_FOUND(HttpStatus.NOT_FOUND, "배송이 아직 시작되지 않았습니다."),
     SHIPMENT_NOT_CANCELABLE(HttpStatus.CONFLICT, "배송이 시작되어 주문 상품을 취소할 수 없습니다."),
     SHIPMENT_NOT_DELIVERED(HttpStatus.CONFLICT, "배송이 완료된 후 구매확정할 수 있습니다."),
     ORDER_NOT_PAYABLE(HttpStatus.CONFLICT, "결제 대기 중인 주문만 결제할 수 있습니다."),

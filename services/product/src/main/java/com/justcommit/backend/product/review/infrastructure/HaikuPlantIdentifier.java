@@ -2,6 +2,7 @@ package com.justcommit.backend.product.review.infrastructure;
 
 import com.anthropic.client.AnthropicClient;
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
+import com.anthropic.errors.AnthropicServiceException;
 import com.anthropic.models.messages.Base64ImageSource;
 import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.ImageBlockParam;
@@ -31,6 +32,7 @@ import java.util.List;
 
 // Claude Haiku 식물 식별. 사진 전부와 금지 품종 목록을 넣고, 답은 structured output(JSON 형식 지정)으로 받음
 // SDK가 429 · 5xx · 연결 실패를 2번 다시 시도함(요청마다 30초 타임아웃 → 최악 약 90초). 그래도 실패 · 거절 · 잘린 응답이면 ReviewEngineException
+// 4xx(408 · 429 제외, 예: 사진이 base64 10MB 한도를 넘음)는 다시 보내도 같아서 재처리하지 않는 ReviewEngineException (#594)
 @Component
 public class HaikuPlantIdentifier implements PlantIdentifier {
 
@@ -66,6 +68,11 @@ public class HaikuPlantIdentifier implements PlantIdentifier {
         StructuredMessage<Answer> message;
         try {
             message = client.messages().create(request(images, bannedNames));
+        } catch (AnthropicServiceException e) {
+            if (ReviewEngineException.isClientError(e.statusCode())) {
+                throw ReviewEngineException.rejected("Haiku 요청 거부: " + e.statusCode(), e);
+            }
+            throw new ReviewEngineException("Haiku 요청 실패: " + e.statusCode(), e);
         } catch (RuntimeException e) {
             throw new ReviewEngineException("Haiku 요청 실패", e);
         }
