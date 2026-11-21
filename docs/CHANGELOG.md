@@ -7,6 +7,7 @@
 
 ## 기록
 
+- 2026-11-21 · services/market.md · reference/external-apis.md · 판매 내역 · 상세를 결제 완료 이후 주문(`PAID`, `CANCELLED`, `COMPLETED`)만으로, 그 밖은 목록에서 빼고 상세 404 `SELLER_ORDER_NOT_FOUND`, 판매 상세에 `buyerNickname`(회원 복제본 기준), 정책 「판매 내역」 행 추가 (#599) (#604)
 - 2026-11-21 · reference/external-apis.md · services/market.md · conventions/resilience.md · glossary.md · 배송 조회 추가: 판매자 `GET orders/seller/{sellerOrderId}/shipment` · 구매자 `GET orders/{orderId}/sellerOrders/{sellerOrderId}/shipment`(본인 주문만, 배송 전 404 `SHIPMENT_TRACKING_NOT_FOUND`), market이 404-express 주문번호 조회를 대신 불러 `courierStatus` · `driverDistanceKm`(m ÷ 1000, 반올림 없음) · `locationName` · `driverCheckedAt`을 보태고 단계별 시각은 market 값. 조회 전용 타임아웃 1초 / 2초 · 재시도 없음 · 실패하면 택배사 값만 null로 200, DB 트랜잭션 밖 호출. 웹훅 거리 저장은 하지 않음, 용어 「배송 조회」 추가 (#588)
 - 2026-11-20 · flows/image-review.md · services/product.md · infra/aws.md · reference/external-apis.md · conventions/resilience.md · 사진 업로드 제한 10MB → 7.5MB(7,864,320B, Haiku base64 4/3배가 Anthropic 이미지 한도 10MB 안에 들게, 넘으면 400 `INVALID_IMAGE_FILE`), 검수 외부 API 4xx(408 · 429 제외)는 엔진 오류 재처리 없이 바로 관리자 확인 `ENGINE_ERROR` (5xx · 429 · 시간 초과 · 연결 실패는 그대로 5분 × 3회), 허용 형식에 코드와 같게 webp 표기 추가 (#594)
 - 2026-11-20 · services/settlement.md · reference/internal-apis.md · settlement 탈퇴 확인 내부 API 구현: `GET /internal/v1/settlements/members/{memberId}/withdrawalCheck`, 판매자의 `PENDING`, `FAILED` 정산 수로 `INCOMPLETE_SETTLEMENT` 판정(0원 정산, 음수 정산 포함, 읽기 전용, 잠그지 않음), `details.incompleteSettlementCount`, 정산 기록이 없는 회원은 차단 없음, 정책 「탈퇴」 행을 구현과 맞춤 (#441) (#603)
