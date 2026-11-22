@@ -186,6 +186,7 @@ public class OrderReadService implements OrderQuery {
                 shipment == null ? null : shipment.pickedUpAt(),
                 shipment == null ? null : shipment.inTransitAt(),
                 shipment == null ? null : shipment.deliveredAt(),
+                sellerOrder.getConfirmedAt(),
                 settlement.status(), settlement.settledAt(), sellerOrder.getCreatedAt(),
                 memberQuery.getNicknames(List.of(order.getBuyerId())).get(order.getBuyerId()),
                 order.getRecipientName(), order.getRecipientPhone(),

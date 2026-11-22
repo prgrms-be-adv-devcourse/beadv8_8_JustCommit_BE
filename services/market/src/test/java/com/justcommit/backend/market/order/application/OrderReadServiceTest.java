@@ -288,6 +288,7 @@ class OrderReadServiceTest {
         assertThat(response.address1()).isEqualTo("서울시");
         assertThat(response.settlementStatus()).isEqualTo("NOT_SETTLED");
         assertThat(response.settledAt()).isNull();
+        assertThat(response.confirmedAt()).isNull(); // 구매 확정 전 (#626)
         assertThat(response.items()).singleElement().satisfies(detail ->
                 assertThat(detail.productId()).isEqualTo(101L));
     }
@@ -296,6 +297,8 @@ class OrderReadServiceTest {
     void sellerDetailUsesActualShipmentAndSettlementData() {
         OrdersItem item = item(order(10L), 20L);
         LocalDateTime settledAt = LocalDateTime.of(2026, 10, 19, 12, 0);
+        LocalDateTime confirmedAt = LocalDateTime.of(2026, 10, 18, 9, 0);
+        ReflectionTestUtils.setField(item.getSellerOrder(), "confirmedAt", confirmedAt);
         when(sellerOrderRepository.findByIdAndSellerId(7L, 20L))
                 .thenReturn(Optional.of(item.getSellerOrder()));
         when(ordersItemRepository.findBySellerOrderIds(List.of(7L))).thenReturn(List.of(item));
@@ -311,6 +314,7 @@ class OrderReadServiceTest {
         assertThat(response.bookedAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 10, 0));
         assertThat(response.pickedUpAt()).isNull();
         assertThat(response.deliveredAt()).isNull();
+        assertThat(response.confirmedAt()).isEqualTo(confirmedAt); // 정산 시각과 따로 (#626)
         assertThat(response.settlementStatus()).isEqualTo("COMPLETED");
         assertThat(response.settledAt()).isEqualTo(settledAt);
     }
