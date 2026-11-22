@@ -1,0 +1,28 @@
+NAME                       READY   STATUS    RESTARTS        AGE    IP            NODE           NOMINATED NODE   READINESS GATES
+ai-6d6c95cfc5-6s4q8        1/1     Running   0               112m   10.42.0.139   ip-10-0-7-76   <none>           <none>
+ai-6d6c95cfc5-z9m7c        0/1     Running   0               10s    10.42.0.141   ip-10-0-7-76   <none>           <none>
+gateway-6cd6f8bbc8-dspwn   1/1     Running   1 (4m28s ago)   2d3h   10.42.0.81    ip-10-0-7-76   <none>           <none>
+gateway-6cd6f8bbc8-ppxnj   1/1     Running   1 (4m30s ago)   2d3h   10.42.0.80    ip-10-0-7-76   <none>           <none>
+market-9589b8d99-v65sl     1/1     Running   0               112m   10.42.0.137   ip-10-0-7-76   <none>           <none>
+market-9589b8d99-xt24k     1/1     Running   0               112m   10.42.0.138   ip-10-0-7-76   <none>           <none>
+4m26s       Normal    Created             pod/gateway-6cd6f8bbc8-dspwn   Container created
+4m26s       Normal    Started             pod/gateway-6cd6f8bbc8-dspwn   Container started
+3m51s       Warning   Unhealthy           pod/gateway-6cd6f8bbc8-ppxnj   Readiness probe failed: dial tcp 10.42.0.80:8080: connect: connection refused
+3m50s       Warning   Unhealthy           pod/gateway-6cd6f8bbc8-dspwn   Readiness probe failed: dial tcp 10.42.0.81:8080: connect: connection refused
+10s         Normal    ScalingReplicaSet   deployment/ai                  Scaled up replica set ai-6d6c95cfc5 from 1 to 2
+10s         Normal    SuccessfulRescale   horizontalpodautoscaler/ai     New size: 2; reason: cpu resource utilization (percentage of request) above target
+10s         Normal    SuccessfulCreate    replicaset/ai-6d6c95cfc5       Created pod: ai-6d6c95cfc5-z9m7c
+6s          Normal    Pulling             pod/ai-6d6c95cfc5-z9m7c        Pulling image "ghcr.io/prgrms-be-adv-devcourse/replant-ai:ba6e75b"
+5s          Normal    Pulled              pod/ai-6d6c95cfc5-z9m7c        Successfully pulled image "ghcr.io/prgrms-be-adv-devcourse/replant-ai:ba6e75b" in 1.16s (1.16s including waiting). Image size: 314671600 bytes.
+5s          Normal    Created             pod/ai-6d6c95cfc5-z9m7c        Container created
+4s          Warning   Unhealthy           pod/ai-6d6c95cfc5-z9m7c        Readiness probe failed: dial tcp 10.42.0.141:8080: connect: connection refused
+4s          Normal    Started             pod/ai-6d6c95cfc5-z9m7c        Container started
+               total        used        free      shared  buff/cache   available
+Mem:            7816        6079         440          63        1677        1736
+Conditions:
+  Type             Status  LastHeartbeatTime                 LastTransitionTime                Reason                       Message
+  ----             ------  -----------------                 ------------------                ------                       -------
+  MemoryPressure   False   Sun, 22 Nov 2026 19:48:19 +0900   Sat, 14 Nov 2026 18:53:56 +0900   KubeletHasSufficientMemory   kubelet has sufficient memory available
+  DiskPressure     False   Sun, 22 Nov 2026 19:48:19 +0900   Sat, 14 Nov 2026 18:53:56 +0900   KubeletHasNoDiskPressure     kubelet has no disk pressure
+  PIDPressure      False   Sun, 22 Nov 2026 19:48:19 +0900   Sat, 14 Nov 2026 18:53:56 +0900   KubeletHasSufficientPID      kubelet has sufficient PID available
+  Ready            True    Sun, 22 Nov 2026 19:48:19 +0900   Sat, 14 Nov 2026 18:53:56 +0900   KubeletReady                 kubelet is posting ready status

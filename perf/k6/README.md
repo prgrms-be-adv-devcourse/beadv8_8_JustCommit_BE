@@ -23,6 +23,7 @@ perf/k6/run.sh smoke.js
 - k6는 내 PC에 직접 설치해서 돌린다 (Windows: `winget install GrafanaLabs.k6`, 측정 기록은 v2.3.0). 결과는 Prometheus로 보내져 Grafana 「replant 부하 측정」에 함께 나온다.
 - 요약 원본은 `perf/k6/results/<스크립트>-<시각>.json`에 남는다.
 - 대상 주소는 `BASE_URL`(기본 `https://replant.kro.kr`), 비밀번호는 `~/.replant-perf/password`.
+- MSA(#628): 미리 로그인은 `LOGIN_BASE_URL`(SSH 터널로 Gateway 직접)로 보낸다 — Gateway 로그인 요청 제한(같은 IP 5회) 때문. 단계별 표는 `stage_report.py --target msa` (`perf/README.md` 「MSA 운영 측정」)
 - 요청 이름은 `GET /products/{id}`처럼 경로 모양으로 묶는다 (상품 id마다 지표가 흩어지지 않게).
 
 ## Docker로 돌리지 않는 이유

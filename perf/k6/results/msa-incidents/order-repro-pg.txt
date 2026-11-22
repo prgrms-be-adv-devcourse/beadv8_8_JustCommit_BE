@@ -1,0 +1,23 @@
+     datname     |        state        | wait_event_type | wait_event | count |   longest_tx    |                                                            q                                                             
+-----------------+---------------------+-----------------+------------+-------+-----------------+--------------------------------------------------------------------------------------------------------------------------
+ ai_db           | idle                | Client          | ClientRead |    20 |                 | 
+ market_db       | idle                | Client          | ClientRead |    13 |                 | 
+ settlement_db   | idle                | Client          | ClientRead |    10 |                 | 
+ member_db       | idle                | Client          | ClientRead |    10 |                 | 
+ payment_db      | idle                | Client          | ClientRead |    10 |                 | 
+ product_db      | idle                | Client          | ClientRead |    10 |                 | 
+ notification_db | idle                | Client          | ClientRead |     9 |                 | 
+ market_db       | idle in transaction | Client          | ClientRead |     6 | 00:00:00.3707   | insert into cart_item (cart_id,created_at,price,product_id,updated_at) values ($1,$2,$3,$4,$5)                          +
+                 |                     |                 |            |       |                 | RETURNING *
+ notification_db | idle in transaction | Client          | ClientRead |     1 | 00:00:00.013844 | insert into notification (created_at,event_key,is_read,item_summary,member_id,message,order_id,product_id,read_at,recipi
+ market_db       | active              | IO              | WalSync    |     1 | 00:00:00.009224 | COMMIT
+ postgres        | idle                | Client          | ClientRead |     1 |                 |                                                                                                                         +
+                 |                     |                 |            |       |                 |                         SELECT                                                                                          +
+                 |                     |                 |            |       |                 |                                 pg_database.datname,                                                                    +
+                 |                     |                 |            |       |                 |                                 tmp.state,                                                                              +
+                 |                     |                 |            |       |                 |                                 tmp2.usename,                                                                           +
+                 |                     |                 |            |       |                 |                                 tmp2.application_name,                                                                  +
+                 |                     |                 |            |       |                 |                                 tmp2.backend_type,                                                                      +
+                 |                     |                 |            |       |                 |         
+(11 rows)
+

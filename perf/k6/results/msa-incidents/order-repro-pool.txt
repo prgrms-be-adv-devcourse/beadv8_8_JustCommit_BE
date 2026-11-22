@@ -1,0 +1,10 @@
+== market-9589b8d99-v65sl 19:53:47
+hikaricp_connections_active{application="market-service",pool="HikariPool-1"} 2.0
+hikaricp_connections_pending{application="market-service",pool="HikariPool-1"} 0.0
+tomcat_threads_busy_threads{application="market-service",name="http-nio-8080"} 5.0
+== market-9589b8d99-xt24k 19:53:49
+hikaricp_connections_active{application="market-service",pool="HikariPool-1"} 4.0
+hikaricp_connections_pending{application="market-service",pool="HikariPool-1"} 0.0
+tomcat_threads_busy_threads{application="market-service",name="http-nio-8080"} 8.0
+market-9589b8d99-v65sl dump lines 930
+market-9589b8d99-xt24k dump lines 3290

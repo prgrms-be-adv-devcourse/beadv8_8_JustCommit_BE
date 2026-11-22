@@ -1,0 +1,38 @@
+== pod/gateway-6cd6f8bbc8-dspwn
+{"terminated":{"containerID":"containerd://960dbc179a3d55426c969f047b376c6be164246015c34a1bc9fbccd626763bcf","exitCode":137,"finishedAt":"2026-11-22T10:45:38Z","reason":"OOMKilled","startedAt":"2026-11-20T07:13:15Z"}}
+    Last State:     Terminated
+      Reason:       OOMKilled
+      Exit Code:    137
+      Started:      Fri, 20 Nov 2026 16:13:15 +0900
+--
+    Readiness:  tcp-socket :http delay=0s timeout=1s period=5s successThreshold=1 failureThreshold=3
+    Environment Variables from:
+      replant-endpoints  ConfigMap  Optional: false
+      gateway-env        Secret     Optional: false
+--
+  Warning  Unhealthy  3s (x9 over 2d3h)   kubelet  spec.containers{gateway}: Readiness probe failed: dial tcp 10.42.0.81:8080: connect: connection refused
+LAST SEEN   TYPE      REASON      OBJECT                         MESSAGE
+16s         Normal    Pulling     pod/gateway-6cd6f8bbc8-dspwn   Pulling image "ghcr.io/prgrms-be-adv-devcourse/replant-gateway:789ff32"
+15s         Normal    Created     pod/gateway-6cd6f8bbc8-dspwn   Container created
+15s         Normal    Started     pod/gateway-6cd6f8bbc8-dspwn   Container started
+15s         Normal    Pulled      pod/gateway-6cd6f8bbc8-dspwn   Successfully pulled image "ghcr.io/prgrms-be-adv-devcourse/replant-gateway:789ff32" in 1.142s (1.183s including waiting). Image size: 183024397 bytes.
+4s          Warning   Unhealthy   pod/gateway-6cd6f8bbc8-dspwn   Readiness probe failed: dial tcp 10.42.0.81:8080: connect: connection refused
+== pod/gateway-6cd6f8bbc8-ppxnj
+{"terminated":{"containerID":"containerd://066842cbb6b6c621e4014a4801f85e82d1741507dd9259b59a79e547aa5fdd33","exitCode":137,"finishedAt":"2026-11-22T10:45:36Z","reason":"OOMKilled","startedAt":"2026-11-20T07:12:58Z"}}
+    Last State:     Terminated
+      Reason:       OOMKilled
+      Exit Code:    137
+      Started:      Fri, 20 Nov 2026 16:12:58 +0900
+--
+    Readiness:  tcp-socket :http delay=0s timeout=1s period=5s successThreshold=1 failureThreshold=3
+    Environment Variables from:
+      replant-endpoints  ConfigMap  Optional: false
+      gateway-env        Secret     Optional: false
+--
+  Warning  Unhealthy  1s (x9 over 2d3h)   kubelet  spec.containers{gateway}: Readiness probe failed: dial tcp 10.42.0.80:8080: connect: connection refused
+LAST SEEN   TYPE      REASON      OBJECT                         MESSAGE
+20s         Normal    Pulling     pod/gateway-6cd6f8bbc8-ppxnj   Pulling image "ghcr.io/prgrms-be-adv-devcourse/replant-gateway:789ff32"
+18s         Normal    Created     pod/gateway-6cd6f8bbc8-ppxnj   Container created
+18s         Normal    Started     pod/gateway-6cd6f8bbc8-ppxnj   Container started
+18s         Normal    Pulled      pod/gateway-6cd6f8bbc8-ppxnj   Successfully pulled image "ghcr.io/prgrms-be-adv-devcourse/replant-gateway:789ff32" in 1.143s (1.143s including waiting). Image size: 183024397 bytes.
+1s          Warning   Unhealthy   pod/gateway-6cd6f8bbc8-ppxnj   Readiness probe failed: dial tcp 10.42.0.80:8080: connect: connection refused

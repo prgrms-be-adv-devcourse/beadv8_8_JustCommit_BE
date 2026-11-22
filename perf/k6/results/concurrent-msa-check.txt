@@ -1,0 +1,47 @@
+== product: 상품 상태 (SOLD_OUT 또는 RESERVED여야 함)
+  id   |  status  | reserved_order_id 
+-------+----------+-------------------
+ 25863 | SOLD_OUT |            123321
+ 25864 | SOLD_OUT |            123322
+ 25865 | SOLD_OUT |            123323
+ 25866 | SOLD_OUT |            123328
+ 25867 | SOLD_OUT |            123331
+ 25868 | SOLD_OUT |            123333
+ 25869 | SOLD_OUT |            123338
+ 25870 | SOLD_OUT |            123342
+ 25871 | SOLD_OUT |            123350
+ 25872 | SOLD_OUT |            123400
+(10 rows)
+
+== market: 상품별 결제된 주문 수 (paid_orders = 1이어야 함)
+ product_id | paid_orders | other_orders |      statuses       
+------------+-------------+--------------+---------------------
+      25863 |           1 |            0 | PAID
+      25864 |           1 |            0 | PAID
+      25865 |           1 |            4 | PAID,PAYMENT_FAILED
+      25866 |           1 |            2 | PAID,PAYMENT_FAILED
+      25867 |           1 |            0 | PAID
+      25868 |           1 |            3 | PAID,PAYMENT_FAILED
+      25869 |           1 |            5 | PAID,PAYMENT_FAILED
+      25870 |           1 |            7 | PAID,PAYMENT_FAILED
+      25871 |           1 |           48 | PAID,PAYMENT_FAILED
+      25872 |           1 |            6 | PAID,PAYMENT_FAILED
+(10 rows)
+
+== payment: 결제된 주문마다 구매자 지갑 출금 (rows = 1, 금액 = 주문 총액이어야 함)
+CREATE TABLE
+COPY 10
+ order_id | total  | payment_rows | payment_sum | result 
+----------+--------+--------------+-------------+--------
+   123321 | 103000 |            1 |      103000 | OK
+   123322 |  13000 |            1 |       13000 | OK
+   123323 |  23000 |            1 |       23000 | OK
+   123328 |  33000 |            1 |       33000 | OK
+   123331 |  43000 |            1 |       43000 | OK
+   123333 |  53000 |            1 |       53000 | OK
+   123338 |  63000 |            1 |       63000 | OK
+   123342 |  73000 |            1 |       73000 | OK
+   123350 |  83000 |            1 |       83000 | OK
+   123400 |  93000 |            1 |       93000 | OK
+(10 rows)
+

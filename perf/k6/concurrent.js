@@ -5,7 +5,7 @@
 import { check, fail } from 'k6';
 import exec from 'k6/execution';
 import http from 'k6/http';
-import { BASE_URL, buyerEmail, post, requirePassword } from './lib/common.js';
+import { BASE_URL, buyerEmail, post, requirePassword, LOGIN_URL, loginHeaders } from './lib/common.js';
 
 const FIRST_ID = Number(__ENV.FIRST_ID);
 const ROUNDS = Number(__ENV.ROUNDS || 10);
@@ -37,9 +37,9 @@ export const options = {
 function loginAll(emails) {
   const tokens = [];
   for (let i = 0; i < emails.length; i += 25) {
-    const batch = emails.slice(i, i + 25).map((email) => ['POST', `${BASE_URL}/api/v1/auth/login`,
+    const batch = emails.slice(i, i + 25).map((email) => ['POST', LOGIN_URL,
       JSON.stringify({ email, password: __ENV.PERF_PASSWORD }),
-      { headers: { 'Content-Type': 'application/json' }, tags: { name: 'setup login' } }]);
+      { headers: loginHeaders(email), tags: { name: 'setup' } }]);
     for (const res of http.batch(batch)) {
       if (res.status !== 200) fail(`로그인 실패 ${res.status}`);
       tokens.push(res.json('data.accessToken'));

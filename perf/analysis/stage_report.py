@@ -27,12 +27,38 @@ QUERIES = {
     '못 보냄(dropped)': ('sum(increase(k6_dropped_iterations_total[{w}]))', '{:.0f}'),
     '서버 CPU 평균 %': ('100 * avg_over_time((1 - avg(rate(node_cpu_seconds_total{{job="node",mode="idle"}}[30s])))[{w}:5s])', '{:.0f}'),
     '서버 CPU 최대 %': ('100 * max_over_time((1 - avg(rate(node_cpu_seconds_total{{job="node",mode="idle"}}[30s])))[{w}:5s])', '{:.0f}'),
-    'steal 최대 %': ('100 * max_over_time(avg(rate(node_cpu_seconds_total{{job="node",mode="steal"}}[30s]))[{w}:5s])', '{:.1f}'),
+    'steal 최대 %': ('100 * max_over_time(avg(rate(node_cpu_seconds_total{{job="node",mode="steal"}}[2m]))[{w}:5s])', '{:.1f}'),
     'Hikari 사용 최대': ('max_over_time(hikaricp_connections_active{{job="app"}}[{w}])', '{:.0f}'),
     'Hikari 대기 최대': ('max_over_time(hikaricp_connections_pending{{job="app"}}[{w}])', '{:.0f}'),
     'Tomcat 바쁨 최대': ('max_over_time(tomcat_threads_busy_threads{{job="app"}}[{w}])', '{:.0f}'),
     '힙 최대 MB': ('max_over_time(sum(jvm_memory_used_bytes{{job="app",area="heap"}})[{w}:5s]) / 1048576', '{:.0f}'),
     'DB 잠금 최대': ('max_over_time(sum(pg_locks_count{{job="postgres"}})[{w}:5s])', '{:.0f}'),
+}
+
+
+# MSA 운영(#628): 운영 Prometheus(데이터 서버, SSH 터널 localhost:19090)의 라벨 job="spring" · service=…, node는 server=app|data
+# 「서버 처리 · p95」는 사용자가 보는 값인 Gateway 기준(세미의 앱 하나와 같은 자리), 서비스별 값은 따로 뽑는다
+_SVC = 'job="spring",uri!~"/actuator.*"'
+_CPU = '100 * {agg}_over_time((1 - avg(rate(node_cpu_seconds_total{{{{job="node",server="{srv}",mode="idle"}}}}[2m])))[{{w}}:5s])'
+QUERIES_MSA = {
+    'k6 보냄 rps': QUERIES['k6 보냄 rps'],
+    '서버 처리 rps(GW)': ('sum(increase(http_server_requests_seconds_count{{' + _SVC + ',service="gateway"}}[{w}])) / {s}', '{:.1f}'),
+    '서버 p95 ms(GW)': ('1000 * histogram_quantile(0.95, sum by (le) (increase(http_server_requests_seconds_bucket{{' + _SVC + ',service="gateway"}}[{w}])))', '{:.0f}'),
+    '서버 p99 ms(GW)': ('1000 * histogram_quantile(0.99, sum by (le) (increase(http_server_requests_seconds_bucket{{' + _SVC + ',service="gateway"}}[{w}])))', '{:.0f}'),
+    'k6 p95 ms(근사)': QUERIES['k6 p95 ms(근사)'],
+    '에러율 %': QUERIES['에러율 %'],
+    '못 보냄(dropped)': QUERIES['못 보냄(dropped)'],
+    **{f'{svc} p95 ms': ('1000 * histogram_quantile(0.95, sum by (le) (increase(http_server_requests_seconds_bucket{{' + _SVC + f',service="{svc}"}}}}[{{w}}])))', '{:.0f}')
+       for svc in ('product', 'market', 'payment')},
+    '앱 서버 CPU 평균 %': (_CPU.format(agg='avg', srv='app'), '{:.0f}'),
+    '앱 서버 CPU 최대 %': (_CPU.format(agg='max', srv='app'), '{:.0f}'),
+    '데이터 서버 CPU 최대 %': (_CPU.format(agg='max', srv='data'), '{:.0f}'),
+    'steal 최대 %': ('100 * max_over_time(max(rate(node_cpu_seconds_total{{job="node",mode="steal"}}[2m]))[{w}:5s])', '{:.1f}'),
+    **{f'Hikari {svc} 사용/대기 최대': (f'max_over_time(max(hikaricp_connections_active{{{{job="spring",service="{svc}"}}}})[{{w}}:5s]) * 1000 + max_over_time(max(hikaricp_connections_pending{{{{job="spring",service="{svc}"}}}})[{{w}}:5s])', 'hikari')
+       for svc in ('product', 'market', 'payment')},
+    'Tomcat 바쁨 최대(market)': ('max_over_time(max(tomcat_threads_busy_threads{{job="spring",service="market"}})[{w}:5s])', '{:.0f}'),
+    '힙 최대 MB(product)': ('max_over_time(sum(jvm_memory_used_bytes{{job="spring",service="product",area="heap"}})[{w}:5s]) / 1048576', '{:.0f}'),
+    'DB 잠금 최대': QUERIES['DB 잠금 최대'],
 }
 
 
@@ -47,6 +73,14 @@ def query(base, promql, at):
     return None if value != value else value  # NaN → None
 
 
+def fmt(f, v):
+    if f is None:
+        return str(v)
+    if f == 'hikari':  # 사용 * 1000 + 대기를 한 쿼리로 받아 「사용/대기」로 보여 준다
+        return f'{int(v // 1000)}/{int(v % 1000)}'
+    return f.format(v)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--start', required=True, help='k6 시작 시각 (ISO 8601, 시간대 포함)')
@@ -56,8 +90,10 @@ def main():
     p.add_argument('--warmup', type=int, default=20, help='단계 시작 후 버리는 초')
     p.add_argument('--prometheus', default='http://localhost:19090')
     p.add_argument('--json', help='결과를 JSON으로도 저장할 경로')
+    p.add_argument('--target', choices=['semi', 'msa'], default='semi', help='msa = 운영 MSA 라벨(#628)')
     a = p.parse_args()
 
+    queries = QUERIES_MSA if a.target == 'msa' else QUERIES
     start = datetime.fromisoformat(a.start)
     steps = [int(x) for x in a.steps.split(',')]
     rows = []
@@ -72,19 +108,19 @@ def main():
         if secs < 15:
             break
         row = {'목표 rps': rps, '구간': f"{begin:%H:%M:%S}~{end:%H:%M:%S}"}
-        for name, (tpl, _) in QUERIES.items():
+        for name, (tpl, _) in queries.items():
             row[name] = query(a.prometheus, tpl.format(w=f'{secs}s', s=secs), end)
         rows.append(row)
 
-    cols = ['목표 rps', '구간'] + list(QUERIES)
-    fmts = {name: f for name, (_, f) in QUERIES.items()}
+    cols = ['목표 rps', '구간'] + list(queries)
+    fmts = {name: f for name, (_, f) in queries.items()}
     print('| ' + ' | '.join(cols) + ' |')
     print('|' + '---|' * len(cols))
     for row in rows:
         cells = []
         for c in cols:
             v = row[c]
-            cells.append('-' if v is None else (fmts[c].format(v) if c in fmts else str(v)))
+            cells.append('-' if v is None else fmt(fmts.get(c), v))
         print('| ' + ' | '.join(cells) + ' |')
     if a.json:
         with open(a.json, 'w', encoding='utf-8') as f:

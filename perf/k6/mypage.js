@@ -4,7 +4,7 @@
 // 비율 (가정): 구매자 내 주문 50% · 판매자 판매 주문 30% · 판매자 정산 20%
 import { check, fail } from 'k6';
 import http from 'k6/http';
-import { BASE_URL, BUYERS, SELLERS, buyerEmail, get, pick, requirePassword, sellerEmail } from './lib/common.js';
+import { BASE_URL, BUYERS, SELLERS, buyerEmail, get, pick, requirePassword, sellerEmail, LOGIN_URL, loginHeaders } from './lib/common.js';
 
 const STEPS = (__ENV.STEPS || '10,20,40').split(',').map(Number);
 const HOLD = __ENV.HOLD || '1m';
@@ -34,9 +34,9 @@ export const options = {
 function loginAll(emails) {
   const tokens = [];
   for (let i = 0; i < emails.length; i += 25) {
-    const batch = emails.slice(i, i + 25).map((email) => ['POST', `${BASE_URL}/api/v1/auth/login`,
+    const batch = emails.slice(i, i + 25).map((email) => ['POST', LOGIN_URL,
       JSON.stringify({ email, password: __ENV.PERF_PASSWORD }),
-      { headers: { 'Content-Type': 'application/json' }, tags: { name: 'setup login' } }]);
+      { headers: loginHeaders(email), tags: { name: 'setup' } }]);
     for (const res of http.batch(batch)) {
       if (res.status !== 200) fail(`로그인 실패 ${res.status}`);
       tokens.push(res.json('data.accessToken'));
