@@ -228,7 +228,9 @@ class OrderControllerTest {
         mockMvc.perform(get("/api/v1/orders/seller"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].sellerOrderId").value(7))
-                .andExpect(jsonPath("$.content[0].confirmedAt").value("2026-10-20T12:00:00"));
+                .andExpect(jsonPath("$.content[0].confirmedAt").value("2026-10-20T12:00:00"))
+                .andExpect(jsonPath("$.content[0].returnStatus").hasJsonPath()) // 반품 없으면 null (#626)
+                .andExpect(jsonPath("$.content[0].returnItemCount").value(0));
     }
 
     @Test
@@ -241,7 +243,8 @@ class OrderControllerTest {
         mockMvc.perform(get("/api/v1/orders/seller/7"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sellerOrderId").value(7))
-                .andExpect(jsonPath("$.buyerNickname").hasJsonPath()); // 응답에 칸이 있음 (#599)
+                .andExpect(jsonPath("$.buyerNickname").hasJsonPath()) // 응답에 칸이 있음 (#599)
+                .andExpect(jsonPath("$.confirmedAt").hasJsonPath()); // 확정 전에도 칸은 있음 (#626)
 
         verify(orderReadService).sellerOrder(10L, 7L);
     }

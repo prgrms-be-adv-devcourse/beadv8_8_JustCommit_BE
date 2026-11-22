@@ -24,6 +24,8 @@ public record SellerOrderDetailResponse(
         LocalDateTime pickedUpAt,
         LocalDateTime inTransitAt,
         LocalDateTime deliveredAt,
+        // 구매 확정 시각 (#626). 확정 전 null. 정산 시각(settledAt)은 지급 실패 · 지연 때 비거나 늦어 따로 둔다
+        LocalDateTime confirmedAt,
         String settlementStatus,
         LocalDateTime settledAt,
         LocalDateTime createdAt,
@@ -43,7 +45,7 @@ public record SellerOrderDetailResponse(
                                      String recipientName, String recipientPhone, String zipcode, String address1,
                                      String address2, List<Item> items) {
         this(sellerOrderId, orderId, orderNo, totalAmount, shippingFee, status, null, null,
-                null, null, null, null, "NOT_SETTLED", null, createdAt, null,
+                null, null, null, null, null, "NOT_SETTLED", null, createdAt, null,
                 recipientName, recipientPhone, zipcode, address1, address2, items, null);
     }
 

@@ -110,6 +110,9 @@ public class OrderReadService implements OrderQuery {
         Map<Long, Integer> itemCounts = new HashMap<>();
         Set<Long> acceptPending = new HashSet<>();
         Set<Long> returnRequested = new HashSet<>();
+        // 반품 진행 상태 (#626): 위와 같은 주문상품 목록으로 계산해 쿼리를 늘리지 않는다
+        Map<Long, SellerOrderResponse.ReturnStatus> returnStatuses = new HashMap<>();
+        Map<Long, Integer> returnItemCounts = new HashMap<>();
         Map<Long, ShipmentResult> shipments = shipmentsBySellerOrder(sellerOrderIds);
         if (!sellerOrderIds.isEmpty()) {
             for (OrdersItem item : ordersItemRepository.findBySellerOrderIds(sellerOrderIds)) {
@@ -121,6 +124,11 @@ public class OrderReadService implements OrderQuery {
                 }
                 if (item.getStatus() == OrderItemStatus.RETURN_REQUESTED) {
                     returnRequested.add(id);
+                }
+                SellerOrderResponse.ReturnStatus returnStatus = SellerOrderResponse.ReturnStatus.from(item.getStatus());
+                if (returnStatus != null) {
+                    returnStatuses.merge(id, returnStatus, SellerOrderResponse.ReturnStatus::lessProgressed);
+                    returnItemCounts.merge(id, 1, Integer::sum);
                 }
             }
         }
@@ -144,7 +152,9 @@ public class OrderReadService implements OrderQuery {
                     sellerOrder.getCreatedAt(), acceptDeadline != null, acceptDeadline,
                     returnRequested.contains(sellerOrder.getId()),
                     earliestReturn == null ? null : earliestReturn.getRequestedAt(),
-                    earliestReturn == null ? null : earliestReturn.responseDeadline());
+                    earliestReturn == null ? null : earliestReturn.responseDeadline(),
+                    returnStatuses.get(sellerOrder.getId()),
+                    returnItemCounts.getOrDefault(sellerOrder.getId(), 0));
         }));
     }
 
@@ -186,6 +196,7 @@ public class OrderReadService implements OrderQuery {
                 shipment == null ? null : shipment.pickedUpAt(),
                 shipment == null ? null : shipment.inTransitAt(),
                 shipment == null ? null : shipment.deliveredAt(),
+                sellerOrder.getConfirmedAt(),
                 settlement.status(), settlement.settledAt(), sellerOrder.getCreatedAt(),
                 memberQuery.getNicknames(List.of(order.getBuyerId())).get(order.getBuyerId()),
                 order.getRecipientName(), order.getRecipientPhone(),
