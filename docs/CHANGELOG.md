@@ -1,12 +1,13 @@
 # 문서 변경 기록
 
 > 언제 읽나: 작업을 시작하기 전, 최근에 바뀐 설계를 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-21 · 관련: 모든 docs
+> 상태: ✅ 확정 · 마지막 수정 2026-11-22 · 관련: 모든 docs
 
 새 항목을 맨 위에 추가합니다. 형식: `날짜 · 문서 · 바뀐 내용 (#PR)`
 
 ## 기록
 
+- 2026-11-22 · reference/external-apis.md · services/market.md · 판매 주문 상세에 `confirmedAt` 추가(목록에는 이미 있음). 판매 주문 목록에 반품 진행 상태 `returnStatus`(주문상품 상태 기준, 가장 덜 진행된 단계, 거절 반품 제외) · `returnItemCount` 추가, 기존 `returnRequested` 유지. 주문상품 상태를 기준으로 한 이유를 market 「판매 내역」에 (#PR_NO)
 - 2026-11-21 · reference/env-vars.md · reference/ports.md · infra/deploy.md · 운영 payment `BANK_MODE=http`(모의 은행 서버 503-bank로 인출 지급, `make-env.sh`가 넣음). 503-bank 3001 행 추가, 은행 서버 `.env` 위치 `~/503-bank/.env`로 정정 (#624)
 - 2026-11-21 · reference/external-apis.md · services/market.md · flows/order-payment.md · glossary.md · 배송비 미리 계산 `GET orders/shippingFees?zipcode&sellerIds` 추가(`region` · `regionLabel` · 판매자별 `fee` · `baseFee` · `extraFee`, 주문 생성과 같은 계산). 주문 생성의 `expectedShippingFee`를 선택 항목으로 구현(없으면 비교 안 함, 다르면 409 `SHIPPING_FEE_CHANGED`). 용어 「배송 지역」(`ShippingRegion`) · 「배송비 미리 계산」(`ShippingFeeQuote`) 추가 (#618)
 - 2026-11-21 · reference/external-apis.md · services/market.md · 반품 택배 조회 API 추가: 판매자 `orders/seller/{sellerOrderId}/items/{orderItemId}/returnShipment` · 구매자 `orders/{orderId}/items/{orderItemId}/returnShipment`, 배송 조회와 같은 칸 + `orderItemId`. 수거 전 거리는 기사 → 구매자 (#621)
