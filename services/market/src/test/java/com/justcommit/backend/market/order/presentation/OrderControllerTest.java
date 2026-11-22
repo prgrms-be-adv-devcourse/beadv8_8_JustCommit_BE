@@ -228,7 +228,9 @@ class OrderControllerTest {
         mockMvc.perform(get("/api/v1/orders/seller"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].sellerOrderId").value(7))
-                .andExpect(jsonPath("$.content[0].confirmedAt").value("2026-10-20T12:00:00"));
+                .andExpect(jsonPath("$.content[0].confirmedAt").value("2026-10-20T12:00:00"))
+                .andExpect(jsonPath("$.content[0].returnStatus").hasJsonPath()) // 반품 없으면 null (#626)
+                .andExpect(jsonPath("$.content[0].returnItemCount").value(0));
     }
 
     @Test

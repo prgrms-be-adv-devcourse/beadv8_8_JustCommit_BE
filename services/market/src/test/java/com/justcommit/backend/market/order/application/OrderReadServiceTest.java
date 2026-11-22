@@ -16,6 +16,7 @@ import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.presentation.OrderListRequest;
+import com.justcommit.backend.market.order.presentation.SellerOrderResponse;
 import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.market.client.product.ProductQuery;
 import com.justcommit.backend.market.client.product.ProductResult;
@@ -424,6 +425,9 @@ class OrderReadServiceTest {
             // 승인된 반품은 더 오래됐어도 마감 계산에서 빠진다
             assertThat(summary.returnRequestedAt()).isEqualTo(earlier);
             assertThat(summary.returnDeadlineAt()).isEqualTo(earlier.plusHours(48));
+            // 신청 2개 + 반품 배송 중 1개 → 가장 덜 진행된 REQUESTED, 3개 (#626)
+            assertThat(summary.returnStatus()).isEqualTo(SellerOrderResponse.ReturnStatus.REQUESTED);
+            assertThat(summary.returnItemCount()).isEqualTo(3);
         });
         verify(returnRequestRepository, times(1)).findBySellerOrderIdIn(any());
     }
@@ -446,7 +450,32 @@ class OrderReadServiceTest {
             assertThat(summary.returnRequested()).isFalse();
             assertThat(summary.returnRequestedAt()).isNull();
             assertThat(summary.returnDeadlineAt()).isNull();
+            // 거절된 반품은 구매 확정이라 반품 중으로 세지 않는다 (#626)
+            assertThat(summary.returnStatus()).isNull();
+            assertThat(summary.returnItemCount()).isZero();
         });
+    }
+
+    @Test
+    @DisplayName("판매 목록: 승인 뒤 반품 배송 중 · 일부 반품이면 returnStatus IN_TRANSIT, returnItemCount는 반품 상품 수 (#626)")
+    void sellerListShowsReturnInTransitForPartialReturn() {
+        Orders order = order(10L);
+        SellerOrder sellerOrder = sellerOrderWith(order, OrderItemStatus.RETURN_IN_TRANSIT,
+                OrderItemStatus.RETURNED, OrderItemStatus.CONFIRMED);
+        when(sellerOrderRepository.findBySellerId(eq(20L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(sellerOrder), PageRequest.of(0, 20), 1));
+        when(ordersItemRepository.findBySellerOrderIds(List.of(7L))).thenReturn(sellerOrder.getItems());
+
+        var response = orderReadService.sellerOrders(20L, new OrderListRequest(0, 20));
+
+        assertThat(response.content()).singleElement().satisfies(summary -> {
+            assertThat(summary.returnRequested()).isFalse(); // 판매자 응답 대기는 없음 (기존 칸 유지)
+            assertThat(summary.returnStatus()).isEqualTo(SellerOrderResponse.ReturnStatus.IN_TRANSIT);
+            assertThat(summary.returnItemCount()).isEqualTo(2);
+            assertThat(summary.itemCount()).isEqualTo(3);
+        });
+        // 주문상품은 페이지 전체를 한 번에 읽는다 (N+1 없음)
+        verify(ordersItemRepository, times(1)).findBySellerOrderIds(any());
     }
 
     @Test
