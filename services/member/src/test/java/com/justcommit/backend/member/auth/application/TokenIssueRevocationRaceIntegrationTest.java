@@ -260,14 +260,17 @@ class TokenIssueRevocationRaceIntegrationTest {
     clockGate = new PauseGate("reissue-1");
 
     Future<TokenReissueResult> first = run("reissue-1", () -> tokenReissueService.reissue(refreshToken));
-    clockGate.awaitReached();  // 첫 요청: 잠금 → 꺼내며 삭제 → 확인을 마치고 멈춤
+    // 첫 요청: 잠금 → 확인을 마치고, Refresh를 꺼내기 전 발급 시각 확인에서 멈춤 (#546)
+    int firstPid = clockGate.awaitReached();
 
-    // 첫 요청이 이미 꺼냈으므로 두 번째 요청은 잠금 전에 거절될 수 있음 (정상 동작)
+    // 첫 요청이 아직 꺼내지 않았으므로 두 번째 요청은 Refresh를 읽고 회원 잠금에서 기다린다
     Future<TokenReissueResult> second = run("reissue-2", () -> tokenReissueService.reissue(refreshToken));
-    assertRejected(second, MemberErrorCode.INVALID_REFRESH_TOKEN);
+    awaitBlockedBy(firstPid);
 
+    // 첫 요청이 꺼내며 삭제 · 커밋한 뒤, 두 번째 요청은 잠금을 얻어도 꺼낼 Refresh가 없다
     clockGate.release();
     assertThat(result(first).refreshToken()).isNotBlank();
+    assertRejected(second, MemberErrorCode.INVALID_REFRESH_TOKEN);
   }
 
   @Test

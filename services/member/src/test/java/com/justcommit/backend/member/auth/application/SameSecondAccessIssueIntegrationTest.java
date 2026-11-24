@@ -1,11 +1,13 @@
 package com.justcommit.backend.member.auth.application;
 
+import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.security.JwtVerifier;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import com.justcommit.backend.common.testcontainers.SharedRedis;
 import com.justcommit.backend.member.auth.domain.RevocationReason;
 import com.justcommit.backend.member.auth.infrastructure.redis.RefreshTokenRedisStore;
 import com.justcommit.backend.member.domain.Member;
+import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import org.junit.jupiter.api.AfterEach;
@@ -32,13 +34,14 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doReturn;
 
 /**
  * 폐기와 같은 초에 발급한 Access (#546).
- * Gateway는 iat <= 끊은 시각인 Access를 거절하므로, 폐기 직후 같은 초에 정상 발급한 Access도 거절 대상이 된다.
- * 해결 전의 현재 동작을 발급 경로별로 기록한다 (경로를 고칠 때 그 경로의 기대를 뒤집는다).
- * 같은 초는 DatabaseClock을 끊은 시각의 0.5초 뒤로 고정해 만든다 (KakaoReloginIntegrationTest와 같은 방식).
+ * Gateway는 iat <= 끊은 시각인 Access를 거절하므로, 폐기 직후 같은 초에 발급하면 정상 발급한 Access도 거절된다.
+ * 로컬 로그인 · 재발급이 다음 초까지 기다린 뒤 발급하는지 확인한다 (카카오 재연결은 KakaoReloginIntegrationTest).
+ * 같은 초는 DatabaseClock을 끊은 시각의 0.5초 뒤로 고정해 만든다.
  */
 @SpringBootTest
 @Testcontainers(disabledWithoutDocker = true)
@@ -128,17 +131,40 @@ class SameSecondAccessIssueIntegrationTest {
   }
 
   @Test
-  @DisplayName("[S-A08 재현 · #546] 폐기 뒤 인증 버전의 Refresh로 같은 초에 재발급해 받은 Access는 iat = 끊은 시각 (로그인 경로와 무관) — 현재 동작 기록")
-  void sameSecondReissueAccessIsRejectable() {
+  @DisplayName("[S-A08 · #546] 폐기 뒤 인증 버전의 Refresh로 같은 초에 재발급하면 다음 초까지 기다린 뒤 발급해, 새 Access의 iat가 끊은 시각보다 뒤다 (로그인 경로와 무관)")
+  void sameSecondReissueIssuesAfterCutoff() {
     Member member = saveMember();
     long cutoff = revoke(member.getId());
     // 폐기가 올린 인증 버전(1)으로 저장한 Refresh: 로그인 경로를 거치지 않고 재발급만 확인
     refreshTokenRedisStore.save("refresh-after-revocation", member.getId(), 1, Duration.ofDays(1));
-    fixClockToSameSecond(cutoff);
+    fixClockToSameSecondThenNext(cutoff);
 
     TokenReissueResult result = tokenReissueService.reissue("refresh-after-revocation");
 
-    assertThat(issuedAtOf(result.accessToken())).isEqualTo(cutoff);
+    assertThat(issuedAtOf(result.accessToken())).isGreaterThan(cutoff);
+  }
+
+  @Test
+  @DisplayName("[S-A08 · #546] 재발급이 발급 시각을 기다리다 MEMBER_BUSY로 끝나도 Refresh는 소비되지 않아, 다음 요청으로 재발급할 수 있다")
+  void reissueKeepsRefreshUntilIssuable() {
+    Member member = saveMember();
+    long cutoff = revoke(member.getId());
+    refreshTokenRedisStore.save("refresh-after-revocation", member.getId(), 1, Duration.ofDays(1));
+    // 시각이 계속 같은 초 → 두 번 시도한 뒤 MEMBER_BUSY
+    fixClockToSameSecond(cutoff);
+
+    assertThatThrownBy(() -> tokenReissueService.reissue("refresh-after-revocation"))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(MemberErrorCode.MEMBER_BUSY);
+    assertThat(refreshTokenRedisStore.findOwner("refresh-after-revocation")).isPresent();
+
+    // 다음 초가 되면 같은 Refresh로 재발급되고, 그때 소비된다
+    doReturn(Instant.ofEpochSecond(cutoff + 1)).when(databaseClock).now();
+    TokenReissueResult result = tokenReissueService.reissue("refresh-after-revocation");
+
+    assertThat(issuedAtOf(result.accessToken())).isGreaterThan(cutoff);
+    assertThat(refreshTokenRedisStore.findOwner("refresh-after-revocation")).isEmpty();
   }
 
   // 실제 폐기 처리로 Redis에 끊은 시각(초)을 남기고, Gateway TokenRevocationChecker와 같은 방식으로 읽음
