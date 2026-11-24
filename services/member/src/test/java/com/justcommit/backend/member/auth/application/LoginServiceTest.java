@@ -6,7 +6,6 @@ import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
-import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,13 +19,16 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
@@ -45,7 +47,7 @@ class LoginServiceTest {
   private RefreshTokenIssuer refreshTokenIssuer;
 
   @Mock
-  private DatabaseClock databaseClock;
+  private AccessIssueTimeGuard accessIssueTimeGuard;
 
   @InjectMocks
   private LoginService loginService;
@@ -60,6 +62,9 @@ class LoginServiceTest {
   @BeforeEach
   void setUp() {
     ReflectionTestUtils.setField(loginService, "accessTokenExpiration", Duration.ofMinutes(30));
+    // 가드는 넘겨받은 로그인 처리를 그대로 한 번 실행 (트랜잭션 · 대기는 AccessIssueTimeGuardIntegrationTest에서 확인)
+    lenient().when(accessIssueTimeGuard.runWithRetry(any()))
+        .thenAnswer(invocation -> invocation.<Supplier<?>>getArgument(0).get());
   }
 
   private Member member() {
@@ -74,7 +79,7 @@ class LoginServiceTest {
   void login_success() {
     given(memberLocker.lockByEmail(EMAIL)).willReturn(Optional.of(member()));
     given(passwordEncoder.matches(PASSWORD, ENCODED_PASSWORD)).willReturn(true);
-    given(databaseClock.now()).willReturn(NOW);
+    given(accessIssueTimeGuard.issuableNow(MEMBER_ID)).willReturn(NOW);
     given(jwtProvider.createAccessToken(MEMBER_ID, "MEMBER", NOW)).willReturn("access-token");
     given(refreshTokenIssuer.issue(MEMBER_ID, 0)).willReturn("refresh-token");
 
@@ -118,7 +123,7 @@ class LoginServiceTest {
             .isEqualTo(MemberErrorCode.LOGIN_FAILED);
 
     then(jwtProvider).shouldHaveNoInteractions();
-    then(databaseClock).shouldHaveNoInteractions();
+    then(accessIssueTimeGuard).should(never()).issuableNow(anyLong());
     then(refreshTokenIssuer).shouldHaveNoInteractions();
   }
 
@@ -135,7 +140,7 @@ class LoginServiceTest {
             .isEqualTo(MemberErrorCode.LOGIN_FAILED);
 
     then(passwordEncoder).shouldHaveNoInteractions();
-    then(databaseClock).shouldHaveNoInteractions();
+    then(accessIssueTimeGuard).should(never()).issuableNow(anyLong());
     then(jwtProvider).shouldHaveNoInteractions();
     then(refreshTokenIssuer).shouldHaveNoInteractions();
   }

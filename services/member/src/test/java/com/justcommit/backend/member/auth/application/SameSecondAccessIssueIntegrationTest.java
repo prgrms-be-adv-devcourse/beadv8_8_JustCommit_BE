@@ -103,28 +103,28 @@ class SameSecondAccessIssueIntegrationTest {
   }
 
   @Test
-  @DisplayName("[S-A08 재현 · #546] 폐기와 같은 초에 로컬 로그인해 받은 Access는 iat = 끊은 시각이라 Gateway 규칙(iat <= 끊은 시각)상 거절 대상 — 현재 동작 기록")
-  void sameSecondLoginAccessIsRejectable() {
+  @DisplayName("[S-A08 · #546] 폐기와 같은 초에 로컬 로그인하면 다음 초까지 기다린 뒤 발급해, 새 Access의 iat가 끊은 시각보다 뒤다 (Gateway 규칙상 거절 대상 아님)")
+  void sameSecondLoginIssuesAfterCutoff() {
     Member member = saveMember();
     long cutoff = revoke(member.getId());
-    fixClockToSameSecond(cutoff);
+    fixClockToSameSecondThenNext(cutoff);
 
     LoginResult result = loginService.login(new LoginCommand(member.getEmail(), PASSWORD));
 
-    assertThat(issuedAtOf(result.accessToken())).isEqualTo(cutoff);
+    assertThat(issuedAtOf(result.accessToken())).isGreaterThan(cutoff);
   }
 
   @Test
-  @DisplayName("[S-A08 재현 · #546] 폐기와 같은 초에 로그인 → 재발급으로 받은 Access도 iat = 끊은 시각 — 현재 동작 기록")
-  void sameSecondLoginThenReissueAccessIsRejectable() {
+  @DisplayName("[S-A08 · #546] 폐기와 같은 초에 로그인 → 재발급: 로그인이 다음 초에 발급되므로 재발급 Access의 iat도 끊은 시각보다 뒤다")
+  void sameSecondLoginThenReissueIssuesAfterCutoff() {
     Member member = saveMember();
     long cutoff = revoke(member.getId());
-    fixClockToSameSecond(cutoff);
+    fixClockToSameSecondThenNext(cutoff);
     String refreshToken = loginService.login(new LoginCommand(member.getEmail(), PASSWORD)).refreshToken();
 
     TokenReissueResult result = tokenReissueService.reissue(refreshToken);
 
-    assertThat(issuedAtOf(result.accessToken())).isEqualTo(cutoff);
+    assertThat(issuedAtOf(result.accessToken())).isGreaterThan(cutoff);
   }
 
   @Test
@@ -150,6 +150,12 @@ class SameSecondAccessIssueIntegrationTest {
   // 시각에 따라 들쭉날쭉하지 않도록, 이후 발급 시각을 끊은 시각과 같은 초(0.5초 뒤)로 고정
   private void fixClockToSameSecond(long cutoff) {
     doReturn(Instant.ofEpochSecond(cutoff).plusMillis(500)).when(databaseClock).now();
+  }
+
+  // 첫 시각은 끊은 시각과 같은 초, 그 뒤로는 다음 초 (실제 시각에 따라 결과가 달라지지 않게 둘 다 고정)
+  private void fixClockToSameSecondThenNext(long cutoff) {
+    doReturn(Instant.ofEpochSecond(cutoff).plusMillis(500), Instant.ofEpochSecond(cutoff + 1))
+        .when(databaseClock).now();
   }
 
   private long issuedAtOf(String accessToken) {
