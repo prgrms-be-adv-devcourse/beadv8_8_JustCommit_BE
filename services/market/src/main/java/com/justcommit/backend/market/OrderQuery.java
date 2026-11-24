@@ -2,6 +2,7 @@ package com.justcommit.backend.market;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface OrderQuery {
 
@@ -16,5 +17,8 @@ public interface OrderQuery {
 
     // 장바구니 추천용: since 이후 구매 확정된 상품 ID, 최신순 최대 limit개 (기준 시각은 판매자 주문의 confirmedAt)
     List<Long> getRecentConfirmedProductIds(Long buyerId, LocalDateTime since, int limit);
+
+    // 리뷰 작성 판단용 판매자 주문 정보 (#582). 판매자 주문이 없으면 빈 값. 구매 확정 전이어도 값을 돌려준다
+    Optional<SellerOrderReviewInfo> findSellerOrderReviewInfo(Long sellerOrderId);
 
 }
