@@ -18,6 +18,8 @@ public class SecurityConfig {
         .authorizeHttpRequests(auth -> auth
             // 택배사 웹훅 (토큰 대신 컨트롤러가 X-Api-Key를 직접 확인)
             .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/courier").permitAll()
+            // 판매자 리뷰 목록 · 집계 (#581): Gateway PublicPaths와 같은 두 경로의 GET만. 그 밖의 리뷰 API는 로그인 필요
+            .requestMatchers(HttpMethod.GET, "/api/v1/reviews", "/api/v1/reviews/summary").permitAll()
             // Prometheus 지표 수집. Gateway가 /actuator를 넘기지 않아 내부망(Prometheus)에서만 닿는다
             .requestMatchers(HttpMethod.GET, "/actuator/prometheus").permitAll()
             // 판매자 수락, 거절은 SELLER 토큰만 (#284). 본인 판매자 주문인지는 서비스가 다시 확인한다

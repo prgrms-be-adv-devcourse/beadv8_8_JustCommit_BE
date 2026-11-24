@@ -45,6 +45,10 @@ class PublicPaths {
       rule(HttpMethod.GET, "/api/v1/speciesSearches"),
       // market: 택배사 웹훅 (토큰 대신 market이 X-Api-Key 확인)
       rule(HttpMethod.POST, "/api/v1/webhooks/courier"),
+      // market: 판매자 리뷰 목록 · 집계 (#581, 비회원도 판매자 상점에서 봄). 이 두 경로의 GET만.
+      // 작성 · 삭제 · 내 리뷰(reviews/me) · 작성 가능 목록(reviews/writable)은 로그인 필요라 /api/v1/reviews/** 를 열지 않음
+      rule(HttpMethod.GET, "/api/v1/reviews"),
+      rule(HttpMethod.GET, "/api/v1/reviews/summary"),
       // member: 카카오 연결 해제 웹훅 (#422, 토큰 대신 member가 Authorization: KakaoAK 확인, GET 쿼리 · POST 폼)
       rule(HttpMethod.GET, "/api/v1/webhooks/kakao/unlink"),
       rule(HttpMethod.POST, "/api/v1/webhooks/kakao/unlink")
