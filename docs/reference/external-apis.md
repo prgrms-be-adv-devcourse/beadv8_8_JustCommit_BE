@@ -1,7 +1,7 @@
 # 외부 API 목록
 
 > 언제 읽나: 외부 API의 경로 · 담당 서비스를 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-22 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-24 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
 
 ## 서비스별 목록
 
@@ -15,9 +15,9 @@
 | POST | `auth/email/verify` | 인증번호 확인 (재설정 목적이면 재설정 토큰 응답) | 공개 |
 | POST | `auth/passwordResets` | 비밀번호 재설정 → [응답 규칙](#비밀번호-재설정--가입-계정-안내) | 공개 |
 | POST | `auth/accountReminders` | 가입 계정 안내 (아이디 찾기) → [응답 규칙](#비밀번호-재설정--가입-계정-안내) | 공개 |
-| POST | `auth/login` | 로그인 | 공개 |
+| POST | `auth/login` | 로그인 (회원 잠금 대기 초과 · 토큰 폐기 직후 발급 시각 대기 초과는 409 `MEMBER_BUSY` → [인증 규칙](../conventions/auth.md#토큰-폐기)) | 공개 |
 | POST | `auth/logout` | 로그아웃 | 공개(Refresh 쿠키 · 선택 `Authorization`) |
-| POST | `auth/reissue` | 토큰 재발급 | 공개(Refresh 쿠키) |
+| POST | `auth/reissue` | 토큰 재발급 (409 `MEMBER_BUSY`는 로그인과 같음. 이때 Refresh는 소비되지 않아 같은 쿠키로 다시 요청할 수 있음) | 공개(Refresh 쿠키) |
 | POST | `users` | 회원가입 (30일 안에 탈퇴한 이메일 · 휴대폰이면 409 `REJOIN_RESTRICTED`) | 공개 |
 | POST | `users/social` | 소셜 가입 완료 (30일 안에 탈퇴한 이메일 · 휴대폰이면 409 `REJOIN_RESTRICTED`) | 공개 |
 | GET | `users/nicknameAvailability?nickname=` | 닉네임 중복 확인 | 공개 |
