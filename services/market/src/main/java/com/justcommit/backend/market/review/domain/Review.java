@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
@@ -37,6 +38,10 @@ public class Review extends BaseTimeEntity {
 
   private static final BigDecimal RATING_MIN = new BigDecimal("0.5");
   private static final BigDecimal RATING_MAX = new BigDecimal("5.0");
+  private static final BigDecimal RATING_STEP = new BigDecimal("0.5");
+
+  // 쓸 수 있는 별점 10개: 5.0부터 0.5까지 0.5 단위 내림차순. 판매자 리뷰 집계의 별점별 개수 구간 (#583)
+  public static final List<BigDecimal> RATINGS = ratings();
 
   // 작성 기간: 구매 확정 시각부터 이 기간 안에만 쓸 수 있다. 끝났으면(같거나 지남) 쓸 수 없다.
   // 작성 가능한 주문 목록(#585)도 같은 계산을 쓴다
@@ -125,6 +130,14 @@ public class Review extends BaseTimeEntity {
     if (new HashSet<>(tags).size() != tags.size()) {
       throw invalid("같은 태그를 두 번 선택할 수 없습니다.");
     }
+  }
+
+  private static List<BigDecimal> ratings() {
+    List<BigDecimal> ratings = new ArrayList<>();
+    for (BigDecimal rating = RATING_MAX; rating.compareTo(RATING_MIN) >= 0; rating = rating.subtract(RATING_STEP)) {
+      ratings.add(rating);
+    }
+    return List.copyOf(ratings);
   }
 
   private static BusinessException invalid(String message) {

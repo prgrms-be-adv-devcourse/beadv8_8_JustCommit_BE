@@ -1,7 +1,9 @@
 package com.justcommit.backend.market;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public interface OrderQuery {
@@ -20,5 +22,8 @@ public interface OrderQuery {
 
     // 리뷰 작성 판단용 판매자 주문 정보 (#582). 판매자 주문이 없으면 빈 값. 구매 확정 전이어도 값을 돌려준다
     Optional<SellerOrderReviewInfo> findSellerOrderReviewInfo(Long sellerOrderId);
+
+    // 판매자 주문별 구매 확정(CONFIRMED)된 주문상품 이름, 주문상품 순서 (#583 리뷰 목록). 확정 상품이 없는 판매자 주문은 빠진다
+    Map<Long, List<String>> getConfirmedProductNames(Collection<Long> sellerOrderIds);
 
 }
