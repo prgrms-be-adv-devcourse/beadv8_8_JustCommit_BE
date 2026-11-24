@@ -1,7 +1,7 @@
 # 용어집 (유비쿼터스 언어)
 
 > 언제 읽나: 같은 대상을 부르는 표준 이름을 찾을 때, 별칭(다른 이름 · 일상어 · 영문)으로 검색할 때, 코드 이름과 문서 이름을 맞출 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-21 · 관련: 노션 「유비쿼터스 언어 정리」, 전체
+> 상태: ✅ 확정 · 마지막 수정 2026-11-24 · 관련: 노션 「유비쿼터스 언어 정리」, 전체
 
 문서 · 코드 · PR · 회의에서는 「표준 용어」만 씁니다. 「별칭」은 검색용이며 본문에 쓰지 않습니다. 시간 · 금액 · 횟수 같은 값은 여기 적지 않고 「원본」 문서를 봅니다.
 
@@ -32,6 +32,8 @@
 | 반송 | `RETURNING` · `RETURNED` (택배사) | 취소 반송 | 취소가 인정됐지만 택배사 장애로 이미 수거된 상품을 택배사가 판매자에게 돌려보내는 것 (택배사 비용). 구매자가 신청하는 반품과 다름 | [취소 · 환불](flows/cancel-refund.md) |
 | 택배사 | – | 404-express, 모의 택배사, courier | 배송을 맡는 외부 서비스 (지금은 모의 택배사 404-express) | [market](services/market.md) |
 | 웹훅 | – | webhook, 콜백 | 택배사가 배송 상태 · 취소 · 요금표 변경을 알려 주는 HTTP 요청 | [market 정책](services/market.md#정책) |
+| 택배 예약 큐 | `ShipmentService.bookReadyShipments` · `ShipmentScheduler` | 예약 큐, 재예약 스케줄러 | `READY` 배송을 한 건씩 `FOR UPDATE SKIP LOCKED`로 집고 30초 임대한 뒤 트랜잭션 밖에서 택배사에 예약하는 스케줄러. 실패해도 포기하지 않음 | [배송](flows/shipment.md#택배-예약-큐) |
+| 택배 취소 큐 | `ShipmentCancelQueueService` | 취소 큐 | `CANCEL_PENDING` 배송을 택배 예약 큐와 같은 방식으로 택배사에 주문번호 + 누른 시각으로 취소 요청하는 스케줄러 | [배송](flows/shipment.md#택배-취소) |
 | 배송 조회 | `ShipmentTracking` | 배송 추적, 기사 위치 | 판매자 · 구매자가 한 배송의 단계 · 시각과 택배사의 남은 거리 · 지점을 보는 조회. 남은 거리는 안내용 | [외부 API](reference/external-apis.md#market) |
 | 배송비 요금표 | `ShippingFeeTable` (`SHIPPING_FEE_TABLE`) | 운임표 | 지역 구분(기본 + 제주 · 도서산간) 배송비 표. market이 버전과 함께 보관 | [market 정책](services/market.md#정책) |
 | 배송 지역 | `ShippingRegion` (`GENERAL` · `JEJU` · `REMOTE`) | 도서산간 여부, 지역 할증 구분 | 배송지 우편번호가 요금표의 어느 할증 구간인지 (일반 · 제주 · 도서산간). 도서산간 → 제주 순으로 보고 할증은 하나만 | [market 정책](services/market.md#정책) |

@@ -24,6 +24,7 @@ replant(팀 JustCommit)는 직접 키운 식물을 사고파는 C2C 식물 마�
 | Kafka 이벤트 발행 · 구독 | `docs/conventions/events.md`, `docs/reference/kafka-topics.md` |
 | 공통 모듈(common-*) 수정 | `docs/conventions/common-modules.md` |
 | 주문 · 결제 · 취소 · 환불 · 정산 흐름 | `docs/flows/` 해당 문서 |
+| 배송 · 택배 예약 · 택배 웹훅 · 반품 배송 · 배송비 | `docs/flows/shipment.md` |
 | 사진 검수 · 검색 · 추천 | `docs/flows/image-review.md`, `docs/flows/search-recommend.md`, `docs/services/ai.md` |
 | 포트 · 환경변수 · Redis 키 · 스케줄러 | `docs/reference/` 해당 문서 |
 | 배포 · 로그 · 알림 · AWS | `docs/infra/` 해당 문서 |
