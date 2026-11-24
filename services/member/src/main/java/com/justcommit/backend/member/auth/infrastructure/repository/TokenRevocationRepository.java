@@ -31,6 +31,11 @@ public interface TokenRevocationRepository extends JpaRepository<TokenRevocation
       """, nativeQuery = true)
   Optional<TokenRevocation> findNextRetryTargetForUpdate();
 
+  // 회원의 가장 늦은 폐기 시각 (#546). 폐기 기록이 없으면 비어 있음
+  // 상태와 관계없이 본다: PENDING도 재처리가 나중에 Redis에 기록하므로 발급 시각은 그 뒤여야 한다
+  @Query("select max(r.cutoffAt) from TokenRevocation r where r.memberId = :memberId")
+  Optional<Instant> findLatestCutoffAt(@Param("memberId") Long memberId);
+
   @Modifying
   @Query(value = """
       UPDATE member_token_revocation
