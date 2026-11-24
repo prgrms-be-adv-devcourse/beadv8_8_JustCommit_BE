@@ -7,7 +7,7 @@
 
 ## 기록
 
-- 2026-11-24 · flows/shipment.md · glossary.md · AGENTS.md · 배송 흐름 문서 새로 만듦(처음 보는 사람용: 배송 생성 시점, 택배 예약 큐, 배송 상태, 택배 웹훅, 택배 취소, 반품 배송, 배송 조회, 배송비, 실패와 재시도, 알려진 한계 「4xx도 끝없이 재시도」, 운영 · 디버깅). 용어 「택배 예약 큐」 「택배 취소 큐」 추가, 문서 지도에 한 줄 (#PR)
+- 2026-11-24 · flows/shipment.md · glossary.md · AGENTS.md · 배송 흐름 문서 새로 만듦(처음 보는 사람용: 배송 생성 시점, 택배 예약 큐, 배송 상태, 택배 웹훅, 택배 취소, 반품 배송, 배송 조회, 배송비, 실패와 재시도, 알려진 한계 「4xx도 끝없이 재시도」, 운영 · 디버깅). 용어 「택배 예약 큐」 「택배 취소 큐」 추가, 문서 지도에 한 줄 (#631)
 - 2026-11-22 · reference/external-apis.md · services/market.md · 판매 주문 상세에 `confirmedAt` 추가(목록에는 이미 있음). 판매 주문 목록에 반품 진행 상태 `returnStatus`(주문상품 상태 기준, 가장 덜 진행된 단계, 거절 반품 제외) · `returnItemCount` 추가, 기존 `returnRequested` 유지. 주문상품 상태를 기준으로 한 이유를 market 「판매 내역」에 (#627)
 - 2026-11-21 · reference/env-vars.md · reference/ports.md · infra/deploy.md · 운영 payment `BANK_MODE=http`(모의 은행 서버 503-bank로 인출 지급, `make-env.sh`가 넣음). 503-bank 3001 행 추가, 은행 서버 `.env` 위치 `~/503-bank/.env`로 정정 (#624)
 - 2026-11-21 · reference/external-apis.md · services/market.md · flows/order-payment.md · glossary.md · 배송비 미리 계산 `GET orders/shippingFees?zipcode&sellerIds` 추가(`region` · `regionLabel` · 판매자별 `fee` · `baseFee` · `extraFee`, 주문 생성과 같은 계산). 주문 생성의 `expectedShippingFee`를 선택 항목으로 구현(없으면 비교 안 함, 다르면 409 `SHIPPING_FEE_CHANGED`). 용어 「배송 지역」(`ShippingRegion`) · 「배송비 미리 계산」(`ShippingFeeQuote`) 추가 (#618)
