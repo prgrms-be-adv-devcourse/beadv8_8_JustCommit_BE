@@ -3,6 +3,8 @@
 # - common/ · Gradle 설정 · 루트 src/ · 이 파일이 바뀌면 전체(./gradlew build)
 # - gateway/ · services/{서비스}/가 바뀌면 그 모듈만(:gateway:build, :services:{서비스}:build)
 # - 그 밖(docs/ 등)만 바뀌면 빌드 없이 통과
+# - CHANGELOG 스크립트 테스트(scripts/test_changelog.py)는 모든 PR에서 실행
+# - CHANGELOG 규칙 확인(scripts/changelog.py verify-pr)은 develop 대상 PR에서만 실행. 규칙 원본: docs/changelog.d/README.md
 # job 이름 build는 ruleset develop-ci의 필수 체크라 바꾸지 않는다 (경로와 상관없이 항상 실행돼야 머지가 안 막힌다)
 name: CI
 
@@ -33,6 +35,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # base 브랜치와 비교하려고 이력을 받는다
+
+      # 통합 스크립트 자체의 테스트 (#640). 모든 PR(develop · main 대상)에서 실행한다 (1~2초, 추가 설치 없음)
+      - name: CHANGELOG 스크립트 테스트
+        run: python3 -m unittest discover -s scripts -p "test_*.py"
+
+      # CHANGELOG 조각 파일 규칙 (#640). develop 대상 PR에서만 실행한다
+      # - 빌드할 모듈이 없는 PR(docs만)에서도 실행되도록 「바뀐 모듈 고르기」보다 앞에 둔다
+      # - main 대상 PR은 건너뛴다. 지금 브랜치 운영에서 변경 기록은 develop으로 들어올 때 확인하고,
+      #   main은 develop의 결과를 옮겨 받기만 한다. base(main)와 비교하면 develop에서 이미 통합한 기록이 모두 걸린다
+      # - main 반영 방식이 바뀌면(예: main으로 직접 들어가는 작업 PR이 생기면) 이 조건을 다시 검토한다
+      - name: CHANGELOG 규칙 확인
+        if: github.base_ref == 'develop'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/changelog.py verify-pr "$BASE_SHA"
 
       - name: 바뀐 모듈 고르기
         id: pick
