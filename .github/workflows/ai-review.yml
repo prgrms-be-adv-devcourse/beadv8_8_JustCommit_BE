@@ -86,7 +86,9 @@ jobs:
             - API: URL에 동사 금지·복수형, 상태 변경은 PATCH + body, ApiResponse 사용, 요청 DTO는 {도메인}{행위}Request record
             - 예외·로그: BusinessException + 모듈 ErrorCode, 로그에 식별 id 포함, 개인정보(이름·전화·주소·계좌) 로그 금지
             - 정책: docs/services/*.md 「정책」과 어긋나는지, Redis 키 이름·TTL 규칙
-            - 문서: 코드가 docs/ 설계와 달라졌는데 같은 PR에서 문서·CHANGELOG를 안 고쳤는지, PR 본문 「📄 문서 변경」 칸을 채웠는지
+            - 문서: 코드가 docs/ 설계와 달라졌는데 같은 PR에서 문서를 안 고쳤는지, PR 본문 「📄 문서 변경」 칸을 채웠는지
+            - 변경 기록(일반 PR): 문서를 고쳤으면 조각 파일 docs/changelog.d/<이슈번호>.md를 추가했는지. docs/CHANGELOG.md를 직접 고치거나 이미 develop에 있는 조각 파일을 고치면 안 됨 (같은 이슈의 추가 변경은 <이슈번호>-<식별자>.md)
+            - 변경 기록(Sprint 종료 통합 PR): scripts/changelog.py merge 결과로 docs/CHANGELOG.md에 항목이 들어가고 통합된 조각 파일이 삭제되는 것은 정상. 이 PR은 자기 조각 파일을 쓰지 않음. 스크립트 결과 말고 기존 기록을 손으로 고쳤는지만 확인
             - 보안: 비밀값·키가 코드에 들어갔는지. SecurityConfig 변경은 "담당자 확인 필요"로 표시
             - 테스트: 새 로직에 테스트가 있는지, 시간은 고정(Clock 등)했는지, @DisplayName은 한국어인지
             - 컨벤션: PR 제목 "타입: 내용", 본문에 Closes #이슈

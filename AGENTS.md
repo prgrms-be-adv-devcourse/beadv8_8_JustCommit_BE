@@ -10,7 +10,7 @@ replant(팀 JustCommit)는 직접 키운 식물을 사고파는 C2C 식물 마�
 
 ## 작업을 시작하기 전
 
-1. `docs/CHANGELOG.md`의 최근 항목과 `git log --oneline -15 -- docs/`로 최근에 바뀐 설계를 확인합니다.
+1. `docs/CHANGELOG.md`의 최근 항목, 아직 통합하지 않은 `docs/changelog.d/`의 조각 파일, `git log --oneline -15 -- docs/`로 최근에 바뀐 설계를 확인합니다.
 2. 아래 문서 지도에서 작업에 맞는 문서를 읽습니다. 문서 머리말의 「상태」가 `⬜ 작성 전`이면 그 내용은 아직 정해지지 않았으니 사용자에게 묻습니다.
 
 ## 문서 지도
@@ -30,6 +30,7 @@ replant(팀 JustCommit)는 직접 키운 식물을 사고파는 C2C 식물 마�
 | DB · 테이블 추가 · Flyway 마이그레이션 | `docs/infra/database.md`, `docs/services/{서비스}.md` 「소유 테이블」 |
 | 테스트 추가 | `docs/testing/strategy.md`, `docs/testing/scenarios.md` |
 | 용어 뜻 | `docs/glossary.md` |
+| 문서 변경 기록 작성 · Sprint 종료 통합 | `docs/changelog.d/README.md` |
 | "왜 이렇게 정했지?" | `docs/decisions/` |
 | 아직 안 정한 것 | `docs/open-questions.md` |
 
@@ -40,7 +41,7 @@ replant(팀 JustCommit)는 직접 키운 식물을 사고파는 C2C 식물 마�
 1. 구현 전에 사용자에게 어느 문서의 어떤 내용과 다른지, 왜 달라져야 하는지 알립니다.
 2. 사용자가 동의하면 같은 PR에서 해당 문서를 고칩니다.
 3. 결정이 바뀐 경우 `docs/decisions/`에 새 ADR을 추가하고, 이전 ADR의 머리말에 `대체됨: NNNN`만 적습니다.
-4. `docs/CHANGELOG.md` 맨 위에 `날짜 · 문서 · 바뀐 내용 (#PR)` 한 줄을 추가합니다.
+4. `docs/changelog.d/<이슈번호>.md`에 `- 날짜 · 문서 · 바뀐 내용 (#이슈번호)` 한 줄을 씁니다. `docs/CHANGELOG.md`는 직접 고치지 않습니다 (Sprint 종료 때 스크립트로 통합). 이미 `develop`에 머지된 조각 파일은 고치지 않고, 같은 이슈의 추가 변경은 `<이슈번호>-<식별자>.md`로 씁니다. Sprint 종료 통합 PR은 예외입니다: 통합 스크립트가 `docs/CHANGELOG.md`를 고치고 조각 파일을 지우며, 통합 작업 자체의 조각 파일은 쓰지 않습니다 → `docs/changelog.d/README.md`
 5. PR 본문의 「📄 문서 변경」 칸에 바꾼 문서를 적습니다. 문서를 안 바꿨으면 「문서 영향 없음」에 체크합니다.
 
 작업 중에 코드와 문서가 이미 어긋난 곳을 발견하면, 어느 쪽이 맞는지 임의로 정하지 말고 사용자에게 알립니다.
@@ -55,7 +56,7 @@ replant(팀 JustCommit)는 직접 키운 식물을 사고파는 C2C 식물 마�
 - 서비스 카드에는 API · 이벤트 · 스케줄러의 이름만 적고 상세는 `docs/reference/`에 씁니다.
 - 용어는 `docs/glossary.md`의 「표준 용어」만 씁니다. 별칭은 검색용이라 본문에 쓰지 않습니다. 새 용어나 새 이름이 필요하면 glossary에 먼저 추가합니다.
 - 설명 글보다 표를 씁니다. 클래스 · 테이블 · 토픽 · 경로 · 상태값 이름은 코드 글꼴(`` ` ``)로 정확히 씁니다.
-- 상태 표시는 ✅ 확정 · 🟨 제안 · ⬜ 미정만 씁니다. ✏️ · 🆕 같은 변경 표시는 문서에 남기지 않고 `CHANGELOG.md`에 씁니다.
+- 상태 표시는 ✅ 확정 · 🟨 제안 · ⬜ 미정만 씁니다. ✏️ · 🆕 같은 변경 표시는 문서에 남기지 않고 변경 기록(`docs/changelog.d/`의 조각 파일)에 씁니다.
 - `##` 하나에는 주제 하나만 둡니다. 파일이 300줄을 넘으면 나누기 전에 사용자에게 묻습니다.
 - 새 문서가 필요하면 기존 폴더 중 맞는 곳에 같은 머리말 양식으로 만들고, 이 파일의 문서 지도에 한 줄 추가합니다.
 - `docs/decisions/`의 ADR은 내용을 고치지 않습니다. 새 ADR은 `_template.md`를 복사해 다음 번호로 만듭니다.
