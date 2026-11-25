@@ -2,6 +2,7 @@ package com.justcommit.backend.market.review.application;
 
 import com.justcommit.backend.common.response.PagingResponse;
 import com.justcommit.backend.market.OrderQuery;
+import com.justcommit.backend.market.ReviewableSellerOrder;
 import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.market.review.domain.Review;
 import com.justcommit.backend.market.review.domain.ReviewTag;
@@ -14,6 +15,7 @@ import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse;
 import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse.RatingCount;
 import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse.TagCount;
 import com.justcommit.backend.market.review.presentation.SellerReviewResponse;
+import com.justcommit.backend.market.review.presentation.WritableReviewResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -24,9 +26,11 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -72,6 +76,44 @@ public class ReviewReadService {
     Map<Long, String> nicknames = memberQuery.getNicknames(
       reviews.stream().map(Review::getSellerId).distinct().toList());
     return PagingResponse.from(page.map(review -> toMyResponse(review, tags, productNames, orderedAts, nicknames)));
+  }
+
+  // 작성 가능한 주문 목록 (#585). 작성 마감이 가까운 순, 마감이 같으면 판매자 주문 id 순
+  public List<WritableReviewResponse> writableSellerOrders(Long buyerId) {
+    return writableSellerOrders(buyerId, LocalDateTime.now());
+  }
+
+  // 테스트가 기준 시각을 고정할 수 있게 now를 받는다. 작성 API(ReviewService.create)와 같은 규칙:
+  // 구매자 본인 · 구매 확정 시각 있음 · 구매 확정 주문상품 있음 · 작성 기간 안(Review.isWithinWritePeriod) · 리뷰 없음(삭제한 리뷰 포함)
+  List<WritableReviewResponse> writableSellerOrders(Long buyerId, LocalDateTime now) {
+    // 조회는 작성 기간으로 후보를 넓게 줄이고(경계 포함), 기간 판단은 작성 API와 같은 Review.isWithinWritePeriod로 한다.
+    // 기준값은 DB에 마이크로초로 반올림돼 전달돼, 쿼리에서 경계를 자르면 마이크로초보다 짧게 남은 주문이 빠진다
+    List<ReviewableSellerOrder> candidates = orderQuery.findReviewableSellerOrders(buyerId,
+        now.minus(Review.WRITE_PERIOD)).stream()
+      .filter(candidate -> Review.isWithinWritePeriod(candidate.confirmedAt(), now))
+      .toList();
+    if (candidates.isEmpty()) {
+      return List.of();
+    }
+    Set<Long> reviewed = new HashSet<>(reviewRepository.findSellerOrderIdsIn(
+      candidates.stream().map(ReviewableSellerOrder::sellerOrderId).toList()));
+    List<ReviewableSellerOrder> writable = candidates.stream()
+      .filter(candidate -> !reviewed.contains(candidate.sellerOrderId()))
+      .sorted(Comparator.comparing((ReviewableSellerOrder candidate) -> Review.writableUntil(candidate.confirmedAt()))
+        .thenComparing(ReviewableSellerOrder::sellerOrderId))
+      .toList();
+    if (writable.isEmpty()) {
+      return List.of();
+    }
+    Map<Long, List<String>> productNames = orderQuery.getConfirmedProductNames(
+      writable.stream().map(ReviewableSellerOrder::sellerOrderId).toList());
+    Map<Long, String> nicknames = memberQuery.getNicknames(
+      writable.stream().map(ReviewableSellerOrder::sellerId).distinct().toList());
+    return writable.stream()
+      .map(candidate -> new WritableReviewResponse(candidate.sellerOrderId(), candidate.orderId(), candidate.sellerId(),
+        nicknames.get(candidate.sellerId()), candidate.orderedAt(), candidate.confirmedAt(),
+        Review.writableUntil(candidate.confirmedAt()), productNames.getOrDefault(candidate.sellerOrderId(), List.of())))
+      .toList();
   }
 
   // 판매자 리뷰 집계 (#583). 평균 · 전체 수 · 별점별 개수는 태그와 조인하지 않은 별점별 집계 하나에서 계산해

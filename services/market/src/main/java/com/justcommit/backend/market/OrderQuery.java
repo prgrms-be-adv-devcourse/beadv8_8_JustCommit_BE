@@ -29,4 +29,8 @@ public interface OrderQuery {
     // 주문 id → 주문 시각(주문 생성 시각) (#584 내 리뷰 목록의 주문일). 없는 주문은 빠진다
     Map<Long, LocalDateTime> getOrderedAts(Collection<Long> orderIds);
 
+    // 리뷰 작성 후보 판매자 주문 (#585): 구매자 본인 · confirmedAt이 confirmedAfter 이후(같은 값 포함) · 구매 확정 주문상품 1개 이상.
+    // 작성 기간 판단과 리뷰 유무는 review가 한다 (confirmedAfter는 후보를 넓게 줄이는 기준이라 경계 주문이 섞일 수 있다)
+    List<ReviewableSellerOrder> findReviewableSellerOrders(Long buyerId, LocalDateTime confirmedAfter);
+
 }

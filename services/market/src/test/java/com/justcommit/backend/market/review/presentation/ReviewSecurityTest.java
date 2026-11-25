@@ -100,6 +100,17 @@ class ReviewSecurityTest {
   }
 
   @Test
+  @DisplayName("토큰 없이 작성 가능한 주문 목록은 401, 로그인하면 토큰의 회원 번호로 서비스까지 간다 (#585)")
+  void writableRequiresLogin() throws Exception {
+    mockMvc.perform(get("/api/v1/reviews/writable")).andExpect(status().isUnauthorized());
+    verify(reviewReadService, never()).writableSellerOrders(any());
+
+    mockMvc.perform(get("/api/v1/reviews/writable").header(HttpHeaders.AUTHORIZATION, "Bearer " + MEMBER_TOKEN))
+      .andExpect(status().isOk());
+    verify(reviewReadService).writableSellerOrders(MEMBER_ID);
+  }
+
+  @Test
   @DisplayName("토큰 없이 내 리뷰 목록 · 리뷰 삭제는 401이고 서비스를 부르지 않는다 (#584)")
   void anonymousCannotListMineOrDelete() throws Exception {
     mockMvc.perform(get("/api/v1/reviews/me")).andExpect(status().isUnauthorized());

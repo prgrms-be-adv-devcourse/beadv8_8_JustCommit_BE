@@ -20,6 +20,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/v1/reviews")
 @RequiredArgsConstructor
@@ -62,6 +64,12 @@ public class ReviewController {
     @ModelAttribute MyReviewListRequest request
   ) {
     return ApiResponse.ok("내 리뷰를 조회했습니다.", reviewReadService.myReviews(member.memberId(), request.toPageable()));
+  }
+
+  // 작성 가능한 주문 목록 (#585). 로그인 필요. 페이지 없이 배열, 작성 마감이 가까운 순, 없으면 빈 배열
+  @GetMapping("/writable")
+  public ApiResponse<List<WritableReviewResponse>> writable(@AuthenticationPrincipal AuthMember member) {
+    return ApiResponse.ok("작성 가능한 주문을 조회했습니다.", reviewReadService.writableSellerOrders(member.memberId()));
   }
 
   // 리뷰 삭제 (#584). 로그인 필요. 숫자 id만 받아 reviews/me · summary · writable과 겹치지 않는다

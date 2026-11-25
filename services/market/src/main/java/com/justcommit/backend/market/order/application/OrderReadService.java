@@ -7,6 +7,7 @@ import com.justcommit.backend.market.OrderResult;
 import com.justcommit.backend.market.OrderShippingInfo;
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderStatus;
+import com.justcommit.backend.market.ReviewableSellerOrder;
 import com.justcommit.backend.market.OrdersItemResult;
 import com.justcommit.backend.market.SellerOrderResult;
 import com.justcommit.backend.market.SellerOrderReviewInfo;
@@ -250,6 +251,11 @@ public class OrderReadService implements OrderQuery {
             return new SellerOrderReviewInfo(sellerOrder.getId(), order.getId(), order.getBuyerId(),
                     sellerOrder.getSellerId(), sellerOrder.getConfirmedAt(), hasConfirmedItem);
         });
+    }
+
+    @Override
+    public List<ReviewableSellerOrder> findReviewableSellerOrders(Long buyerId, LocalDateTime confirmedAfter) {
+        return sellerOrderRepository.findReviewable(buyerId, confirmedAfter, OrderItemStatus.CONFIRMED);
     }
 
     @Override

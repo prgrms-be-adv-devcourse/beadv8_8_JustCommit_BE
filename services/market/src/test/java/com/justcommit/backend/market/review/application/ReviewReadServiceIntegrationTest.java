@@ -1,5 +1,6 @@
 package com.justcommit.backend.market.review.application;
 
+import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.response.PagingResponse;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import com.justcommit.backend.market.ShipmentQuery;
@@ -13,6 +14,8 @@ import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
+import com.justcommit.backend.market.review.domain.Review;
+import com.justcommit.backend.market.review.domain.ReviewErrorCode;
 import com.justcommit.backend.market.review.domain.ReviewTag;
 import com.justcommit.backend.market.review.presentation.MyReviewListRequest;
 import com.justcommit.backend.market.review.presentation.MyReviewResponse;
@@ -21,6 +24,7 @@ import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse.R
 import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse.TagCount;
 import com.justcommit.backend.market.review.presentation.SellerReviewListRequest;
 import com.justcommit.backend.market.review.presentation.SellerReviewResponse;
+import com.justcommit.backend.market.review.presentation.WritableReviewResponse;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,12 +52,13 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 // 판매자 리뷰 목록 · 집계를 실제 Postgres, 실제 주문 조회(OrderReadService), 실제 닉네임 조회(회원 복제본)로 확인한다 (#583)
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, OrderReadService.class, ReviewReadService.class,
+@Import({JpaAuditingConfig.class, OrderReadService.class, ReviewReadService.class, ReviewService.class,
   ReviewReadServiceIntegrationTest.MemberClientScan.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -83,6 +88,7 @@ class ReviewReadServiceIntegrationTest {
   @MockitoBean ProductQuery productQuery;
 
   @Autowired ReviewReadService reviewReadService;
+  @Autowired ReviewService reviewService;
   @Autowired OrdersRepository ordersRepository;
   @Autowired JdbcTemplate jdbcTemplate;
 
@@ -250,6 +256,117 @@ class ReviewReadServiceIntegrationTest {
     review(nextSellerOrderId(), 10L, SELLER_ID, "5.0", BASE, BASE.plusHours(1));
 
     assertThat(reviewReadService.myReviews(10L, new MyReviewListRequest(null, null).toPageable()).content()).isEmpty();
+  }
+
+  private static final LocalDateTime WRITABLE_NOW = LocalDateTime.of(2026, 11, 24, 12, 0);
+
+  @Test
+  @DisplayName("작성 가능 목록 (#585): 본인 · 확정 · 확정 상품 있음 · 72시간 안 · 리뷰 없음(삭제 포함)만, 마감이 가까운 순 · 같으면 판매자 주문 id 순")
+  void writableSellerOrders() {
+    replica(SELLER_ID, "베란다정원", false);
+    replica(OTHER_SELLER_ID, null, true);
+    long partial = confirmed(sellerOrder(10L, SELLER_ID, new String[] {"몬스테라", "CONFIRMED"},
+      new String[] {"선인장", "CANCELLED"}), WRITABLE_NOW.minusHours(1));
+    long sameDeadline = confirmed(sellerOrder(10L, SELLER_ID, new String[] {"고무나무", "CONFIRMED"}),
+      WRITABLE_NOW.minusHours(1));
+    long almostExpired = confirmed(sellerOrder(10L, OTHER_SELLER_ID, new String[] {"필레아", "CONFIRMED"}),
+      WRITABLE_NOW.minusHours(72).plusSeconds(1));
+    // 빠져야 하는 것
+    confirmed(sellerOrder(99L, SELLER_ID, new String[] {"남의 주문", "CONFIRMED"}), WRITABLE_NOW.minusHours(1));
+    sellerOrder(10L, SELLER_ID, new String[] {"확정 전", "NORMAL"});
+    confirmed(sellerOrder(10L, SELLER_ID, new String[] {"반품1", "RETURNED"}, new String[] {"반품2", "RETURNED"}),
+      WRITABLE_NOW.minusHours(1));
+    confirmed(sellerOrder(10L, SELLER_ID, new String[] {"정확히 72시간", "CONFIRMED"}), WRITABLE_NOW.minusHours(72));
+    long reviewed = confirmed(sellerOrder(10L, SELLER_ID, new String[] {"리뷰 씀", "CONFIRMED"}), WRITABLE_NOW.minusHours(2));
+    review(reviewed, 10L, SELLER_ID, "5.0", WRITABLE_NOW.minusHours(1), null);
+    long deleted = confirmed(sellerOrder(10L, SELLER_ID, new String[] {"리뷰 삭제함", "CONFIRMED"}), WRITABLE_NOW.minusHours(3));
+    review(deleted, 10L, SELLER_ID, "5.0", WRITABLE_NOW.minusHours(2), WRITABLE_NOW.minusHours(1));
+
+    List<WritableReviewResponse> writable = reviewReadService.writableSellerOrders(10L, WRITABLE_NOW);
+
+    assertThat(writable).extracting(WritableReviewResponse::sellerOrderId)
+      .containsExactly(almostExpired, partial, sameDeadline);
+    WritableReviewResponse first = writable.get(0);
+    assertThat(first.sellerId()).isEqualTo(OTHER_SELLER_ID);
+    assertThat(first.sellerNickname()).isEqualTo("탈퇴한 회원");
+    assertThat(first.confirmedAt()).isEqualTo(WRITABLE_NOW.minusHours(72).plusSeconds(1));
+    assertThat(first.writableUntil()).isEqualTo(WRITABLE_NOW.plusSeconds(1));
+    WritableReviewResponse partialOrder = writable.get(1);
+    assertThat(partialOrder.sellerNickname()).isEqualTo("베란다정원");
+    assertThat(partialOrder.productNames()).containsExactly("몬스테라"); // 취소 상품은 빠짐
+    assertThat(partialOrder.orderId()).isEqualTo(orderIdOf(partial));
+    assertThat(partialOrder.orderedAt()).isEqualTo(
+      jdbcTemplate.queryForObject("select created_at from orders where id = ?", LocalDateTime.class, orderIdOf(partial)));
+    assertThat(partialOrder.writableUntil()).isEqualTo(WRITABLE_NOW.plusHours(71));
+  }
+
+  @Test
+  @DisplayName("작성 가능 목록: 쓸 수 있는 주문이 없으면 빈 배열")
+  void writableSellerOrdersEmpty() {
+    confirmed(sellerOrder(10L, SELLER_ID, new String[] {"정확히 72시간", "CONFIRMED"}), WRITABLE_NOW.minusHours(72));
+
+    assertThat(reviewReadService.writableSellerOrders(10L, WRITABLE_NOW)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("작성 가능 목록과 작성 API(#582)는 같은 기준 시각에 같은 판단: 목록의 주문은 작성되고, 빠진 주문은 정해진 409로 거절된다")
+  void writableListMatchesCreateRules() {
+    long writableA = confirmed(sellerOrder(10L, SELLER_ID, new String[] {"몬스테라", "CONFIRMED"}), WRITABLE_NOW.minusHours(1));
+    long writableB = confirmed(sellerOrder(10L, SELLER_ID, new String[] {"필레아", "CONFIRMED"}),
+      WRITABLE_NOW.minusHours(72).plusNanos(1_000));
+    long expired = confirmed(sellerOrder(10L, SELLER_ID, new String[] {"고무나무", "CONFIRMED"}), WRITABLE_NOW.minusHours(72));
+    long allReturned = confirmed(sellerOrder(10L, SELLER_ID, new String[] {"반품", "RETURNED"}), WRITABLE_NOW.minusHours(1));
+
+    List<Long> listed = reviewReadService.writableSellerOrders(10L, WRITABLE_NOW).stream()
+      .map(WritableReviewResponse::sellerOrderId).toList();
+
+    assertThat(listed).containsExactlyInAnyOrder(writableA, writableB);
+    for (Long sellerOrderId : listed) {
+      assertThat(reviewService.create(10L, sellerOrderId, new BigDecimal("4.5"), "잎이 싱싱하고 포장이 꼼꼼했어요", List.of(),
+        WRITABLE_NOW)).isNotNull();
+    }
+    assertCreateRejected(expired, ReviewErrorCode.REVIEW_PERIOD_EXPIRED);
+    assertCreateRejected(allReturned, ReviewErrorCode.REVIEW_NO_CONFIRMED_ITEM);
+    // 리뷰를 쓴 주문은 목록에서 빠진다
+    assertThat(reviewReadService.writableSellerOrders(10L, WRITABLE_NOW)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("작성 가능 목록: 마감까지 DB 저장 정밀도(마이크로초)보다 짧게 남아도 작성할 수 있으면 나오고, 정확히 72시간 · 마감 직후는 빠진다")
+  void writableWithSubMicrosecondRemaining() {
+    LocalDateTime confirmedAt = LocalDateTime.of(2026, 11, 21, 12, 0, 0, 123_456_000); // 마이크로초 단위로 저장되는 값
+    long sellerOrderId = confirmed(sellerOrder(10L, SELLER_ID, new String[] {"몬스테라", "CONFIRMED"}), confirmedAt);
+    LocalDateTime deadline = confirmedAt.plus(Review.WRITE_PERIOD);
+
+    // 남은 시간 400ns · 600ns: 조회 기준값(now - 72시간)이 마이크로초로 반올림 · 버림되는 두 경우
+    for (long remainingNanos : new long[] {400, 600}) {
+      LocalDateTime now = deadline.minusNanos(remainingNanos);
+      assertThat(Review.isWithinWritePeriod(confirmedAt, now)).isTrue();
+      assertThat(reviewReadService.writableSellerOrders(10L, now))
+        .as("마감 %dns 전", remainingNanos)
+        .extracting(WritableReviewResponse::sellerOrderId).containsExactly(sellerOrderId);
+    }
+    assertThat(reviewReadService.writableSellerOrders(10L, deadline)).isEmpty();
+    assertThat(reviewReadService.writableSellerOrders(10L, deadline.plusNanos(400))).isEmpty();
+    assertThat(reviewReadService.writableSellerOrders(10L, deadline.plusNanos(600))).isEmpty();
+    // 목록에 나온 시각에는 작성 API도 통과한다
+    assertThat(reviewService.create(10L, sellerOrderId, new BigDecimal("4.5"), "잎이 싱싱하고 포장이 꼼꼼했어요", List.of(),
+      deadline.minusNanos(400))).isNotNull();
+  }
+
+  private void assertCreateRejected(long sellerOrderId, ReviewErrorCode errorCode) {
+    assertThatThrownBy(() -> reviewService.create(10L, sellerOrderId, new BigDecimal("4.5"), "잎이 싱싱하고 포장이 꼼꼼했어요",
+      List.of(), WRITABLE_NOW))
+      .isInstanceOfSatisfying(BusinessException.class, e -> assertThat(e.getErrorCode()).isEqualTo(errorCode));
+  }
+
+  private long confirmed(long sellerOrderId, LocalDateTime confirmedAt) {
+    jdbcTemplate.update("update seller_order set confirmed_at = ? where id = ?", confirmedAt, sellerOrderId);
+    return sellerOrderId;
+  }
+
+  private long orderIdOf(long sellerOrderId) {
+    return jdbcTemplate.queryForObject("select order_id from seller_order where id = ?", Long.class, sellerOrderId);
   }
 
   private static void assertRatingCounts(ReviewSummaryResponse summary, long... counts) {
