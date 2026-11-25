@@ -46,7 +46,7 @@
 |---|---|
 | 기존 토큰 | 카카오 연결 해제 웹훅의 비동기 처리에서 `SOCIAL_UNLINKED`로 폐기. 인증 버전이 올라가 그 전 Refresh 재발급은 거절되고, Redis에 폐기 시각이 기록된 뒤부터 기존 Access도 거절 (`PENDING` 동안 통과할 수 있는 한계는 같음) |
 | 재발급 | 회원 상태가 `INACTIVE`면 401 `INVALID_REFRESH_TOKEN` (탈퇴 회원과 같은 응답) |
-| 카카오 로그인 | 정상 카카오 로그인이면 회원 행 잠금 안에서 이전 미처리 수신 기록을 **항상**(`ACTIVE`여도) 무효로 하고, `INACTIVE`면 `ACTIVE`로 복구한 뒤 발급. `UNLINK_FROM_ADMIN`으로 `INACTIVE`가 된 회원도 복구(이용 정지로 취급하지 않음). 무효화 범위 → [탈퇴 흐름](../flows/signup-and-replica.md#재로그인). 발급 시각 확인을 무효화 · 복구보다 먼저 하며, 폐기와 같은 초에 재연결해도 발급 초가 최근 폐기 초보다 클 때만 발급함 (위 「시각」) |
+| 카카오 로그인 | 정상 카카오 로그인이면 회원 행 잠금 안에서 이전 미처리 수신 기록을 **항상**(`ACTIVE`여도) 무효로 하고, `INACTIVE`면 `ACTIVE`로 복구한 뒤 발급. `UNLINK_FROM_ADMIN`으로 `INACTIVE`가 된 회원도 복구(이용 정지로 취급하지 않음). 무효화 범위 → [탈퇴 흐름](../flows/signup-and-replica.md#재로그인). 발급 시각 확인을 무효화 · 복구보다 먼저 하며, 폐기와 같은 초에 재연결해도 발급 초가 최근 폐기 초보다 클 때만 발급함 (위 「시각」). 탈퇴가 보류됐던 회원(지금 연결 해제의 자동 탈퇴 처리 기록이 `NOTICE_PENDING` · 안내 메일 뒤 `DONE` · 안내 단계에서 멈춘 `FAILED`)을 복구할 때만, 무효화하기 전에 판정해 `/oauth/callback?notice=WITHDRAWAL_HELD`로 리다이렉트(Refresh 쿠키는 같음) → [외부 API](../reference/external-apis.md#member) (#616) |
 
 회원 기능 제한 · 내부 계좌 조회 유지 → [member 정책](../services/member.md#정책), 처리 흐름 → [탈퇴 흐름](../flows/signup-and-replica.md#카카오-연결-해제-웹훅)
 

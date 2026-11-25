@@ -39,7 +39,7 @@
 | POST | `sellers` | 판매자 등록 (`reviewConsentAgreed`=true · `reviewConsentVersion` 필수. 누락 · 미동의 400, 현재 버전이 아니면 409 `REVIEW_CONSENT_VERSION_MISMATCH`) | 로그인 |
 | GET | `sellers/{sellerId}` | 판매자 공개 정보 (닉네임 · 소개글 · 등록일, 숫자 id만) | 공개 |
 | PATCH | `sellers/me/intro` | 소개글 수정 (최대 500자, 빈 문자열은 삭제) | 로그인 (판매자만) |
-| GET | `/oauth2/authorization/kakao` · `/login/oauth2/code/kakao` | 카카오 로그인 (Spring Security 처리, `/api/v1` 아님). 카카오 인증 뒤 로그인 처리에서 난 오류는 HTTP 오류 응답이 아니라 프론트 `/oauth/callback?error={오류 코드}`로 리다이렉트. 회원 잠금 대기 초과 · 발급 시각 조건 미충족은 `error=MEMBER_BUSY` → [인증 규칙](../conventions/auth.md#토큰-폐기). 신규 회원으로 판정됐는데 카카오 이메일이 30일 안에 탈퇴한 이메일이면 가입 토큰 없이 `error=REJOIN_RESTRICTED_EMAIL` → [재가입 제한](../flows/signup-and-replica.md#재가입-제한) | 공개 |
+| GET | `/oauth2/authorization/kakao` · `/login/oauth2/code/kakao` | 카카오 로그인 (Spring Security 처리, `/api/v1` 아님). 카카오 인증 뒤 로그인 처리에서 난 오류는 HTTP 오류 응답이 아니라 프론트 `/oauth/callback?error={오류 코드}`로 리다이렉트. 회원 잠금 대기 초과 · 발급 시각 조건 미충족은 `error=MEMBER_BUSY` → [인증 규칙](../conventions/auth.md#토큰-폐기). 신규 회원으로 판정됐는데 카카오 이메일이 30일 안에 탈퇴한 이메일이면 가입 토큰 없이 `error=REJOIN_RESTRICTED_EMAIL` → [재가입 제한](../flows/signup-and-replica.md#재가입-제한). 카카오 연결 해제 뒤 탈퇴가 보류됐던 회원이 다시 로그인해 복구되면 `/oauth/callback?notice=WITHDRAWAL_HELD`(Refresh 쿠키는 평소와 같음, #616) → [재로그인](../flows/signup-and-replica.md#재로그인) | 공개 |
 | GET · POST | `webhooks/kakao/unlink` | 카카오 연결 해제 웹훅 (`Authorization: KakaoAK {어드민 키}`) → [카카오 연결 해제 웹훅](#카카오-연결-해제-웹훅) | 공개 |
 
 #### 이메일 인증 목적
