@@ -111,10 +111,11 @@ spring:
                 - Path=/api/v1/webhooks/courier
               metadata:
                 response-timeout: 5000
+            # 리뷰 (#581): 작성 · 삭제 · 목록 · 집계 모두 market. 기본 타임아웃, 요청 수 제한 없음
             - id: market
               uri: ${MARKET_SERVICE_URL:http://localhost:8083}
               predicates:
-                - Path=/api/v1/cart/**,/api/v1/orders/**,/api/v1/webhooks/**
+                - Path=/api/v1/cart/**,/api/v1/orders/**,/api/v1/webhooks/**,/api/v1/reviews/**
             - id: payment-charge-confirm
               uri: ${PAYMENT_SERVICE_URL:http://localhost:8084}
               predicates:
