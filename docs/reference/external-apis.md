@@ -180,6 +180,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | GET | `reviews/summary?sellerId` | 판매자 리뷰 집계: `averageRating`(소수 첫째 자리 `HALF_UP`, 리뷰 0건이면 null) · `reviewCount` · `ratingCounts`(5.0 → 0.5 0.5 단위 10구간 `{rating, count}`, 합 = `reviewCount`) · `tagCounts`(태그 5종 enum 순서 `{tag, count}`, 건수 정렬 · 막대 비율은 화면). 삭제한 리뷰는 넣지 않고 없는 구간 · 태그는 0. 평균 · 리뷰 수 · 별점별 개수는 태그와 조인하지 않고 세어 태그가 여러 개인 리뷰도 한 번만 들어감. `sellerId` 오류는 목록과 같음 | 공개 |
 | GET | `reviews/me?page&size` | 내 리뷰 목록: 로그인한 회원이 쓴 삭제하지 않은 리뷰만 최신순(같은 시각이면 `reviewId` 역순), `data`는 공통 `PagingResponse`(기본 20개, 최대 50개). 항목 `reviewId` · `sellerId` · `sellerNickname`(회원 복제본 기준, 탈퇴면 「탈퇴한 회원」, 복제본이 없으면 「알 수 없는 회원」) · `orderId` · `orderedAt`(주문 시각) · `rating` · `content` · `tags`(enum 순서) · `productNames`(구매 확정 주문상품 이름만) · `createdAt` · `deletableUntil`(작성 시각 + 72시간, 이 시각부터 삭제 불가). 삭제 기한이 지난 리뷰도 목록에 남음 | 로그인 |
 | DELETE | `reviews/{reviewId}` | 리뷰 삭제 (숫자 id만, 성공 200 `ApiResponse` 메시지만): 작성자 본인의 삭제하지 않은 리뷰를 작성 시각부터 72시간 안에만, `deleted_at`만 기록(행은 남아 같은 판매자 주문에 다시 쓸 수 없음). 없는 리뷰 · 다른 작성자의 리뷰 · 이미 삭제된 리뷰는 같은 404 `REVIEW_NOT_FOUND`, 정확히 72시간째부터 409 `REVIEW_DELETE_PERIOD_EXPIRED`(기한은 본인의 미삭제 리뷰일 때만 봄). 같은 리뷰를 동시에 지우면 작성자 · `deleted_at IS NULL` 조건 UPDATE로 한 요청만 200, 나머지는 404(먼저 기록한 `deleted_at` 유지) | 로그인 |
+| GET | `reviews/writable` | 작성 가능한 주문 목록 (페이지 없이 배열, 없으면 빈 배열): 로그인한 구매자의 판매자 주문 중 구매 확정 시각이 있고 구매 확정 주문상품이 1개 이상이며 구매 확정 시각부터 72시간 안(정확히 72시간째부터 빠짐)이고 리뷰가 없는 것(삭제한 리뷰도 작성 이력). 리뷰 작성 API와 같은 기준 시각 · 같은 기한 계산(`Review.WRITE_PERIOD`). 정렬은 작성 마감이 가까운 순, 같으면 `sellerOrderId` 순. 항목 `sellerOrderId` · `orderId` · `sellerId` · `sellerNickname`(회원 복제본 기준) · `orderedAt` · `confirmedAt` · `writableUntil`(확정 + 72시간) · `productNames`(구매 확정 주문상품 이름만) | 로그인 |
 | POST | `webhooks/courier` | 택배사 웹훅 (`X-Api-Key`): 배송 상태(`courierOrderNo` · `trackingNo` 필수)와 요금표 변경(`status` `SHIPPING_FEES_CHANGED`, `version` · `updatedAt` · `baseFee` · `jejuSurcharge` · `remoteSurcharge` · `jejuZipcodes` · `remoteZipcodes`) 두 가지. 본문 원본은 404-express `docs/design.md` 「웹훅」 | 공개 |
 
 ### ai
@@ -232,7 +233,6 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 
 | 서비스 | 기능 | 설명 |
 |---|---|---|
-| market | 작성 가능한 주문 목록 | 노션 6절 |
 | notification | `GET notifications?read=` (커서 페이지네이션) | 삭제 API 없음 |
 
 ## 경로 개선안
