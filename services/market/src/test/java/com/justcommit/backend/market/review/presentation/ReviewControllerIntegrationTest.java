@@ -464,6 +464,48 @@ class ReviewControllerIntegrationTest {
     assertThat(mockMvc.perform(delete("/api/v1/reviews/abc")).andReturn().getHandler()).isNull();
   }
 
+  @Test
+  @DisplayName("작성 가능한 주문 목록 (#585): 200 ApiResponse의 data에 배열, 리뷰를 쓰면 빠지고 실제 삭제 API로 지워도 다시 나오지 않는다")
+  void writableListThenWriteAndDelete() throws Exception {
+    long sellerOrderId = sellerOrder(BUYER_ID, LocalDateTime.now().minusDays(1), "CONFIRMED", "CANCELLED");
+    when(memberQuery.getNicknames(anyCollection())).thenReturn(Map.of(SELLER_ID, "베란다정원"));
+
+    mockMvc.perform(get("/api/v1/reviews/writable"))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.message").value("작성 가능한 주문을 조회했습니다."))
+      .andExpect(jsonPath("$.data.length()").value(1))
+      .andExpect(jsonPath("$.data[0].sellerOrderId").value(sellerOrderId))
+      .andExpect(jsonPath("$.data[0].sellerId").value(SELLER_ID))
+      .andExpect(jsonPath("$.data[0].sellerNickname").value("베란다정원"))
+      .andExpect(jsonPath("$.data[0].orderedAt").isNotEmpty())
+      .andExpect(jsonPath("$.data[0].confirmedAt").isNotEmpty())
+      .andExpect(jsonPath("$.data[0].writableUntil").isNotEmpty())
+      .andExpect(jsonPath("$.data[0].productNames.length()").value(1))
+      .andExpect(jsonPath("$.data[0].productNames[0]").value("몬스테라0"));
+
+    createFor(sellerOrderId).andExpect(status().isCreated());
+    mockMvc.perform(get("/api/v1/reviews/writable"))
+      .andExpect(jsonPath("$.data.length()").value(0));
+
+    Long reviewId = jdbcTemplate.queryForObject("select id from review where seller_order_id = ?", Long.class, sellerOrderId);
+    mockMvc.perform(delete("/api/v1/reviews/{reviewId}", reviewId)).andExpect(status().isOk());
+    mockMvc.perform(get("/api/v1/reviews/writable"))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.data").isArray())
+      .andExpect(jsonPath("$.data.length()").value(0));
+  }
+
+  @Test
+  @DisplayName("작성 가능한 주문 목록: 쓸 수 있는 주문이 없으면 빈 배열")
+  void writableListEmpty() throws Exception {
+    sellerOrder(BUYER_ID, null, "NORMAL"); // 구매 확정 전
+
+    mockMvc.perform(get("/api/v1/reviews/writable"))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.data").isArray())
+      .andExpect(jsonPath("$.data.length()").value(0));
+  }
+
   // 작성자 · 작성 시각을 정해 리뷰를 DB에 직접 넣는다 (판매자 20, 별점 4.5, 태그 없음)
   private long insertReviewBy(long sellerOrderId, long buyerId, LocalDateTime createdAt) {
     return jdbcTemplate.queryForObject("""

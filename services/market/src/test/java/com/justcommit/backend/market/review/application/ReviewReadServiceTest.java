@@ -1,6 +1,7 @@
 package com.justcommit.backend.market.review.application;
 
 import com.justcommit.backend.market.OrderQuery;
+import com.justcommit.backend.market.ReviewableSellerOrder;
 import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.market.review.domain.Review;
 import com.justcommit.backend.market.review.domain.ReviewTag;
@@ -21,6 +22,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -114,6 +116,48 @@ class ReviewReadServiceTest {
     verify(reviewRepository).findTagsByReviewIds(List.of(1L, 2L, 3L));
     verify(orderQuery).getConfirmedProductNames(List.of(101L, 102L, 103L));
     verify(memberQuery).getNicknames(List.of(10L, 11L));
+  }
+
+  private static final LocalDateTime NOW = LocalDateTime.of(2026, 11, 24, 12, 0);
+
+  @Test
+  @DisplayName("작성 가능 목록 (#585): 후보 조회 기준 시각은 now - WRITE_PERIOD, 정확히 72시간인 후보와 리뷰가 있는 후보는 빠지고 마감 · id 순으로 정렬한다")
+  void writableFiltersAndSorts() {
+    ReviewableSellerOrder later = candidate(30L, NOW.minusHours(1));
+    ReviewableSellerOrder sameDeadlineSmallerId = candidate(20L, NOW.minusHours(1));
+    ReviewableSellerOrder earliest = candidate(40L, NOW.minusHours(70));
+    ReviewableSellerOrder exactlyExpired = candidate(50L, NOW.minus(Review.WRITE_PERIOD));
+    ReviewableSellerOrder reviewed = candidate(60L, NOW.minusHours(2));
+    when(orderQuery.findReviewableSellerOrders(10L, NOW.minus(Review.WRITE_PERIOD)))
+      .thenReturn(List.of(later, sameDeadlineSmallerId, earliest, exactlyExpired, reviewed));
+    when(reviewRepository.findSellerOrderIdsIn(List.of(30L, 20L, 40L, 60L))).thenReturn(List.of(60L));
+    when(orderQuery.getConfirmedProductNames(List.of(40L, 20L, 30L))).thenReturn(Map.of());
+    when(memberQuery.getNicknames(List.of(SELLER_ID))).thenReturn(Map.of(SELLER_ID, "베란다정원"));
+
+    var writable = reviewReadService.writableSellerOrders(10L, NOW);
+
+    assertThat(writable).extracting(response -> response.sellerOrderId()).containsExactly(40L, 20L, 30L);
+    assertThat(writable.get(0).writableUntil()).isEqualTo(NOW.plusHours(2));
+    assertThat(writable.get(0).productNames()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("작성 가능 목록: 후보가 없거나 모두 리뷰를 썼으면 빈 배열이고 상품명 · 닉네임을 조회하지 않는다")
+  void writableEmptySkipsLookups() {
+    when(orderQuery.findReviewableSellerOrders(10L, NOW.minus(Review.WRITE_PERIOD))).thenReturn(List.of());
+    assertThat(reviewReadService.writableSellerOrders(10L, NOW)).isEmpty();
+
+    when(orderQuery.findReviewableSellerOrders(11L, NOW.minus(Review.WRITE_PERIOD)))
+      .thenReturn(List.of(candidate(30L, NOW.minusHours(1))));
+    when(reviewRepository.findSellerOrderIdsIn(List.of(30L))).thenReturn(List.of(30L));
+    assertThat(reviewReadService.writableSellerOrders(11L, NOW)).isEmpty();
+
+    verify(orderQuery, never()).getConfirmedProductNames(any());
+    verify(memberQuery, never()).getNicknames(any());
+  }
+
+  private static ReviewableSellerOrder candidate(long sellerOrderId, LocalDateTime confirmedAt) {
+    return new ReviewableSellerOrder(sellerOrderId, sellerOrderId + 1000, SELLER_ID, confirmedAt.minusDays(3), confirmedAt);
   }
 
   private static Review review(long id, long sellerOrderId, long buyerId) {

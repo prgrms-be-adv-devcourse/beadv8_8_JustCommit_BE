@@ -1,7 +1,7 @@
 # 테스트 시나리오
 
 > 언제 읽나: 시나리오 ID로 내용을 찾거나 결과를 기록할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: [노션 「테스트 시나리오」 4절](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-24 · 관련: [노션 「테스트 시나리오」 4절](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
 
 시나리오마다 어느 서비스의 테스트인지, 무엇을 대신 세우는지(WireMock · 테스트 Kafka · Clock 등), 무엇을 확인하는지는 노션 「테스트 시나리오」 4절 표에 있습니다. 이 문서는 ID · 문장 · 결과 기록용입니다.
 
@@ -166,5 +166,17 @@
 | S-P02 | 충전 승인 결과 불명 → `PENDING` → 조회로 승인 또는 실패 확정 | 결과 불명 | 통합 | PR |  |  |
 
 S-P01(충전 취소)은 충전 취소를 하지 않기로 해서 지웠습니다. 번호는 다시 쓰지 않습니다.
+
+## R. 리뷰
+
+| ID | 시나리오 | 종류 | 수준 | 자동화 | 남길 실측값 | 결과 |
+|---|---|---|---|---|---|---|
+| S-R01 | 구매 확정 후 72시간 안의 본인 판매자 주문에 리뷰 작성 → 201, `review` · `review_tag` 저장 | 정상 | 통합 | PR |  | 검증 (11/24, #582 ~ #585 PR 머지 전 로컬): `ReviewControllerIntegrationTest` |
+| S-R02 | 같은 판매자 주문에 두 번 작성 → 409 `REVIEW_ALREADY_WRITTEN`, 두 요청이 중복 확인을 함께 통과해도 유니크 제약으로 1건만 저장 | 중복 | 통합 | PR |  | 검증 (11/24, #582 ~ #585 PR 머지 전 로컬): `ReviewServiceIntegrationTest` |
+| S-R03 | 구매 확정 후 정확히 72시간째부터 작성 → 409 `REVIEW_PERIOD_EXPIRED`, 작성 가능 목록에서도 빠짐 | 경계 | 통합 | PR |  | 검증 (11/24, #582 ~ #585 PR 머지 전 로컬): `ReviewTest`, `ReviewReadServiceIntegrationTest` |
+| S-R04 | 리뷰 삭제 후 같은 판매자 주문에 다시 작성 → 409 `REVIEW_ALREADY_WRITTEN`, 작성 가능 목록에 다시 나오지 않음 | 규칙 | 통합 | PR |  | 검증 (11/24, #582 ~ #585 PR 머지 전 로컬): `ReviewControllerIntegrationTest` |
+| S-R05 | 탈퇴한 작성자의 리뷰 → 판매자 리뷰 목록에서 닉네임 「탈퇴한 회원」 | 규칙 | 통합 | PR |  | 검증 (11/24, #582 ~ #585 PR 머지 전 로컬): `ReviewReadServiceIntegrationTest` |
+| S-R06 | 작성 가능 목록 → 본인 · 확정 상품 있음 · 72시간 안 · 리뷰 없음(삭제 포함)만, 목록의 주문은 같은 기준 시각에 작성 API를 통과 | 규칙 | 통합 | PR |  | 검증 (11/24, #582 ~ #585 PR 머지 전 로컬): `ReviewReadServiceIntegrationTest` |
+| S-R07 | 같은 리뷰를 동시에 삭제 → 한 요청만 200, 나머지 404 `REVIEW_NOT_FOUND`, 먼저 기록한 `deleted_at` 유지 | 경합 | 통합 | PR |  | 검증 (11/24, #582 ~ #585 PR 머지 전 로컬): `ReviewServiceIntegrationTest` |
 
 ⬜ ai(추천 fallback) 시나리오는 Sprint 2에 추가합니다.

@@ -2,6 +2,7 @@ package com.justcommit.backend.market.order.infrastructure;
 
 import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderStatus;
+import com.justcommit.backend.market.ReviewableSellerOrder;
 import com.justcommit.backend.market.order.domain.SellerOrder;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
@@ -97,4 +98,17 @@ public interface SellerOrderRepository extends JpaRepository<SellerOrder, Long> 
     long countActiveBySellerId(@Param("sellerId") Long sellerId,
                                @Param("orderStatuses") Collection<OrderStatus> orderStatuses,
                                @Param("itemStatuses") Collection<OrderItemStatus> itemStatuses);
+
+    // 리뷰 작성 후보 판매자 주문 (#585): 구매자의 주문 · confirmedAt이 confirmedAfter 이후 · 구매 확정 주문상품이 있음.
+    // confirmedAfter는 마이크로초로 반올림돼 전달되므로 경계(>=)까지 넓게 고르고, 작성 기간 판단은 review가 Java로 한다
+    @Query("""
+            select new com.justcommit.backend.market.ReviewableSellerOrder(s.id, o.id, s.sellerId, o.createdAt, s.confirmedAt)
+            from SellerOrder s join s.order o
+            where o.buyerId = :buyerId
+              and s.confirmedAt >= :confirmedAfter
+              and exists (select 1 from OrdersItem i where i.sellerOrder = s and i.status = :status)
+            """)
+    List<ReviewableSellerOrder> findReviewable(@Param("buyerId") Long buyerId,
+                                               @Param("confirmedAfter") LocalDateTime confirmedAfter,
+                                               @Param("status") OrderItemStatus status);
 }
