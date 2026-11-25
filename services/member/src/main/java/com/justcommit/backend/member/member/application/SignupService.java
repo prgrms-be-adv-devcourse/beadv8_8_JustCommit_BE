@@ -105,9 +105,14 @@ public class SignupService {
   }
 
   // 핸드폰 번호 사용 가능 여부 (중복 확인 API)
+  // 가입된 번호면 false, 30일 안에 탈퇴한 번호면 409 REJOIN_RESTRICTED_PHONE으로 이유를 알려 줌 (#611)
   @Transactional(readOnly = true)
   public boolean isPhoneAvailable(String phone) {
-    return !memberRepository.existsByPhone(phone);
+    if (memberRepository.existsByPhone(phone)) {
+      return false;
+    }
+    rejoinRestriction.checkPhone(phone);
+    return true;
   }
 
   // DB가 알려 준 제약 이름으로 어떤 값이 겹쳤는지 구분

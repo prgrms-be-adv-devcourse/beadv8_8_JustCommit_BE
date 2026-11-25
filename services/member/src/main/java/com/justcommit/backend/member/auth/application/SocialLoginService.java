@@ -9,6 +9,7 @@ import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
+import com.justcommit.backend.member.withdrawal.application.RejoinRestriction;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ public class SocialLoginService {
   private final RefreshTokenIssuer refreshTokenIssuer;
   private final AccessIssueTimeGuard accessIssueTimeGuard;
   private final KakaoUnlinkReceiptRepository unlinkReceiptRepository;
+  private final RejoinRestriction rejoinRestriction;
 
   @Value("${jwt.access-token-expiration}")
   private Duration accessTokenExpiration;
@@ -75,6 +77,9 @@ public class SocialLoginService {
     if (memberRepository.existsByEmail(email)) {
       throw new BusinessException(MemberErrorCode.SOCIAL_EMAIL_CONFLICT);
     }
+    // 30일 안에 탈퇴한 이메일이면 가입 토큰을 주지 않고 추가정보 입력 전에 안내 (#611)
+    // 성공 핸들러가 /oauth/callback?error=REJOIN_RESTRICTED_EMAIL로 보낸다. 최종 판정은 소셜 가입 트랜잭션에서 다시 한다
+    rejoinRestriction.checkEmail(email);
 
     String signupToken = jwtProvider.createSignupToken(
             command.provider().name(), command.providerId(), email);

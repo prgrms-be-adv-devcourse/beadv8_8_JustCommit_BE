@@ -303,6 +303,19 @@ class SignupServiceTest {
     given(memberRepository.existsByPhone(PHONE)).willReturn(true);
 
     assertThat(signupService.isPhoneAvailable(PHONE)).isFalse();
+    then(rejoinRestriction).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("30일 안에 탈퇴한 휴대폰 번호면 false가 아니라 409 REJOIN_RESTRICTED_PHONE (#611)")
+  void isPhoneAvailable_rejoinRestricted() {
+    given(memberRepository.existsByPhone(PHONE)).willReturn(false);
+    willThrow(new BusinessException(MemberErrorCode.REJOIN_RESTRICTED_PHONE))
+        .given(rejoinRestriction).checkPhone(PHONE);
+
+    assertThatThrownBy(() -> signupService.isPhoneAvailable(PHONE))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode").isEqualTo(MemberErrorCode.REJOIN_RESTRICTED_PHONE);
   }
 
   @Test
@@ -311,5 +324,6 @@ class SignupServiceTest {
     given(memberRepository.existsByPhone(PHONE)).willReturn(false);
 
     assertThat(signupService.isPhoneAvailable(PHONE)).isTrue();
+    then(rejoinRestriction).should().checkPhone(PHONE);
   }
 }

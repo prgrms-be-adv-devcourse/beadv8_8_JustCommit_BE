@@ -1,7 +1,7 @@
 # 테스트 시나리오
 
 > 언제 읽나: 시나리오 ID로 내용을 찾거나 결과를 기록할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-24 · 관련: [노션 「테스트 시나리오」 4절](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-25 · 관련: [노션 「테스트 시나리오」 4절](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
 
 시나리오마다 어느 서비스의 테스트인지, 무엇을 대신 세우는지(WireMock · 테스트 Kafka · Clock 등), 무엇을 확인하는지는 노션 「테스트 시나리오」 4절 표에 있습니다. 이 문서는 ID · 문장 · 결과 기록용입니다.
 
@@ -31,7 +31,7 @@
 | S-B04 | 탈퇴 확인 3곳 병렬 호출, 하나라도 실패하면 탈퇴 막음 (Fail-closed) | 장애 | 통합 | PR |  | 완료 (11/18): `WithdrawalScenarioTest`, `WithdrawalCheckServiceIntegrationTest` |
 | S-B05 | 직접 탈퇴(로컬 비밀번호 · 카카오 탈퇴 토큰) → 개인정보 컬럼 NULL · 배송지 삭제 · 탈퇴 기록 저장 · `MemberWithdrawn` Outbox 저장이 한 트랜잭션, 저장이 실패하면 Outbox까지 모두 롤백 | 정상 | 통합 | PR |  | 완료 (11/19): 직접 탈퇴(로컬 · 카카오)에서 익명화 · 배송지 · 탈퇴 기록 · `MemberWithdrawn` Outbox가 함께 커밋되고 저장 실패 시 함께 롤백, 같은 회원의 동시 요청도 이벤트 1건(`WithdrawalServiceIntegrationTest`) |
 | S-B06 | 탈퇴 조건 미충족 → 409 `WITHDRAWAL_BLOCKED`, 회원 · 토큰 · 탈퇴 기록 변화 없음. 사전 확인 GET은 차단 사유를 보여 주고, GET이 `ALLOWED`였어도 POST에서 다시 확인 | 규칙 | 통합 | PR |  | 완료 (11/18): `WithdrawalServiceIntegrationTest`(사전 확인 `ALLOWED` 뒤 최종 탈퇴 재확인 포함) |
-| S-B07 | 재가입 제한: 탈퇴한 이메일만 · 휴대폰만 · 둘 다 같으면 30일 이내 로컬 · 소셜 가입 거절(일치 항목을 구분하지 않는 같은 응답), 30일이 지나면 가입 가능(정리 스케줄러가 기록을 아직 지우지 않았어도) | 경계 | 통합 | PR |  | 완료 (11/18): `RejoinRestrictionIntegrationTest` |
+| S-B07 | 재가입 제한: 탈퇴한 이메일만 · 휴대폰만 · 둘 다 같으면 30일 이내 로컬 · 소셜 가입 거절(일치 항목을 구분하지 않는 같은 응답), 30일이 지나면 가입 가능(정리 스케줄러가 기록을 아직 지우지 않았어도) | 경계 | 통합 | PR |  | 완료 (11/18): `RejoinRestrictionIntegrationTest`. 앞 단계 안내(#611, 11/25): 인증번호 발송 `REJOIN_RESTRICTED_EMAIL`(메일 · Redis 기록 없음) · 휴대폰 확인 `REJOIN_RESTRICTED_PHONE` · 카카오 신규 판정 `REJOIN_RESTRICTED_EMAIL`, 앞 단계를 건너뛴 로컬 · 소셜 가입은 최종 `REJOIN_RESTRICTED`, DB 시각을 고정해 정확히 30일 전 탈퇴는 모든 단계 통과 · 1초 모자라면 모든 단계 차단(`RejoinPreCheckIntegrationTest`), 콜백 리다이렉트(`SocialLoginSuccessHandlerTest`), 휴대폰 확인 HTTP 409 `REJOIN_RESTRICTED_PHONE` · 가입된 번호 200 `available: false`(`AvailabilityPathIntegrationTest`) |
 | S-B08 | 같은 이메일 · 휴대폰으로 가입과 탈퇴가 동시에 진행 → 탈퇴가 커밋되면 가입이 재가입 제한을 우회하지 못함 (실제 PostgreSQL) | 경계 | 통합 | PR |  | 완료 (11/18): 실제 PostgreSQL에서 커밋 전후 · 사전 검사 통과 후 가입 · 탈퇴가 끼어드는 경합(로컬 가입 경로, `RejoinRestrictionIntegrationTest`) |
 | S-B09 | 카카오 탈퇴: 연결 해제 실패 → 503 `SOCIAL_UNLINK_FAILED`, 회원 변화 없음 · 탈퇴 토큰 소비됨 / 연결 해제 성공 뒤 DB 롤백 확인 → 회원 `ACTIVE` 유지, 재인증 후 다시 탈퇴할 때 `-101`을 성공으로 처리 / 커밋 결과 불명 → 503 `RESULT_UNKNOWN`, 자동 재요청 금지 | 장애 | 통합 | PR |  | 완료 (11/18): 연결 해제 실패 · 롤백 · 롤백 뒤 재시도(`WithdrawalServiceIntegrationTest`), HTTP 400 + `-101`만 성공(`KakaoAdminClientTest`). `RESULT_UNKNOWN`은 503 응답 매핑 · 쿠키 유지까지 검증(`WithdrawalControllerIntegrationTest`) |
 | S-B10 | 카카오 연결 해제 웹훅: 키가 틀리면 401(기록 없음), 맞으면 요청 값과 관계없이 200, 정상 요청은 수신 기록 저장 후 정상 상황에서 3초 안에 응답 / 같은 연결 해제 상태에서 웹훅이 중복 수신돼도 회원 상태 변경 · 토큰 폐기 · 자동 탈퇴를 멱등 처리 / `INCOMPLETE_SIGN_UP` · 회원 없음은 기록만 / `UNLINK_FROM_ADMIN`은 `INACTIVE`만 / 자동 탈퇴 대상은 `ALLOWED`면 탈퇴, `BLOCKED`면 `INACTIVE` + 안내 메일, `UNAVAILABLE`이면 안내 없이 재시도 후 소진 시 `FAILED` | 규칙 | 통합 | PR |  | 검증 (11/19): 수신(`KakaoUnlinkWebhookIntegrationTest`, 저장 실패 · 테이블 잠금 지연에도 3초 안 200), 처리(`KakaoUnlinkProcessorIntegrationTest`), Gateway 라우트(`KakaoUnlinkWebhookRouteIntegrationTest`). 실제 카카오 웹훅은 운영 HTTPS 주소 등록 뒤 확인 |

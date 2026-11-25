@@ -60,9 +60,10 @@ public class MemberController {
     return ApiResponse.ok("닉네임 사용 가능 여부를 확인했습니다.", new NicknameCheckResponse(available));
   }
 
+  // 형식 검증은 가입 요청과 같은 PHONE_REGEX. 실패하면 BindException → 400 INVALID_FIELD_ERROR
   @GetMapping("/phoneAvailability")
-  public ApiResponse<PhoneCheckResponse> checkPhone(@RequestParam String phone) {
-    boolean available = signupService.isPhoneAvailable(phone);
+  public ApiResponse<PhoneCheckResponse> checkPhone(@Valid @ModelAttribute PhoneCheckRequest request) {
+    boolean available = signupService.isPhoneAvailable(request.phone());
     return ApiResponse.ok("휴대폰 번호 사용 가능 여부를 확인했습니다.", new PhoneCheckResponse(available));
   }
 

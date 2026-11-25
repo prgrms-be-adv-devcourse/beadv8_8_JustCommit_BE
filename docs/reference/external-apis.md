@@ -1,7 +1,7 @@
 # 외부 API 목록
 
 > 언제 읽나: 외부 API의 경로 · 담당 서비스를 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-24 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-25 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
 
 ## 서비스별 목록
 
@@ -21,7 +21,7 @@
 | POST | `users` | 회원가입 (30일 안에 탈퇴한 이메일 · 휴대폰이면 409 `REJOIN_RESTRICTED`) | 공개 |
 | POST | `users/social` | 소셜 가입 완료 (30일 안에 탈퇴한 이메일 · 휴대폰이면 409 `REJOIN_RESTRICTED`) | 공개 |
 | GET | `users/nicknameAvailability?nickname=` | 닉네임 중복 확인 | 공개 |
-| GET | `users/phoneAvailability?phone=` | 휴대폰 중복 확인 | 공개 |
+| GET | `users/phoneAvailability?phone=` | 휴대폰 중복 확인. `phone`은 가입 요청과 같은 형식(하이픈 없이 `01`로 시작하는 숫자 11자리)이고, 없거나 형식이 다르면 400 `INVALID_FIELD_ERROR`(회원 · 탈퇴 기록을 조회하지 않음, 파라미터 누락도 #611 전의 `MISSING_PARAMETER` 대신 이 코드). 가입된 번호면 200 `available: false`, 30일 안에 탈퇴한 번호면 409 `REJOIN_RESTRICTED_PHONE` → [재가입 제한](../flows/signup-and-replica.md#재가입-제한) | 공개 |
 | GET | `users/me` | 내 정보 | 로그인 |
 | PATCH | `users/me/nickname` | 닉네임 변경 (지금 닉네임과 같으면 그대로) | 로그인 |
 | PATCH | `users/me/password` | 비밀번호 변경 → 모든 기기 로그아웃. 200이면 이 기기 Refresh 쿠키 만료 · 프론트는 Access를 지우고 로그인 화면으로, `revocationCompleted`는 서버 폐기 기록 완료 여부. 503 `RESULT_UNKNOWN`은 자동 재시도 금지. 같은 인증 버전에서 현재 비밀번호를 5회 틀리면 5번째까지 400, 이후 요청은 첫 오답부터 24시간이 되는 시점까지 429 `PASSWORD_CHANGE_LOCKED` + `Retry-After`(남은 초) | 로그인 (로컬 회원) |
@@ -39,14 +39,14 @@
 | POST | `sellers` | 판매자 등록 (`reviewConsentAgreed`=true · `reviewConsentVersion` 필수. 누락 · 미동의 400, 현재 버전이 아니면 409 `REVIEW_CONSENT_VERSION_MISMATCH`) | 로그인 |
 | GET | `sellers/{sellerId}` | 판매자 공개 정보 (닉네임 · 소개글 · 등록일, 숫자 id만) | 공개 |
 | PATCH | `sellers/me/intro` | 소개글 수정 (최대 500자, 빈 문자열은 삭제) | 로그인 (판매자만) |
-| GET | `/oauth2/authorization/kakao` · `/login/oauth2/code/kakao` | 카카오 로그인 (Spring Security 처리, `/api/v1` 아님). 카카오 인증 뒤 로그인 처리에서 난 오류는 HTTP 오류 응답이 아니라 프론트 `/oauth/callback?error={오류 코드}`로 리다이렉트. 회원 잠금 대기 초과 · 발급 시각 조건 미충족은 `error=MEMBER_BUSY` → [인증 규칙](../conventions/auth.md#토큰-폐기) | 공개 |
+| GET | `/oauth2/authorization/kakao` · `/login/oauth2/code/kakao` | 카카오 로그인 (Spring Security 처리, `/api/v1` 아님). 카카오 인증 뒤 로그인 처리에서 난 오류는 HTTP 오류 응답이 아니라 프론트 `/oauth/callback?error={오류 코드}`로 리다이렉트. 회원 잠금 대기 초과 · 발급 시각 조건 미충족은 `error=MEMBER_BUSY` → [인증 규칙](../conventions/auth.md#토큰-폐기). 신규 회원으로 판정됐는데 카카오 이메일이 30일 안에 탈퇴한 이메일이면 가입 토큰 없이 `error=REJOIN_RESTRICTED_EMAIL` → [재가입 제한](../flows/signup-and-replica.md#재가입-제한) | 공개 |
 | GET · POST | `webhooks/kakao/unlink` | 카카오 연결 해제 웹훅 (`Authorization: KakaoAK {어드민 키}`) → [카카오 연결 해제 웹훅](#카카오-연결-해제-웹훅) | 공개 |
 
 #### 이메일 인증 목적
 
 | 요청 `purpose` | 동작 |
 |---|---|
-| 생략 · `SIGNUP` | 가입 (생략하면 기존 요청과 같게 가입으로 처리). 가입된 이메일 409 `DUPLICATE_EMAIL`, 발송 제한 429 `EMAIL_SEND_COOLDOWN` · `EMAIL_SEND_DAILY_LIMIT`(+ `Retry-After`), 메일 작업 제출 거절 500 `EMAIL_SEND_FAILED`(→ [메일 발송](#메일-발송)), 확인 실패는 `EMAIL_CODE_MISMATCH` · `EMAIL_CODE_EXPIRED` · `EMAIL_CODE_ATTEMPTS_EXCEEDED` |
+| 생략 · `SIGNUP` | 가입 (생략하면 기존 요청과 같게 가입으로 처리). 가입된 이메일 409 `DUPLICATE_EMAIL`, 30일 안에 탈퇴한 이메일 409 `REJOIN_RESTRICTED_EMAIL`(메일 · 발송 예약 없음 → [재가입 제한](../flows/signup-and-replica.md#재가입-제한)), 발송 제한 429 `EMAIL_SEND_COOLDOWN` · `EMAIL_SEND_DAILY_LIMIT`(+ `Retry-After`), 메일 작업 제출 거절 500 `EMAIL_SEND_FAILED`(→ [메일 발송](#메일-발송)), 확인 실패는 `EMAIL_CODE_MISMATCH` · `EMAIL_CODE_EXPIRED` · `EMAIL_CODE_ATTEMPTS_EXCEEDED` |
 | `PASSWORD_RESET` | 비밀번호 재설정 (아래 응답 규칙) |
 | `ACCOUNT_CHANGE` | 공개 경로에서는 받지 않음(400 `EMAIL_PURPOSE_NOT_SUPPORTED`). 계좌 변경 인증은 로그인 필수 전용 경로로 → [계좌 변경](#계좌-변경) |
 | `WITHDRAWAL` | 공개 경로에서는 받지 않음(400 `EMAIL_PURPOSE_NOT_SUPPORTED`). 탈퇴 인증은 로그인 필수 전용 경로로 → [회원 탈퇴](#회원-탈퇴) |

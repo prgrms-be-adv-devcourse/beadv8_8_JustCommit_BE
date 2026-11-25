@@ -10,6 +10,7 @@ import com.justcommit.backend.member.config.MailExecutorConfig;
 import com.justcommit.backend.member.domain.exception.EmailCooldownException;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.withdrawal.application.RejoinRestriction;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
@@ -40,6 +41,7 @@ public class EmailVerificationService {
   private final VerificationMailSender mailSender;
   private final MemberRepository memberRepository;
   private final PasswordResetService passwordResetService;
+  private final RejoinRestriction rejoinRestriction;
   private final TaskExecutor mailTaskExecutor;
 
   // 메일 실행기는 이름으로만 주입되는 빈이라 생성자 매개변수에 @Qualifier를 직접 붙인다
@@ -48,15 +50,17 @@ public class EmailVerificationService {
                                   VerificationMailSender mailSender,
                                   MemberRepository memberRepository,
                                   PasswordResetService passwordResetService,
+                                  RejoinRestriction rejoinRestriction,
                                   @Qualifier(MailExecutorConfig.MAIL_TASK_EXECUTOR) TaskExecutor mailTaskExecutor) {
     this.store = store;
     this.mailSender = mailSender;
     this.memberRepository = memberRepository;
     this.passwordResetService = passwordResetService;
+    this.rejoinRestriction = rejoinRestriction;
     this.mailTaskExecutor = mailTaskExecutor;
   }
 
-  // 인증번호 발송 (공개 경로): 목적 확인 -> 가입 여부 확인 -> 번호 발송
+  // 인증번호 발송 (공개 경로): 목적 확인 -> 가입 여부 · 재가입 제한 확인(가입 목적) -> 번호 발송
   public EmailSendResult sendCode(String rawEmail, EmailPurpose purpose) {
     requireSupported(purpose);
     String email = normalize(rawEmail);
@@ -68,6 +72,8 @@ public class EmailVerificationService {
     if (memberRepository.existsByEmail(email)) {
       throw new BusinessException(MemberErrorCode.DUPLICATE_EMAIL);
     }
+    // 30일 안에 탈퇴한 이메일이면 발송 예약 전에 409 REJOIN_RESTRICTED_EMAIL (메일 · 재발송 제한 · 하루 횟수 모두 없음, #611)
+    rejoinRestriction.checkEmail(email);
     return issueCode(email, purpose, "");
   }
 
