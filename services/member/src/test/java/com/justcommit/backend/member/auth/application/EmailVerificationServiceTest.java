@@ -13,6 +13,7 @@ import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerification
 import com.justcommit.backend.member.domain.exception.EmailCooldownException;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.withdrawal.application.RejoinRestriction;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -63,6 +64,9 @@ class EmailVerificationServiceTest {
   @Mock
   private PasswordResetService passwordResetService;
 
+  @Mock
+  private RejoinRestriction rejoinRestriction;
+
   private EmailVerificationService service;
 
   // 기본은 제출한 작업을 바로 실행하는 실행기 (기존 흐름을 순서대로 검증). 비동기 · 제출 거절은 각 테스트에서 따로 만든다 (#421)
@@ -72,7 +76,8 @@ class EmailVerificationServiceTest {
   }
 
   private EmailVerificationService serviceWith(TaskExecutor mailTaskExecutor) {
-    return new EmailVerificationService(store, mailSender, memberRepository, passwordResetService, mailTaskExecutor);
+    return new EmailVerificationService(store, mailSender, memberRepository, passwordResetService, rejoinRestriction,
+        mailTaskExecutor);
   }
 
   // 대기열이 가득 찬 실행기처럼 제출을 항상 거절
@@ -336,6 +341,33 @@ class EmailVerificationServiceTest {
 
     then(store).shouldHaveNoInteractions();
     then(mailSender).shouldHaveNoInteractions();
+    then(rejoinRestriction).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("30일 안에 탈퇴한 이메일이면 REJOIN_RESTRICTED_EMAIL, 발송 자리 · 번호 저장 · 메일 발송 없음 (#611)")
+  void sendCode_rejoinRestricted() {
+    given(memberRepository.existsByEmail(EMAIL)).willReturn(false);
+    willThrow(new BusinessException(MemberErrorCode.REJOIN_RESTRICTED_EMAIL))
+        .given(rejoinRestriction).checkEmail(EMAIL);
+
+    assertThatThrownBy(() -> service.sendCode(" Test@Example.com ", SIGNUP))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode").isEqualTo(MemberErrorCode.REJOIN_RESTRICTED_EMAIL);
+
+    then(store).shouldHaveNoInteractions();
+    then(mailSender).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("비밀번호 재설정 목적은 재가입 제한을 보지 않음 (가입 여부를 드러내지 않는 기존 규칙 유지, #611)")
+  void sendCode_resetSkipsRejoinRestriction() {
+    givenSendSlot(RESET_QUOTA, SendStatus.ACQUIRED, 0);
+    given(passwordResetService.findTarget(EMAIL)).willReturn(Optional.empty());
+
+    service.sendCode(EMAIL, RESET);
+
+    then(rejoinRestriction).shouldHaveNoInteractions();
   }
 
   @Test
