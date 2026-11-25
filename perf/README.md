@@ -100,3 +100,51 @@ docker exec -i justcommit-postgres psql -U product_app -d product_perf_db -v pro
 # ADMIN 토큰으로 POST /api/v1/admin/products/searchIndex 뒤
 LABEL=opensearch-10k perf/k6/search-steps.sh 20,40,80,160,320,640
 ```
+
+## MSA 운영 측정 (#628)
+
+세미와 같은 k6 스크립트 · 판정 기준(p95 2초 또는 에러 5%)으로 MSA 운영 서버를 쟀다. 결과 · 해석은 노션 「replant 세미 프로젝트 측정 기록」 아래 하위 페이지 「MSA 운영 측정 — 세미 기준선과 비교 (#628)」.
+
+### 환경 (2026-11-22, 운영)
+
+| 항목 | 세미 | MSA |
+|---|---|---|
+| 서버 | t3.medium 1대 | 앱 서버 t3.large(vCPU 2) K3s + compose, 데이터 서버 t3.medium |
+| 지표 | 내 PC Prometheus 15초 | 운영 Alloy → Prometheus 60초, SSH 터널 `localhost:19090` (k6도 여기로 remote write) |
+| 단계 유지 | 2분 | 3분 (60초 수집이라 단계마다 표본 2개 이상) |
+| 로그인 | 공개 주소 | Gateway가 같은 IP 로그인을 연속 5회로 제한 → 미리 로그인만 SSH 터널로 Gateway NodePort(`localhost:18080` → `10.0.7.76:30080`)에 직접, 계정마다 다른 `X-Forwarded-For` (`LOGIN_BASE_URL`). 측정 요청은 공개 주소 |
+| 데이터 | `data/seed.sql` | `data/msa/seed.sh` — 같은 양을 서비스별 DB에 (회원 → 회원 복제본 → 지갑 → 상품 → 지난 주문) |
+
+### 결과 요약
+
+| 시나리오 | 세미 한계 | MSA 한계 | MSA p95 (한계) | MSA가 무너진 원인 |
+|---|---|---|---|---|
+| 둘러보기 (상품 1만) | 80~88 TPS | 80 rps | 144ms | 160에서 데이터 서버 CPU 97% + Gateway 2파드 OOMKilled |
+| 주문 · 결제 | 5건/초 (교착) | 10건/초 | 198ms | 20에서 앱 서버 CPU 100% |
+| 섞어서 90:10 | 초당 20 | 초당 20 | 1,002ms | 40에서 데이터 서버 CPU 100%, 장바구니 담기 43% 실패 |
+| 동시 구매 50 × 10 | 통과 | 통과 | 796ms | 5xx 0 · 지갑 일치 |
+| 내 주문 목록 (11만) | 306ms (인덱스 뒤) | 40 rps 통과 | 83ms | — |
+
+- 상품 4만 개에서 둘러보기는 20~40 rps에서 무너졌다: 목록 쿼리 `order by created_at`에 인덱스가 없어 매번 전체 스캔 + 디스크 정렬
+- 운영 추적 샘플링 100% → 부하 뒤 Tempo가 데이터 서버 CPU 67~72%를 10분 넘게 씀. 데이터 서버 CPU 수치에 섞여 있음
+
+### 다시 재기
+
+```bash
+# 터널 두 개 (따로 띄워 둠)
+ssh -N -L 18080:10.0.7.76:30080 replant-app          # 미리 로그인용 Gateway 직접
+ssh -N -L 19090:10.0.7.79:9090 replant-data          # 운영 Prometheus
+
+PERF_HASH='<bcrypt 해시>' perf/data/msa/seed.sh      # Docker가 있으면 PERF_HASH 없이 (htpasswd)
+# 관리자(perf-admin@perf.test) 토큰으로 POST /api/v1/admin/products/searchIndex/rebuilds
+perf/data/msa/park-products.sh park <주문용 첫 id> <끝 id>   # 둘러보기는 세미처럼 상품 1만 개로 (뒤에 unpark + rebuilds)
+perf/k6/run.sh browse.js -e HOLD=3m
+LOGIN_BASE_URL=http://localhost:18080 perf/k6/run.sh order.js -e FIRST_ID=<id> -e LAST_ID=<id> -e HOLD=3m
+python -I perf/analysis/stage_report.py --target msa --start <시작 + setup 시간> --steps 5,10,20,40,80 --hold 180
+perf/data/msa/check-concurrent.sh <FIRST_ID>          # concurrent.js 뒤
+```
+
+- 측정 뒤 시연 데이터로 되돌리기: 시연 도구 `npm run demo -- restore base` (브랜치 `gasic37200/perf-demo-data`의 `perf/demo/`)
+- 무너지는 단계에서 Gateway가 OOMKilled되면 SSH 터널도 끊길 수 있다 → 다음 측정 전에 `curl localhost:18080/actuator/health`
+- 서비스가 재시작한 직후(차가운 JVM)에는 한계가 크게 낮게 나온다 → 1분 데우고 잰다
+- 결과 원본: `k6/results/*-msa-*`, 장애 때 저장한 로그 `k6/results/msa-incidents/`

@@ -37,8 +37,30 @@ function authHeaders(token) {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+// MSA(#628): Gateway가 로그인을 같은 IP 연속 5회로 제한한다. 미리 로그인만 SSH 터널로 Gateway에 직접 보내고(LOGIN_BASE_URL,
+// 예: http://localhost:18080 → 앱 서버 NodePort 30080), 계정마다 다른 X-Forwarded-For를 붙인다. Nginx를 거치는 공개 주소는
+// X-Forwarded-For를 접속 IP로 덮어써서 이 방법이 통하지 않는다. 측정 요청은 그대로 BASE_URL로 간다
+const LOGIN_BASE_URL = __ENV.LOGIN_BASE_URL;
+
+function fakeIp(email) {
+  let h = 0;
+  for (let i = 0; i < email.length; i++) h = (h * 31 + email.charCodeAt(i)) >>> 0;
+  return `10.250.${(h >>> 8) & 255}.${h & 255}`;
+}
+
+// 여러 명을 http.batch로 미리 로그인하는 스크립트(order · mixed · concurrent · mypage)용
+export const LOGIN_URL = `${LOGIN_BASE_URL || BASE_URL}/api/v1/auth/login`;
+export function loginHeaders(email) {
+  return LOGIN_BASE_URL ? { ...JSON_HEADERS, 'X-Forwarded-For': fakeIp(email) } : JSON_HEADERS;
+}
+
 export function login(email) {
-  const res = post('/api/v1/auth/login', { email, password: PASSWORD }, null, 'POST /auth/login');
+  const res = LOGIN_BASE_URL
+    ? http.post(`${LOGIN_BASE_URL}/api/v1/auth/login`, JSON.stringify({ email, password: PASSWORD }), {
+        headers: { ...JSON_HEADERS, 'X-Forwarded-For': fakeIp(email) },
+        tags: { name: 'setup' },
+      })
+    : post('/api/v1/auth/login', { email, password: PASSWORD }, null, 'POST /auth/login');
   const ok = check(res, { '로그인 200': (r) => r.status === 200 });
   return ok ? res.json('data.accessToken') : null;
 }

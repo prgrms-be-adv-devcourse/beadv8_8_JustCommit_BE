@@ -5,7 +5,7 @@
 import { check, fail } from 'k6';
 import exec from 'k6/execution';
 import http from 'k6/http';
-import { BASE_URL, BUYERS, buyerEmail, post, requirePassword } from './lib/common.js';
+import { BASE_URL, BUYERS, buyerEmail, post, requirePassword, LOGIN_URL, loginHeaders } from './lib/common.js';
 
 const STEPS = (__ENV.STEPS || '5,10,20,40,80').split(',').map(Number);
 const HOLD = __ENV.HOLD || '2m';
@@ -47,9 +47,9 @@ export function setup() {
   for (let start = 1; start <= LOGIN_BUYERS; start += 20) {
     const batch = [];
     for (let n = start; n < Math.min(start + 20, LOGIN_BUYERS + 1); n++) {
-      batch.push(['POST', `${BASE_URL}/api/v1/auth/login`,
+      batch.push(['POST', LOGIN_URL,
         JSON.stringify({ email: buyerEmail(n), password: __ENV.PERF_PASSWORD }),
-        { headers: { 'Content-Type': 'application/json' }, tags: { name: 'setup login' } }]);
+        { headers: loginHeaders(buyerEmail(n)), tags: { name: 'setup' } }]);
     }
     for (const res of http.batch(batch)) {
       if (res.status !== 200) fail(`로그인 실패 ${res.status}`);
