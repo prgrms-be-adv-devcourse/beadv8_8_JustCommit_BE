@@ -155,13 +155,16 @@ perf/data/msa/check-concurrent.sh <FIRST_ID>          # concurrent.js 뒤
 
 ### 단계별 지표
 
-서비스가 `/actuator/prometheus`로 내보내는 Timer (태그 `stage`, 구간 히스토그램). Grafana 「replant MSA 측정」의 「검색 · 챗봇 단계별 시간」 줄에 단계별 p50 · p95가 나온다.
+서비스가 `/actuator/prometheus`로 내보내는 Timer (태그 `stage` · `outcome`, 구간 히스토그램). Grafana 「replant MSA 측정」의 「검색 · 챗봇 단계별 시간」 줄에 단계별 성공 p50 · p95와 실패 p95가 나온다.
 
-| 지표 | 단계 `stage` | 남기는 때 |
-|---|---|---|
-| `product_search_stage_seconds` (product) | `total` 전체 · `opensearch` product가 본 OpenSearch 호출 · `opensearch_took` OpenSearch 응답의 `took` · `db` DB 재조회 · `fallback` 장애 시 LIKE | 키워드 검색만 (키워드 없는 목록 · 판매자 상점은 안 남김). `opensearch` · `db`는 성공만, `total`은 대체 포함 |
-| `ai_species_search_stage_seconds` (ai) | `total` · `embedding` 질문 임베딩(OpenAI) · `vector_search` 품종 벡터 검색 · `product_lookup` 판매 중 상품 조회 | 입력 검증을 통과한 요청. `total`은 임베딩 실패(503)도 포함 |
-| `ai_chatbot_stage_seconds` (ai) | `total` · `history` 대화 기록(이어 묻기만) · `embedding` · `product_search`(대안 포함) · `species_search` · `answer` 답변 생성(Claude) · `save` 대화 저장 | `answer`는 키가 있을 때만, 실패해도 남김. `total`은 404 · 403 · 503 포함 |
+| 지표 | 단계 `stage` | 남기는 때 | 구간 범위 |
+|---|---|---|---|
+| `product_search_stage_seconds` (product) | `total` 전체 · `opensearch` product가 본 OpenSearch 호출 · `opensearch_took` OpenSearch 응답의 `took` · `db` DB 재조회 · `fallback` 장애 시 LIKE | 키워드 검색만 (키워드 없는 목록 · 판매자 상점은 안 남김). LIKE 대체로 응답했으면 `total`은 성공, `opensearch`는 실패 | 1ms ~ 5초 |
+| `ai_species_search_stage_seconds` (ai) | `total` · `embedding` 질문 임베딩(OpenAI) · `vector_search` 품종 벡터 검색 · `product_lookup` 판매 중 상품 조회 | 입력 검증(400)을 통과한 요청. 임베딩 실패(503)는 `embedding` · `total` 실패 | 5ms ~ 5초 |
+| `ai_chatbot_stage_seconds` (ai) | `total` · `history` 대화 기록(이어 묻기만) · `embedding` · `product_search`(대안 포함) · `species_search` · `answer` 답변 생성(Claude) · `save` 대화 저장 | `answer`는 키가 있을 때만. 답변 생성 실패는 고정 문장으로 답하므로 `answer`만 실패, 404 · 403 · 503은 `total`도 실패 | 5ms ~ 30초 |
+
+- `outcome`: `success` · `failure`. 실패는 예외로 끝난 단계에 걸린 시간 (시간 초과로 실패한 요청이 어느 단계에서 기다렸는지 보려고, #649 리뷰). 성공 Timer는 시작할 때 만들고 실패 Timer는 처음 실패할 때 생긴다
+- 구간 범위: 히스토그램 구간을 범위 안만 내보내 시계열 수를 줄인다 (기본 1ms ~ 30초). 범위 밖 값은 맨 끝 구간에 들어가 p95가 범위 끝으로 보인다
 
 - `opensearch` − `opensearch_took` = 네트워크 · 연결 풀 · 동시 검색 자리 대기 · 직렬화. 이 차이가 크면 OpenSearch 밖의 문제다
 - `answer`는 운영 ai에 `ANTHROPIC_API_KEY`가 있어야 남는다. 없으면 챗봇이 고정 문장으로 답하고(`answerGenerated=false`) 이 단계는 0건
@@ -211,6 +214,14 @@ k6 run -e TARGET=species -e RPM=9 -e DURATION=6m --summary-export results/stages
 python3 -I ../analysis/stage_timing.py --start <시작> --end <끝> --only product
 ```
 
-- 측정 계정(`perf-buyer-N@perf.test`)이 운영에 있어야 챗봇을 잴 수 있다. #628 뒤 시연 데이터로 되돌렸으면 `data/msa/seed.sh`로 회원만 다시 넣는다
+- 측정 계정(`perf-buyer-N@perf.test`)이 운영에 있어야 챗봇을 잴 수 있다. #628 뒤 시연 데이터로 되돌렸으면 `data/msa/seed.sh`로 다시 넣는다 (회원과 함께 상품 · 주문도 들어가므로 측정 뒤 시연 데이터로 되돌림)
 - 배포 · 재시작 직후는 JVM이 덜 데워져 느리게 나온다 → 1분 데우고 잰다 (MSA 운영 측정과 같음)
-- 챗봇 1번은 Claude · OpenAI를 54번 부른다. 측정 횟수를 기록해 비용을 확인한다
+
+### 챗봇 측정의 데이터 · 비용
+
+| 항목 | 내용 |
+|---|---|
+| 계정 | 측정 전용 `perf-buyer-1..N@perf.test` (`data/msa/seed.sh`가 넣음). 실제 회원 · 시연 계정은 쓰지 않는다 |
+| 남는 데이터 | 메시지마다 `ai_db`의 `chat_conversation` · `chat_message`에 대화가 저장된다 (`save` 단계). 측정 1번에 대화 51개 · 메시지 108개 (18개 중 이어 묻기 1개) |
+| 정리 | `data/msa/clean-chatbot.sh`로 개수 확인 → `--yes`로 측정 계정 대화만 삭제 (`chat_message`는 FK로 같이 지워짐) |
+| 비용 | 1번 측정에 OpenAI 임베딩 54번 + Claude Haiku 답변 54번 (키가 있을 때). 측정한 날짜 · 횟수를 결과 표 옆에 적는다 |

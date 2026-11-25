@@ -2,10 +2,12 @@ package com.justcommit.backend.ai.search;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.justcommit.backend.ai.common.StageTimers;
 import com.justcommit.backend.ai.search.application.QueryEmbedder;
 import com.justcommit.backend.ai.search.application.SpeciesSearchService;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -129,7 +131,7 @@ class SpeciesSearchIntegrationTest {
     }
 
     @Test
-    @DisplayName("[#634] 질문 임베딩 · 벡터 검색 · 상품 조회 · 전체를 단계별 Timer로, 임베딩이 실패하면 전체만 늘어난다")
+    @DisplayName("[#634] 질문 임베딩 · 벡터 검색 · 상품 조회 · 전체를 단계별 Timer로, 임베딩이 실패하면 임베딩 · 전체가 실패로")
     void recordsStageTimers() throws Exception {
         List<String> stages = List.of(SpeciesSearchService.STAGE_EMBEDDING, SpeciesSearchService.STAGE_VECTOR_SEARCH,
                 SpeciesSearchService.STAGE_PRODUCT_LOOKUP, SpeciesSearchService.STAGE_TOTAL);
@@ -142,10 +144,13 @@ class SpeciesSearchIntegrationTest {
         }
 
         Map<String, Long> beforeFailure = counts(stages);
+        long embeddingFailures = failures(SpeciesSearchService.STAGE_EMBEDDING);
+        long totalFailures = failures(SpeciesSearchService.STAGE_TOTAL);
         assertThat(search(FAIL, 5).statusCode()).isEqualTo(503);
 
-        assertThat(count(SpeciesSearchService.STAGE_TOTAL)).isEqualTo(beforeFailure.get(SpeciesSearchService.STAGE_TOTAL) + 1);
-        assertThat(count(SpeciesSearchService.STAGE_EMBEDDING)).isEqualTo(beforeFailure.get(SpeciesSearchService.STAGE_EMBEDDING));
+        assertThat(failures(SpeciesSearchService.STAGE_EMBEDDING)).isEqualTo(embeddingFailures + 1);
+        assertThat(failures(SpeciesSearchService.STAGE_TOTAL)).isEqualTo(totalFailures + 1);
+        assertThat(counts(stages)).isEqualTo(beforeFailure);
     }
 
     private Map<String, Long> counts(List<String> stages) {
@@ -155,7 +160,15 @@ class SpeciesSearchIntegrationTest {
     }
 
     private long count(String stage) {
-        return meterRegistry.get(SpeciesSearchService.METRIC).tag("stage", stage).timer().count();
+        return meterRegistry.get(SpeciesSearchService.METRIC).tag("stage", stage)
+                .tag("outcome", StageTimers.SUCCESS).timer().count();
+    }
+
+    // 실패 Timer는 처음 실패할 때 생기므로 없으면 0건
+    private long failures(String stage) {
+        Timer timer = meterRegistry.find(SpeciesSearchService.METRIC).tag("stage", stage)
+                .tag("outcome", StageTimers.FAILURE).timer();
+        return timer == null ? 0 : timer.count();
     }
 
     @Test

@@ -156,7 +156,7 @@ class ProductSearchServiceTest {
     }
 
     @Test
-    @DisplayName("[#634] OpenSearch 실패 → LIKE 대체: 전체 · 대체 시간만 남고 OpenSearch · DB 재조회는 0건")
+    @DisplayName("[#634] OpenSearch 실패 → LIKE 대체: OpenSearch는 실패로, 대체 · 전체는 성공으로 남고 DB 재조회는 0건")
     void recordsFallbackStage() {
         given(keywordSearch.search(any(), any(), anyInt(), anyInt()))
                 .willThrow(new ProductSearchUnavailableException("연결 실패", new java.net.ConnectException()));
@@ -167,7 +167,24 @@ class ProductSearchServiceTest {
         assertThat(timer(ProductSearchMetrics.Stage.TOTAL).count()).isEqualTo(1);
         assertThat(timer(ProductSearchMetrics.Stage.FALLBACK).count()).isEqualTo(1);
         assertThat(timer(ProductSearchMetrics.Stage.OPENSEARCH).count()).isZero();
+        assertThat(failures(ProductSearchMetrics.Stage.OPENSEARCH)).isEqualTo(1);
         assertThat(timer(ProductSearchMetrics.Stage.DB).count()).isZero();
+        assertThat(failures(ProductSearchMetrics.Stage.TOTAL)).isZero();
+    }
+
+    @Test
+    @DisplayName("[#634] DB 재조회가 예외로 끝나면 DB · 전체가 실패로 남고 예외는 그대로")
+    void recordsDbFailure() {
+        given(keywordSearch.search(any(), any(), anyInt(), anyInt()))
+                .willReturn(new ProductKeywordSearch.Result(List.of(1L), 1, 3));
+        given(productRepository.findWithSpeciesByIdIn(List.of(1L))).willThrow(new IllegalStateException("DB 오류"));
+
+        assertThatThrownBy(() -> service.search(request("몬스테라", null, null, null, null)))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(failures(ProductSearchMetrics.Stage.DB)).isEqualTo(1);
+        assertThat(failures(ProductSearchMetrics.Stage.TOTAL)).isEqualTo(1);
+        assertThat(timer(ProductSearchMetrics.Stage.TOTAL).count()).isZero();
     }
 
     @Test
@@ -182,7 +199,15 @@ class ProductSearchServiceTest {
     }
 
     private Timer timer(ProductSearchMetrics.Stage stage) {
-        return meterRegistry.get(ProductSearchMetrics.NAME).tag("stage", stage.tag()).timer();
+        return meterRegistry.get(ProductSearchMetrics.NAME).tag("stage", stage.tag())
+                .tag("outcome", ProductSearchMetrics.SUCCESS).timer();
+    }
+
+    // 실패 Timer는 처음 실패할 때 생기므로 없으면 0건
+    private long failures(ProductSearchMetrics.Stage stage) {
+        Timer timer = meterRegistry.find(ProductSearchMetrics.NAME).tag("stage", stage.tag())
+                .tag("outcome", ProductSearchMetrics.FAILURE).timer();
+        return timer == null ? 0 : timer.count();
     }
 
     @Test

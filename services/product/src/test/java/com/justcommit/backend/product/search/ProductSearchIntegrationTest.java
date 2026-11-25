@@ -212,7 +212,8 @@ class ProductSearchIntegrationTest {
     }
 
     private Timer timer(Stage stage) {
-        return meterRegistry.get(ProductSearchMetrics.NAME).tag("stage", stage.tag()).timer();
+        return meterRegistry.get(ProductSearchMetrics.NAME).tag("stage", stage.tag())
+                .tag("outcome", ProductSearchMetrics.SUCCESS).timer();
     }
 
     @Test

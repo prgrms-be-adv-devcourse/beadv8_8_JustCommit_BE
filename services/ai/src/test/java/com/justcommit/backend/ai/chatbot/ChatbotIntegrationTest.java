@@ -8,6 +8,7 @@ import com.justcommit.backend.ai.chatbot.application.AnswerGenerator;
 import com.justcommit.backend.ai.chatbot.application.ChatPrompt;
 import com.justcommit.backend.ai.chatbot.application.ChatTurn;
 import com.justcommit.backend.ai.chatbot.application.ChatbotService;
+import com.justcommit.backend.ai.common.StageTimers;
 import com.justcommit.backend.ai.product.infrastructure.messaging.ProductEventListener;
 import com.justcommit.backend.ai.search.application.QueryEmbedder;
 import com.justcommit.backend.ai.support.KeywordEmbeddingModel;
@@ -15,6 +16,7 @@ import com.justcommit.backend.common.security.AuthMember;
 import com.justcommit.backend.common.security.JwtVerifier;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -185,21 +187,27 @@ class ChatbotIntegrationTest {
     }
 
     @Test
-    @DisplayName("[#634] 임베딩이 실패한 요청(503)은 전체 시간만 남고, LLM이 실패해도 답변 생성 시간은 남긴다")
+    @DisplayName("[#634] 임베딩 실패(503)는 임베딩 · 전체가 실패로, LLM 실패는 답변 생성만 실패로 남고 전체는 성공(고정 문장 응답)")
     void recordsStageTimersOnFailure() throws Exception {
         Map<String, Long> before = counts();
+        long embeddingFailures = failures(ChatbotService.STAGE_EMBEDDING);
+        long totalFailures = failures(ChatbotService.STAGE_TOTAL);
+        long answerFailures = failures(ChatbotService.STAGE_ANSWER);
         embeddingModel.failing.set(true);
 
         assertThat(send(MEMBER_A, null, "어두운 방").statusCode()).isEqualTo(503);
 
-        assertThat(count(ChatbotService.STAGE_TOTAL)).isEqualTo(before.get(ChatbotService.STAGE_TOTAL) + 1);
-        assertThat(count(ChatbotService.STAGE_EMBEDDING)).isEqualTo(before.get(ChatbotService.STAGE_EMBEDDING));
+        assertThat(failures(ChatbotService.STAGE_EMBEDDING)).isEqualTo(embeddingFailures + 1);
+        assertThat(failures(ChatbotService.STAGE_TOTAL)).isEqualTo(totalFailures + 1);
+        assertThat(count(ChatbotService.STAGE_TOTAL)).isEqualTo(before.get(ChatbotService.STAGE_TOTAL));
 
         embeddingModel.failing.set(false);
         answerGenerator.failing.set(true);
         assertThat(send(MEMBER_A, null, "어두운 방").statusCode()).isEqualTo(200);
 
-        assertThat(count(ChatbotService.STAGE_ANSWER)).isEqualTo(before.get(ChatbotService.STAGE_ANSWER) + 1);
+        assertThat(failures(ChatbotService.STAGE_ANSWER)).isEqualTo(answerFailures + 1);
+        assertThat(count(ChatbotService.STAGE_ANSWER)).isEqualTo(before.get(ChatbotService.STAGE_ANSWER));
+        assertThat(count(ChatbotService.STAGE_TOTAL)).isEqualTo(before.get(ChatbotService.STAGE_TOTAL) + 1);
     }
 
     private Map<String, Long> counts() {
@@ -213,7 +221,15 @@ class ChatbotIntegrationTest {
     }
 
     private long count(String stage) {
-        return meterRegistry.get(ChatbotService.METRIC).tag("stage", stage).timer().count();
+        return meterRegistry.get(ChatbotService.METRIC).tag("stage", stage)
+                .tag("outcome", StageTimers.SUCCESS).timer().count();
+    }
+
+    // 실패 Timer는 처음 실패할 때 생기므로 없으면 0건
+    private long failures(String stage) {
+        Timer timer = meterRegistry.find(ChatbotService.METRIC).tag("stage", stage)
+                .tag("outcome", StageTimers.FAILURE).timer();
+        return timer == null ? 0 : timer.count();
     }
 
     @Test

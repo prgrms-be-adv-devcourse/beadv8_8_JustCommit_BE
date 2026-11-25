@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -37,7 +38,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * DB를 읽고 응답으로 바꾸는 부분만 읽기 전용 트랜잭션으로 감싼다 (open-in-view가 꺼져 있어, 썸네일용 사진 목록을
  * 지연 로딩하려면 세션이 열려 있어야 함).
  *
- * <p>키워드 검색은 단계별 시간을 {@link ProductSearchMetrics}에 남긴다 (#634): 전체 · OpenSearch 호출 · took · DB 재조회 · LIKE 대체.
+ * <p>키워드 검색은 단계별 시간을 {@link ProductSearchMetrics}에 성공 · 실패로 나눠 남긴다 (#634): 전체 · OpenSearch 호출 · took ·
+ * DB 재조회 · LIKE 대체.
  * 키워드 없는 조회 · 판매자 상점은 HTTP 응답 시간({@code http.server.requests})으로 충분해 따로 재지 않는다.
  */
 @Slf4j
@@ -66,18 +68,38 @@ public class ProductSearchService {
         }
         long startedAt = System.nanoTime();
         try {
+            Page<ProductSearchResponse> page = searchWithFallback(request, statuses, pageable);
+            // LIKE 대체로 응답한 요청도 사용자에게는 응답이 갔으므로 성공
+            metrics.record(ProductSearchMetrics.Stage.TOTAL, startedAt);
+            return page;
+        } catch (RuntimeException e) {
+            metrics.recordFailure(ProductSearchMetrics.Stage.TOTAL, startedAt);
+            throw e;
+        }
+    }
+
+    private Page<ProductSearchResponse> searchWithFallback(ProductSearchRequest request, List<ProductStatus> statuses,
+                                                           Pageable pageable) {
+        try {
             return searchOpenSearch(request, statuses, pageable);
         } catch (ProductSearchUnavailableException e) {
             // 검색어 원문은 남기지 않고 길이만 (로그 노출 · 길이 줄이기, #547 리뷰)
             log.warn("OpenSearch 검색 실패, DB LIKE 검색으로 대신함: keywordLength={}, cause={}",
                     request.keyword().length(), e.getCause() == null ? e.toString() : e.getCause().toString());
-            long fallbackAt = System.nanoTime();
-            Page<ProductSearchResponse> page = searchDb(request, pageable);
-            metrics.record(ProductSearchMetrics.Stage.FALLBACK, fallbackAt);
-            return page;
-        } finally {
-            // 성공 · 대체 모두 (DB 오류로 예외가 난 요청도 걸린 시간만큼 들어감)
-            metrics.record(ProductSearchMetrics.Stage.TOTAL, startedAt);
+            return timed(ProductSearchMetrics.Stage.FALLBACK, () -> searchDb(request, pageable));
+        }
+    }
+
+    // 단계 시간을 성공 · 실패로 나눠 남긴다 (예외는 그대로 던짐)
+    private <T> T timed(ProductSearchMetrics.Stage stage, Supplier<T> step) {
+        long startedAt = System.nanoTime();
+        try {
+            T result = step.get();
+            metrics.record(stage, startedAt);
+            return result;
+        } catch (RuntimeException e) {
+            metrics.recordFailure(stage, startedAt);
+            throw e;
         }
     }
 
@@ -113,18 +135,15 @@ public class ProductSearchService {
                 request.keyword().trim(), statuses, request.speciesId(),
                 nameOf(request.category()), nameOf(request.light()), nameOf(request.watering()),
                 nameOf(request.difficulty()), request.minPrice(), request.maxPrice());
-        long searchAt = System.nanoTime();
-        ProductKeywordSearch.Result result = keywordSearch.search(
-                condition, request.searchSort(), pageable.getPageNumber(), pageable.getPageSize());
-        metrics.record(ProductSearchMetrics.Stage.OPENSEARCH, searchAt);
+        ProductKeywordSearch.Result result = timed(ProductSearchMetrics.Stage.OPENSEARCH, () -> keywordSearch.search(
+                condition, request.searchSort(), pageable.getPageNumber(), pageable.getPageSize()));
         if (result.tookMillis() >= 0) {
             metrics.recordMillis(ProductSearchMetrics.Stage.OPENSEARCH_TOOK, result.tookMillis());
         }
 
         // OpenSearch가 정한 순서를 지키며 DB 최신 값으로. 색인이 몇 초 늦어 그사이 숨김 · 판매 상태가 바뀐 상품은
         // 여기서 한 번 더 걸러 내 화면에 나가지 않게 한다 (전체 개수는 OpenSearch 기준이라 그 몇 초 동안 1~2개 차이 날 수 있음)
-        long dbAt = System.nanoTime();
-        List<ProductSearchResponse> content = readOnly.execute(status -> {
+        List<ProductSearchResponse> content = timed(ProductSearchMetrics.Stage.DB, () -> readOnly.execute(status -> {
             Map<Long, Product> products = productRepository.findWithSpeciesByIdIn(result.productIds()).stream()
                     .collect(Collectors.toMap(Product::getId, Function.identity()));
             return result.productIds().stream()
@@ -133,8 +152,7 @@ public class ProductSearchService {
                     .filter(product -> !product.isHidden() && statuses.contains(product.getStatus()))
                     .map(ProductSearchResponse::from)
                     .toList();
-        });
-        metrics.record(ProductSearchMetrics.Stage.DB, dbAt);
+        }));
         // 정렬은 OpenSearch가 했으므로 페이지 정보에는 번호 · 크기만 담음.
         // 마지막 페이지에서 걸러 낸 상품이 있으면 PageImpl이 전체 개수를 (앞 페이지 수 + 이번 개수)로 맞춘다
         return new PageImpl<>(content, PageRequest.of(pageable.getPageNumber(), pageable.getPageSize()),

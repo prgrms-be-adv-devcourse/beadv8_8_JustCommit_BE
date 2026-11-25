@@ -19,7 +19,7 @@
 
 | 수집 대상 | 방법 |
 |---|---|
-| 서비스 | `/actuator/prometheus` (HTTP · Hikari · Tomcat · JVM). 검색 · 챗봇은 단계별 시간도: `product_search_stage_seconds` · `ai_species_search_stage_seconds` · `ai_chatbot_stage_seconds` (태그 `stage`, 단계 목록은 `perf/README.md` 「검색 · 챗봇 단계별 운영 측정」) |
+| 서비스 | `/actuator/prometheus` (HTTP · Hikari · Tomcat · JVM). 검색 · 챗봇은 단계별 시간도: `product_search_stage_seconds` · `ai_species_search_stage_seconds` · `ai_chatbot_stage_seconds` (태그 `stage` · `outcome`, 단계 목록은 `perf/README.md` 「검색 · 챗봇 단계별 운영 측정」) |
 | 서버 (앱 · 데이터) | node-exporter (CPU · 메모리 · 디스크 · CPU steal). 앱 서버는 Alloy 내장 `prometheus.exporter.unix`로 같은 지표 |
 | PostgreSQL | postgres-exporter |
 | Kafka | kafka-exporter (토픽별 offset → DLT 유입 알림) |

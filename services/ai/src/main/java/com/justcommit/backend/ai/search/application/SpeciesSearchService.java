@@ -8,6 +8,7 @@ import com.justcommit.backend.ai.search.infrastructure.SpeciesSearchQueryReposit
 import com.justcommit.backend.ai.search.infrastructure.SpeciesSearchQueryRepository.SimilarSpecies;
 import com.justcommit.backend.common.exception.BusinessException;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -20,8 +21,8 @@ import org.springframework.stereotype.Service;
  * 품종 의미 검색 (docs/flows/search-recommend.md 「품종 의미 검색」, ADR 0030).
  * 문장 → 질의 벡터(OpenAI) → species_vector_store에서 가까운 품종 → 상품 스냅샷에서 그 품종의 판매 중 상품
  *
- * <p>단계별 시간(#634)은 {@code ai.species_search.stage}: 질문 임베딩 · 벡터 검색 · 상품 조회 · 전체.
- * 임베딩 · 조회 단계는 성공만, 전체는 검증을 통과한 모든 요청(임베딩 실패로 503이 된 요청 포함)을 남긴다.
+ * <p>단계별 시간(#634)은 {@code ai.species_search.stage}: 질문 임베딩 · 벡터 검색 · 상품 조회 · 전체를 {@code outcome}
+ * (success · failure)으로 나눠 남긴다. 입력 검증(400)에 걸린 요청은 남기지 않는다. 구간 범위 5ms ~ 5초 (임베딩 시간 초과 3초).
  */
 @Slf4j
 @Service
@@ -52,7 +53,8 @@ public class SpeciesSearchService {
         this.queryRepository = queryRepository;
         this.minSimilarity = minSimilarity;
         this.timers = new StageTimers(meterRegistry, METRIC, "품종 의미 검색 단계별 시간 (#634)",
-                List.of(STAGE_EMBEDDING, STAGE_VECTOR_SEARCH, STAGE_PRODUCT_LOOKUP, STAGE_TOTAL));
+                List.of(STAGE_EMBEDDING, STAGE_VECTOR_SEARCH, STAGE_PRODUCT_LOOKUP, STAGE_TOTAL),
+                Duration.ofMillis(5), Duration.ofSeconds(5));
     }
 
     public List<SpeciesSearchResult> search(String rawQuery, int size) {
@@ -64,36 +66,29 @@ public class SpeciesSearchService {
             throw new BusinessException(AiErrorCode.INVALID_SEARCH_SIZE);
         }
 
-        long start = System.nanoTime();
-        try {
-            return search(query, size, start);
-        } finally {
-            timers.record(STAGE_TOTAL, start);
-        }
+        return timers.time(STAGE_TOTAL, () -> searchValid(query, size));
     }
 
-    private List<SpeciesSearchResult> search(String query, int size, long start) {
+    private List<SpeciesSearchResult> searchValid(String query, int size) {
+        long start = System.nanoTime();
         float[] vector;
         try {
-            vector = queryEmbedder.embed(query);
+            vector = timers.time(STAGE_EMBEDDING, () -> queryEmbedder.embed(query));
         } catch (QueryEmbeddingException e) {
             // 검색만 실패시킨다. 문장은 로그에 남기지 않음 (사용자 입력)
             log.warn("품종 의미 검색 임베딩 실패: {}", e.getMessage());
             throw new BusinessException(AiErrorCode.SEMANTIC_SEARCH_UNAVAILABLE);
         }
-        timers.record(STAGE_EMBEDDING, start);
 
         long vectorAt = System.nanoTime();
-        List<SimilarSpecies> species = queryRepository.findSimilarSpecies(vector, minSimilarity, size);
-        timers.record(STAGE_VECTOR_SEARCH, vectorAt);
+        List<SimilarSpecies> species = timers.time(STAGE_VECTOR_SEARCH,
+                () -> queryRepository.findSimilarSpecies(vector, minSimilarity, size));
 
-        long productAt = System.nanoTime();
         Map<Integer, List<Long>> products = new HashMap<>();
-        for (ActiveProduct p : queryRepository.findActiveProducts(
-                species.stream().map(SimilarSpecies::speciesId).toList(), PRODUCTS_PER_SPECIES)) {
+        for (ActiveProduct p : timers.time(STAGE_PRODUCT_LOOKUP, () -> queryRepository.findActiveProducts(
+                species.stream().map(SimilarSpecies::speciesId).toList(), PRODUCTS_PER_SPECIES))) {
             products.computeIfAbsent(p.speciesId(), id -> new ArrayList<>()).add(p.productId());
         }
-        timers.record(STAGE_PRODUCT_LOOKUP, productAt);
 
         List<SpeciesSearchResult> result = species.stream()
                 .map(s -> new SpeciesSearchResult(s.speciesId(), s.name(), round(s.similarity()),

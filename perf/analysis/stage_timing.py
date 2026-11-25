@@ -1,7 +1,8 @@
 """검색 · 챗봇 단계별 p50 · p95 표 (#634)
 
-측정 구간 [--start, --end] 동안 운영 Prometheus에 쌓인 단계별 Timer 히스토그램에서 단계마다 건수 · p50 · p95를 뽑아
-Markdown 표로 출력한다. 전체(total)를 뺀 단계 중 p95가 가장 큰 단계에 ← 가장 느림 을 붙인다.
+측정 구간 [--start, --end] 동안 운영 Prometheus에 쌓인 단계별 Timer 히스토그램에서 단계마다 성공 건수 · p50 · p95와
+실패 건수 · 실패 p95(태그 outcome=failure)를 뽑아 Markdown 표로 출력한다.
+전체(total)를 뺀 단계 중 성공 p95가 가장 큰 단계에 ← 가장 느림 을 붙인다.
 
 지표 (서비스가 내보냄, docs/infra/observability.md):
   product_search_stage_seconds   상품 키워드 검색  total · opensearch · opensearch_took · db · fallback
@@ -78,11 +79,20 @@ def ms(v):
 
 
 def report(base, name, t, end, window):
-    sel = f'job="spring",service="{t["service"]}"'
-    bucket = f'sum by (le, stage) (increase({t["metric"]}_bucket{{{sel}}}[{window}]))'
-    counts = by_stage(query(base, f'sum by (stage) (increase({t["metric"]}_count{{{sel}}}[{window}]))', end))
-    p50 = by_stage(query(base, f'histogram_quantile(0.5, {bucket})', end))
-    p95 = by_stage(query(base, f'histogram_quantile(0.95, {bucket})', end))
+    def sel(outcome):
+        return f'job="spring",service="{t["service"]}",outcome="{outcome}"'
+
+    def bucket(outcome):
+        return f'sum by (le, stage) (increase({t["metric"]}_bucket{{{sel(outcome)}}}[{window}]))'
+
+    def count(outcome):
+        return by_stage(query(base, f'sum by (stage) (increase({t["metric"]}_count{{{sel(outcome)}}}[{window}]))', end))
+
+    counts = count('success')
+    p50 = by_stage(query(base, f'histogram_quantile(0.5, {bucket("success")})', end))
+    p95 = by_stage(query(base, f'histogram_quantile(0.95, {bucket("success")})', end))
+    fail_counts = count('failure')
+    fail_p95 = by_stage(query(base, f'histogram_quantile(0.95, {bucket("failure")})', end))
 
     http_sel = f'job="spring",service="{t["service"]}",uri="{t["uri"]}"'
     http_bucket = f'sum by (le) (increase(http_server_requests_seconds_bucket{{{http_sel}}}[{window}]))'
@@ -93,13 +103,16 @@ def report(base, name, t, end, window):
     slowest = max(steps, key=lambda s: steps[s] or 0) if steps else None
 
     print(f'\n### {t["title"]}\n')
-    print('| 단계 | 건수 | p50 ms | p95 ms | |')
-    print('|---|---|---|---|---|')
+    print('| 단계 | 건수 | p50 ms | p95 ms | 실패 건수 | 실패 p95 ms | |')
+    print('|---|---|---|---|---|---|---|')
     for s in t['stages']:
         mark = '← 가장 느림' if s == slowest else ''
-        print(f'| `{s}` | {counts.get(s, 0):.0f} | {ms(p50.get(s))} | {ms(p95.get(s))} | {mark} |')
-    print(f'| (HTTP {t["service"]}) | | {ms(http_p50)} | {ms(http_p95)} | 서비스가 본 응답 시간 |')
-    return {'counts': counts, 'p50': p50, 'p95': p95, 'http_p50': http_p50, 'http_p95': http_p95, 'slowest': slowest}
+        fails = fail_counts.get(s) or 0
+        print(f'| `{s}` | {counts.get(s) or 0:.0f} | {ms(p50.get(s))} | {ms(p95.get(s))} | {fails:.0f} | '
+              f'{ms(fail_p95.get(s)) if fails else "-"} | {mark} |')
+    print(f'| (HTTP {t["service"]}) | | {ms(http_p50)} | {ms(http_p95)} | | | 서비스가 본 응답 시간 (성공 · 실패 모두) |')
+    return {'counts': counts, 'p50': p50, 'p95': p95, 'fail_counts': fail_counts, 'fail_p95': fail_p95,
+            'http_p50': http_p50, 'http_p95': http_p95, 'slowest': slowest}
 
 
 def main():
