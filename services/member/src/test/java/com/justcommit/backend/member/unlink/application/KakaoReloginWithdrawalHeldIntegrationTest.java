@@ -13,6 +13,7 @@ import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReceipt;
 import com.justcommit.backend.member.unlink.infrastructure.mail.KakaoUnlinkNoticeMailSender;
 import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
+import com.justcommit.backend.member.withdrawal.application.WithdrawalCheckService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.security.KeyPair;
@@ -33,7 +35,10 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
@@ -42,6 +47,9 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -80,7 +88,10 @@ class KakaoReloginWithdrawalHeldIntegrationTest {
   }
 
   @Autowired KakaoUnlinkProcessor processor;
-  @Autowired KakaoUnlinkReceiptRepository receiptRepository;
+  // 재로그인이 처리 기록을 읽은 "뒤" · 무효화하기 "전"에 다른 일을 끼워 넣기 위해 가로챔. 평소에는 실제 빈 그대로
+  @MockitoSpyBean KakaoUnlinkReceiptRepository receiptRepository;
+  // 3곳 확인 도중(처리 기록 지정 뒤 · BLOCKED 저장 전)에 처리기를 멈추기 위해 가로챔
+  @MockitoSpyBean WithdrawalCheckService withdrawalCheckService;
   @Autowired SocialLoginService socialLoginService;
   @Autowired MemberRepository memberRepository;
   @Autowired JdbcTemplate jdbcTemplate;
@@ -197,6 +208,127 @@ class KakaoReloginWithdrawalHeldIntegrationTest {
     processor.processDue();
     assertMember(member, MemberStatus.INACTIVE);
     assertThat(login("9400000005")).isFalse();
+  }
+
+  @Test
+  @DisplayName("[#616] 재로그인이 처리 기록을 잠그고 읽으면, 무효화하기 전에 처리기가 BLOCKED(NOTICE_PENDING)를 저장하지 못하고 보류 판정 전 재로그인과 같은 결과")
+  void blockedSavedBetweenReadAndInvalidate_noticeNotLost() throws Exception {
+    Member member = kakaoMember("9400000006");
+    Long receiptId = receive("9400000006", "ACCOUNT_DELETE");
+    stubUnlinked();
+    stubChecks(BLOCK);
+    processor.process(processor.claimNext().orElseThrow()); // PENDING → INACTIVATED
+    KakaoUnlinkProcessor.Claim decide = processor.claimNext().orElseThrow();
+
+    // 처리기: 처리 기록 지정(회원 잠금 풀림) → 3곳 확인에서 재로그인이 기록을 읽을 때까지 멈춤 → BLOCKED 저장
+    CountDownLatch checkEntered = new CountDownLatch(1);
+    CountDownLatch loginRead = new CountDownLatch(1);
+    doAnswer(invocation -> {
+      checkEntered.countDown();
+      loginRead.await(5, TimeUnit.SECONDS);
+      return invocation.callRealMethod();
+    }).when(withdrawalCheckService).check(member.getId());
+    Thread worker = new Thread(() -> processor.process(decide));
+    worker.start();
+    assertThat(checkEntered.await(5, TimeUnit.SECONDS)).isTrue();
+
+    // 재로그인: 처리 기록을 읽은 뒤 무효화하기 직전에 처리기를 보내고, 처리기가 끝날 수 있으면(최대 2초) 기다림
+    AtomicReference<String> statusBeforeInvalidate = new AtomicReference<>();
+    doAnswer(invocation -> {
+      loginRead.countDown();
+      worker.join(2000);
+      statusBeforeInvalidate.set(status(receiptId));
+      // 저장소는 인터페이스 프록시라 callRealMethod 대신 spy의 기본 응답(실제 빈으로 위임)을 그대로 씀
+      return mockingDetails(receiptRepository).getMockCreationSettings().getDefaultAnswer().answer(invocation);
+    }).when(receiptRepository).invalidatePending(anyString(), any());
+
+    boolean held = login("9400000006");
+    worker.join(10_000);
+
+    // 잠금이 없으면 이 사이에 NOTICE_PENDING이 저장돼, 안내 없이 보류가 무효화되고 대기 메일만 취소됐다
+    assertThat(statusBeforeInvalidate.get())
+        .as("재로그인이 끝날 때까지 처리기는 BLOCKED를 저장하지 못함")
+        .isEqualTo("INACTIVATED");
+    assertThat(held).isFalse();
+    assertThat(worker.isAlive()).isFalse();
+    assertMember(member, MemberStatus.ACTIVE);
+    assertThat(status(receiptId)).isEqualTo("INVALIDATED");
+    processor.processDue();
+    verify(noticeMailSender, never()).send(any());
+  }
+
+  @Test
+  @DisplayName("[#616] 처리기가 BLOCKED를 저장하려고 처리 기록을 먼저 잠갔으면, 재로그인은 저장이 끝난 NOTICE_PENDING을 읽고 안내 표시")
+  void blockedLockedBeforeRelogin_notice() throws Exception {
+    Member member = kakaoMember("9400000008");
+    Long receiptId = receive("9400000008", "ACCOUNT_DELETE");
+    stubUnlinked();
+    stubChecks(BLOCK);
+    processor.process(processor.claimNext().orElseThrow()); // PENDING → INACTIVATED
+    KakaoUnlinkProcessor.Claim decide = processor.claimNext().orElseThrow();
+
+    // 처리기: 3곳 확인(BLOCKED) 뒤 결과를 반영하려고 기록을 잠근 상태에서 잠시 멈춤 (그동안 재로그인이 같은 기록을 잠그려 함)
+    CountDownLatch checked = new CountDownLatch(1);
+    CountDownLatch locked = new CountDownLatch(1);
+    doAnswer(invocation -> {
+      Object result = invocation.callRealMethod();
+      checked.countDown();
+      return result;
+    }).when(withdrawalCheckService).check(member.getId());
+    doAnswer(invocation -> {
+      Object receipt = mockingDetails(receiptRepository).getMockCreationSettings().getDefaultAnswer().answer(invocation);
+      if (checked.getCount() == 0) {
+        locked.countDown();
+        Thread.sleep(1000);
+      }
+      return receipt;
+    }).when(receiptRepository).findByIdForUpdate(decide.id());
+    Thread worker = new Thread(() -> processor.process(decide));
+    worker.start();
+    assertThat(locked.await(5, TimeUnit.SECONDS)).isTrue();
+
+    boolean held = login("9400000008");
+    worker.join(10_000);
+
+    assertThat(held).isTrue();
+    assertThat(worker.isAlive()).isFalse();
+    assertMember(member, MemberStatus.ACTIVE);
+    assertThat(status(receiptId)).isEqualTo("INVALIDATED");
+    processor.processDue();
+    verify(noticeMailSender, never()).send(any());
+  }
+
+  @Test
+  @DisplayName("[#616] 안내 메일을 보내는 도중 다시 로그인하면 안내 표시, 이미 시작된 메일은 그대로 한 번 나가고 끝난 처리는 무효를 덮어쓰지 않음 (기존 동작)")
+  void reloginWhileMailSending_noticeAndMailUnchanged() throws Exception {
+    Member member = kakaoMember("9400000007");
+    Long receiptId = receive("9400000007", "ACCOUNT_DELETE");
+    stubUnlinked();
+    stubChecks(BLOCK);
+    processor.process(processor.claimNext().orElseThrow()); // PENDING → INACTIVATED
+    processor.process(processor.claimNext().orElseThrow()); // INACTIVATED → NOTICE_PENDING
+    KakaoUnlinkProcessor.Claim notice = processor.claimNext().orElseThrow();
+
+    CountDownLatch mailStarted = new CountDownLatch(1);
+    CountDownLatch loginDone = new CountDownLatch(1);
+    doAnswer(invocation -> {
+      mailStarted.countDown();
+      loginDone.await(5, TimeUnit.SECONDS);
+      return null;
+    }).when(noticeMailSender).send(member.getEmail());
+    Thread worker = new Thread(() -> processor.process(notice));
+    worker.start();
+    assertThat(mailStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+    boolean held = login("9400000007");
+    loginDone.countDown();
+    worker.join(10_000);
+
+    assertThat(held).isTrue();
+    assertThat(worker.isAlive()).isFalse();
+    assertMember(member, MemberStatus.ACTIVE);
+    assertThat(status(receiptId)).isEqualTo("INVALIDATED");
+    verify(noticeMailSender, times(1)).send(member.getEmail());
   }
 
   private boolean login(String providerId) {

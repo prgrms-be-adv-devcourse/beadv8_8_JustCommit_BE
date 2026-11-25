@@ -107,18 +107,18 @@ class SocialLoginServiceTest {
     verify(jwtProvider, never()).createSignupToken(anyString(), anyString(), anyString());
     // 기존 회원은 재가입 판정을 하지 않음 (#611은 신규 판정에만)
     verify(rejoinRestriction, never()).checkEmail(anyString());
-    // ACTIVE 회원의 평소 로그인은 탈퇴 보류 안내 대상이 아니고 처리 기록도 찾지 않음 (#616)
+    // ACTIVE 회원의 평소 로그인은 탈퇴 보류 안내 대상이 아니고 처리 기록을 찾거나 잠그지 않음 (#616)
     assertThat(((SocialLoginResult.ExistingMember) result).withdrawalHeldRestored()).isFalse();
-    verify(unlinkReceiptRepository, never()).findByMemberIdAndUnlinkVersionAndHandlesWithdrawalTrue(anyLong(), anyInt());
+    verify(unlinkReceiptRepository, never()).findWithdrawalHandlerForUpdate(anyLong(), anyInt());
   }
 
   @Test
-  @DisplayName("탈퇴가 보류됐던 INACTIVE 회원이 다시 로그인하면 복구 표시, 무효화하기 전에 처리 기록을 확인 (#616)")
+  @DisplayName("탈퇴가 보류됐던 INACTIVE 회원이 다시 로그인하면 복구 표시, 무효화하기 전에 처리 기록을 잠그고 확인 (#616)")
   void withdrawalHeldMemberRestored() {
     Member member = inactiveMember(4L, 1);
     given(memberLocker.lockByProvider(Provider.KAKAO, "123")).willReturn(Optional.of(member));
     given(accessIssueTimeGuard.issuableNow(4L)).willReturn(NOW);
-    given(unlinkReceiptRepository.findByMemberIdAndUnlinkVersionAndHandlesWithdrawalTrue(4L, 1))
+    given(unlinkReceiptRepository.findWithdrawalHandlerForUpdate(4L, 1))
         .willReturn(Optional.of(heldReceipt(4L, 1)));
 
     SocialLoginResult result = socialLoginService.login(
@@ -127,7 +127,7 @@ class SocialLoginServiceTest {
     assertThat(((SocialLoginResult.ExistingMember) result).withdrawalHeldRestored()).isTrue();
     assertThat(member.getStatus()).isEqualTo(MemberStatus.ACTIVE);
     InOrder order = inOrder(unlinkReceiptRepository);
-    order.verify(unlinkReceiptRepository).findByMemberIdAndUnlinkVersionAndHandlesWithdrawalTrue(4L, 1);
+    order.verify(unlinkReceiptRepository).findWithdrawalHandlerForUpdate(4L, 1);
     order.verify(unlinkReceiptRepository).invalidatePending(anyString(), any());
   }
 
@@ -137,7 +137,7 @@ class SocialLoginServiceTest {
     Member member = inactiveMember(4L, 1);
     given(memberLocker.lockByProvider(Provider.KAKAO, "123")).willReturn(Optional.of(member));
     given(accessIssueTimeGuard.issuableNow(4L)).willReturn(NOW);
-    given(unlinkReceiptRepository.findByMemberIdAndUnlinkVersionAndHandlesWithdrawalTrue(4L, 1))
+    given(unlinkReceiptRepository.findWithdrawalHandlerForUpdate(4L, 1))
         .willReturn(Optional.empty());
 
     SocialLoginResult result = socialLoginService.login(
