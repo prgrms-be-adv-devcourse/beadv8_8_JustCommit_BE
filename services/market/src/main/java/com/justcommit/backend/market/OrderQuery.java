@@ -26,4 +26,7 @@ public interface OrderQuery {
     // 판매자 주문별 구매 확정(CONFIRMED)된 주문상품 이름, 주문상품 순서 (#583 리뷰 목록). 확정 상품이 없는 판매자 주문은 빠진다
     Map<Long, List<String>> getConfirmedProductNames(Collection<Long> sellerOrderIds);
 
+    // 주문 id → 주문 시각(주문 생성 시각) (#584 내 리뷰 목록의 주문일). 없는 주문은 빠진다
+    Map<Long, LocalDateTime> getOrderedAts(Collection<Long> orderIds);
+
 }

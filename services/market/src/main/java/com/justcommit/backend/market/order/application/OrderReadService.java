@@ -253,6 +253,15 @@ public class OrderReadService implements OrderQuery {
     }
 
     @Override
+    public Map<Long, LocalDateTime> getOrderedAts(Collection<Long> orderIds) {
+        if (orderIds.isEmpty()) {
+            return Map.of();
+        }
+        return ordersRepository.findAllById(orderIds).stream()
+                .collect(Collectors.toMap(Orders::getId, Orders::getCreatedAt));
+    }
+
+    @Override
     public Map<Long, List<String>> getConfirmedProductNames(Collection<Long> sellerOrderIds) {
         if (sellerOrderIds.isEmpty()) {
             return Map.of();

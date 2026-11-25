@@ -20,6 +20,9 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
   // 판매자 리뷰 목록 (#583): 삭제하지 않은 리뷰만. 정렬은 pageable로 받는다 (태그는 따로 묶어서 읽는다)
   Page<Review> findBySellerIdAndDeletedAtIsNull(Long sellerId, Pageable pageable);
 
+  // 내 리뷰 목록 (#584): 삭제하지 않은 내 리뷰만. 정렬은 pageable로 받는다
+  Page<Review> findByBuyerIdAndDeletedAtIsNull(Long buyerId, Pageable pageable);
+
   // 목록 한 페이지의 태그를 한 번에 읽는다. 컬렉션 fetch join은 페이지를 메모리에서 자르게 되어 쓰지 않는다
   @Query("select r.id as reviewId, t as tag from Review r join r.tags t where r.id in :reviewIds")
   List<ReviewTagRow> findTagsByReviewIds(@Param("reviewIds") Collection<Long> reviewIds);

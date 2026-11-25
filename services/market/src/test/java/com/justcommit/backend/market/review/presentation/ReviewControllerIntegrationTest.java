@@ -368,12 +368,42 @@ class ReviewControllerIntegrationTest {
       .andExpect(jsonPath("$.code").value("TYPE_MISMATCH"));
   }
 
+  @Test
+  @DisplayName("내 리뷰 목록 (#584): 200 ApiResponse의 data에 PagingResponse, 판매자 닉네임 · deletableUntil 포함")
+  void myReviewList() throws Exception {
+    long sellerOrderId = sellerOrder(BUYER_ID, LocalDateTime.now().minusDays(1), "CONFIRMED");
+    long reviewId = insertReview(sellerOrderId, "4.5", "GOOD_PRICE");
+    insertReviewBy(sellerOrder(99L, LocalDateTime.now().minusDays(1), "CONFIRMED"), 99L, LocalDateTime.now()); // 남의 리뷰
+    when(memberQuery.getNicknames(anyCollection())).thenReturn(Map.of(SELLER_ID, "베란다정원"));
+
+    mockMvc.perform(get("/api/v1/reviews/me"))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.message").value("내 리뷰를 조회했습니다."))
+      .andExpect(jsonPath("$.data.totalElements").value(1))
+      .andExpect(jsonPath("$.data.content[0].reviewId").value(reviewId))
+      .andExpect(jsonPath("$.data.content[0].sellerId").value(SELLER_ID))
+      .andExpect(jsonPath("$.data.content[0].sellerNickname").value("베란다정원"))
+      .andExpect(jsonPath("$.data.content[0].orderedAt").isNotEmpty())
+      .andExpect(jsonPath("$.data.content[0].tags[0]").value("GOOD_PRICE"))
+      .andExpect(jsonPath("$.data.content[0].productNames[0]").value("몬스테라0"))
+      .andExpect(jsonPath("$.data.content[0].createdAt").isNotEmpty())
+      .andExpect(jsonPath("$.data.content[0].deletableUntil").isNotEmpty());
+  }
+
+  // 작성자 · 작성 시각을 정해 리뷰를 DB에 직접 넣는다 (판매자 20, 별점 4.5, 태그 없음)
+  private long insertReviewBy(long sellerOrderId, long buyerId, LocalDateTime createdAt) {
+    return jdbcTemplate.queryForObject("""
+      insert into review (seller_order_id, order_id, buyer_id, seller_id, rating, content, created_at, updated_at)
+      values (?, (select order_id from seller_order where id = ?), ?, ?, 4.5, ?, ?, ?) returning id
+      """, Long.class, sellerOrderId, sellerOrderId, buyerId, SELLER_ID, CONTENT, createdAt, createdAt);
+  }
+
   // 목록 · 집계용 리뷰를 DB에 직접 넣는다 (판매자 20, 구매자 10)
   private long insertReview(long sellerOrderId, String rating, String... tags) {
     Long id = jdbcTemplate.queryForObject("""
       insert into review (seller_order_id, order_id, buyer_id, seller_id, rating, content, created_at, updated_at)
-      values (?, 1, ?, ?, ?, ?, now(), now()) returning id
-      """, Long.class, sellerOrderId, BUYER_ID, SELLER_ID, new BigDecimal(rating), CONTENT);
+      values (?, (select order_id from seller_order where id = ?), ?, ?, ?, ?, now(), now()) returning id
+      """, Long.class, sellerOrderId, sellerOrderId, BUYER_ID, SELLER_ID, new BigDecimal(rating), CONTENT);
     for (String tag : tags) {
       jdbcTemplate.update("insert into review_tag (review_id, tag) values (?, ?)", id, tag);
     }

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -136,6 +137,20 @@ class ReviewTest {
   void duplicateTagsRejected() {
     assertInvalid(() -> review(new BigDecimal("4.5"), CONTENT,
       List.of(ReviewTag.GOOD_PRICE, ReviewTag.CAREFUL_PACKING, ReviewTag.GOOD_PRICE)));
+  }
+
+  @Test
+  @DisplayName("삭제 기한은 리뷰 작성 시각에서 3일 뒤다 (#584)")
+  void deletableUntilIsThreeDaysAfterCreation() {
+    Review review = createdAt(CONFIRMED_AT);
+
+    assertThat(review.deletableUntil()).isEqualTo(LocalDateTime.of(2026, 11, 27, 10, 0, 0));
+  }
+
+  private static Review createdAt(LocalDateTime createdAt) {
+    Review review = review(new BigDecimal("4.5"), CONTENT, List.of());
+    ReflectionTestUtils.setField(review, "createdAt", createdAt);
+    return review;
   }
 
   private static Review review(BigDecimal rating, String content, List<ReviewTag> tags) {

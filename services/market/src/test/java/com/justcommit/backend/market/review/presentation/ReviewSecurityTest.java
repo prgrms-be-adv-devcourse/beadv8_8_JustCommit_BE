@@ -29,9 +29,11 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -93,5 +95,22 @@ class ReviewSecurityTest {
 
     verify(reviewService).create(MEMBER_ID, 7L, new BigDecimal("4.5"), "잎이 싱싱하고 포장이 꼼꼼했어요",
       List.of(ReviewTag.GOOD_PRICE));
+  }
+
+  @Test
+  @DisplayName("토큰 없이 내 리뷰 목록은 401이고 서비스를 부르지 않는다 (#584)")
+  void anonymousCannotListMine() throws Exception {
+    mockMvc.perform(get("/api/v1/reviews/me")).andExpect(status().isUnauthorized());
+
+    verify(reviewReadService, never()).myReviews(any(), any());
+  }
+
+  @Test
+  @DisplayName("로그인한 회원이면 토큰의 회원 번호로 내 리뷰 목록까지 간다 (#584)")
+  void memberCanListMine() throws Exception {
+    mockMvc.perform(get("/api/v1/reviews/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + MEMBER_TOKEN))
+      .andExpect(status().isOk());
+
+    verify(reviewReadService).myReviews(eq(MEMBER_ID), any());
   }
 }

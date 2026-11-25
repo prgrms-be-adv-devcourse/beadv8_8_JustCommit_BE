@@ -52,4 +52,13 @@ public class ReviewController {
   public ApiResponse<ReviewSummaryResponse> summary(@RequestParam Long sellerId) {
     return ApiResponse.ok("판매자 리뷰 집계를 조회했습니다.", reviewReadService.summary(sellerId));
   }
+
+  // 내 리뷰 목록 (#584). 로그인 필요
+  @GetMapping("/me")
+  public ApiResponse<PagingResponse<MyReviewResponse>> myReviews(
+    @AuthenticationPrincipal AuthMember member,
+    @ModelAttribute MyReviewListRequest request
+  ) {
+    return ApiResponse.ok("내 리뷰를 조회했습니다.", reviewReadService.myReviews(member.memberId(), request.toPageable()));
+  }
 }
