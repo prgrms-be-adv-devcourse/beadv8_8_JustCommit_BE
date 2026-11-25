@@ -13,6 +13,7 @@ import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
+import com.justcommit.backend.market.review.application.ReviewReadService;
 import com.justcommit.backend.market.review.application.ReviewService;
 import com.justcommit.backend.market.review.infrastructure.ReviewRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -54,10 +55,15 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.mockingDetails;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -69,7 +75,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration(JacksonAutoConfiguration.class)
-@Import({JpaAuditingConfig.class, OrderReadService.class, ReviewService.class})
+@Import({JpaAuditingConfig.class, OrderReadService.class, ReviewService.class, ReviewReadService.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class ReviewControllerIntegrationTest {
@@ -92,6 +98,7 @@ class ReviewControllerIntegrationTest {
   @MockitoSpyBean ReviewRepository reviewRepository;
 
   @Autowired ReviewService reviewService;
+  @Autowired ReviewReadService reviewReadService;
   @Autowired OrdersRepository ordersRepository;
   @Autowired JdbcTemplate jdbcTemplate;
   @Autowired JsonMapper jsonMapper;
@@ -100,7 +107,7 @@ class ReviewControllerIntegrationTest {
 
   @BeforeEach
   void setUp() {
-    mockMvc = MockMvcBuilders.standaloneSetup(new ReviewController(reviewService))
+    mockMvc = MockMvcBuilders.standaloneSetup(new ReviewController(reviewService, reviewReadService))
       .setMessageConverters(new JacksonJsonHttpMessageConverter(jsonMapper))
       .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
       .setControllerAdvice(new GlobalExceptionHandler())
@@ -281,6 +288,96 @@ class ReviewControllerIntegrationTest {
       .andExpect(status().isConflict())
       .andExpect(jsonPath("$.code").value("REVIEW_ALREADY_WRITTEN"));
     assertThat(jdbcTemplate.queryForObject("select count(*) from review", Long.class)).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("판매자 리뷰 목록: 200 ApiResponse의 data에 PagingResponse, 리뷰마다 태그 · 확정 상품명 · 작성자 닉네임, 기본 20개")
+  void sellerReviewList() throws Exception {
+    long sellerOrderId = sellerOrder(BUYER_ID, LocalDateTime.now().minusDays(1), "CONFIRMED", "CANCELLED");
+    long reviewId = insertReview(sellerOrderId, "4.5", "CAREFUL_PACKING", "AS_DESCRIBED");
+    when(memberQuery.getNicknames(anyCollection())).thenReturn(Map.of(BUYER_ID, "초록손"));
+
+    mockMvc.perform(get("/api/v1/reviews").param("sellerId", String.valueOf(SELLER_ID)))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.status").value(200))
+      .andExpect(jsonPath("$.message").value("판매자 리뷰를 조회했습니다."))
+      .andExpect(jsonPath("$.data.page").value(0))
+      .andExpect(jsonPath("$.data.size").value(20))
+      .andExpect(jsonPath("$.data.totalElements").value(1))
+      .andExpect(jsonPath("$.data.content[0].reviewId").value(reviewId))
+      .andExpect(jsonPath("$.data.content[0].rating").value(4.5))
+      .andExpect(jsonPath("$.data.content[0].content").value(CONTENT))
+      .andExpect(jsonPath("$.data.content[0].tags[0]").value("AS_DESCRIBED"))
+      .andExpect(jsonPath("$.data.content[0].tags[1]").value("CAREFUL_PACKING"))
+      .andExpect(jsonPath("$.data.content[0].createdAt").isNotEmpty())
+      .andExpect(jsonPath("$.data.content[0].writerNickname").value("초록손"))
+      .andExpect(jsonPath("$.data.content[0].productNames.length()").value(1))
+      .andExpect(jsonPath("$.data.content[0].productNames[0]").value("몬스테라0"));
+  }
+
+  @Test
+  @DisplayName("판매자 리뷰 목록: size는 최대 50, 리뷰가 없는 판매자는 빈 목록")
+  void sellerReviewListPageSizeAndEmpty() throws Exception {
+    mockMvc.perform(get("/api/v1/reviews").param("sellerId", "999").param("size", "100"))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.data.size").value(50))
+      .andExpect(jsonPath("$.data.content.length()").value(0))
+      .andExpect(jsonPath("$.data.totalElements").value(0));
+  }
+
+  @Test
+  @DisplayName("판매자 리뷰 집계: 200 ApiResponse, 별점 10구간(5.0 → 0.5) · 태그 5종(enum 순서), 0건이면 평균 null")
+  void sellerReviewSummary() throws Exception {
+    insertReview(sellerOrder(BUYER_ID, LocalDateTime.now().minusDays(1), "CONFIRMED"), "4.0", "GOOD_PRICE");
+    insertReview(sellerOrder(BUYER_ID, LocalDateTime.now().minusDays(1), "CONFIRMED"), "4.5");
+
+    mockMvc.perform(get("/api/v1/reviews/summary").param("sellerId", String.valueOf(SELLER_ID)))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.message").value("판매자 리뷰 집계를 조회했습니다."))
+      .andExpect(jsonPath("$.data.averageRating").value(4.3))
+      .andExpect(jsonPath("$.data.reviewCount").value(2))
+      .andExpect(jsonPath("$.data.ratingCounts.length()").value(10))
+      .andExpect(jsonPath("$.data.ratingCounts[0].rating").value(5.0))
+      .andExpect(jsonPath("$.data.ratingCounts[0].count").value(0))
+      .andExpect(jsonPath("$.data.ratingCounts[1].rating").value(4.5))
+      .andExpect(jsonPath("$.data.ratingCounts[1].count").value(1))
+      .andExpect(jsonPath("$.data.ratingCounts[2].count").value(1))
+      .andExpect(jsonPath("$.data.ratingCounts[9].rating").value(0.5))
+      .andExpect(jsonPath("$.data.tagCounts.length()").value(5))
+      .andExpect(jsonPath("$.data.tagCounts[0].tag").value("AS_DESCRIBED"))
+      .andExpect(jsonPath("$.data.tagCounts[4].tag").value("GOOD_PRICE"))
+      .andExpect(jsonPath("$.data.tagCounts[4].count").value(1));
+    mockMvc.perform(get("/api/v1/reviews/summary").param("sellerId", "999"))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.data.averageRating").value(nullValue()))
+      .andExpect(jsonPath("$.data.reviewCount").value(0));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"/api/v1/reviews", "/api/v1/reviews/summary"})
+  @DisplayName("판매자 리뷰 목록 · 집계: sellerId 누락 · 빈 값은 400 MISSING_PARAMETER, 형식 오류는 400 TYPE_MISMATCH")
+  void sellerIdIsRequiredNumber(String path) throws Exception {
+    mockMvc.perform(get(path))
+      .andExpect(status().isBadRequest())
+      .andExpect(jsonPath("$.code").value("MISSING_PARAMETER"));
+    mockMvc.perform(get(path).param("sellerId", ""))
+      .andExpect(status().isBadRequest())
+      .andExpect(jsonPath("$.code").value("MISSING_PARAMETER"));
+    mockMvc.perform(get(path).param("sellerId", "abc"))
+      .andExpect(status().isBadRequest())
+      .andExpect(jsonPath("$.code").value("TYPE_MISMATCH"));
+  }
+
+  // 목록 · 집계용 리뷰를 DB에 직접 넣는다 (판매자 20, 구매자 10)
+  private long insertReview(long sellerOrderId, String rating, String... tags) {
+    Long id = jdbcTemplate.queryForObject("""
+      insert into review (seller_order_id, order_id, buyer_id, seller_id, rating, content, created_at, updated_at)
+      values (?, 1, ?, ?, ?, ?, now(), now()) returning id
+      """, Long.class, sellerOrderId, BUYER_ID, SELLER_ID, new BigDecimal(rating), CONTENT);
+    for (String tag : tags) {
+      jdbcTemplate.update("insert into review_tag (review_id, tag) values (?, ?)", id, tag);
+    }
+    return id;
   }
 
   private ResultActions createFor(long sellerOrderId) throws Exception {

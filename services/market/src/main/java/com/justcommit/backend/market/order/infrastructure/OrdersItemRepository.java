@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.time.LocalDateTime;
@@ -139,6 +140,17 @@ public interface OrdersItemRepository extends JpaRepository<OrdersItem, Long> {
 
     @Query("select i from OrdersItem i join fetch i.sellerOrder s where s.id in :sellerOrderIds order by i.id")
     List<OrdersItem> findBySellerOrderIds(@Param("sellerOrderIds") List<Long> sellerOrderIds);
+
+    // 판매자 주문 id → 상품 이름 (리뷰 목록의 구매 상품명, #583). 엔티티 대신 두 값만 읽는다
+    @Query("""
+            select new com.justcommit.backend.market.order.infrastructure.SellerOrderProductName(i.sellerOrder.id, i.productName)
+            from OrdersItem i
+            where i.sellerOrder.id in :sellerOrderIds
+              and i.status = :status
+            order by i.id
+            """)
+    List<SellerOrderProductName> findProductNamesBySellerOrderIds(@Param("sellerOrderIds") Collection<Long> sellerOrderIds,
+                                                                  @Param("status") OrderItemStatus status);
 
     // 장바구니 추천 요청용 최근 구매 확정 상품 ID. 기준 시각은 판매자 주문의 confirmedAt (주문상품별 확정 시각이 없음,
     // 판매자 주문의 상품이 모두 확정되기 전의 CONFIRMED 주문상품은 빠짐 → docs/reference/internal-apis.md)

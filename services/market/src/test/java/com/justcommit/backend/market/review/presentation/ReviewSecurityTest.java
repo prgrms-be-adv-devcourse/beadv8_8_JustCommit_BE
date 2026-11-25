@@ -4,6 +4,7 @@ import com.justcommit.backend.common.security.AuthMember;
 import com.justcommit.backend.common.security.JwtVerifier;
 import com.justcommit.backend.common.security.config.CommonSecurityConfigurer;
 import com.justcommit.backend.market.config.SecurityConfig;
+import com.justcommit.backend.market.review.application.ReviewReadService;
 import com.justcommit.backend.market.review.application.ReviewService;
 import com.justcommit.backend.market.review.domain.ReviewTag;
 import jakarta.servlet.Filter;
@@ -58,6 +59,7 @@ class ReviewSecurityTest {
 
   @MockitoBean JwtVerifier jwtVerifier;
   @MockitoBean ReviewService reviewService;
+  @MockitoBean ReviewReadService reviewReadService;
   @Autowired WebApplicationContext context;
 
   private MockMvc mockMvc;

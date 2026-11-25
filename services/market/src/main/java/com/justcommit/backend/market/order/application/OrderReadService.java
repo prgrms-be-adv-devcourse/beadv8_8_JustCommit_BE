@@ -20,6 +20,7 @@ import com.justcommit.backend.market.order.domain.SellerOrder;
 import com.justcommit.backend.market.order.infrastructure.OrdersItemRepository;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.order.infrastructure.ReturnRequestRepository;
+import com.justcommit.backend.market.order.infrastructure.SellerOrderProductName;
 import com.justcommit.backend.market.order.infrastructure.SellerOrderRepository;
 import com.justcommit.backend.market.order.presentation.OrderDetailResponse;
 import com.justcommit.backend.market.order.presentation.OrderListRequest;
@@ -249,6 +250,19 @@ public class OrderReadService implements OrderQuery {
             return new SellerOrderReviewInfo(sellerOrder.getId(), order.getId(), order.getBuyerId(),
                     sellerOrder.getSellerId(), sellerOrder.getConfirmedAt(), hasConfirmedItem);
         });
+    }
+
+    @Override
+    public Map<Long, List<String>> getConfirmedProductNames(Collection<Long> sellerOrderIds) {
+        if (sellerOrderIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, List<String>> result = new HashMap<>();
+        for (SellerOrderProductName row : ordersItemRepository.findProductNamesBySellerOrderIds(sellerOrderIds,
+                OrderItemStatus.CONFIRMED)) {
+            result.computeIfAbsent(row.sellerOrderId(), ignored -> new ArrayList<>()).add(row.productName());
+        }
+        return result;
     }
 
     @Override

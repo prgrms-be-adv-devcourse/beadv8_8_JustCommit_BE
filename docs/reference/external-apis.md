@@ -176,6 +176,8 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | POST | `orders/items/{id}/return/approve` | 판매자 반품 승인 (본문 없음, 성공 200 본문 없음): 그 주문상품만 담은 반품 배송(`READY`)을 만들고 반품 배송비를 남김. 응답 전 반품 신청이 아니면(이미 승인, 거절, 자동 승인 포함) 409 `RETURN_NOT_DECIDABLE`, 남의 판매자 주문의 주문상품은 404 | SELLER |
 | POST | `orders/items/{id}/return/reject` | 판매자 반품 거절 (본문 없음, 성공 200 본문 없음): 그 주문상품을 바로 구매 확정. 409, 404는 승인과 같음 | SELLER |
 | POST | `reviews` | 리뷰 작성: 본문 `sellerOrderId`(필수) · `rating`(필수, 0.5 ~ 5.0 · 0.5 단위) · `content`(필수, 앞뒤 공백을 빼고 10 ~ 300자, 뺀 값을 저장) · `tags`(선택, `AS_DESCRIBED` · `DETAILED_DESCRIPTION` · `CAREFUL_PACKING` · `HEALTHY_ARRIVAL` · `GOOD_PRICE` 이름 문자열만, 생략 · null은 빈 목록). 성공 201 `data.reviewId`. 별점 · 글 길이 · 필수 값 누락 · 태그 안 null · 같은 태그 중복 400 `INVALID_FIELD_ERROR`, 없는 태그 이름 · 숫자 태그(순번) 400 `BAD_REQUEST_DATA`, 없는 판매자 주문과 남의 판매자 주문은 같은 404 `REVIEW_SELLER_ORDER_NOT_FOUND`, 구매 확정 전 409 `REVIEW_NOT_CONFIRMED`, 구매 확정된 주문상품 없음(전부 반품) 409 `REVIEW_NO_CONFIRMED_ITEM`, 이미 씀(삭제한 리뷰 포함, 동시 요청은 `seller_order_id` 유니크로 1건만) 409 `REVIEW_ALREADY_WRITTEN`, 작성 기한 지남 409 `REVIEW_PERIOD_EXPIRED` | 로그인 |
+| GET | `reviews?sellerId&page&size` | 판매자 리뷰 목록 (판매자 상점 · 받은 리뷰): 삭제하지 않은 리뷰만 최신순(같은 시각이면 `reviewId` 역순), `data`는 공통 `PagingResponse`(기본 20개, 최대 50개). 항목 `reviewId` · `rating` · `content` · `tags`(enum 순서) · `createdAt` · `writerNickname`(회원 복제본 기준, 탈퇴면 「탈퇴한 회원」, 복제본이 없으면 「알 수 없는 회원」) · `productNames`(그 판매자 주문의 구매 확정 `CONFIRMED` 주문상품 이름만, 주문상품 순서). 리뷰가 없는 판매자는 빈 목록. `sellerId` 누락 · 빈 값 400 `MISSING_PARAMETER`, 형식 오류 400 `TYPE_MISMATCH` | 공개 |
+| GET | `reviews/summary?sellerId` | 판매자 리뷰 집계: `averageRating`(소수 첫째 자리 `HALF_UP`, 리뷰 0건이면 null) · `reviewCount` · `ratingCounts`(5.0 → 0.5 0.5 단위 10구간 `{rating, count}`, 합 = `reviewCount`) · `tagCounts`(태그 5종 enum 순서 `{tag, count}`, 건수 정렬 · 막대 비율은 화면). 삭제한 리뷰는 넣지 않고 없는 구간 · 태그는 0. 평균 · 리뷰 수 · 별점별 개수는 태그와 조인하지 않고 세어 태그가 여러 개인 리뷰도 한 번만 들어감. `sellerId` 오류는 목록과 같음 | 공개 |
 | POST | `webhooks/courier` | 택배사 웹훅 (`X-Api-Key`): 배송 상태(`courierOrderNo` · `trackingNo` 필수)와 요금표 변경(`status` `SHIPPING_FEES_CHANGED`, `version` · `updatedAt` · `baseFee` · `jejuSurcharge` · `remoteSurcharge` · `jejuZipcodes` · `remoteZipcodes`) 두 가지. 본문 원본은 404-express `docs/design.md` 「웹훅」 | 공개 |
 
 ### ai
@@ -228,7 +230,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 
 | 서비스 | 기능 | 설명 |
 |---|---|---|
-| market | 리뷰 삭제 · 판매자 리뷰 목록 (태그 집계) | 노션 6절 |
+| market | 리뷰 삭제 · 내 리뷰 목록 · 작성 가능한 주문 목록 | 노션 6절 |
 | notification | `GET notifications?read=` (커서 페이지네이션) | 삭제 API 없음 |
 
 ## 경로 개선안
