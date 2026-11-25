@@ -29,10 +29,12 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -98,19 +100,24 @@ class ReviewSecurityTest {
   }
 
   @Test
-  @DisplayName("토큰 없이 내 리뷰 목록은 401이고 서비스를 부르지 않는다 (#584)")
-  void anonymousCannotListMine() throws Exception {
+  @DisplayName("토큰 없이 내 리뷰 목록 · 리뷰 삭제는 401이고 서비스를 부르지 않는다 (#584)")
+  void anonymousCannotListMineOrDelete() throws Exception {
     mockMvc.perform(get("/api/v1/reviews/me")).andExpect(status().isUnauthorized());
+    mockMvc.perform(delete("/api/v1/reviews/1")).andExpect(status().isUnauthorized());
 
     verify(reviewReadService, never()).myReviews(any(), any());
+    verify(reviewService, never()).delete(anyLong(), anyLong());
   }
 
   @Test
-  @DisplayName("로그인한 회원이면 토큰의 회원 번호로 내 리뷰 목록까지 간다 (#584)")
-  void memberCanListMine() throws Exception {
+  @DisplayName("로그인한 회원이면 토큰의 회원 번호로 내 리뷰 목록 · 리뷰 삭제까지 간다 (#584)")
+  void memberCanListMineAndDelete() throws Exception {
     mockMvc.perform(get("/api/v1/reviews/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + MEMBER_TOKEN))
+      .andExpect(status().isOk());
+    mockMvc.perform(delete("/api/v1/reviews/1").header(HttpHeaders.AUTHORIZATION, "Bearer " + MEMBER_TOKEN))
       .andExpect(status().isOk());
 
     verify(reviewReadService).myReviews(eq(MEMBER_ID), any());
+    verify(reviewService).delete(MEMBER_ID, 1L);
   }
 }

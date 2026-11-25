@@ -63,6 +63,28 @@ public class ReviewService {
     }
   }
 
+  // 리뷰 삭제 (#584). 작성자 본인만, 리뷰 작성 시각부터 삭제 기간 안에만. 행은 남기고 deleted_at만 채운다
+  @Transactional
+  public void delete(Long buyerId, Long reviewId) {
+    delete(buyerId, reviewId, LocalDateTime.now());
+  }
+
+  // 테스트가 현재 시각을 고정할 수 있게 now를 받는다
+  @Transactional
+  void delete(Long buyerId, Long reviewId, LocalDateTime now) {
+    // 없는 리뷰 · 다른 작성자의 리뷰 · 이미 삭제된 리뷰는 같은 404. 기한은 본인의 미삭제 리뷰일 때만 본다
+    Review review = reviewRepository.findById(reviewId)
+      .filter(found -> found.getBuyerId().equals(buyerId) && found.getDeletedAt() == null)
+      .orElseThrow(() -> new BusinessException(ReviewErrorCode.REVIEW_NOT_FOUND));
+    if (!review.isWithinDeletePeriod(now)) {
+      throw new BusinessException(ReviewErrorCode.REVIEW_DELETE_PERIOD_EXPIRED);
+    }
+    // 동시에 같은 리뷰를 지우면 위 확인은 둘 다 통과할 수 있다. 조건부 UPDATE로 한 요청만 바꾸고 나머지는 이미 삭제된 리뷰와 같은 404
+    if (reviewRepository.softDelete(reviewId, buyerId, now) == 0) {
+      throw new BusinessException(ReviewErrorCode.REVIEW_NOT_FOUND);
+    }
+  }
+
   private boolean isDuplicateSellerOrder(DataIntegrityViolationException e) {
     return e.getCause() instanceof ConstraintViolationException violation
       && Review.UK_SELLER_ORDER_ID.equals(violation.getConstraintName());

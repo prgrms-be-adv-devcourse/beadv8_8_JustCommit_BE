@@ -147,6 +147,17 @@ class ReviewTest {
     assertThat(review.deletableUntil()).isEqualTo(LocalDateTime.of(2026, 11, 27, 10, 0, 0));
   }
 
+  @Test
+  @DisplayName("작성 직후와 72시간이 되기 직전에는 지울 수 있고, 정확히 72시간째부터는 지울 수 없다 (#584)")
+  void deletePeriodBoundary() {
+    Review review = createdAt(CONFIRMED_AT);
+
+    assertThat(review.isWithinDeletePeriod(CONFIRMED_AT)).isTrue();
+    assertThat(review.isWithinDeletePeriod(CONFIRMED_AT.plusHours(72).minusNanos(1))).isTrue();
+    assertThat(review.isWithinDeletePeriod(CONFIRMED_AT.plusHours(72))).isFalse();
+    assertThat(review.isWithinDeletePeriod(CONFIRMED_AT.plusHours(72).plusNanos(1))).isFalse();
+  }
+
   private static Review createdAt(LocalDateTime createdAt) {
     Review review = review(new BigDecimal("4.5"), CONTENT, List.of());
     ReflectionTestUtils.setField(review, "createdAt", createdAt);

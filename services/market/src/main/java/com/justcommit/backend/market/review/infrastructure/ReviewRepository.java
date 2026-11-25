@@ -5,10 +5,12 @@ import com.justcommit.backend.market.review.domain.ReviewTag;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 
@@ -22,6 +24,15 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 
   // 내 리뷰 목록 (#584): 삭제하지 않은 내 리뷰만. 정렬은 pageable로 받는다
   Page<Review> findByBuyerIdAndDeletedAtIsNull(Long buyerId, Pageable pageable);
+
+  // 리뷰 삭제 (#584): 작성자이고 아직 삭제하지 않은 행만 바꾼다. 같은 리뷰를 동시에 지우면 한 요청만 1을 받고
+  // 나머지는 0(먼저 저장한 deleted_at은 그대로)
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query("""
+    update Review r set r.deletedAt = :now, r.updatedAt = :now
+    where r.id = :reviewId and r.buyerId = :buyerId and r.deletedAt is null
+    """)
+  int softDelete(@Param("reviewId") Long reviewId, @Param("buyerId") Long buyerId, @Param("now") LocalDateTime now);
 
   // 목록 한 페이지의 태그를 한 번에 읽는다. 컬렉션 fetch join은 페이지를 메모리에서 자르게 되어 쓰지 않는다
   @Query("select r.id as reviewId, t as tag from Review r join r.tags t where r.id in :reviewIds")

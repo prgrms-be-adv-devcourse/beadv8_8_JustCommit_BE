@@ -63,6 +63,7 @@ import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.mockingDetails;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -388,6 +389,79 @@ class ReviewControllerIntegrationTest {
       .andExpect(jsonPath("$.data.content[0].productNames[0]").value("몬스테라0"))
       .andExpect(jsonPath("$.data.content[0].createdAt").isNotEmpty())
       .andExpect(jsonPath("$.data.content[0].deletableUntil").isNotEmpty());
+  }
+
+  @Test
+  @DisplayName("리뷰 삭제 (#584): 200 ApiResponse(메시지만), deleted_at 기록 · 행 유지. 내 리뷰 · 판매자 목록 · 집계에서 빠지고 같은 판매자 주문에 다시 쓰면 409")
+  void deleteThenExcludedEverywhereAndCannotRewrite() throws Exception {
+    long sellerOrderId = sellerOrder(BUYER_ID, LocalDateTime.now().minusDays(1), "CONFIRMED");
+    createFor(sellerOrderId).andExpect(status().isCreated());
+    Long reviewId = jdbcTemplate.queryForObject("select id from review where seller_order_id = ?", Long.class, sellerOrderId);
+
+    mockMvc.perform(delete("/api/v1/reviews/{reviewId}", reviewId))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.status").value(200))
+      .andExpect(jsonPath("$.message").value("리뷰를 삭제했습니다."))
+      .andExpect(jsonPath("$.data").doesNotExist());
+
+    assertThat(jdbcTemplate.queryForObject("select deleted_at from review where id = ?", LocalDateTime.class, reviewId))
+      .isNotNull();
+    assertThat(jdbcTemplate.queryForObject("select count(*) from review", Long.class)).isEqualTo(1);
+    mockMvc.perform(get("/api/v1/reviews/me"))
+      .andExpect(jsonPath("$.data.totalElements").value(0));
+    mockMvc.perform(get("/api/v1/reviews").param("sellerId", String.valueOf(SELLER_ID)))
+      .andExpect(jsonPath("$.data.totalElements").value(0));
+    mockMvc.perform(get("/api/v1/reviews/summary").param("sellerId", String.valueOf(SELLER_ID)))
+      .andExpect(jsonPath("$.data.reviewCount").value(0))
+      .andExpect(jsonPath("$.data.averageRating").value(nullValue()))
+      .andExpect(jsonPath("$.data.ratingCounts[1].count").value(0))
+      .andExpect(jsonPath("$.data.tagCounts[4].count").value(0));
+    createFor(sellerOrderId)
+      .andExpect(status().isConflict())
+      .andExpect(jsonPath("$.code").value("REVIEW_ALREADY_WRITTEN"));
+  }
+
+  @Test
+  @DisplayName("리뷰 삭제: 없는 리뷰 · 다른 작성자의 리뷰 · 이미 삭제된 리뷰는 모두 404 REVIEW_NOT_FOUND이고 아무것도 바뀌지 않는다")
+  void deleteNotFoundCases() throws Exception {
+    long othersReviewId = insertReviewBy(sellerOrder(99L, LocalDateTime.now().minusDays(1), "CONFIRMED"), 99L,
+      LocalDateTime.now());
+    long deletedReviewId = insertReviewBy(sellerOrder(BUYER_ID, LocalDateTime.now().minusDays(1), "CONFIRMED"), BUYER_ID,
+      LocalDateTime.now());
+    LocalDateTime firstDeletedAt = LocalDateTime.now().minusMinutes(5).withNano(0);
+    jdbcTemplate.update("update review set deleted_at = ? where id = ?", firstDeletedAt, deletedReviewId);
+
+    for (long reviewId : new long[] {othersReviewId + 1_000, othersReviewId, deletedReviewId}) {
+      mockMvc.perform(delete("/api/v1/reviews/{reviewId}", reviewId))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("REVIEW_NOT_FOUND"));
+    }
+    assertThat(jdbcTemplate.queryForObject("select deleted_at from review where id = ?", LocalDateTime.class,
+      othersReviewId)).isNull();
+    assertThat(jdbcTemplate.queryForObject("select deleted_at from review where id = ?", LocalDateTime.class,
+      deletedReviewId)).isEqualTo(firstDeletedAt);
+  }
+
+  @Test
+  @DisplayName("리뷰 삭제: 작성 후 72시간이 지났으면 409 REVIEW_DELETE_PERIOD_EXPIRED이고 삭제하지 않는다")
+  void deleteAfterPeriodIsConflict() throws Exception {
+    long reviewId = insertReviewBy(sellerOrder(BUYER_ID, LocalDateTime.now().minusDays(5), "CONFIRMED"), BUYER_ID,
+      LocalDateTime.now().minusHours(72).minusMinutes(1));
+
+    mockMvc.perform(delete("/api/v1/reviews/{reviewId}", reviewId))
+      .andExpect(status().isConflict())
+      .andExpect(jsonPath("$.code").value("REVIEW_DELETE_PERIOD_EXPIRED"));
+    assertThat(jdbcTemplate.queryForObject("select deleted_at from review where id = ?", LocalDateTime.class, reviewId))
+      .isNull();
+  }
+
+  // 매핑이 없을 때의 응답 코드는 standalone MockMvc(정적 리소스 핸들러 없음)와 실제 앱이 달라 보지 않고, 삭제 메서드로 가지 않는 것만 본다
+  @Test
+  @DisplayName("리뷰 삭제: reviewId가 숫자가 아니면 삭제 메서드로 매핑되지 않는다 (reviews/me는 GET만 있어 405)")
+  void deleteRequiresNumericReviewId() throws Exception {
+    mockMvc.perform(delete("/api/v1/reviews/me"))
+      .andExpect(status().isMethodNotAllowed());
+    assertThat(mockMvc.perform(delete("/api/v1/reviews/abc")).andReturn().getHandler()).isNull();
   }
 
   // 작성자 · 작성 시각을 정해 리뷰를 DB에 직접 넣는다 (판매자 20, 별점 4.5, 태그 없음)

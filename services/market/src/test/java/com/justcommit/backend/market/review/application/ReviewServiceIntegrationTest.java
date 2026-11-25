@@ -40,8 +40,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
@@ -210,6 +212,57 @@ class ReviewServiceIntegrationTest {
     assertThat(jdbcTemplate.queryForList("select id from review", Long.class)).containsExactly(savedId);
     assertThat(jdbcTemplate.queryForList("select tag from review_tag order by tag", String.class))
       .containsExactlyElementsOf(winnerTags.stream().map(Enum::name).sorted().toList());
+  }
+
+  @Test
+  @DisplayName("같은 리뷰를 동시에 지우면 한 요청만 200이고 다른 요청은 404 REVIEW_NOT_FOUND, 먼저 저장한 deleted_at은 덮어써지지 않는다 (#584)")
+  void concurrentDeleteSucceedsOnce() throws Exception {
+    Target target = sellerOrder("CONFIRMED");
+    // 리뷰 작성 시각은 실제 시각(감사 기능)이라 삭제 시각도 실제 시각 기준으로 둔다 (삭제 기간 안)
+    Long reviewId = reviewService.create(BUYER_ID, target.sellerOrderId(), RATING, CONTENT, List.of(), NOW);
+    LocalDateTime firstNow = LocalDateTime.now().withNano(0);
+    LocalDateTime secondNow = firstNow.plusSeconds(1);
+    CyclicBarrier beforeUpdate = new CyclicBarrier(2);
+    Answer<?> real = realAnswer();
+    // 두 요청이 모두 소유 · 미삭제 확인을 통과한 뒤 UPDATE하게 해, 확인이 아니라 조건부 UPDATE에서 갈리는 경로를 만든다
+    doAnswer(invocation -> {
+      beforeUpdate.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      return real.answer(invocation);
+    }).when(reviewRepository).softDelete(any(), any(), any());
+
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    Object firstResult;
+    Object secondResult;
+    try {
+      Future<Object> first = executor.submit(deleteCapturing(reviewId, firstNow));
+      Future<Object> second = executor.submit(deleteCapturing(reviewId, secondNow));
+      firstResult = first.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      secondResult = second.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    } finally {
+      executor.shutdownNow();
+      assertThat(executor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+    }
+
+    // 한 건은 성공(null), 다른 한 건은 404
+    List<Object> results = Arrays.asList(firstResult, secondResult);
+    assertThat(results).filteredOn(Objects::isNull).hasSize(1);
+    assertThat(results).filteredOn(BusinessException.class::isInstance).singleElement()
+      .satisfies(e -> assertThat(((BusinessException) e).getErrorCode()).isEqualTo(ReviewErrorCode.REVIEW_NOT_FOUND));
+    // deleted_at은 성공한 요청의 시각 그대로 (진 요청이 덮어쓰지 않음)
+    LocalDateTime winnerNow = firstResult == null ? firstNow : secondNow;
+    assertThat(jdbcTemplate.queryForObject("select deleted_at from review where id = ?", LocalDateTime.class, reviewId))
+      .isEqualTo(winnerNow);
+  }
+
+  private Callable<Object> deleteCapturing(Long reviewId, LocalDateTime now) {
+    return () -> {
+      try {
+        reviewService.delete(BUYER_ID, reviewId, now);
+        return null;
+      } catch (BusinessException e) {
+        return e;
+      }
+    };
   }
 
   private Callable<Object> createCapturing(Target target, List<ReviewTag> tags) {

@@ -109,6 +109,11 @@ public class Review extends BaseTimeEntity {
     return getCreatedAt().plus(DELETE_PERIOD);
   }
 
+  // 삭제 기간 안인지: 지금 < 리뷰 작성 시각 + 삭제 기간 (정확히 72시간째부터 지울 수 없다)
+  public boolean isWithinDeletePeriod(LocalDateTime now) {
+    return now.isBefore(deletableUntil());
+  }
+
   // 0.5 ~ 5.0, 0.5 단위: 2배 했을 때 정수여야 한다 (4.50은 허용, 2.3 · 4.55는 거절)
   private static void validateRating(BigDecimal rating) {
     if (rating == null || rating.compareTo(RATING_MIN) < 0 || rating.compareTo(RATING_MAX) > 0
