@@ -33,7 +33,14 @@ public interface ProductKeywordSearch {
     ) {
     }
 
-    // productIds는 정렬된 순서 그대로, total은 조건에 맞는 전체 개수
-    record Result(List<Long> productIds, long total) {
+    // productIds는 정렬된 순서 그대로, total은 조건에 맞는 전체 개수,
+    // tookMillis는 OpenSearch 응답의 took(OpenSearch 안에서 검색에 쓴 시간, 모르면 음수. 단계별 시간 #634)
+    record Result(List<Long> productIds, long total, long tookMillis) {
+
+        public static final long UNKNOWN_TOOK = -1;
+
+        public Result(List<Long> productIds, long total) {
+            this(productIds, total, UNKNOWN_TOOK);
+        }
     }
 }

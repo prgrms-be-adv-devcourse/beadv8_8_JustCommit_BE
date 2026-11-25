@@ -17,7 +17,9 @@ import com.justcommit.backend.product.search.application.ProductDocument;
 import com.justcommit.backend.product.search.application.ProductIndexService;
 import com.justcommit.backend.product.search.application.ProductIndexService.ReindexResult;
 import com.justcommit.backend.product.search.application.ProductSearchIndex;
+import com.justcommit.backend.product.search.application.ProductSearchMetrics;
 import com.justcommit.backend.product.search.application.ProductSearchService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.justcommit.backend.product.product.presentation.dto.ProductSearchRequest;
 import com.justcommit.backend.product.product.presentation.dto.ProductSearchResponse;
 import com.justcommit.backend.product.search.infrastructure.OpenSearchConfig;
@@ -117,6 +119,12 @@ class ProductSearchIndexScenarioTest {
         @Bean
         JsonMapper jsonMapper() {
             return JsonMapper.builder().build();
+        }
+
+        // 검색 단계별 시간(#634)은 이 시나리오의 관심 밖이라 따로 모으기만 함
+        @Bean
+        ProductSearchMetrics productSearchMetrics() {
+            return new ProductSearchMetrics(new SimpleMeterRegistry());
         }
 
         // 운영 설정과 같은 클래스로 만들되 주소만 컨테이너로, 읽기 타임아웃은 느린 CI를 위해 넉넉히

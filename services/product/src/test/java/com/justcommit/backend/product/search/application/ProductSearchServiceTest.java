@@ -18,7 +18,10 @@ import com.justcommit.backend.product.product.infrastructure.ProductRepository;
 import com.justcommit.backend.product.product.presentation.dto.ProductSearchRequest;
 import com.justcommit.backend.product.product.presentation.dto.ProductSearchResponse;
 import com.justcommit.backend.product.species.domain.Species;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
+import java.util.concurrent.TimeUnit;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -51,6 +54,8 @@ class ProductSearchServiceTest {
 
     ProductSearchService service;
 
+    SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
     @BeforeEach
     void setUp() {
         // DB 부분을 감싸는 트랜잭션은 이 테스트의 관심 밖이라 아무것도 하지 않는 매니저로
@@ -72,7 +77,7 @@ class ProductSearchServiceTest {
             protected void doRollback(DefaultTransactionStatus status) {
             }
         };
-        service = new ProductSearchService(productRepository, keywordSearch, noTx);
+        service = new ProductSearchService(productRepository, keywordSearch, noTx, new ProductSearchMetrics(meterRegistry));
     }
 
     @Test
@@ -120,6 +125,64 @@ class ProductSearchServiceTest {
         Page<ProductSearchResponse> page = service.search(request("몬스테라", null, null, null, null));
 
         assertThat(page.getContent()).extracting(ProductSearchResponse::productId).containsExactly(1L);
+    }
+
+    @Test
+    @DisplayName("[#634] 키워드 검색 단계별 시간: 전체 · OpenSearch 호출 · took(OpenSearch가 준 값 그대로) · DB 재조회, 대체는 없음")
+    void recordsStageTimers() {
+        given(keywordSearch.search(any(), any(), anyInt(), anyInt()))
+                .willReturn(new ProductKeywordSearch.Result(List.of(), 0, 7));
+        given(productRepository.findWithSpeciesByIdIn(List.of())).willReturn(List.of());
+
+        service.search(request("몬스테라", null, null, null, null));
+
+        assertThat(timer(ProductSearchMetrics.Stage.TOTAL).count()).isEqualTo(1);
+        assertThat(timer(ProductSearchMetrics.Stage.OPENSEARCH).count()).isEqualTo(1);
+        assertThat(timer(ProductSearchMetrics.Stage.DB).count()).isEqualTo(1);
+        assertThat(timer(ProductSearchMetrics.Stage.OPENSEARCH_TOOK).totalTime(TimeUnit.MILLISECONDS)).isEqualTo(7);
+        assertThat(timer(ProductSearchMetrics.Stage.FALLBACK).count()).isZero();
+    }
+
+    @Test
+    @DisplayName("[#634] took을 모르면(음수) took만 남기지 않는다")
+    void skipsUnknownTook() {
+        given(keywordSearch.search(any(), any(), anyInt(), anyInt()))
+                .willReturn(new ProductKeywordSearch.Result(List.of(), 0));
+
+        service.search(request("몬스테라", null, null, null, null));
+
+        assertThat(timer(ProductSearchMetrics.Stage.OPENSEARCH).count()).isEqualTo(1);
+        assertThat(timer(ProductSearchMetrics.Stage.OPENSEARCH_TOOK).count()).isZero();
+    }
+
+    @Test
+    @DisplayName("[#634] OpenSearch 실패 → LIKE 대체: 전체 · 대체 시간만 남고 OpenSearch · DB 재조회는 0건")
+    void recordsFallbackStage() {
+        given(keywordSearch.search(any(), any(), anyInt(), anyInt()))
+                .willThrow(new ProductSearchUnavailableException("연결 실패", new java.net.ConnectException()));
+        given(productRepository.findAll(any(Specification.class), any(Pageable.class))).willReturn(Page.empty());
+
+        service.search(request("몬스테라", null, null, null, null));
+
+        assertThat(timer(ProductSearchMetrics.Stage.TOTAL).count()).isEqualTo(1);
+        assertThat(timer(ProductSearchMetrics.Stage.FALLBACK).count()).isEqualTo(1);
+        assertThat(timer(ProductSearchMetrics.Stage.OPENSEARCH).count()).isZero();
+        assertThat(timer(ProductSearchMetrics.Stage.DB).count()).isZero();
+    }
+
+    @Test
+    @DisplayName("[#634] 키워드 없는 조회 · 판매자 상점은 키워드 검색 단계 시간을 남기지 않는다")
+    void dbOnlySearchRecordsNoStage() {
+        given(productRepository.findAll(any(Specification.class), any(Pageable.class))).willReturn(Page.empty());
+
+        service.search(request(null, null, null, null, null));
+        service.search(request("몬스테라", null, 7L, null, null));
+
+        assertThat(timer(ProductSearchMetrics.Stage.TOTAL).count()).isZero();
+    }
+
+    private Timer timer(ProductSearchMetrics.Stage stage) {
+        return meterRegistry.get(ProductSearchMetrics.NAME).tag("stage", stage.tag()).timer();
     }
 
     @Test

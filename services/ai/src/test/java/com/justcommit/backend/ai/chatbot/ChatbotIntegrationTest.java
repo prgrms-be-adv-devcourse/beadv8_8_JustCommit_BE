@@ -7,17 +7,21 @@ import static org.mockito.BDDMockito.given;
 import com.justcommit.backend.ai.chatbot.application.AnswerGenerator;
 import com.justcommit.backend.ai.chatbot.application.ChatPrompt;
 import com.justcommit.backend.ai.chatbot.application.ChatTurn;
+import com.justcommit.backend.ai.chatbot.application.ChatbotService;
 import com.justcommit.backend.ai.product.infrastructure.messaging.ProductEventListener;
 import com.justcommit.backend.ai.search.application.QueryEmbedder;
 import com.justcommit.backend.ai.support.KeywordEmbeddingModel;
 import com.justcommit.backend.common.security.AuthMember;
 import com.justcommit.backend.common.security.JwtVerifier;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
@@ -111,6 +115,7 @@ class ChatbotIntegrationTest {
     @Autowired KeywordEmbeddingModel embeddingModel;
     @Autowired FakeAnswerGenerator answerGenerator;
     @Autowired JdbcClient jdbcClient;
+    @Autowired MeterRegistry meterRegistry;
 
     private final HttpClient http = HttpClient.newHttpClient();
     private final JsonMapper json = JsonMapper.builder().build();
@@ -155,6 +160,60 @@ class ChatbotIntegrationTest {
         assertThat(prompt.history()).isEmpty();
         assertThat(prompt.userMessage()).contains("그늘 몬스테라", "질문: 어두운 방에서 키울 식물 있어?")
                 .doesNotContain("그늘 스킨답서스", "그늘 고사리");
+    }
+
+    @Test
+    @DisplayName("[#634] 단계별 Timer: 새 대화는 기록 읽기 없이 임베딩 · 상품 · 품종 검색 · 답변 생성 · 저장 · 전체, 이어 묻기는 기록 읽기도")
+    void recordsStageTimers() throws Exception {
+        List<String> everyTurn = List.of(ChatbotService.STAGE_EMBEDDING, ChatbotService.STAGE_PRODUCT_SEARCH,
+                ChatbotService.STAGE_SPECIES_SEARCH, ChatbotService.STAGE_ANSWER, ChatbotService.STAGE_SAVE,
+                ChatbotService.STAGE_TOTAL);
+        Map<String, Long> before = counts();
+
+        String conversationId = data(send(MEMBER_A, null, "어두운 방에서 키울 식물 있어?"))
+                .get("conversationId").asString();
+
+        for (String stage : everyTurn) {
+            assertThat(count(stage)).as(stage).isEqualTo(before.get(stage) + 1);
+        }
+        assertThat(count(ChatbotService.STAGE_HISTORY)).isEqualTo(before.get(ChatbotService.STAGE_HISTORY));
+
+        assertThat(send(MEMBER_A, conversationId, "물은 얼마나 줘?").statusCode()).isEqualTo(200);
+
+        assertThat(count(ChatbotService.STAGE_HISTORY)).isEqualTo(before.get(ChatbotService.STAGE_HISTORY) + 1);
+        assertThat(count(ChatbotService.STAGE_TOTAL)).isEqualTo(before.get(ChatbotService.STAGE_TOTAL) + 2);
+    }
+
+    @Test
+    @DisplayName("[#634] 임베딩이 실패한 요청(503)은 전체 시간만 남고, LLM이 실패해도 답변 생성 시간은 남긴다")
+    void recordsStageTimersOnFailure() throws Exception {
+        Map<String, Long> before = counts();
+        embeddingModel.failing.set(true);
+
+        assertThat(send(MEMBER_A, null, "어두운 방").statusCode()).isEqualTo(503);
+
+        assertThat(count(ChatbotService.STAGE_TOTAL)).isEqualTo(before.get(ChatbotService.STAGE_TOTAL) + 1);
+        assertThat(count(ChatbotService.STAGE_EMBEDDING)).isEqualTo(before.get(ChatbotService.STAGE_EMBEDDING));
+
+        embeddingModel.failing.set(false);
+        answerGenerator.failing.set(true);
+        assertThat(send(MEMBER_A, null, "어두운 방").statusCode()).isEqualTo(200);
+
+        assertThat(count(ChatbotService.STAGE_ANSWER)).isEqualTo(before.get(ChatbotService.STAGE_ANSWER) + 1);
+    }
+
+    private Map<String, Long> counts() {
+        Map<String, Long> counts = new HashMap<>();
+        for (String stage : List.of(ChatbotService.STAGE_HISTORY, ChatbotService.STAGE_EMBEDDING,
+                ChatbotService.STAGE_PRODUCT_SEARCH, ChatbotService.STAGE_SPECIES_SEARCH, ChatbotService.STAGE_ANSWER,
+                ChatbotService.STAGE_SAVE, ChatbotService.STAGE_TOTAL)) {
+            counts.put(stage, count(stage));
+        }
+        return counts;
+    }
+
+    private long count(String stage) {
+        return meterRegistry.get(ChatbotService.METRIC).tag("stage", stage).timer().count();
     }
 
     @Test

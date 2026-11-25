@@ -13,6 +13,8 @@ import com.justcommit.backend.product.product.presentation.dto.ProductSearchResp
 import com.justcommit.backend.product.search.application.ProductIndexService;
 import com.justcommit.backend.product.search.application.ProductIndexService.RebuildResult;
 import com.justcommit.backend.product.search.application.ProductKeywordSearch;
+import com.justcommit.backend.product.search.application.ProductSearchMetrics;
+import com.justcommit.backend.product.search.application.ProductSearchMetrics.Stage;
 import com.justcommit.backend.product.search.application.ProductSearchSort;
 import com.justcommit.backend.product.search.application.ProductSearchService;
 import com.justcommit.backend.product.search.infrastructure.OpenSearchConfig;
@@ -22,13 +24,18 @@ import com.justcommit.backend.product.search.infrastructure.ProductIndexAdmin;
 import com.justcommit.backend.product.search.infrastructure.ProductIndexInitializer;
 import com.justcommit.backend.product.species.domain.Species;
 import com.justcommit.backend.product.species.infrastructure.SpeciesRepository;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -75,7 +82,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaAuditingConfig.class, ClockConfig.class, ProductIndexService.class, OpenSearchProductIndex.class,
         ProductIndexAdmin.class,
-        OpenSearchProductSearch.class, ProductSearchService.class, ProductSearchIntegrationTest.Config.class})
+        OpenSearchProductSearch.class, ProductSearchService.class, ProductSearchMetrics.class,
+        ProductSearchIntegrationTest.Config.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class ProductSearchIntegrationTest {
@@ -113,6 +121,12 @@ class ProductSearchIntegrationTest {
         OpenSearchClient openSearchClient() throws URISyntaxException {
             return client(Duration.ofSeconds(10));
         }
+
+        // JPA 슬라이스라 지표 자동 설정이 없어 단계별 시간(#634)을 받을 레지스트리를 직접 둔다
+        @Bean
+        MeterRegistry meterRegistry() {
+            return new SimpleMeterRegistry();
+        }
     }
 
     private static OpenSearchClient client(Duration readTimeout) throws URISyntaxException {
@@ -137,6 +151,7 @@ class ProductSearchIntegrationTest {
     @Autowired SpeciesRepository speciesRepository;
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transactionManager;
+    @Autowired MeterRegistry meterRegistry;
 
     @AfterEach
     void cleanUp() {
@@ -173,6 +188,34 @@ class ProductSearchIntegrationTest {
     }
 
     @Test
+    @DisplayName("[#634] 키워드 검색은 전체 · OpenSearch 호출 · took · DB 재조회 시간을 단계별 Timer로 남긴다")
+    void recordsStageTimers() throws IOException {
+        save(MONSTERA_ID, SELLER_ID, "몬스테라 알보 팝니다", "잘 키웠어요", ProductStatus.ACTIVE);
+        index();
+        // 레지스트리는 이 클래스의 다른 테스트와 같이 쓰므로 늘어난 만큼만 본다
+        Map<Stage, Long> before = new EnumMap<>(Stage.class);
+        for (Stage stage : Stage.values()) {
+            before.put(stage, count(stage));
+        }
+
+        search("몬스테라");
+
+        for (Stage stage : List.of(Stage.TOTAL, Stage.OPENSEARCH, Stage.OPENSEARCH_TOOK, Stage.DB)) {
+            assertThat(count(stage)).as(stage.tag()).isEqualTo(before.get(stage) + 1);
+        }
+        // OpenSearch가 응답했으므로 LIKE 대체는 없음
+        assertThat(count(Stage.FALLBACK)).isEqualTo(before.get(Stage.FALLBACK));
+    }
+
+    private long count(Stage stage) {
+        return timer(stage).count();
+    }
+
+    private Timer timer(Stage stage) {
+        return meterRegistry.get(ProductSearchMetrics.NAME).tag("stage", stage.tag()).timer();
+    }
+
+    @Test
     @DisplayName("[#486 완료 기준 2 · S-C02] 검수 중 · 반려 · 숨김 · 삭제 상품은 검색에 나오지 않음, onSale=true면 판매 중만")
     void exposureRule() throws IOException {
         Product active = save(MONSTERA_ID, SELLER_ID, "몬스테라 판매 중", "설명", ProductStatus.ACTIVE);
@@ -202,7 +245,8 @@ class ProductSearchIntegrationTest {
         save(SANSEVIERIA_ID, SELLER_ID, "산세베리아", "설명", ProductStatus.ACTIVE);
         // 운영과 같은 짧은 읽기 타임아웃(2초)으로 붙는 검색 서비스
         ProductSearchService shortTimeout = new ProductSearchService(productRepository,
-                new OpenSearchProductSearch(client(Duration.ofSeconds(2))), transactionManager);
+                new OpenSearchProductSearch(client(Duration.ofSeconds(2))), transactionManager,
+                new ProductSearchMetrics(new SimpleMeterRegistry()));
 
         var docker = OPENSEARCH.getDockerClient();
         docker.pauseContainerCmd(OPENSEARCH.getContainerId()).exec();
@@ -226,7 +270,7 @@ class ProductSearchIntegrationTest {
         // 연결 풀 · 동시 검색 상한 2개 · 빌리기 대기 0.2초 · 읽기 2초 (운영은 20개)
         ProductSearchService smallPool = new ProductSearchService(productRepository,
                 new OpenSearchProductSearch(client(Duration.ofSeconds(2), 2, Duration.ofMillis(200)), 2, Duration.ofMillis(200)),
-                transactionManager);
+                transactionManager, new ProductSearchMetrics(new SimpleMeterRegistry()));
 
         var docker = OPENSEARCH.getDockerClient();
         docker.pauseContainerCmd(OPENSEARCH.getContainerId()).exec();
