@@ -16,10 +16,21 @@ import com.justcommit.backend.common.exception.GlobalExceptionHandler;
 import com.justcommit.backend.common.security.internal.InternalKeyFilter;
 import com.justcommit.backend.payment.application.PaymentResult;
 import com.justcommit.backend.payment.application.PaymentService;
+import com.justcommit.backend.payment.application.settlement.SettlementLedgerQueryService;
+import com.justcommit.backend.payment.application.settlement.SettlementLedgerRow;
 import com.justcommit.backend.payment.application.withdrawal.WithdrawalCheckService;
+import com.justcommit.backend.payment.domain.RefType;
+import com.justcommit.backend.payment.domain.TransactionStatus;
+import com.justcommit.backend.payment.domain.WalletType;
 import com.justcommit.backend.payment.domain.exception.PaymentErrorCode;
 import com.justcommit.backend.payment.presentation.internal.dto.WithdrawalCheckResponse;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.LongStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -56,12 +67,16 @@ class PaymentInternalControllerTest {
     @Mock
     private WithdrawalCheckService withdrawalCheckService;
 
+    @Mock
+    private SettlementLedgerQueryService settlementLedgerQueryService;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         // 실제 앱처럼 내부 키 필터를 앞에 둔다 (/internal/** 요청은 X-Internal-Key가 맞아야 통과)
-        mockMvc = MockMvcBuilders.standaloneSetup(new PaymentInternalController(paymentService, withdrawalCheckService))
+        mockMvc = MockMvcBuilders.standaloneSetup(new PaymentInternalController(
+                        paymentService, withdrawalCheckService, settlementLedgerQueryService))
                 .addFilters(new InternalKeyFilter(INTERNAL_KEY))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -285,5 +300,96 @@ class PaymentInternalControllerTest {
                 .header("Idempotency-Key", idempotencyKey)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body);
+    }
+
+    // ===== 정산 원장 조회 =====
+
+    private static final String LEDGER_URL = "/internal/v1/settlementPayouts/ledgers";
+
+    @Test
+    @DisplayName("정산 원장은 settlementId별 행 목록으로 응답하고, 행이 없는 정산은 빈 목록이다")
+    void findSettlementLedgers() throws Exception {
+        LocalDateTime occurredAt = LocalDateTime.of(2026, 11, 25, 10, 0);
+        Map<Long, List<SettlementLedgerRow>> ledgers = new LinkedHashMap<>();
+        ledgers.put(9L, List.of(
+                new SettlementLedgerRow(9L, 1L, WalletType.HOLDING, null, RefType.SETTLEMENT,
+                        TransactionStatus.OUT, new BigDecimal("10000"), occurredAt),
+                new SettlementLedgerRow(9L, 5L, WalletType.MEMBER, 4L, RefType.SETTLEMENT,
+                        TransactionStatus.IN, new BigDecimal("9500"), occurredAt)));
+        ledgers.put(10L, List.of());
+        given(settlementLedgerQueryService.findLedgers(List.of(9L, 10L))).willReturn(ledgers);
+
+        mockMvc.perform(ledgerPost("""
+                        {"settlementIds": [9, 10]}
+                        """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.ledgers.length()").value(2))
+                .andExpect(jsonPath("$.data.ledgers['9'].length()").value(2))
+                .andExpect(jsonPath("$.data.ledgers['9'][0].walletId").value(1))
+                .andExpect(jsonPath("$.data.ledgers['9'][0].walletType").value("HOLDING"))
+                .andExpect(jsonPath("$.data.ledgers['9'][0].memberId").doesNotExist())
+                .andExpect(jsonPath("$.data.ledgers['9'][0].refType").value("SETTLEMENT"))
+                .andExpect(jsonPath("$.data.ledgers['9'][0].status").value("OUT"))
+                .andExpect(jsonPath("$.data.ledgers['9'][0].amount").value(10000))
+                .andExpect(jsonPath("$.data.ledgers['9'][0].occurredAt").exists())
+                .andExpect(jsonPath("$.data.ledgers['9'][1].memberId").value(4))
+                .andExpect(jsonPath("$.data.ledgers['10']").isArray())
+                .andExpect(jsonPath("$.data.ledgers['10']").isEmpty());
+    }
+
+    @Test
+    @DisplayName("정산 원장 조회는 100개까지 받는다")
+    void findSettlementLedgersAcceptsHundredIds() throws Exception {
+        given(settlementLedgerQueryService.findLedgers(any())).willReturn(Map.of());
+
+        mockMvc.perform(ledgerPost(idsBody(100)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("정산 원장 조회의 settlementIds가 0개 · 101개 · null · 원소 null이면 400 INVALID_FIELD_ERROR")
+    void findSettlementLedgersRejectsInvalidIds() throws Exception {
+        for (String body : List.of(
+                "{\"settlementIds\": []}",
+                idsBody(101),
+                "{\"settlementIds\": null}",
+                "{}",
+                "{\"settlementIds\": [9, null]}")) {
+            mockMvc.perform(ledgerPost(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_FIELD_ERROR"));
+        }
+
+        verifyNoInteractions(settlementLedgerQueryService);
+    }
+
+    @Test
+    @DisplayName("정산 원장 조회에 X-Internal-Key가 없거나 틀리면 401 INVALID_INTERNAL_KEY")
+    void findSettlementLedgersRejectsMissingOrWrongInternalKey() throws Exception {
+        mockMvc.perform(post(LEDGER_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"settlementIds\": [9]}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_INTERNAL_KEY"));
+        mockMvc.perform(post(LEDGER_URL)
+                        .header(InternalKeyFilter.HEADER, "wrong-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"settlementIds\": [9]}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_INTERNAL_KEY"));
+
+        verifyNoInteractions(settlementLedgerQueryService);
+    }
+
+    private MockHttpServletRequestBuilder ledgerPost(String body) {
+        return post(LEDGER_URL)
+                .header(InternalKeyFilter.HEADER, INTERNAL_KEY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body);
+    }
+
+    private static String idsBody(int count) {
+        return LongStream.rangeClosed(1, count).mapToObj(String::valueOf)
+                .collect(Collectors.joining(", ", "{\"settlementIds\": [", "]}"));
     }
 }
