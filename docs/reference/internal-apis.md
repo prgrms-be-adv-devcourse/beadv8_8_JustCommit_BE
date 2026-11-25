@@ -1,7 +1,7 @@
 # 내부 API 목록
 
 > 언제 읽나: 서비스 간 내부 API의 경로 · 멱등 키를 찾을 때
-> 상태: 🟨 제안 · 마지막 수정 2026-11-20 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
+> 상태: 🟨 제안 · 마지막 수정 2026-11-25 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
 
 ## 목록
 
@@ -19,6 +19,7 @@
 | payment | `POST /internal/v1/refunds/orderItems/{orderItemId}` | market | 상품 금액 환불 (취소 · 거절 · 반품). 같은 키면 `ALREADY_REFUNDED`로 처음 결과, 확정 실패는 4xx | orderItemId | ✅ |
 | payment | `POST /internal/v1/refunds/shippingFees/{sellerOrderId}` | market | 배송비 환불. 같은 키면 `ALREADY_REFUNDED`, 확정 실패는 4xx | sellerOrderId | ✅ |
 | payment | `POST /internal/v1/settlementPayouts` | settlement | 정산 지급 (0 이상: 지급, 음수: 판매자 잔액에서 회수 후 미수금). 요청 `sellerOrderId`, `payoutAmount`, `fee`, `shippingFee`, `sellerBurdenAmount`(배송비와 부담금이 없으면 0). 배송비를 `HOLDING` → `REVENUE`로 옮김(이미 옮겼거나 환불됐으면 건너뜀). 검증 실패는 4xx `INVALID_AMOUNT`, 다시 보내도 실패 | settlementId | ✅ |
+| payment | `POST /internal/v1/settlementPayouts/ledgers` | settlement | 정산 대사용 원장 조회 (읽기 전용, 지갑 잠금 없음). 요청 `settlementIds` 1~100개(비었거나 null이거나 넘치면 400 `INVALID_FIELD_ERROR`, 중복은 하나로). `ref_type`이 `SETTLEMENT`, `SETTLEMENT_FEE`, `SETTLEMENT_COLLECTION`, `SELLER_BURDEN`이고 `ref_id`가 settlementId인 행을 지갑 조건 없이 한 번에 조회(예상 밖 지갑에 기록된 행도 포함). 응답 `data.ledgers`는 settlementId별 행 목록 `[{walletId, walletType, memberId, refType, status, amount, occurredAt}]`(`memberId`는 시스템 지갑이면 null, `status`는 `IN`/`OUT`, `occurredAt`은 `ref_occurred_time`), 행이 없는 정산은 빈 목록 | – | ✅ |
 | settlement | `GET /internal/v1/settlements/seller-orders/{sellerOrderId}` | market | 정산 완료 시각 | – | 🟨 |
 | market | `GET /internal/v1/shipments?sellerOrderIds=` | notification | 알림 문구용 배송 정보 | – | 🟨 |
 | ai | `POST /internal/v1/ai/admin/reindex?target=SPECIES` | 운영자 | 품종 재임베딩: 문서 해시가 바뀐 품종만 임베딩해 `species_vector_store`에 upsert, 프로필에 없는 벡터는 삭제. 응답 `total` · `embedded` · `skipped` · `deleted`. 다시 불러도 결과가 같음 | – | ✅ |
