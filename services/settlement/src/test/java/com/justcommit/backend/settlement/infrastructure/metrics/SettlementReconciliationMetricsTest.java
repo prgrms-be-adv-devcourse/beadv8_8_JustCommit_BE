@@ -32,16 +32,16 @@ class SettlementReconciliationMetricsTest {
     void readsFromDb() {
         LocalDateTime finishedAt = LocalDateTime.of(2026, 11, 25, 9, 40, 5);
         when(mismatchRepository.countUnresolved()).thenReturn(3L);
-        when(runRepository.findLastSucceededAt()).thenReturn(Optional.of(finishedAt));
+        when(runRepository.findLastSuccessOrBaselineAt()).thenReturn(Optional.of(finishedAt));
 
         assertThat(metrics.unresolvedMismatches()).isEqualTo(3.0);
         assertThat(metrics.lastSuccessEpochSeconds()).isEqualTo(finishedAt.atZone(SEOUL).toEpochSecond());
     }
 
     @Test
-    @DisplayName("한 번도 성공하지 않았으면 마지막 성공 시각은 NaN (0이면 미실행 알림이 바로 울림)")
-    void noSuccessYet() {
-        when(runRepository.findLastSucceededAt()).thenReturn(Optional.empty());
+    @DisplayName("성공 행도 기준 행(BASELINE)도 없으면 NaN (0이면 미실행 알림이 바로 울림)")
+    void noSuccessNorBaseline() {
+        when(runRepository.findLastSuccessOrBaselineAt()).thenReturn(Optional.empty());
 
         assertThat(metrics.lastSuccessEpochSeconds()).isNaN();
     }
@@ -50,7 +50,7 @@ class SettlementReconciliationMetricsTest {
     @DisplayName("DB를 못 읽으면 두 Gauge 모두 NaN (0으로 알림이 거짓으로 꺼지지 않게)")
     void nanOnDbFailure() {
         when(mismatchRepository.countUnresolved()).thenThrow(new IllegalStateException("DB 연결 실패"));
-        when(runRepository.findLastSucceededAt()).thenThrow(new IllegalStateException("DB 연결 실패"));
+        when(runRepository.findLastSuccessOrBaselineAt()).thenThrow(new IllegalStateException("DB 연결 실패"));
 
         assertThat(metrics.unresolvedMismatches()).isNaN();
         assertThat(metrics.lastSuccessEpochSeconds()).isNaN();

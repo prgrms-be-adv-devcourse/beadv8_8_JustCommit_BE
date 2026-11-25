@@ -39,6 +39,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 // 정산 대사 실행 흐름: 배치 나누기, 실패한 배치 건너뛰기, 실행 결과(SUCCEEDED, PARTIAL, FAILED) 기록과 지표
+// 결과 판정: 실패한 배치 없음(대상 0건 포함) → SUCCEEDED, 일부 실패 → PARTIAL, 모두 실패 또는 예외 → FAILED
 class SettlementReconciliationServiceTest {
 
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
@@ -102,23 +103,71 @@ class SettlementReconciliationServiceTest {
     }
 
     @Test
-    @DisplayName("응답에 요청한 ID가 빠지면 그 배치를 비교하지 않고 PARTIAL")
+    @DisplayName("응답에 요청한 ID가 빠지면 그 배치를 비교하지 않는다 (배치가 하나뿐이라 FAILED)")
     void skipsBatchWithMissingKey() {
         givenTargets(target(1L), target(2L));
         when(ledgerClient.findLedgers(anyCollection())).thenReturn(Map.of(1L, paidLedger()));
 
-        assertThat(service(100).reconcile()).isEqualTo(ReconciliationRunResult.PARTIAL);
+        assertThat(service(100).reconcile()).isEqualTo(ReconciliationRunResult.FAILED);
         verify(recorder, never()).record(anyList(), any());
+        verify(runRepository).insert(NOW, NOW, ReconciliationRunResult.FAILED, 2, 0, 1);
     }
 
     @Test
-    @DisplayName("응답에 요청하지 않은 ID가 섞여도 그 배치를 비교하지 않고 PARTIAL")
+    @DisplayName("응답에 요청하지 않은 ID가 섞여도 그 배치를 비교하지 않는다 (배치가 하나뿐이라 FAILED)")
     void skipsBatchWithExtraKey() {
         givenTargets(target(1L));
         when(ledgerClient.findLedgers(anyCollection())).thenReturn(Map.of(1L, paidLedger(), 99L, List.of()));
 
-        assertThat(service(100).reconcile()).isEqualTo(ReconciliationRunResult.PARTIAL);
+        assertThat(service(100).reconcile()).isEqualTo(ReconciliationRunResult.FAILED);
         verify(recorder, never()).record(anyList(), any());
+    }
+
+    @Test
+    @DisplayName("모든 배치의 payment 조회가 실패하면 아무것도 비교하지 못했으므로 FAILED")
+    void allBatchesFailed() {
+        givenTargets(target(1L), target(2L));
+        when(ledgerClient.findLedgers(anyCollection())).thenThrow(new IllegalStateException("payment 응답 없음"));
+
+        ReconciliationRunResult result = service(1).reconcile();
+
+        assertThat(result).isEqualTo(ReconciliationRunResult.FAILED);
+        verify(recorder, never()).record(anyList(), any());
+        verify(runRepository).insert(NOW, NOW, ReconciliationRunResult.FAILED, 2, 0, 2);
+        assertThat(registry.get("settlement.reconciliation.failed.batches").counter().count()).isEqualTo(2);
+        assertThat(runs("failed")).isEqualTo(1);
+        assertThat(runs("partial")).isZero();
+    }
+
+    @Test
+    @DisplayName("대상이 없으면 payment를 부르지 않고 SUCCEEDED")
+    void noTargets() {
+        givenTargets();
+
+        assertThat(service(100).reconcile()).isEqualTo(ReconciliationRunResult.SUCCEEDED);
+
+        verify(ledgerClient, never()).findLedgers(anyCollection());
+        verify(runRepository).insert(NOW, NOW, ReconciliationRunResult.SUCCEEDED, 0, 0, 0);
+    }
+
+    @Test
+    @DisplayName("결과 판정: 실패 0개 SUCCEEDED, 일부 PARTIAL, 전부 FAILED")
+    void resultOf() {
+        assertThat(SettlementReconciliationService.resultOf(0, 0)).isEqualTo(ReconciliationRunResult.SUCCEEDED);
+        assertThat(SettlementReconciliationService.resultOf(3, 0)).isEqualTo(ReconciliationRunResult.SUCCEEDED);
+        assertThat(SettlementReconciliationService.resultOf(3, 1)).isEqualTo(ReconciliationRunResult.PARTIAL);
+        assertThat(SettlementReconciliationService.resultOf(3, 2)).isEqualTo(ReconciliationRunResult.PARTIAL);
+        assertThat(SettlementReconciliationService.resultOf(3, 3)).isEqualTo(ReconciliationRunResult.FAILED);
+        assertThat(SettlementReconciliationService.resultOf(1, 1)).isEqualTo(ReconciliationRunResult.FAILED);
+    }
+
+    @Test
+    @DisplayName("BASELINE은 실행 결과가 아니라 실행 횟수 지표에 없다")
+    void baselineNotInRunCounter() {
+        service(100);
+
+        assertThat(registry.find("settlement.reconciliation.runs").tag("result", "baseline").counter()).isNull();
+        assertThat(registry.find("settlement.reconciliation.runs").counters()).hasSize(3);
     }
 
     @Test

@@ -26,6 +26,8 @@ import java.util.Objects;
 //   2. 배치(기본 100개)마다 트랜잭션 밖에서 payment 정산 원장을 조회한다. 실패하거나 응답 키가 요청과 다르면 그 배치만 건너뜀
 //   3. 판정기로 비교하고, 배치마다 짧은 트랜잭션으로 불일치를 기록한다
 //   4. 실행 결과를 settlement_reconciliation_run에 남기고 지표를 올린다
+//      SUCCEEDED: 실패한 배치 없음 (대상이 없어 배치가 0개여도), PARTIAL: 일부 배치 실패,
+//      FAILED: 모든 배치 실패 또는 대상 조회, 기록 중 예외
 // 예외를 밖으로 던지지 않고 결과(FAILED)로 돌려준다
 @Slf4j
 @Service
@@ -72,7 +74,7 @@ public class SettlementReconciliationService {
             for (int from = 0; from < loaded.size(); from += properties.batchSize()) {
                 reconcileBatch(loaded.subList(from, Math.min(from + properties.batchSize(), loaded.size())), counts);
             }
-            result = counts.failedBatches == 0 ? ReconciliationRunResult.SUCCEEDED : ReconciliationRunResult.PARTIAL;
+            result = resultOf(counts.batches, counts.failedBatches);
         } catch (RuntimeException e) {
             result = ReconciliationRunResult.FAILED;
             log.atError()
@@ -96,7 +98,16 @@ public class SettlementReconciliationService {
         return result;
     }
 
+    // 모든 배치가 실패하면 아무것도 비교하지 못했으므로 PARTIAL이 아니라 FAILED
+    static ReconciliationRunResult resultOf(int batches, int failedBatches) {
+        if (failedBatches == 0) {
+            return ReconciliationRunResult.SUCCEEDED;
+        }
+        return failedBatches == batches ? ReconciliationRunResult.FAILED : ReconciliationRunResult.PARTIAL;
+    }
+
     private void reconcileBatch(List<ReconciliationTarget> batch, Counts counts) {
+        counts.batches++;
         List<Long> ids = batch.stream().map(ReconciliationTarget::settlementId).toList();
         Map<Long, List<SettlementLedgerEntry>> ledgers = fetchLedgers(ids);
         if (ledgers == null) {
@@ -159,6 +170,7 @@ public class SettlementReconciliationService {
 
     private static final class Counts {
         int targets;
+        int batches;
         int mismatches;
         int inserted;
         int alreadyRecorded;

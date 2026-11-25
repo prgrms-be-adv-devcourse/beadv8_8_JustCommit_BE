@@ -192,14 +192,14 @@ class SettlementReconciliationScenarioTest {
     }
 
     @Test
-    @DisplayName("응답에서 settlementId가 빠지면 그 배치는 비교하지 않고 건너뛴다 (불일치 기록 없음, PARTIAL)")
+    @DisplayName("응답에서 settlementId가 빠지면 그 배치는 비교하지 않고 건너뛴다 (불일치 기록 없음, 배치가 하나뿐이라 FAILED)")
     void missingKeySkipsBatch() {
         Settlement answered = completed(settlement("30000", "0"));
         Settlement omitted = completed(settlement("30000", "0"));
         // answered는 원장이 없어 비교했다면 MISSING_LEDGER가 됐을 것
         stubLedgers(Map.of(answered.getId(), rows()));
 
-        assertThat(reconciliationService.reconcile()).isEqualTo(ReconciliationRunResult.PARTIAL);
+        assertThat(reconciliationService.reconcile()).isEqualTo(ReconciliationRunResult.FAILED);
 
         assertThat(mismatches()).isEmpty();
         assertThat(lastRun()).containsEntry("failed_batch_count", 1);

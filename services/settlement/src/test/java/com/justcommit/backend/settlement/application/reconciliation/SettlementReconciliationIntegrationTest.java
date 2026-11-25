@@ -205,9 +205,49 @@ class SettlementReconciliationIntegrationTest {
         runRepository.insert(succeededAt.plusDays(1), succeededAt.plusDays(1), ReconciliationRunResult.PARTIAL, 1, 0, 1);
         runRepository.insert(succeededAt.plusDays(1), succeededAt.plusDays(1), ReconciliationRunResult.FAILED, 0, 0, 0);
 
-        assertThat(runRepository.findLastSucceededAt()).contains(succeededAt);
+        assertThat(runRepository.findLastSuccessOrBaselineAt()).contains(succeededAt);
         assertThat(gauge("settlement.reconciliation.last.success.timestamp"))
                 .isEqualTo(succeededAt.atZone(ZoneId.systemDefault()).toEpochSecond());
+    }
+
+    @Test
+    @DisplayName("성공 이력이 없으면 기준 행(BASELINE, 배포 시각)을 마지막 성공 시각으로 쓰고, 성공하면 그 시각으로 바뀐다")
+    void baselineUsedUntilFirstSuccess() {
+        LocalDateTime deployedAt = LocalDateTime.of(2026, 11, 25, 14, 0);
+        insertBaseline(deployedAt);
+        // 실패, 일부 실패는 기준 시각을 앞당기지 않는다
+        runRepository.insert(deployedAt.plusHours(20), deployedAt.plusHours(20), ReconciliationRunResult.FAILED, 0, 0, 0);
+        runRepository.insert(deployedAt.plusHours(21), deployedAt.plusHours(21), ReconciliationRunResult.PARTIAL, 2, 0, 1);
+
+        assertThat(runRepository.findLastSuccessOrBaselineAt()).contains(deployedAt);
+        assertThat(gauge("settlement.reconciliation.last.success.timestamp"))
+                .isEqualTo(deployedAt.atZone(ZoneId.systemDefault()).toEpochSecond());
+
+        LocalDateTime succeededAt = deployedAt.plusHours(22);
+        runRepository.insert(succeededAt, succeededAt, ReconciliationRunResult.SUCCEEDED, 1, 0, 0);
+
+        assertThat(runRepository.findLastSuccessOrBaselineAt()).contains(succeededAt);
+    }
+
+    @Test
+    @DisplayName("BASELINE은 마이그레이션만 넣는다 (실행 결과로 기록할 수 없음)")
+    void baselineCannotBeRecordedAsRun() {
+        LocalDateTime now = LocalDateTime.now();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        runRepository.insert(now, now, ReconciliationRunResult.BASELINE, 0, 0, 0))
+                .hasRootCauseInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("BASELINE");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from settlement_reconciliation_run", Integer.class))
+                .isZero();
+    }
+
+    private void insertBaseline(LocalDateTime at) {
+        jdbcTemplate.update("""
+                insert into settlement_reconciliation_run
+                       (started_at, finished_at, result, target_count, mismatch_count, failed_batch_count)
+                values (?, ?, 'BASELINE', 0, 0, 0)
+                """, Timestamp.valueOf(at), Timestamp.valueOf(at));
     }
 
     private double gauge(String name) {
