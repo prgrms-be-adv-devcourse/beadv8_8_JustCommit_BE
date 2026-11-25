@@ -61,7 +61,8 @@ settlement의 정산과 payment의 정산 원장을 매일 비교해 어긋난 �
 | 대상 | `PENDING`, `FAILED` 정산 전부, `completed_at`이 최근 7일 안인 `COMPLETED` 정산 |
 | 비교 원장 | payment `POST /internal/v1/settlementPayouts/ledgers`로 읽은 정산 원장. 100개씩 트랜잭션 밖에서 부르고, 조회가 실패하거나 응답 키가 요청과 다르면 그 배치는 건너뜀 |
 | 기록 | `settlement_reconciliation_mismatch`. 미해결 행에만 유니크 (`settlement_id`, `mismatch_type`)라 같은 불일치는 한 행, 해결한 뒤 다시 생기면 새 행 |
-| 실행 이력 | `settlement_reconciliation_run` (`SUCCEEDED`, `PARTIAL`, `FAILED`) |
+| 실행 이력 | `settlement_reconciliation_run`. `SUCCEEDED`: 실패한 배치 없음 (대상 0건 포함), `PARTIAL`: 일부 배치 실패, `FAILED`: 모든 배치 실패 또는 대상 조회, 기록 중 예외 |
+| 기준 행 | V7 마이그레이션이 배포 시각으로 `BASELINE` 행 1개를 넣음. 실행 결과가 아니므로 실행 횟수 지표(`settlement_reconciliation_runs_total`)와 실행 통계에서 뺌 (실행 이력을 셀 때는 `result <> 'BASELINE'`). 성공 이력이 없을 때 미실행 알림의 기준 시각으로만 씀 |
 
 기대 원장 (정산금 p, 수수료 f, 판매자 부담금 b, 회수액 c):
 
