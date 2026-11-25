@@ -46,7 +46,10 @@ public class SocialLoginSuccessHandler implements AuthenticationSuccessHandler {
 
           response.addHeader(HttpHeaders.SET_COOKIE,
                   refreshTokenCookieFactory.create(login.refreshToken(), login.refreshTokenTtl()).toString());
-          response.sendRedirect(redirectUrl.existingMember());  // JSON 응답 대신 리다이렉트
+          // JSON 응답 대신 리다이렉트. 탈퇴가 보류됐던 회원이 복구됐을 때만 안내 표시를 붙임 (#616)
+          response.sendRedirect(existing.withdrawalHeldRestored()
+                  ? redirectUrl.withdrawalHeldRestored()
+                  : redirectUrl.existingMember());
         }
         case SocialLoginResult.NewMember newMember ->
                 response.sendRedirect(redirectUrl.newMember(newMember.signupToken()));

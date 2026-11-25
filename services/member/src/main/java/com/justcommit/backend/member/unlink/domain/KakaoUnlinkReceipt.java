@@ -146,6 +146,20 @@ public class KakaoUnlinkReceipt extends BaseTimeEntity {
     finish(KakaoUnlinkStatus.DONE);
   }
 
+  // 자동 탈퇴 판단에서 BLOCKED(탈퇴 보류)로 정해진 기록인지 (#616). 재로그인이 무효화하기 전에 읽는다
+  // - NOTICE_PENDING: 보류로 정해짐, 안내 메일 대기 · 재시도 중
+  // - DONE: 처리 담당 기록의 DONE은 탈퇴 완료 또는 안내 메일 발송이다. 회원이 INACTIVE로 남아 있으면 안내 메일 쪽
+  //   (탈퇴했으면 DELETED라 재로그인할 수 없음). 그래서 INACTIVE 회원의 현재 연결 해제 상태에만 쓴다
+  // - FAILED: 안내 메일 단계에서 멈춘 경우만 (탈퇴 확인 단계에서 멈췄으면 아직 보류인지 모름)
+  public boolean isWithdrawalHeld() {
+    if (!handlesWithdrawal) {
+      return false;
+    }
+    return status == KakaoUnlinkStatus.NOTICE_PENDING
+        || status == KakaoUnlinkStatus.DONE
+        || (status == KakaoUnlinkStatus.FAILED && resumeState == KakaoUnlinkStatus.NOTICE_PENDING);
+  }
+
   // 같은 연결 해제 상태를 다른 기록이 처리
   public void markDuplicate() {
     finish(KakaoUnlinkStatus.DUPLICATE);
