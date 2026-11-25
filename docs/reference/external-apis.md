@@ -21,7 +21,7 @@
 | POST | `users` | 회원가입 (30일 안에 탈퇴한 이메일 · 휴대폰이면 409 `REJOIN_RESTRICTED`) | 공개 |
 | POST | `users/social` | 소셜 가입 완료 (30일 안에 탈퇴한 이메일 · 휴대폰이면 409 `REJOIN_RESTRICTED`) | 공개 |
 | GET | `users/nicknameAvailability?nickname=` | 닉네임 중복 확인 | 공개 |
-| GET | `users/phoneAvailability?phone=` | 휴대폰 중복 확인 (가입된 번호면 200 `available: false`, 30일 안에 탈퇴한 번호면 409 `REJOIN_RESTRICTED_PHONE` → [재가입 제한](../flows/signup-and-replica.md#재가입-제한)) | 공개 |
+| GET | `users/phoneAvailability?phone=` | 휴대폰 중복 확인. `phone`은 가입 요청과 같은 형식(하이픈 없이 `01`로 시작하는 숫자 11자리)이고, 없거나 형식이 다르면 400 `INVALID_FIELD_ERROR`(회원 · 탈퇴 기록을 조회하지 않음, 파라미터 누락도 #611 전의 `MISSING_PARAMETER` 대신 이 코드). 가입된 번호면 200 `available: false`, 30일 안에 탈퇴한 번호면 409 `REJOIN_RESTRICTED_PHONE` → [재가입 제한](../flows/signup-and-replica.md#재가입-제한) | 공개 |
 | GET | `users/me` | 내 정보 | 로그인 |
 | PATCH | `users/me/nickname` | 닉네임 변경 (지금 닉네임과 같으면 그대로) | 로그인 |
 | PATCH | `users/me/password` | 비밀번호 변경 → 모든 기기 로그아웃. 200이면 이 기기 Refresh 쿠키 만료 · 프론트는 Access를 지우고 로그인 화면으로, `revocationCompleted`는 서버 폐기 기록 완료 여부. 503 `RESULT_UNKNOWN`은 자동 재시도 금지. 같은 인증 버전에서 현재 비밀번호를 5회 틀리면 5번째까지 400, 이후 요청은 첫 오답부터 24시간이 되는 시점까지 429 `PASSWORD_CHANGE_LOCKED` + `Retry-After`(남은 초) | 로그인 (로컬 회원) |
