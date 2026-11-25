@@ -9,8 +9,10 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -51,5 +53,24 @@ public class ReviewController {
   @GetMapping("/summary")
   public ApiResponse<ReviewSummaryResponse> summary(@RequestParam Long sellerId) {
     return ApiResponse.ok("판매자 리뷰 집계를 조회했습니다.", reviewReadService.summary(sellerId));
+  }
+
+  // 내 리뷰 목록 (#584). 로그인 필요
+  @GetMapping("/me")
+  public ApiResponse<PagingResponse<MyReviewResponse>> myReviews(
+    @AuthenticationPrincipal AuthMember member,
+    @ModelAttribute MyReviewListRequest request
+  ) {
+    return ApiResponse.ok("내 리뷰를 조회했습니다.", reviewReadService.myReviews(member.memberId(), request.toPageable()));
+  }
+
+  // 리뷰 삭제 (#584). 로그인 필요. 숫자 id만 받아 reviews/me · summary · writable과 겹치지 않는다
+  @DeleteMapping("/{reviewId:[0-9]+}")
+  public ApiResponse<Void> delete(
+    @AuthenticationPrincipal AuthMember member,
+    @PathVariable Long reviewId
+  ) {
+    reviewService.delete(member.memberId(), reviewId);
+    return ApiResponse.ok("리뷰를 삭제했습니다.");
   }
 }

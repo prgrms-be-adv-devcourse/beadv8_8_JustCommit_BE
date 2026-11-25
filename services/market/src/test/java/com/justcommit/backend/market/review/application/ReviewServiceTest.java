@@ -148,6 +148,72 @@ class ReviewServiceTest {
     assertThatThrownBy(() -> create(List.of())).isSameAs(unknown);
   }
 
+  @Test
+  @DisplayName("삭제 (#584): 본인의 미삭제 리뷰를 작성 후 72시간 안에 지우면 작성자 · 삭제 전 조건으로 deleted_at을 기록한다")
+  void deleteOwnReviewWithinPeriod() {
+    Review review = savedReview(BUYER_ID, NOW.minusHours(71), null);
+    when(reviewRepository.findById(100L)).thenReturn(Optional.of(review));
+    when(reviewRepository.softDelete(100L, BUYER_ID, NOW)).thenReturn(1);
+
+    reviewService.delete(BUYER_ID, 100L, NOW);
+
+    verify(reviewRepository).softDelete(100L, BUYER_ID, NOW);
+  }
+
+  @Test
+  @DisplayName("삭제: 없는 리뷰 · 다른 작성자의 리뷰 · 이미 삭제된 리뷰는 모두 같은 404 REVIEW_NOT_FOUND이고 UPDATE하지 않는다")
+  void deleteNotFoundCases() {
+    when(reviewRepository.findById(100L)).thenReturn(Optional.empty());
+    when(reviewRepository.findById(101L)).thenReturn(Optional.of(savedReview(99L, NOW.minusHours(1), null)));
+    when(reviewRepository.findById(102L)).thenReturn(Optional.of(savedReview(BUYER_ID, NOW.minusHours(1), NOW)));
+
+    for (long reviewId : new long[] {100L, 101L, 102L}) {
+      assertThatThrownBy(() -> reviewService.delete(BUYER_ID, reviewId, NOW))
+        .isInstanceOfSatisfying(BusinessException.class,
+          e -> assertThat(e.getErrorCode()).isEqualTo(ReviewErrorCode.REVIEW_NOT_FOUND));
+    }
+    verify(reviewRepository, never()).softDelete(any(), any(), any());
+  }
+
+  @Test
+  @DisplayName("삭제: 작성 후 정확히 72시간째면 409 REVIEW_DELETE_PERIOD_EXPIRED이고 UPDATE하지 않는다")
+  void deleteAtExactlySeventyTwoHoursIsExpired() {
+    when(reviewRepository.findById(100L)).thenReturn(Optional.of(savedReview(BUYER_ID, NOW.minusHours(72), null)));
+
+    assertThatThrownBy(() -> reviewService.delete(BUYER_ID, 100L, NOW))
+      .isInstanceOfSatisfying(BusinessException.class,
+        e -> assertThat(e.getErrorCode()).isEqualTo(ReviewErrorCode.REVIEW_DELETE_PERIOD_EXPIRED));
+    verify(reviewRepository, never()).softDelete(any(), any(), any());
+  }
+
+  @Test
+  @DisplayName("삭제: 다른 작성자의 리뷰는 기한이 지났어도 409가 아니라 404다 (기한은 본인 리뷰일 때만 본다)")
+  void othersExpiredReviewIsNotFound() {
+    when(reviewRepository.findById(100L)).thenReturn(Optional.of(savedReview(99L, NOW.minusDays(10), null)));
+
+    assertThatThrownBy(() -> reviewService.delete(BUYER_ID, 100L, NOW))
+      .isInstanceOfSatisfying(BusinessException.class,
+        e -> assertThat(e.getErrorCode()).isEqualTo(ReviewErrorCode.REVIEW_NOT_FOUND));
+  }
+
+  @Test
+  @DisplayName("삭제: 확인 뒤 다른 요청이 먼저 지워 UPDATE된 행이 없으면 404 REVIEW_NOT_FOUND")
+  void deleteLosingRaceIsNotFound() {
+    when(reviewRepository.findById(100L)).thenReturn(Optional.of(savedReview(BUYER_ID, NOW.minusHours(1), null)));
+    when(reviewRepository.softDelete(100L, BUYER_ID, NOW)).thenReturn(0);
+
+    assertThatThrownBy(() -> reviewService.delete(BUYER_ID, 100L, NOW))
+      .isInstanceOfSatisfying(BusinessException.class,
+        e -> assertThat(e.getErrorCode()).isEqualTo(ReviewErrorCode.REVIEW_NOT_FOUND));
+  }
+
+  private static Review savedReview(long buyerId, LocalDateTime createdAt, LocalDateTime deletedAt) {
+    Review review = new Review(SELLER_ORDER_ID, 9L, buyerId, 20L, RATING, CONTENT, List.of());
+    ReflectionTestUtils.setField(review, "createdAt", createdAt);
+    ReflectionTestUtils.setField(review, "deletedAt", deletedAt);
+    return review;
+  }
+
   private Long create(List<ReviewTag> tags) {
     return reviewService.create(BUYER_ID, SELLER_ORDER_ID, RATING, CONTENT, tags, NOW);
   }

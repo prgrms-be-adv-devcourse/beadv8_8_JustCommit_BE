@@ -14,6 +14,8 @@ import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.SellerOrder;
 import com.justcommit.backend.market.order.infrastructure.OrdersRepository;
 import com.justcommit.backend.market.review.domain.ReviewTag;
+import com.justcommit.backend.market.review.presentation.MyReviewListRequest;
+import com.justcommit.backend.market.review.presentation.MyReviewResponse;
 import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse;
 import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse.RatingCount;
 import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse.TagCount;
@@ -205,6 +207,49 @@ class ReviewReadServiceIntegrationTest {
     assertThat(summary.averageRating()).isEqualByComparingTo("3.5");
     assertRatingCounts(summary, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0);
     assertThat(summary.tagCounts()).extracting(TagCount::count).containsExactly(1L, 0L, 1L, 0L, 1L);
+  }
+
+  @Test
+  @DisplayName("내 리뷰 목록 (#584): 내가 쓴 미삭제 리뷰만 최신순, 판매자 닉네임 · 주문일 · 확정 상품명 · 태그 · deletableUntil(작성 + 72시간)")
+  void myReviews() {
+    replica(SELLER_ID, "베란다정원", false);
+    replica(OTHER_SELLER_ID, null, true);
+    long sellerOrderId = sellerOrder(10L, SELLER_ID, new String[] {"몬스테라", "CONFIRMED"}, new String[] {"선인장", "CANCELLED"});
+    long orderId = jdbcTemplate.queryForObject("select order_id from seller_order where id = ?", Long.class, sellerOrderId);
+    LocalDateTime orderedAt = jdbcTemplate.queryForObject("select created_at from orders where id = ?", LocalDateTime.class,
+      orderId);
+    long older = review(sellerOrderId, 10L, SELLER_ID, "4.5", BASE, null, ReviewTag.HEALTHY_ARRIVAL, ReviewTag.CAREFUL_PACKING);
+    jdbcTemplate.update("update review set order_id = ? where id = ?", orderId, older);
+    long newer = review(nextSellerOrderId(), 10L, OTHER_SELLER_ID, "4.0", BASE.plusHours(1), null);
+    review(nextSellerOrderId(), 10L, SELLER_ID, "5.0", BASE.plusHours(2), BASE.plusHours(3)); // 삭제함
+    review(nextSellerOrderId(), 99L, SELLER_ID, "3.0", BASE.plusHours(4), null); // 다른 회원의 리뷰
+
+    PagingResponse<MyReviewResponse> page = reviewReadService.myReviews(10L, new MyReviewListRequest(null, null).toPageable());
+
+    assertThat(page.totalElements()).isEqualTo(2);
+    assertThat(page.content()).extracting(MyReviewResponse::reviewId).containsExactly(newer, older);
+    MyReviewResponse olderReview = page.content().get(1);
+    assertThat(olderReview.sellerId()).isEqualTo(SELLER_ID);
+    assertThat(olderReview.sellerNickname()).isEqualTo("베란다정원");
+    assertThat(olderReview.orderId()).isEqualTo(orderId);
+    assertThat(olderReview.orderedAt()).isEqualTo(orderedAt);
+    assertThat(olderReview.rating()).isEqualByComparingTo("4.5");
+    assertThat(olderReview.tags()).containsExactly(ReviewTag.CAREFUL_PACKING, ReviewTag.HEALTHY_ARRIVAL);
+    assertThat(olderReview.productNames()).containsExactly("몬스테라"); // 취소 상품은 빠짐
+    assertThat(olderReview.createdAt()).isEqualTo(BASE);
+    assertThat(olderReview.deletableUntil()).isEqualTo(BASE.plusHours(72));
+    // 삭제 기한이 지난 리뷰도 목록에는 남는다
+    assertThat(olderReview.deletableUntil()).isBefore(LocalDateTime.now());
+    assertThat(page.content().get(0).sellerNickname()).isEqualTo("탈퇴한 회원");
+    assertThat(page.content().get(0).orderedAt()).isNull(); // 주문 정보가 없는 리뷰
+  }
+
+  @Test
+  @DisplayName("내 리뷰 목록: 쓴 리뷰가 없거나 모두 삭제했으면 빈 목록")
+  void myReviewsEmpty() {
+    review(nextSellerOrderId(), 10L, SELLER_ID, "5.0", BASE, BASE.plusHours(1));
+
+    assertThat(reviewReadService.myReviews(10L, new MyReviewListRequest(null, null).toPageable()).content()).isEmpty();
   }
 
   private static void assertRatingCounts(ReviewSummaryResponse summary, long... counts) {

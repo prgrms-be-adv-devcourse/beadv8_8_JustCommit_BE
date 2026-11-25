@@ -9,6 +9,7 @@ import com.justcommit.backend.market.review.infrastructure.ReviewRepository;
 import com.justcommit.backend.market.review.infrastructure.ReviewRepository.RatingCountRow;
 import com.justcommit.backend.market.review.infrastructure.ReviewRepository.ReviewTagRow;
 import com.justcommit.backend.market.review.infrastructure.ReviewRepository.TagCountRow;
+import com.justcommit.backend.market.review.presentation.MyReviewResponse;
 import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse;
 import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse.RatingCount;
 import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse.TagCount;
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.EnumSet;
@@ -52,6 +54,24 @@ public class ReviewReadService {
     Map<Long, String> nicknames = memberQuery.getNicknames(
       reviews.stream().map(Review::getBuyerId).distinct().toList());
     return PagingResponse.from(page.map(review -> toResponse(review, tags, productNames, nicknames)));
+  }
+
+  // 내 리뷰 목록 (#584). 페이지에 든 리뷰의 태그 · 구매 상품명 · 주문일 · 판매자 닉네임을 각각 한 번에 묶어서 읽는다.
+  // 삭제 기한이 지난 리뷰도 목록에는 남는다 (화면이 deletableUntil로 삭제 버튼을 정한다)
+  public PagingResponse<MyReviewResponse> myReviews(Long buyerId, Pageable pageable) {
+    Page<Review> page = reviewRepository.findByBuyerIdAndDeletedAtIsNull(buyerId, pageable);
+    List<Review> reviews = page.getContent();
+    if (reviews.isEmpty()) {
+      return PagingResponse.from(page.map(review -> toMyResponse(review, Map.of(), Map.of(), Map.of(), Map.of())));
+    }
+    Map<Long, List<ReviewTag>> tags = tagsByReview(reviews.stream().map(Review::getId).toList());
+    Map<Long, List<String>> productNames = orderQuery.getConfirmedProductNames(
+      reviews.stream().map(Review::getSellerOrderId).distinct().toList());
+    Map<Long, LocalDateTime> orderedAts = orderQuery.getOrderedAts(
+      reviews.stream().map(Review::getOrderId).distinct().toList());
+    Map<Long, String> nicknames = memberQuery.getNicknames(
+      reviews.stream().map(Review::getSellerId).distinct().toList());
+    return PagingResponse.from(page.map(review -> toMyResponse(review, tags, productNames, orderedAts, nicknames)));
   }
 
   // 판매자 리뷰 집계 (#583). 평균 · 전체 수 · 별점별 개수는 태그와 조인하지 않은 별점별 집계 하나에서 계산해
@@ -98,6 +118,14 @@ public class ReviewReadService {
     Map<Long, List<ReviewTag>> result = new HashMap<>();
     tags.forEach((reviewId, set) -> result.put(reviewId, List.copyOf(set)));
     return result;
+  }
+
+  private static MyReviewResponse toMyResponse(Review review, Map<Long, List<ReviewTag>> tags,
+    Map<Long, List<String>> productNames, Map<Long, LocalDateTime> orderedAts, Map<Long, String> nicknames) {
+    return new MyReviewResponse(review.getId(), review.getSellerId(), nicknames.get(review.getSellerId()),
+      review.getOrderId(), orderedAts.get(review.getOrderId()), review.getRating(), review.getContent(),
+      tags.getOrDefault(review.getId(), List.of()), productNames.getOrDefault(review.getSellerOrderId(), List.of()),
+      review.getCreatedAt(), review.deletableUntil());
   }
 
   private static SellerReviewResponse toResponse(Review review, Map<Long, List<ReviewTag>> tags,

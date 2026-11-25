@@ -47,6 +47,9 @@ public class Review extends BaseTimeEntity {
   // 작성 가능한 주문 목록(#585)도 같은 계산을 쓴다
   public static final Duration WRITE_PERIOD = Duration.ofDays(3);
 
+  // 삭제 기간 (#584): 리뷰 작성 시각부터 이 기간 안에만 지울 수 있다. 끝났으면(같거나 지남) 지울 수 없다
+  public static final Duration DELETE_PERIOD = Duration.ofDays(3);
+
   @Column(nullable = false)
   private Long sellerOrderId;
 
@@ -99,6 +102,16 @@ public class Review extends BaseTimeEntity {
   // 작성 기간 안인지: 지금 < 구매 확정 시각 + 작성 기간
   public static boolean isWithinWritePeriod(LocalDateTime confirmedAt, LocalDateTime now) {
     return now.isBefore(writableUntil(confirmedAt));
+  }
+
+  // 삭제 기한: 리뷰 작성 시각 + 삭제 기간. 내 리뷰 목록의 deletableUntil
+  public LocalDateTime deletableUntil() {
+    return getCreatedAt().plus(DELETE_PERIOD);
+  }
+
+  // 삭제 기간 안인지: 지금 < 리뷰 작성 시각 + 삭제 기간 (정확히 72시간째부터 지울 수 없다)
+  public boolean isWithinDeletePeriod(LocalDateTime now) {
+    return now.isBefore(deletableUntil());
   }
 
   // 0.5 ~ 5.0, 0.5 단위: 2배 했을 때 정수여야 한다 (4.50은 허용, 2.3 · 4.55는 거절)

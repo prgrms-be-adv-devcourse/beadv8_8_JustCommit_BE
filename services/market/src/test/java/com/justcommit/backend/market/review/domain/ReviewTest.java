@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -136,6 +137,31 @@ class ReviewTest {
   void duplicateTagsRejected() {
     assertInvalid(() -> review(new BigDecimal("4.5"), CONTENT,
       List.of(ReviewTag.GOOD_PRICE, ReviewTag.CAREFUL_PACKING, ReviewTag.GOOD_PRICE)));
+  }
+
+  @Test
+  @DisplayName("삭제 기한은 리뷰 작성 시각에서 3일 뒤다 (#584)")
+  void deletableUntilIsThreeDaysAfterCreation() {
+    Review review = createdAt(CONFIRMED_AT);
+
+    assertThat(review.deletableUntil()).isEqualTo(LocalDateTime.of(2026, 11, 27, 10, 0, 0));
+  }
+
+  @Test
+  @DisplayName("작성 직후와 72시간이 되기 직전에는 지울 수 있고, 정확히 72시간째부터는 지울 수 없다 (#584)")
+  void deletePeriodBoundary() {
+    Review review = createdAt(CONFIRMED_AT);
+
+    assertThat(review.isWithinDeletePeriod(CONFIRMED_AT)).isTrue();
+    assertThat(review.isWithinDeletePeriod(CONFIRMED_AT.plusHours(72).minusNanos(1))).isTrue();
+    assertThat(review.isWithinDeletePeriod(CONFIRMED_AT.plusHours(72))).isFalse();
+    assertThat(review.isWithinDeletePeriod(CONFIRMED_AT.plusHours(72).plusNanos(1))).isFalse();
+  }
+
+  private static Review createdAt(LocalDateTime createdAt) {
+    Review review = review(new BigDecimal("4.5"), CONTENT, List.of());
+    ReflectionTestUtils.setField(review, "createdAt", createdAt);
+    return review;
   }
 
   private static Review review(BigDecimal rating, String content, List<ReviewTag> tags) {
