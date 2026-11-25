@@ -18,7 +18,9 @@ public enum ReviewErrorCode implements ErrorCode {
   REVIEW_PERIOD_EXPIRED(HttpStatus.CONFLICT, "리뷰 작성 기간이 지났습니다."),
   // 없는 리뷰 · 다른 작성자의 리뷰 · 이미 삭제된 리뷰를 구분하지 않는다 (#584)
   REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "리뷰를 찾을 수 없습니다."),
-  REVIEW_DELETE_PERIOD_EXPIRED(HttpStatus.CONFLICT, "리뷰 삭제 기간이 지났습니다.");
+  REVIEW_DELETE_PERIOD_EXPIRED(HttpStatus.CONFLICT, "리뷰 삭제 기간이 지났습니다."),
+  // 주문별 리뷰 상태 (#644): 없는 주문과 다른 구매자의 주문을 구분하지 않는다
+  REVIEW_ORDER_NOT_FOUND(HttpStatus.NOT_FOUND, "주문을 찾을 수 없습니다.");
 
   private final HttpStatus status;
   private final String message;

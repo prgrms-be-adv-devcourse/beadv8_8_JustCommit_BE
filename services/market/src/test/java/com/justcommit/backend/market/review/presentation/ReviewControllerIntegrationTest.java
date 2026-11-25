@@ -51,6 +51,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -504,6 +505,87 @@ class ReviewControllerIntegrationTest {
       .andExpect(status().isOk())
       .andExpect(jsonPath("$.data").isArray())
       .andExpect(jsonPath("$.data.length()").value(0));
+  }
+
+  @Test
+  @DisplayName("주문별 리뷰 상태 (#644): 등록하면 그 판매자는 작성 완료 · 남은 건수와 다음 판매자가 갱신되고, 삭제하면 삭제함(내용 없음)이고 다시 작성 가능해지지 않는다")
+  void orderReviewStatusFlow() throws Exception {
+    long[] ids = twoSellerOrder(LocalDateTime.now().minusDays(1), LocalDateTime.now().minusDays(2));
+    long orderId = ids[0];
+    long laterDeadline = ids[1];
+    long earlierDeadline = ids[2];
+
+    mockMvc.perform(get("/api/v1/reviews/orders/{orderId}", orderId))
+      .andExpect(status().isOk())
+      .andExpect(jsonPath("$.message").value("주문의 판매자별 리뷰 상태를 조회했습니다."))
+      .andExpect(jsonPath("$.data.orderId").value(orderId))
+      .andExpect(jsonPath("$.data.summary.targetCount").value(2))
+      .andExpect(jsonPath("$.data.summary.writtenCount").value(0))
+      .andExpect(jsonPath("$.data.summary.writableCount").value(2))
+      .andExpect(jsonPath("$.data.summary.nextWritable.sellerOrderId").value(earlierDeadline))
+      .andExpect(jsonPath("$.data.sellerOrders.length()").value(2))
+      .andExpect(jsonPath("$.data.sellerOrders[0].reviewStatus").value("WRITABLE"))
+      .andExpect(jsonPath("$.data.sellerOrders[0].writableUntil").isNotEmpty())
+      .andExpect(jsonPath("$.data.sellerOrders[0].review").value(nullValue()));
+
+    String deletedContent = "삭제할 리뷰 본문은 응답에 나오면 안 돼요";
+    create("""
+      {"sellerOrderId": %d, "rating": 2.5, "content": "%s", "tags": ["GOOD_PRICE"]}
+      """.formatted(earlierDeadline, deletedContent)).andExpect(status().isCreated());
+    Long reviewId = jdbcTemplate.queryForObject("select id from review where seller_order_id = ?", Long.class, earlierDeadline);
+
+    mockMvc.perform(get("/api/v1/reviews/orders/{orderId}", orderId))
+      .andExpect(jsonPath("$.data.sellerOrders[1].reviewStatus").value("WRITTEN"))
+      .andExpect(jsonPath("$.data.sellerOrders[1].review.reviewId").value(reviewId))
+      .andExpect(jsonPath("$.data.sellerOrders[1].review.content").value(deletedContent))
+      .andExpect(jsonPath("$.data.sellerOrders[1].review.tags[0]").value("GOOD_PRICE"))
+      .andExpect(jsonPath("$.data.summary.writtenCount").value(1))
+      .andExpect(jsonPath("$.data.summary.writableCount").value(1))
+      .andExpect(jsonPath("$.data.summary.nextWritable.sellerOrderId").value(laterDeadline));
+
+    mockMvc.perform(delete("/api/v1/reviews/{reviewId}", reviewId)).andExpect(status().isOk());
+    String body = mockMvc.perform(get("/api/v1/reviews/orders/{orderId}", orderId))
+      .andExpect(jsonPath("$.data.sellerOrders[1].reviewStatus").value("DELETED"))
+      .andExpect(jsonPath("$.data.sellerOrders[1].review").value(nullValue()))
+      .andExpect(jsonPath("$.data.summary.targetCount").value(2))
+      .andExpect(jsonPath("$.data.summary.writtenCount").value(1))
+      .andExpect(jsonPath("$.data.summary.writableCount").value(1))
+      .andExpect(jsonPath("$.data.summary.nextWritable.sellerOrderId").value(laterDeadline))
+      .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+    assertThat(body).doesNotContain(deletedContent).doesNotContain("\"reviewId\":" + reviewId);
+    createFor(earlierDeadline)
+      .andExpect(status().isConflict())
+      .andExpect(jsonPath("$.code").value("REVIEW_ALREADY_WRITTEN"));
+  }
+
+  @Test
+  @DisplayName("주문별 리뷰 상태: 없는 주문과 다른 구매자의 주문은 같은 404 REVIEW_ORDER_NOT_FOUND, 숫자가 아닌 orderId는 매핑되지 않는다")
+  void orderReviewStatusNotFound() throws Exception {
+    long othersOrderId = jdbcTemplate.queryForObject("select order_id from seller_order where id = ?", Long.class,
+      sellerOrder(99L, LocalDateTime.now().minusDays(1), "CONFIRMED"));
+
+    for (long orderId : new long[] {othersOrderId, othersOrderId + 1_000}) {
+      mockMvc.perform(get("/api/v1/reviews/orders/{orderId}", orderId))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("REVIEW_ORDER_NOT_FOUND"));
+    }
+    assertThat(mockMvc.perform(get("/api/v1/reviews/orders/abc")).andReturn().getHandler()).isNull();
+  }
+
+  // 구매자 10의 주문 하나에 판매자 20 · 21의 판매자 주문. [주문 id, 판매자 20 주문 id, 판매자 21 주문 id]
+  private long[] twoSellerOrder(LocalDateTime firstConfirmedAt, LocalDateTime secondConfirmedAt) {
+    Orders order = new Orders("ORD-RVO-" + System.nanoTime(), BUYER_ID, "구매자", "01012345678", "12345", "서울시", null, 2);
+    SellerOrder first = new SellerOrder(order, SELLER_ID);
+    first.addItems(List.of(new OrdersItem(first, 100L, "몬스테라", new BigDecimal("10000"))));
+    SellerOrder second = new SellerOrder(order, SELLER_ID + 1);
+    second.addItems(List.of(new OrdersItem(second, 101L, "필레아", new BigDecimal("10000"))));
+    order.addSellerOrders(List.of(first, second));
+    ordersRepository.save(order);
+    jdbcTemplate.update("update orders_item set status = 'CONFIRMED' where seller_order_id in (?, ?)", first.getId(),
+      second.getId());
+    jdbcTemplate.update("update seller_order set confirmed_at = ? where id = ?", firstConfirmedAt, first.getId());
+    jdbcTemplate.update("update seller_order set confirmed_at = ? where id = ?", secondConfirmedAt, second.getId());
+    return new long[] {order.getId(), first.getId(), second.getId()};
   }
 
   // 작성자 · 작성 시각을 정해 리뷰를 DB에 직접 넣는다 (판매자 20, 별점 4.5, 태그 없음)

@@ -6,6 +6,7 @@ import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.OrderResult;
 import com.justcommit.backend.market.OrderShippingInfo;
 import com.justcommit.backend.market.OrderItemStatus;
+import com.justcommit.backend.market.OrderReviewTarget;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.ReviewableSellerOrder;
 import com.justcommit.backend.market.OrdersItemResult;
@@ -251,6 +252,12 @@ public class OrderReadService implements OrderQuery {
             return new SellerOrderReviewInfo(sellerOrder.getId(), order.getId(), order.getBuyerId(),
                     sellerOrder.getSellerId(), sellerOrder.getConfirmedAt(), hasConfirmedItem);
         });
+    }
+
+    @Override
+    public List<OrderReviewTarget> findOrderReviewTargets(Long buyerId, Long orderId) {
+        return sellerOrderRepository.findOrderReviewTargets(buyerId, orderId, OrderItemStatus.CONFIRMED,
+                OrderItemStatus.CANCELLED);
     }
 
     @Override

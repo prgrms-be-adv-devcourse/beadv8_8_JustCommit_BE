@@ -1,19 +1,28 @@
 package com.justcommit.backend.market.review.application;
 
 import com.justcommit.backend.common.response.PagingResponse;
+import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.market.OrderQuery;
+import com.justcommit.backend.market.OrderReviewTarget;
 import com.justcommit.backend.market.ReviewableSellerOrder;
 import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.market.review.domain.Review;
+import com.justcommit.backend.market.review.domain.ReviewErrorCode;
 import com.justcommit.backend.market.review.domain.ReviewTag;
 import com.justcommit.backend.market.review.infrastructure.ReviewRepository;
 import com.justcommit.backend.market.review.infrastructure.ReviewRepository.RatingCountRow;
 import com.justcommit.backend.market.review.infrastructure.ReviewRepository.ReviewTagRow;
 import com.justcommit.backend.market.review.infrastructure.ReviewRepository.TagCountRow;
 import com.justcommit.backend.market.review.presentation.MyReviewResponse;
+import com.justcommit.backend.market.review.presentation.OrderReviewStatusResponse;
+import com.justcommit.backend.market.review.presentation.OrderReviewStatusResponse.NextWritable;
+import com.justcommit.backend.market.review.presentation.OrderReviewStatusResponse.SellerOrderReview;
+import com.justcommit.backend.market.review.presentation.OrderReviewStatusResponse.Summary;
+import com.justcommit.backend.market.review.presentation.OrderReviewStatusResponse.WrittenReview;
 import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse;
 import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse.RatingCount;
 import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse.TagCount;
+import com.justcommit.backend.market.review.presentation.SellerOrderReviewStatus;
 import com.justcommit.backend.market.review.presentation.SellerReviewResponse;
 import com.justcommit.backend.market.review.presentation.WritableReviewResponse;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +38,8 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -114,6 +125,89 @@ public class ReviewReadService {
         nicknames.get(candidate.sellerId()), candidate.orderedAt(), candidate.confirmedAt(),
         Review.writableUntil(candidate.confirmedAt()), productNames.getOrDefault(candidate.sellerOrderId(), List.of())))
       .toList();
+  }
+
+  // 주문 상세의 판매자별 리뷰 상태 (#644). 주문 상세 · 작성 화면의 판매자 선택 · 등록 후 다음 판매자에 쓴다
+  public OrderReviewStatusResponse orderReviewStatus(Long buyerId, Long orderId) {
+    return orderReviewStatus(buyerId, orderId, LocalDateTime.now());
+  }
+
+  // 테스트가 기준 시각을 고정할 수 있게 now를 받는다. 작성 가능 판정은 작성 API(#582) · 작성 가능 목록(#585)과 같은 규칙
+  OrderReviewStatusResponse orderReviewStatus(Long buyerId, Long orderId, LocalDateTime now) {
+    // 구매자 본인의 주문만 조회한다. 없는 주문과 남의 주문은 같은 404
+    List<OrderReviewTarget> targets = orderQuery.findOrderReviewTargets(buyerId, orderId);
+    if (targets.isEmpty()) {
+      throw new BusinessException(ReviewErrorCode.REVIEW_ORDER_NOT_FOUND);
+    }
+    List<Long> sellerOrderIds = targets.stream().map(OrderReviewTarget::sellerOrderId).toList();
+    Map<Long, Review> reviews = reviewRepository.findBySellerOrderIdIn(sellerOrderIds).stream()
+      .collect(Collectors.toMap(Review::getSellerOrderId, Function.identity()));
+    // 삭제한 리뷰의 태그는 읽지도 않는다 (내용을 내보내지 않음)
+    List<Long> visibleReviewIds = reviews.values().stream()
+      .filter(review -> review.getDeletedAt() == null).map(Review::getId).toList();
+    Map<Long, List<ReviewTag>> tags = visibleReviewIds.isEmpty() ? Map.of() : tagsByReview(visibleReviewIds);
+    Map<Long, List<String>> productNames = orderQuery.getConfirmedProductNames(sellerOrderIds);
+    Map<Long, String> nicknames = memberQuery.getNicknames(
+      targets.stream().map(OrderReviewTarget::sellerId).distinct().toList());
+
+    List<SellerOrderReview> sellerOrders = targets.stream().map(target -> {
+      Review review = reviews.get(target.sellerOrderId());
+      SellerOrderReviewStatus status = reviewStatus(target, review, now);
+      WrittenReview written = status == SellerOrderReviewStatus.WRITTEN
+        ? new WrittenReview(review.getId(), review.getRating(), review.getContent(),
+          tags.getOrDefault(review.getId(), List.of()), review.getCreatedAt())
+        : null;
+      return new SellerOrderReview(target.sellerOrderId(), target.sellerId(), nicknames.get(target.sellerId()),
+        productNames.getOrDefault(target.sellerOrderId(), List.of()), target.confirmedAt(),
+        target.confirmedAt() == null ? null : Review.writableUntil(target.confirmedAt()), status, written);
+    }).toList();
+    return new OrderReviewStatusResponse(orderId, summary(sellerOrders), sellerOrders);
+  }
+
+  // 위에서부터 처음 맞는 상태. 리뷰가 있으면(삭제 포함) 주문 상태 · 기한보다 먼저 본다
+  static SellerOrderReviewStatus reviewStatus(OrderReviewTarget target, Review review, LocalDateTime now) {
+    if (review != null) {
+      return review.getDeletedAt() != null ? SellerOrderReviewStatus.DELETED : SellerOrderReviewStatus.WRITTEN;
+    }
+    if (target.confirmedAt() == null) {
+      // 전부 취소 완료면 구매 확정 시각이 채워지지 않는다. 취소 · 환불이 처리 중이면 아직 확정 전으로 본다
+      return target.allItemsCancelled() ? SellerOrderReviewStatus.NO_CONFIRMED_ITEM : SellerOrderReviewStatus.NOT_CONFIRMED;
+    }
+    if (!target.hasConfirmedItem()) {
+      return SellerOrderReviewStatus.NO_CONFIRMED_ITEM;
+    }
+    if (!Review.isWithinWritePeriod(target.confirmedAt(), now)) {
+      return SellerOrderReviewStatus.EXPIRED;
+    }
+    return SellerOrderReviewStatus.WRITABLE;
+  }
+
+  private static Summary summary(List<SellerOrderReview> sellerOrders) {
+    int target = 0;
+    int written = 0;
+    int writable = 0;
+    for (SellerOrderReview sellerOrder : sellerOrders) {
+      switch (sellerOrder.reviewStatus()) {
+        case WRITTEN, DELETED -> {
+          target++;
+          written++;
+        }
+        case WRITABLE -> {
+          target++;
+          writable++;
+        }
+        case EXPIRED -> target++;
+        case NOT_CONFIRMED, NO_CONFIRMED_ITEM -> {
+        }
+      }
+    }
+    NextWritable next = sellerOrders.stream()
+      .filter(sellerOrder -> sellerOrder.reviewStatus() == SellerOrderReviewStatus.WRITABLE)
+      .min(Comparator.comparing(SellerOrderReview::writableUntil).thenComparing(SellerOrderReview::sellerOrderId))
+      .map(sellerOrder -> new NextWritable(sellerOrder.sellerOrderId(), sellerOrder.sellerId(),
+        sellerOrder.sellerNickname(), sellerOrder.writableUntil()))
+      .orElse(null);
+    return new Summary(target, written, writable, next);
   }
 
   // 판매자 리뷰 집계 (#583). 평균 · 전체 수 · 별점별 개수는 태그와 조인하지 않은 별점별 집계 하나에서 계산해

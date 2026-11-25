@@ -19,6 +19,9 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
   // 삭제한 리뷰도 센다 (삭제 여부를 조건에 넣지 않는다): 삭제한 판매자 주문에도 다시 쓸 수 없다
   boolean existsBySellerOrderId(Long sellerOrderId);
 
+  // 주문 상세의 판매자별 리뷰 상태용 (#644). 삭제한 리뷰도 읽는다 (삭제함 상태 판정, 본문은 응답에 넣지 않음)
+  List<Review> findBySellerOrderIdIn(Collection<Long> sellerOrderIds);
+
   // 리뷰가 있는 판매자 주문 id (#585 작성 가능 목록에서 뺄 것). existsBySellerOrderId처럼 삭제한 리뷰도 센다
   @Query("select r.sellerOrderId from Review r where r.sellerOrderId in :sellerOrderIds")
   List<Long> findSellerOrderIdsIn(@Param("sellerOrderIds") Collection<Long> sellerOrderIds);
