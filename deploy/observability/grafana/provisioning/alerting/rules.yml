@@ -351,6 +351,108 @@ groups:
     labels:
       team: replant
     isPaused: false
+  - uid: replant-settlement-reconciliation-mismatch
+    title: 정산 대사 불일치
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: max(settlement_reconciliation_mismatches)
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    annotations:
+      summary: 미해결 정산 대사 불일치 {{ $values.A.Value }}건 — settlement_reconciliation_mismatch와 settlement ERROR 로그 확인
+    labels:
+      team: replant
+    isPaused: false
+  - uid: replant-settlement-reconciliation-failed
+    title: 정산 대사 실행 실패
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: sum(increase(settlement_reconciliation_runs_total{result=~"failed|partial"}[1h]))
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    annotations:
+      summary: 정산 대사가 실패했거나(FAILED) 일부 배치를 건너뜀(PARTIAL) — settlement_reconciliation_run과 settlement 로그 확인
+    labels:
+      team: replant
+    isPaused: false
+  - uid: replant-settlement-reconciliation-not-run
+    title: 정산 대사 미실행
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: time() - max(settlement_reconciliation_last_success_timestamp_seconds)
+        instant: true
+        intervalMs: 60000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 90000
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    annotations:
+      summary: 정산 대사가 25시간 넘게 성공하지 않음 ({{ $values.A.Value }}초) — 스케줄러 꺼짐(enabled), ShedLock, 실행 이력 확인
+    labels:
+      team: replant
+    isPaused: false
   - uid: replant-review-required
     title: 결제 확인 필요 주문
     condition: C
