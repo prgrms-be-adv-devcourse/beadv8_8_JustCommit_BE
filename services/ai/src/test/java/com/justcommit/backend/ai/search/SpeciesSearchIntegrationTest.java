@@ -2,8 +2,12 @@ package com.justcommit.backend.ai.search;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.justcommit.backend.ai.common.StageTimers;
 import com.justcommit.backend.ai.search.application.QueryEmbedder;
+import com.justcommit.backend.ai.search.application.SpeciesSearchService;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -13,7 +17,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -79,6 +85,7 @@ class SpeciesSearchIntegrationTest {
     @LocalServerPort int port;
     @Autowired JdbcClient jdbcClient;
     @Autowired FakeQueryEmbedder embedder;
+    @Autowired MeterRegistry meterRegistry;
 
     private final HttpClient http = HttpClient.newHttpClient();
     private final JsonMapper json = JsonMapper.builder().build();
@@ -121,6 +128,47 @@ class SpeciesSearchIntegrationTest {
         // 판매 중 상품이 없는 품종도 품종은 보여 준다 (결제 대기는 판매 중이 아님)
         assertThat(productIds(items.get(1))).isEmpty();
         assertThat(productIds(items.get(2))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("[#634] 질문 임베딩 · 벡터 검색 · 상품 조회 · 전체를 단계별 Timer로, 임베딩이 실패하면 임베딩 · 전체가 실패로")
+    void recordsStageTimers() throws Exception {
+        List<String> stages = List.of(SpeciesSearchService.STAGE_EMBEDDING, SpeciesSearchService.STAGE_VECTOR_SEARCH,
+                SpeciesSearchService.STAGE_PRODUCT_LOOKUP, SpeciesSearchService.STAGE_TOTAL);
+        Map<String, Long> before = counts(stages);
+
+        assertThat(search("햇빛 적은 방에서 키우기 쉬운 식물", 5).statusCode()).isEqualTo(200);
+
+        for (String stage : stages) {
+            assertThat(count(stage)).as(stage).isEqualTo(before.get(stage) + 1);
+        }
+
+        Map<String, Long> beforeFailure = counts(stages);
+        long embeddingFailures = failures(SpeciesSearchService.STAGE_EMBEDDING);
+        long totalFailures = failures(SpeciesSearchService.STAGE_TOTAL);
+        assertThat(search(FAIL, 5).statusCode()).isEqualTo(503);
+
+        assertThat(failures(SpeciesSearchService.STAGE_EMBEDDING)).isEqualTo(embeddingFailures + 1);
+        assertThat(failures(SpeciesSearchService.STAGE_TOTAL)).isEqualTo(totalFailures + 1);
+        assertThat(counts(stages)).isEqualTo(beforeFailure);
+    }
+
+    private Map<String, Long> counts(List<String> stages) {
+        Map<String, Long> counts = new HashMap<>();
+        stages.forEach(stage -> counts.put(stage, count(stage)));
+        return counts;
+    }
+
+    private long count(String stage) {
+        return meterRegistry.get(SpeciesSearchService.METRIC).tag("stage", stage)
+                .tag("outcome", StageTimers.SUCCESS).timer().count();
+    }
+
+    // 실패 Timer는 처음 실패할 때 생기므로 없으면 0건
+    private long failures(String stage) {
+        Timer timer = meterRegistry.find(SpeciesSearchService.METRIC).tag("stage", stage)
+                .tag("outcome", StageTimers.FAILURE).timer();
+        return timer == null ? 0 : timer.count();
     }
 
     @Test

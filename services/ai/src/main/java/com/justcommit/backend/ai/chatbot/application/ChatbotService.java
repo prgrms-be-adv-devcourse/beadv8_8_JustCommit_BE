@@ -4,10 +4,13 @@ import com.justcommit.backend.ai.chatbot.application.ChatSearchResult.ProductHit
 import com.justcommit.backend.ai.chatbot.application.ChatSearchResult.SpeciesHit;
 import com.justcommit.backend.ai.chatbot.infrastructure.ChatSearchRepository;
 import com.justcommit.backend.ai.chatbot.infrastructure.ConversationRepository;
+import com.justcommit.backend.ai.common.StageTimers;
 import com.justcommit.backend.ai.search.application.QueryEmbedder;
 import com.justcommit.backend.ai.search.infrastructure.SpeciesSearchQueryRepository;
 import com.justcommit.backend.ai.search.infrastructure.SpeciesSearchQueryRepository.SimilarSpecies;
 import com.justcommit.backend.common.exception.BusinessException;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -23,6 +26,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 외부 호출(임베딩 · LLM)은 트랜잭션 밖에서 하고, 저장만 짧은 트랜잭션으로 묶는다.
  * - 임베딩 실패: 검색을 못 하므로 503 CHATBOT_UNAVAILABLE (대화 기록도 남기지 않음)
  * - LLM 실패 · 키 없음: 고정 문장 + 찾은 상품 카드 (answerGenerated=false)
+ *
+ * 단계별 시간(#634)은 {@code ai.chatbot.stage}: 대화 기록 읽기(이어 묻기만) · 질문 임베딩 · 상품 검색(대안 포함) · 품종 검색 ·
+ * 답변 생성(키가 있을 때만) · 저장 · 전체를 {@code outcome}(success · failure)으로 나눠 남긴다. 답변 생성 실패는 고정 문장으로
+ * 응답하므로 전체는 성공, 404 · 403 · 503은 전체도 실패. 구간 범위 5ms ~ 30초 (Gateway 응답 제한 20초를 덮음).
  */
 @Slf4j
 @Service
@@ -30,6 +37,15 @@ public class ChatbotService {
 
     static final String FALLBACK_WITH_PRODUCTS = "지금은 답변을 만들지 못했어요. 질문과 비슷한 판매 중 식물을 찾아 두었으니 아래 상품을 확인해 주세요.";
     static final String FALLBACK_WITHOUT_PRODUCTS = "지금은 답변을 만들지 못했어요. 잠시 후 다시 물어봐 주세요.";
+
+    public static final String METRIC = "ai.chatbot.stage";
+    public static final String STAGE_HISTORY = "history";
+    public static final String STAGE_EMBEDDING = "embedding";
+    public static final String STAGE_PRODUCT_SEARCH = "product_search";
+    public static final String STAGE_SPECIES_SEARCH = "species_search";
+    public static final String STAGE_ANSWER = "answer";
+    public static final String STAGE_SAVE = "save";
+    public static final String STAGE_TOTAL = "total";
 
     private final ConversationRepository conversationRepository;
     private final ChatSearchRepository searchRepository;
@@ -44,6 +60,7 @@ public class ChatbotService {
     private final double productMinSimilarity;
     private final double speciesMinSimilarity;
     private final int historySize;
+    private final StageTimers timers;
 
     public ChatbotService(
             ConversationRepository conversationRepository,
@@ -58,7 +75,8 @@ public class ChatbotService {
             @Value("${custom.chatbot.species-top-k:3}") int speciesTopK,
             @Value("${custom.chatbot.product-min-similarity:0.28}") double productMinSimilarity,
             @Value("${custom.species-search.min-similarity:0.35}") double speciesMinSimilarity,
-            @Value("${custom.chatbot.history-size:10}") int historySize) {
+            @Value("${custom.chatbot.history-size:10}") int historySize,
+            MeterRegistry meterRegistry) {
         this.conversationRepository = conversationRepository;
         this.searchRepository = searchRepository;
         this.speciesQueryRepository = speciesQueryRepository;
@@ -72,6 +90,13 @@ public class ChatbotService {
         this.productMinSimilarity = productMinSimilarity;
         this.speciesMinSimilarity = speciesMinSimilarity;
         this.historySize = historySize;
+        this.timers = new StageTimers(meterRegistry, METRIC, "챗봇 메시지 단계별 시간 (#634)",
+                List.of(STAGE_HISTORY, STAGE_EMBEDDING, STAGE_PRODUCT_SEARCH, STAGE_SPECIES_SEARCH, STAGE_ANSWER,
+                        STAGE_SAVE, STAGE_TOTAL),
+                Duration.ofMillis(5), Duration.ofSeconds(30));
+    }
+
+    private record ProductSearch(List<ProductHit> products, List<ProductHit> alternatives) {
     }
 
     // cards: 화면 상품 카드. 맞는 상품이 있으면 그 상품, 없으면 답변에 제목이 나온 대안 상품만
@@ -81,23 +106,41 @@ public class ChatbotService {
 
     public ChatReply send(long memberId, UUID conversationId, String message) {
         long startedAt = System.nanoTime();
+        return timers.time(STAGE_TOTAL, () -> send(memberId, conversationId, message, startedAt));
+    }
+
+    private ChatReply send(long memberId, UUID conversationId, String message, long startedAt) {
         String question = message.strip();
 
         boolean isNew = conversationId == null;
         UUID id = isNew ? UUID.randomUUID() : conversationId;
-        List<ChatTurn> history = isNew ? List.of() : loadHistory(memberId, id);
+        List<ChatTurn> history = List.of();
+        if (!isNew) {
+            history = timers.time(STAGE_HISTORY, () -> loadHistory(memberId, id));
+        }
 
-        float[] queryVector = embed(searchText(history, question));
-        List<ProductHit> products = searchRepository.findProducts(queryVector, productTopK, productMinSimilarity);
-        ChatSearchResult result = new ChatSearchResult(products, findSpecies(queryVector), alternatives(queryVector, products));
+        String searchText = searchText(history, question);
+        float[] queryVector = timers.time(STAGE_EMBEDDING, () -> embed(searchText));
+
+        // 대안 상품 검색(맞는 상품이 0개일 때만 한 번 더 부르는 DB 쿼리)도 상품 검색 단계에 넣는다
+        ProductSearch found = timers.time(STAGE_PRODUCT_SEARCH, () -> {
+            List<ProductHit> hits = searchRepository.findProducts(queryVector, productTopK, productMinSimilarity);
+            return new ProductSearch(hits, alternatives(queryVector, hits));
+        });
+
+        List<SpeciesHit> species = timers.time(STAGE_SPECIES_SEARCH, () -> findSpecies(queryVector));
+        ChatSearchResult result = new ChatSearchResult(found.products(), species, found.alternatives());
 
         String answer = null;
         int llmCalls = 0;
         if (answerGenerator.isConfigured()) {
             llmCalls = 1;
+            List<ChatTurn> turns = history;
             try {
-                answer = plainText(answerGenerator.answer(promptFactory.create(question, history, result)));
+                answer = timers.time(STAGE_ANSWER,
+                        () -> plainText(answerGenerator.answer(promptFactory.create(question, turns, result))));
             } catch (RuntimeException e) {
+                // 실패(시간 초과 등)도 outcome=failure로 남는다: 고정 문장으로 답하기 전에 사용자가 기다린 시간
                 log.warn("챗봇 답변 생성 실패, 고정 문장으로 답함: conversationId={}, error={}", id, e.toString());
             }
         }
@@ -107,12 +150,13 @@ public class ChatbotService {
         }
 
         String savedAnswer = answer;
-        transactionTemplate.executeWithoutResult(status -> {
+        timers.time(STAGE_SAVE, () -> transactionTemplate.execute(status -> {
             if (isNew) {
                 conversationRepository.create(id, memberId);
             }
             conversationRepository.appendExchange(id, question, savedAnswer);
-        });
+            return null;
+        }));
 
         log.info("챗봇 메시지: conversationId={}, memberId={}, elapsedMs={}, embeddingCalls=1, llmCalls={}, "
                         + "answerGenerated={}, products={}, alternatives={}, species={}",

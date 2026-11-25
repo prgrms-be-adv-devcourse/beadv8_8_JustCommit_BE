@@ -1,7 +1,7 @@
 # 관측 (로그 · 지표 · 알림)
 
 > 언제 읽나: 로그 형식, 추적, 대시보드, 알림을 다룰 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 16, 노션 「정책 정리」 10.10, ADR 0008 · 0027
+> 상태: ✅ 확정 · 마지막 수정 2026-11-25 · 관련: Miro 16, 노션 「정책 정리」 10.10, ADR 0008 · 0027
 
 ## 구성
 
@@ -19,7 +19,7 @@
 
 | 수집 대상 | 방법 |
 |---|---|
-| 서비스 | `/actuator/prometheus` (HTTP · Hikari · Tomcat · JVM) |
+| 서비스 | `/actuator/prometheus` (HTTP · Hikari · Tomcat · JVM). 검색 · 챗봇은 단계별 시간도: `product_search_stage_seconds` · `ai_species_search_stage_seconds` · `ai_chatbot_stage_seconds` (태그 `stage` · `outcome`, 단계 목록은 `perf/README.md` 「검색 · 챗봇 단계별 운영 측정」) |
 | 서버 (앱 · 데이터) | node-exporter (CPU · 메모리 · 디스크 · CPU steal). 앱 서버는 Alloy 내장 `prometheus.exporter.unix`로 같은 지표 |
 | PostgreSQL | postgres-exporter |
 | Kafka | kafka-exporter (토픽별 offset → DLT 유입 알림) |

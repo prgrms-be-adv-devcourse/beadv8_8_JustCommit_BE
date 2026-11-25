@@ -484,6 +484,301 @@
     },
     {
       "type": "row",
+      "id": 26,
+      "title": "검색 · 챗봇 단계별 시간 (#634, p50 · p95)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "id": 27,
+      "title": "상품 키워드 검색 (product)",
+      "description": "GET /api/v1/products?keyword=. total = 전체, opensearch = product가 본 호출 시간, opensearch_took = OpenSearch 안 시간, db = DB 재조회, fallback = 장애 시 LIKE. 실패(outcome=failure)는 실패한 요청이 있을 때만 「실패 p95」로 나옴",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 26
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.5
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(product_search_stage_seconds_bucket{job=\"spring\",service=\"product\",outcome=\"success\"}[$__rate_interval])))",
+          "legendFormat": "{{stage}} p95"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, stage) (rate(product_search_stage_seconds_bucket{job=\"spring\",service=\"product\",outcome=\"success\"}[$__rate_interval])))",
+          "legendFormat": "{{stage}} p50"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(product_search_stage_seconds_bucket{job=\"spring\",service=\"product\",outcome=\"failure\"}[$__rate_interval])))",
+          "legendFormat": "{{stage}} 실패 p95"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 28,
+      "title": "품종 의미 검색 (ai)",
+      "description": "GET /api/v1/speciesSearches. embedding = 질문 임베딩(OpenAI), vector_search = pgvector 품종 검색, product_lookup = 판매 중 상품 조회. 실패(outcome=failure)는 실패한 요청이 있을 때만 「실패 p95」로 나옴",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 26
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(ai_species_search_stage_seconds_bucket{job=\"spring\",service=\"ai\",outcome=\"success\"}[$__rate_interval])))",
+          "legendFormat": "{{stage}} p95"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, stage) (rate(ai_species_search_stage_seconds_bucket{job=\"spring\",service=\"ai\",outcome=\"success\"}[$__rate_interval])))",
+          "legendFormat": "{{stage}} p50"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(ai_species_search_stage_seconds_bucket{job=\"spring\",service=\"ai\",outcome=\"failure\"}[$__rate_interval])))",
+          "legendFormat": "{{stage}} 실패 p95"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 29,
+      "title": "챗봇 메시지 (ai)",
+      "description": "POST /api/v1/chatbot/messages. history = 대화 기록(이어 묻기), embedding, product_search(대안 포함), species_search, answer = 답변 생성(Claude), save = 대화 저장. 실패(outcome=failure)는 실패한 요청이 있을 때만 「실패 p95」로 나옴",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 26
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "stacking": {
+              "mode": "none"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(ai_chatbot_stage_seconds_bucket{job=\"spring\",service=\"ai\",outcome=\"success\"}[$__rate_interval])))",
+          "legendFormat": "{{stage}} p95"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, stage) (rate(ai_chatbot_stage_seconds_bucket{job=\"spring\",service=\"ai\",outcome=\"success\"}[$__rate_interval])))",
+          "legendFormat": "{{stage}} p50"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(ai_chatbot_stage_seconds_bucket{job=\"spring\",service=\"ai\",outcome=\"failure\"}[$__rate_interval])))",
+          "legendFormat": "{{stage}} 실패 p95"
+        }
+      ]
+    },
+    {
+      "type": "row",
       "id": 8,
       "title": "커넥션 · 스레드 · DB",
       "collapsed": false,
@@ -491,7 +786,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 25
+        "y": 34
       },
       "panels": []
     },
@@ -508,7 +803,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 26
+        "y": 35
       },
       "fieldConfig": {
         "defaults": {
@@ -582,7 +877,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 26
+        "y": 35
       },
       "fieldConfig": {
         "defaults": {
@@ -638,7 +933,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 34
+        "y": 43
       },
       "fieldConfig": {
         "defaults": {
@@ -694,7 +989,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 34
+        "y": 43
       },
       "fieldConfig": {
         "defaults": {
@@ -750,7 +1045,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 42
+        "y": 51
       },
       "fieldConfig": {
         "defaults": {
@@ -815,7 +1110,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 42
+        "y": 51
       },
       "fieldConfig": {
         "defaults": {
@@ -867,7 +1162,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 50
+        "y": 59
       },
       "panels": []
     },
@@ -884,7 +1179,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 51
+        "y": 60
       },
       "fieldConfig": {
         "defaults": {
@@ -941,7 +1236,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 51
+        "y": 60
       },
       "fieldConfig": {
         "defaults": {
@@ -1013,7 +1308,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 59
+        "y": 68
       },
       "fieldConfig": {
         "defaults": {
@@ -1078,7 +1373,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 59
+        "y": 68
       },
       "fieldConfig": {
         "defaults": {
@@ -1151,7 +1446,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 67
+        "y": 76
       },
       "fieldConfig": {
         "defaults": {
@@ -1207,7 +1502,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 67
+        "y": 76
       },
       "fieldConfig": {
         "defaults": {
@@ -1263,7 +1558,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 75
+        "y": 84
       },
       "fieldConfig": {
         "defaults": {
@@ -1319,7 +1614,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 75
+        "y": 84
       },
       "fieldConfig": {
         "defaults": {
@@ -1371,7 +1666,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 83
+        "y": 92
       },
       "panels": []
     },
@@ -1387,7 +1682,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 84
+        "y": 93
       },
       "options": {
         "showTime": true,

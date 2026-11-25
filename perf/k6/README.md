@@ -9,6 +9,8 @@
 | `concurrent.js` | 같은 상품 하나를 50명이 동시에 주문 × 10라운드, 끝나면 `perf/data/check-concurrent.sql`로 DB 확인 | 정합성 (1명만 결제되는가) |
 | `mypage.js` | 로그인한 구매자 · 판매자가 내 주문 · 판매 주문 · 정산 목록 첫 페이지 | 인덱스 비교 (`bulk-orders.sql` → `add-indexes.sql` 전후) |
 | `search.js` | 키워드 검색만 (`browse.js`의 검색 요청, 검색어 = 품종 이름), `search-steps.sh`가 초당 요청 수 단계마다 따로 실행 (#571) | LIKE vs OpenSearch (`-e RPS= -e DURATION=`) |
+| `search-stages.js` | 상품 키워드 검색(`-e TARGET=product`) 또는 품종 의미 검색(`-e TARGET=species`)을 분당 고정 개수로, 입력은 `lib/search-stages-data.js` (#634) | 단계별 시간 (낮은 부하, `-e RPM= -e DURATION=`) |
+| `chatbot.js` | 회원 여러 명이 #303 대표 질문 18개를 7초 간격으로 (회원당 1분 10회 제한 안) (#634) | 단계별 시간 (`-e MEMBERS=3 -e GAP=7`) |
 
 결과 해석: 단계별 표는 `python -I perf/analysis/stage_report.py --start <run.sh가 찍은 시작 시각> --steps 10,20,40 --hold 120 --ramp 10` (Prometheus에서 단계마다 서버 처리량 · p95 · CPU · Hikari · 힙 등을 뽑는다). setup(미리 로그인)이 있는 스크립트는 시작 시각에 setup 시간(약 20초)을 더한다.
 

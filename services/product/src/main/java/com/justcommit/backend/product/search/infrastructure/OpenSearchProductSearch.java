@@ -106,7 +106,7 @@ public class OpenSearchProductSearch implements ProductKeywordSearch {
         SearchResponse<ProductDocument> response = execute(request);
         List<Long> ids = response.hits().hits().stream().map(hit -> Long.valueOf(hit.id())).toList();
         long total = response.hits().total() == null ? ids.size() : response.hits().total().value();
-        return new Result(ids, total);
+        return new Result(ids, total, response.took());
     }
 
     private SearchResponse<ProductDocument> execute(SearchRequest request) {
