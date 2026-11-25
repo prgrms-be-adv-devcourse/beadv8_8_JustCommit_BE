@@ -9,6 +9,7 @@ import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
+import com.justcommit.backend.member.withdrawal.application.RejoinRestriction;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -53,6 +55,9 @@ class SocialLoginServiceTest {
 
   @Mock
   private KakaoUnlinkReceiptRepository unlinkReceiptRepository;
+
+  @Mock
+  private RejoinRestriction rejoinRestriction;
 
   @InjectMocks
   private SocialLoginService socialLoginService;
@@ -97,6 +102,8 @@ class SocialLoginServiceTest {
       assertThat(login.refreshToken()).isEqualTo("refresh-token");
     });
     verify(jwtProvider, never()).createSignupToken(anyString(), anyString(), anyString());
+    // 기존 회원은 재가입 판정을 하지 않음 (#611은 신규 판정에만)
+    verify(rejoinRestriction, never()).checkEmail(anyString());
   }
 
   @Test
@@ -152,6 +159,26 @@ class SocialLoginServiceTest {
       assertThat(newMember.signupToken()).isEqualTo("signup-token");
       assertThat(newMember.expiresIn()).isEqualTo(600);
     });
+    verify(refreshTokenIssuer, never()).issue(anyLong(), anyInt());
+    verify(rejoinRestriction).checkEmail("user@kakao.com");
+  }
+
+  @Test
+  @DisplayName("신규 회원이 30일 안에 탈퇴한 이메일이면 REJOIN_RESTRICTED_EMAIL, 가입 토큰 · Access · Refresh 발급 없음 (#611)")
+  void newMemberRejoinRestricted() {
+    given(memberLocker.lockByProvider(Provider.KAKAO, "123"))
+            .willReturn(Optional.empty());
+    given(memberRepository.existsByEmail("user@kakao.com")).willReturn(false);
+    willThrow(new BusinessException(MemberErrorCode.REJOIN_RESTRICTED_EMAIL))
+            .given(rejoinRestriction).checkEmail("user@kakao.com");
+
+    assertThatThrownBy(() -> socialLoginService.login(
+            new SocialLoginCommand(Provider.KAKAO, "123", "User@Kakao.com")))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MemberErrorCode.REJOIN_RESTRICTED_EMAIL);
+    verify(jwtProvider, never()).createSignupToken(anyString(), anyString(), anyString());
+    verify(jwtProvider, never()).createAccessToken(anyLong(), anyString(), any());
     verify(refreshTokenIssuer, never()).issue(anyLong(), anyInt());
   }
 
