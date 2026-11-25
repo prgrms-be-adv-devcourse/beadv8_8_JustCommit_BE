@@ -15,6 +15,7 @@ import com.justcommit.backend.member.unlink.infrastructure.mail.KakaoUnlinkNotic
 import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
 import com.justcommit.backend.member.withdrawal.application.WithdrawalCheckService;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -31,14 +32,19 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
@@ -46,6 +52,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
@@ -71,6 +78,8 @@ class KakaoReloginWithdrawalHeldIntegrationTest {
 
   private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
+  // 경합 테스트의 대기 한도: 넘으면 실패
+  private static final Duration WAIT = Duration.ofSeconds(10);
   private static final String BLOCK = """
       {"hasWithdrawalBlocker": true, "blockingReasons": ["ACTIVE_BUYER_ORDER"], "details": {"activeBuyerOrderCount": 1}}""";
 
@@ -101,9 +110,25 @@ class KakaoReloginWithdrawalHeldIntegrationTest {
   @MockitoBean KakaoUnlinkNoticeMailSender noticeMailSender;
 
   private final List<Long> memberIds = new ArrayList<>();
+  // 경합 테스트에서 작업 스레드를 멈춰 두는 래치. 테스트가 실패해도 정리 때 모두 풀어 준다
+  private final List<CountDownLatch> holds = new CopyOnWriteArrayList<>();
+  private ExecutorService executor;
+
+  @BeforeEach
+  void setUp() {
+    executor = Executors.newCachedThreadPool();
+    holds.clear();
+  }
 
   @AfterEach
-  void cleanUp() {
+  void cleanUp() throws InterruptedException {
+    // 실패해도 멈춘 작업을 풀고 → 작업 종료를 확인한 뒤 → 데이터 정리
+    holds.forEach(CountDownLatch::countDown);
+    executor.shutdown();
+    if (!executor.awaitTermination(WAIT.toSeconds(), TimeUnit.SECONDS)) {
+      executor.shutdownNow();
+      executor.awaitTermination(WAIT.toSeconds(), TimeUnit.SECONDS);
+    }
     jdbcTemplate.update("delete from member_kakao_unlink_receipt");
     for (Long id : memberIds) {
       jdbcTemplate.update("delete from member_token_revocation where member_id = ?", id);
@@ -220,37 +245,45 @@ class KakaoReloginWithdrawalHeldIntegrationTest {
     processor.process(processor.claimNext().orElseThrow()); // PENDING → INACTIVATED
     KakaoUnlinkProcessor.Claim decide = processor.claimNext().orElseThrow();
 
-    // 처리기: 처리 기록 지정(회원 잠금 풀림) → 3곳 확인에서 재로그인이 기록을 읽을 때까지 멈춤 → BLOCKED 저장
+    // 처리기: 처리 기록 지정(회원 잠금 풀림) → 3곳 확인에서 멈춤. 풀리면 BLOCKED를 저장하려고 기록을 잠그려 함
     CountDownLatch checkEntered = new CountDownLatch(1);
-    CountDownLatch loginRead = new CountDownLatch(1);
+    CountDownLatch checkRelease = hold();
     doAnswer(invocation -> {
       checkEntered.countDown();
-      loginRead.await(5, TimeUnit.SECONDS);
+      awaitRelease(checkRelease);
       return invocation.callRealMethod();
     }).when(withdrawalCheckService).check(member.getId());
-    Thread worker = new Thread(() -> processor.process(decide));
-    worker.start();
-    assertThat(checkEntered.await(5, TimeUnit.SECONDS)).isTrue();
+    Future<?> worker = run("processor", () -> {
+      processor.process(decide);
+      return null;
+    });
+    assertThat(checkEntered.await(WAIT.toSeconds(), TimeUnit.SECONDS)).as("처리기가 3곳 확인에 도착").isTrue();
 
-    // 재로그인: 처리 기록을 읽은 뒤 무효화하기 직전에 처리기를 보내고, 처리기가 끝날 수 있으면(최대 2초) 기다림
-    AtomicReference<String> statusBeforeInvalidate = new AtomicReference<>();
+    // 재로그인: 처리 기록을 잠그고 읽은 뒤, 무효화하기 직전에 트랜잭션을 연 채 멈춤
+    CountDownLatch loginRead = new CountDownLatch(1);
+    CountDownLatch loginRelease = hold();
+    AtomicInteger loginPid = new AtomicInteger();
     doAnswer(invocation -> {
+      loginPid.set(currentBackendPid());
       loginRead.countDown();
-      worker.join(2000);
-      statusBeforeInvalidate.set(status(receiptId));
+      awaitRelease(loginRelease);
       // 저장소는 인터페이스 프록시라 callRealMethod 대신 spy의 기본 응답(실제 빈으로 위임)을 그대로 씀
       return mockingDetails(receiptRepository).getMockCreationSettings().getDefaultAnswer().answer(invocation);
     }).when(receiptRepository).invalidatePending(anyString(), any());
+    Future<Boolean> login = run("login", () -> login("9400000006"));
+    assertThat(loginRead.await(WAIT.toSeconds(), TimeUnit.SECONDS)).as("재로그인이 처리 기록을 읽음").isTrue();
 
-    boolean held = login("9400000006");
-    worker.join(10_000);
-
+    // 처리기를 보내고, 처리기의 기록 잠금 조회가 재로그인 세션에 실제로 막힌 것을 확인한 뒤에만 재로그인을 진행
+    checkRelease.countDown();
+    awaitReceiptLockWaitBlockedBy(loginPid.get());
     // 잠금이 없으면 이 사이에 NOTICE_PENDING이 저장돼, 안내 없이 보류가 무효화되고 대기 메일만 취소됐다
-    assertThat(statusBeforeInvalidate.get())
+    assertThat(status(receiptId))
         .as("재로그인이 끝날 때까지 처리기는 BLOCKED를 저장하지 못함")
         .isEqualTo("INACTIVATED");
-    assertThat(held).isFalse();
-    assertThat(worker.isAlive()).isFalse();
+    loginRelease.countDown();
+
+    assertThat(result(login)).isFalse();
+    result(worker);
     assertMember(member, MemberStatus.ACTIVE);
     assertThat(status(receiptId)).isEqualTo("INVALIDATED");
     processor.processDue();
@@ -267,9 +300,11 @@ class KakaoReloginWithdrawalHeldIntegrationTest {
     processor.process(processor.claimNext().orElseThrow()); // PENDING → INACTIVATED
     KakaoUnlinkProcessor.Claim decide = processor.claimNext().orElseThrow();
 
-    // 처리기: 3곳 확인(BLOCKED) 뒤 결과를 반영하려고 기록을 잠근 상태에서 잠시 멈춤 (그동안 재로그인이 같은 기록을 잠그려 함)
+    // 처리기: 3곳 확인(BLOCKED) 뒤 결과를 반영하려고 기록을 잠근 상태에서 트랜잭션을 연 채 멈춤
     CountDownLatch checked = new CountDownLatch(1);
     CountDownLatch locked = new CountDownLatch(1);
+    CountDownLatch workerRelease = hold();
+    AtomicInteger workerPid = new AtomicInteger();
     doAnswer(invocation -> {
       Object result = invocation.callRealMethod();
       checked.countDown();
@@ -277,21 +312,26 @@ class KakaoReloginWithdrawalHeldIntegrationTest {
     }).when(withdrawalCheckService).check(member.getId());
     doAnswer(invocation -> {
       Object receipt = mockingDetails(receiptRepository).getMockCreationSettings().getDefaultAnswer().answer(invocation);
-      if (checked.getCount() == 0) {
+      if (checked.getCount() == 0) { // 3곳 확인 전 처리 기록 지정 때의 잠금은 그냥 지나감
+        workerPid.set(currentBackendPid());
         locked.countDown();
-        Thread.sleep(1000);
+        awaitRelease(workerRelease);
       }
       return receipt;
     }).when(receiptRepository).findByIdForUpdate(decide.id());
-    Thread worker = new Thread(() -> processor.process(decide));
-    worker.start();
-    assertThat(locked.await(5, TimeUnit.SECONDS)).isTrue();
+    Future<?> worker = run("processor", () -> {
+      processor.process(decide);
+      return null;
+    });
+    assertThat(locked.await(WAIT.toSeconds(), TimeUnit.SECONDS)).as("처리기가 기록을 잠금").isTrue();
 
-    boolean held = login("9400000008");
-    worker.join(10_000);
+    // 재로그인의 기록 잠금 조회가 처리기 세션에 실제로 막힌 것을 확인한 뒤에만 처리기를 진행
+    Future<Boolean> login = run("login", () -> login("9400000008"));
+    awaitReceiptLockWaitBlockedBy(workerPid.get());
+    workerRelease.countDown();
 
-    assertThat(held).isTrue();
-    assertThat(worker.isAlive()).isFalse();
+    assertThat(result(login)).isTrue();
+    result(worker);
     assertMember(member, MemberStatus.ACTIVE);
     assertThat(status(receiptId)).isEqualTo("INVALIDATED");
     processor.processDue();
@@ -329,6 +369,53 @@ class KakaoReloginWithdrawalHeldIntegrationTest {
     assertMember(member, MemberStatus.ACTIVE);
     assertThat(status(receiptId)).isEqualTo("INVALIDATED");
     verify(noticeMailSender, times(1)).send(member.getEmail());
+  }
+
+  // holderPid 세션에 막혀 처리 기록 잠금 조회(select ... for update)에서 기다리는 세션이 생길 때까지 확인.
+  // 같은 행의 무효화(UPDATE) 대기는 세지 않는다: 잠금 없이 읽고 UPDATE에서만 기다리는 경우를 통과시키지 않기 위해
+  private void awaitReceiptLockWaitBlockedBy(int holderPid) throws InterruptedException {
+    long deadline = System.nanoTime() + WAIT.toNanos();
+    while (System.nanoTime() < deadline) {
+      Integer blocked = jdbcTemplate.queryForObject("""
+          select count(*) from pg_stat_activity
+           where wait_event_type = 'Lock' and ? = any(pg_blocking_pids(pid))
+             and query ilike 'select%member_kakao_unlink_receipt%'
+          """, Integer.class, holderPid);
+      if (blocked != null && blocked > 0) {
+        return;
+      }
+      Thread.sleep(20);
+    }
+    fail("세션 %d에 막혀 처리 기록 잠금을 기다리는 조회가 없습니다.", holderPid);
+  }
+
+  private int currentBackendPid() {
+    Integer pid = jdbcTemplate.queryForObject("select pg_backend_pid()", Integer.class);
+    return pid == null ? -1 : pid;
+  }
+
+  private CountDownLatch hold() {
+    CountDownLatch latch = new CountDownLatch(1);
+    holds.add(latch);
+    return latch;
+  }
+
+  // 작업 스레드 안에서 해제 신호를 기다린다. 오지 않으면 예외로 그 작업을 끝낸다 (트랜잭션 롤백 · 잠금 해제)
+  private static void awaitRelease(CountDownLatch release) throws InterruptedException {
+    if (!release.await(WAIT.toSeconds(), TimeUnit.SECONDS)) {
+      throw new IllegalStateException("해제 신호가 오지 않았습니다.");
+    }
+  }
+
+  private <T> Future<T> run(String name, Callable<T> task) {
+    return executor.submit(() -> {
+      Thread.currentThread().setName(name);
+      return task.call();
+    });
+  }
+
+  private static <T> T result(Future<T> future) throws Exception {
+    return future.get(WAIT.toSeconds(), TimeUnit.SECONDS);
   }
 
   private boolean login(String providerId) {
