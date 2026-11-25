@@ -18,6 +18,9 @@ import com.justcommit.backend.market.review.domain.Review;
 import com.justcommit.backend.market.review.domain.ReviewErrorCode;
 import com.justcommit.backend.market.review.domain.ReviewTag;
 import com.justcommit.backend.market.review.presentation.MyReviewListRequest;
+import com.justcommit.backend.market.review.presentation.OrderReviewStatusResponse;
+import com.justcommit.backend.market.review.presentation.OrderReviewStatusResponse.SellerOrderReview;
+import com.justcommit.backend.market.review.presentation.SellerOrderReviewStatus;
 import com.justcommit.backend.market.review.presentation.MyReviewResponse;
 import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse;
 import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse.RatingCount;
@@ -354,9 +357,140 @@ class ReviewReadServiceIntegrationTest {
       deadline.minusNanos(400))).isNotNull();
   }
 
+  @Test
+  @DisplayName("주문별 리뷰 상태 (#644): 6가지 상태와 우선순위, 삭제한 리뷰는 내용 없음, 건수 · 다음 판매자, 같은 기준 시각의 #585 목록과 WRITABLE이 같다")
+  void orderReviewStatus() {
+    replica(30L, "초록손", false);
+    List<Long> ids = multiSellerOrder(10L,
+      new Seller(30L, WRITABLE_NOW.minusHours(1), "CONFIRMED"),            // 0 작성 가능
+      new Seller(31L, null, "NORMAL"),                                   // 1 확정 전
+      new Seller(32L, WRITABLE_NOW.minusHours(80), "CONFIRMED"),           // 2 리뷰 씀 (기한이 지나도 작성 완료)
+      new Seller(33L, WRITABLE_NOW.minusHours(100), "RETURNED", "RETURNED"), // 3 전부 반품 + 기한 지남 → 확정 상품 없음
+      new Seller(34L, null, "CANCELLED", "CANCELLED"),                   // 4 전부 취소 완료 → 확정 상품 없음
+      new Seller(35L, null, "CANCELLED", "CANCEL_PROCESSING"),           // 5 취소 처리 중 → 확정 전
+      new Seller(36L, WRITABLE_NOW.minusHours(72), "CONFIRMED"),           // 6 정확히 72시간 → 기간 지남
+      new Seller(37L, WRITABLE_NOW.minusHours(2), "CONFIRMED"),            // 7 리뷰 삭제 (기간 안이어도 삭제함)
+      new Seller(38L, WRITABLE_NOW.minusHours(71), "CONFIRMED", "CANCELLED")); // 8 작성 가능, 마감이 가장 가까움
+    long writtenId = review(ids.get(2), 10L, 32L, "4.5", WRITABLE_NOW.minusHours(79), null,
+      ReviewTag.HEALTHY_ARRIVAL, ReviewTag.AS_DESCRIBED);
+    review(ids.get(7), 10L, 37L, "1.0", WRITABLE_NOW.minusHours(1), WRITABLE_NOW.minusMinutes(30), ReviewTag.GOOD_PRICE);
+    long orderId = orderIdOf(ids.get(0));
+
+    OrderReviewStatusResponse response = reviewReadService.orderReviewStatus(10L, orderId, WRITABLE_NOW);
+
+    assertThat(response.orderId()).isEqualTo(orderId);
+    assertThat(response.sellerOrders()).extracting(SellerOrderReview::sellerOrderId).containsExactlyElementsOf(ids);
+    assertThat(response.sellerOrders()).extracting(SellerOrderReview::reviewStatus).containsExactly(
+      SellerOrderReviewStatus.WRITABLE, SellerOrderReviewStatus.NOT_CONFIRMED, SellerOrderReviewStatus.WRITTEN,
+      SellerOrderReviewStatus.NO_CONFIRMED_ITEM, SellerOrderReviewStatus.NO_CONFIRMED_ITEM,
+      SellerOrderReviewStatus.NOT_CONFIRMED, SellerOrderReviewStatus.EXPIRED, SellerOrderReviewStatus.DELETED,
+      SellerOrderReviewStatus.WRITABLE);
+    SellerOrderReview writable = response.sellerOrders().get(0);
+    assertThat(writable.sellerNickname()).isEqualTo("초록손");
+    assertThat(writable.productNames()).containsExactly("상품0");
+    assertThat(writable.writableUntil()).isEqualTo(WRITABLE_NOW.plusHours(71));
+    assertThat(writable.review()).isNull();
+    assertThat(response.sellerOrders().get(1).writableUntil()).isNull(); // 확정 전
+    SellerOrderReview written = response.sellerOrders().get(2);
+    assertThat(written.review().reviewId()).isEqualTo(writtenId);
+    assertThat(written.review().rating()).isEqualByComparingTo("4.5");
+    assertThat(written.review().content()).isEqualTo("잎이 싱싱하고 포장이 꼼꼼했어요");
+    assertThat(written.review().tags()).containsExactly(ReviewTag.AS_DESCRIBED, ReviewTag.HEALTHY_ARRIVAL);
+    assertThat(written.review().createdAt()).isEqualTo(WRITABLE_NOW.minusHours(79));
+    assertThat(response.sellerOrders().get(7).review()).isNull(); // 삭제한 리뷰는 ID · 본문 · 태그를 내보내지 않음
+    assertThat(response.sellerOrders().get(8).productNames()).containsExactly("상품0"); // 취소 상품은 빠짐
+
+    assertThat(response.summary().targetCount()).isEqualTo(5); // 작성 가능 2 · 작성 완료 1 · 삭제함 1 · 기간 지남 1
+    assertThat(response.summary().writtenCount()).isEqualTo(2);
+    assertThat(response.summary().writableCount()).isEqualTo(2);
+    assertThat(response.summary().nextWritable().sellerOrderId()).isEqualTo(ids.get(8));
+    assertThat(response.summary().nextWritable().writableUntil()).isEqualTo(WRITABLE_NOW.plusHours(1));
+
+    // 같은 기준 시각의 작성 가능 목록(#585)과 WRITABLE이 같다
+    List<Long> writableIds = response.sellerOrders().stream()
+      .filter(sellerOrder -> sellerOrder.reviewStatus() == SellerOrderReviewStatus.WRITABLE)
+      .map(SellerOrderReview::sellerOrderId).toList();
+    assertThat(reviewReadService.writableSellerOrders(10L, WRITABLE_NOW))
+      .extracting(WritableReviewResponse::sellerOrderId).containsExactlyInAnyOrderElementsOf(writableIds);
+  }
+
+  @Test
+  @DisplayName("주문별 리뷰 상태: 마감 400ns 전은 WRITABLE이고 #582 작성이 통과, 정확히 72시간은 EXPIRED이고 #585 목록에서 빠지며 작성은 409")
+  void orderReviewStatusBoundaryMatchesCreateAndWritable() {
+    LocalDateTime confirmedAt = LocalDateTime.of(2026, 11, 21, 12, 0, 0, 123_456_000);
+    List<Long> ids = multiSellerOrder(10L, new Seller(30L, confirmedAt, "CONFIRMED"), new Seller(31L, confirmedAt, "CONFIRMED"));
+    long orderId = orderIdOf(ids.get(0));
+    LocalDateTime deadline = confirmedAt.plus(Review.WRITE_PERIOD);
+
+    LocalDateTime almost = deadline.minusNanos(400);
+    assertThat(reviewReadService.orderReviewStatus(10L, orderId, almost).sellerOrders())
+      .extracting(SellerOrderReview::reviewStatus).containsOnly(SellerOrderReviewStatus.WRITABLE);
+    assertThat(reviewReadService.writableSellerOrders(10L, almost)).extracting(WritableReviewResponse::sellerOrderId)
+      .containsExactlyInAnyOrderElementsOf(ids);
+    assertThat(reviewService.create(10L, ids.get(0), new BigDecimal("4.5"), "잎이 싱싱하고 포장이 꼼꼼했어요", List.of(), almost))
+      .isNotNull();
+
+    OrderReviewStatusResponse atDeadline = reviewReadService.orderReviewStatus(10L, orderId, deadline);
+    assertThat(atDeadline.sellerOrders()).extracting(SellerOrderReview::reviewStatus)
+      .containsExactly(SellerOrderReviewStatus.WRITTEN, SellerOrderReviewStatus.EXPIRED);
+    assertThat(atDeadline.summary().writableCount()).isZero();
+    assertThat(atDeadline.summary().nextWritable()).isNull();
+    assertThat(reviewReadService.writableSellerOrders(10L, deadline)).isEmpty();
+    assertCreateRejected(ids.get(1), deadline, ReviewErrorCode.REVIEW_PERIOD_EXPIRED);
+  }
+
+  @Test
+  @DisplayName("주문별 리뷰 상태: 없는 주문과 다른 구매자의 주문은 같은 404 REVIEW_ORDER_NOT_FOUND")
+  void orderReviewStatusNotFound() {
+    List<Long> ids = multiSellerOrder(99L, new Seller(30L, WRITABLE_NOW.minusHours(1), "CONFIRMED"));
+    long othersOrderId = orderIdOf(ids.get(0));
+
+    for (long orderId : new long[] {othersOrderId, othersOrderId + 1_000}) {
+      assertThatThrownBy(() -> reviewReadService.orderReviewStatus(10L, orderId, WRITABLE_NOW))
+        .isInstanceOfSatisfying(BusinessException.class,
+          e -> assertThat(e.getErrorCode()).isEqualTo(ReviewErrorCode.REVIEW_ORDER_NOT_FOUND));
+    }
+  }
+
+  private record Seller(long sellerId, LocalDateTime confirmedAt, String... itemStatuses) {
+  }
+
+  // 주문 하나에 판매자 주문 여러 개. 주문상품 이름은 "상품{i}", 상태 · 구매 확정 시각은 DB에 직접 넣는다
+  private List<Long> multiSellerOrder(long buyerId, Seller... sellers) {
+    Orders order = new Orders("ORD-RVS-" + System.nanoTime(), buyerId, "구매자", "01012345678", "12345", "서울시", null,
+      Arrays.stream(sellers).mapToInt(seller -> seller.itemStatuses().length).sum());
+    List<SellerOrder> sellerOrders = new ArrayList<>();
+    List<List<OrdersItem>> items = new ArrayList<>();
+    for (Seller seller : sellers) {
+      SellerOrder sellerOrder = new SellerOrder(order, seller.sellerId());
+      List<OrdersItem> sellerItems = new ArrayList<>();
+      for (int i = 0; i < seller.itemStatuses().length; i++) {
+        sellerItems.add(new OrdersItem(sellerOrder, 100L + i, "상품" + i, new BigDecimal("10000")));
+      }
+      sellerOrder.addItems(sellerItems);
+      sellerOrders.add(sellerOrder);
+      items.add(sellerItems);
+    }
+    order.addSellerOrders(sellerOrders);
+    ordersRepository.save(order);
+    for (int s = 0; s < sellers.length; s++) {
+      for (int i = 0; i < sellers[s].itemStatuses().length; i++) {
+        jdbcTemplate.update("update orders_item set status = ? where id = ?", sellers[s].itemStatuses()[i],
+          items.get(s).get(i).getId());
+      }
+      jdbcTemplate.update("update seller_order set confirmed_at = ? where id = ?", sellers[s].confirmedAt(),
+        sellerOrders.get(s).getId());
+    }
+    return sellerOrders.stream().map(SellerOrder::getId).toList();
+  }
+
   private void assertCreateRejected(long sellerOrderId, ReviewErrorCode errorCode) {
+    assertCreateRejected(sellerOrderId, WRITABLE_NOW, errorCode);
+  }
+
+  private void assertCreateRejected(long sellerOrderId, LocalDateTime now, ReviewErrorCode errorCode) {
     assertThatThrownBy(() -> reviewService.create(10L, sellerOrderId, new BigDecimal("4.5"), "잎이 싱싱하고 포장이 꼼꼼했어요",
-      List.of(), WRITABLE_NOW))
+      List.of(), now))
       .isInstanceOfSatisfying(BusinessException.class, e -> assertThat(e.getErrorCode()).isEqualTo(errorCode));
   }
 

@@ -1,6 +1,7 @@
 package com.justcommit.backend.market.order.infrastructure;
 
 import com.justcommit.backend.market.OrderItemStatus;
+import com.justcommit.backend.market.OrderReviewTarget;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.ReviewableSellerOrder;
 import com.justcommit.backend.market.order.domain.SellerOrder;
@@ -111,4 +112,21 @@ public interface SellerOrderRepository extends JpaRepository<SellerOrder, Long> 
     List<ReviewableSellerOrder> findReviewable(@Param("buyerId") Long buyerId,
                                                @Param("confirmedAfter") LocalDateTime confirmedAfter,
                                                @Param("status") OrderItemStatus status);
+
+    // 주문 상세의 판매자별 리뷰 상태용 (#644): 구매자 본인의 주문만, 판매자 주문 id 순.
+    // 남의 주문이면 없는 주문과 같이 빈 목록
+    @Query("""
+            select new com.justcommit.backend.market.OrderReviewTarget(s.id, s.sellerId, s.confirmedAt,
+                case when exists (select 1 from OrdersItem i where i.sellerOrder = s and i.status = :confirmed)
+                    then true else false end,
+                case when not exists (select 1 from OrdersItem i where i.sellerOrder = s and i.status <> :cancelled)
+                    then true else false end)
+            from SellerOrder s join s.order o
+            where o.id = :orderId and o.buyerId = :buyerId
+            order by s.id
+            """)
+    List<OrderReviewTarget> findOrderReviewTargets(@Param("buyerId") Long buyerId,
+                                                   @Param("orderId") Long orderId,
+                                                   @Param("confirmed") OrderItemStatus confirmed,
+                                                   @Param("cancelled") OrderItemStatus cancelled);
 }

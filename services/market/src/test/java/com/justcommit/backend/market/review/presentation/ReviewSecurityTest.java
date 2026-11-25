@@ -100,6 +100,17 @@ class ReviewSecurityTest {
   }
 
   @Test
+  @DisplayName("토큰 없이 주문별 리뷰 상태는 401, 로그인하면 토큰의 회원 번호로 서비스까지 간다 (#644)")
+  void orderReviewStatusRequiresLogin() throws Exception {
+    mockMvc.perform(get("/api/v1/reviews/orders/1")).andExpect(status().isUnauthorized());
+    verify(reviewReadService, never()).orderReviewStatus(any(), any());
+
+    mockMvc.perform(get("/api/v1/reviews/orders/1").header(HttpHeaders.AUTHORIZATION, "Bearer " + MEMBER_TOKEN))
+      .andExpect(status().isOk());
+    verify(reviewReadService).orderReviewStatus(MEMBER_ID, 1L);
+  }
+
+  @Test
   @DisplayName("토큰 없이 작성 가능한 주문 목록은 401, 로그인하면 토큰의 회원 번호로 서비스까지 간다 (#585)")
   void writableRequiresLogin() throws Exception {
     mockMvc.perform(get("/api/v1/reviews/writable")).andExpect(status().isUnauthorized());

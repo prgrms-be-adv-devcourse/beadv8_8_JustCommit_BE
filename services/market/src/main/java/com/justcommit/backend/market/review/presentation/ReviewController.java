@@ -72,6 +72,16 @@ public class ReviewController {
     return ApiResponse.ok("작성 가능한 주문을 조회했습니다.", reviewReadService.writableSellerOrders(member.memberId()));
   }
 
+  // 주문 상세의 판매자별 리뷰 상태 (#644). 로그인 필요, 구매자 본인의 주문만 (없는 주문 · 남의 주문은 같은 404)
+  @GetMapping("/orders/{orderId:[0-9]+}")
+  public ApiResponse<OrderReviewStatusResponse> orderReviewStatus(
+    @AuthenticationPrincipal AuthMember member,
+    @PathVariable Long orderId
+  ) {
+    return ApiResponse.ok("주문의 판매자별 리뷰 상태를 조회했습니다.",
+      reviewReadService.orderReviewStatus(member.memberId(), orderId));
+  }
+
   // 리뷰 삭제 (#584). 로그인 필요. 숫자 id만 받아 reviews/me · summary · writable과 겹치지 않는다
   @DeleteMapping("/{reviewId:[0-9]+}")
   public ApiResponse<Void> delete(

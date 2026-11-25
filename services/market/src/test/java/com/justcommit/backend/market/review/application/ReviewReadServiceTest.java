@@ -1,14 +1,19 @@
 package com.justcommit.backend.market.review.application;
 
+import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.market.OrderQuery;
+import com.justcommit.backend.market.OrderReviewTarget;
 import com.justcommit.backend.market.ReviewableSellerOrder;
 import com.justcommit.backend.market.client.member.MemberQuery;
 import com.justcommit.backend.market.review.domain.Review;
+import com.justcommit.backend.market.review.domain.ReviewErrorCode;
 import com.justcommit.backend.market.review.domain.ReviewTag;
 import com.justcommit.backend.market.review.infrastructure.ReviewRepository;
 import com.justcommit.backend.market.review.infrastructure.ReviewRepository.RatingCountRow;
 import com.justcommit.backend.market.review.infrastructure.ReviewRepository.ReviewTagRow;
+import com.justcommit.backend.market.review.presentation.OrderReviewStatusResponse;
 import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse;
+import com.justcommit.backend.market.review.presentation.SellerOrderReviewStatus;
 import com.justcommit.backend.market.review.presentation.ReviewSummaryResponse.RatingCount;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -154,6 +159,71 @@ class ReviewReadServiceTest {
 
     verify(orderQuery, never()).getConfirmedProductNames(any());
     verify(memberQuery, never()).getNicknames(any());
+  }
+
+  @Test
+  @DisplayName("주문별 리뷰 상태 판정 (#644): 리뷰(삭제 포함) → 확정 상품 없음 · 확정 전 → 기간 지남 → 작성 가능 순으로 처음 맞는 것")
+  void reviewStatusPrecedence() {
+    Review deleted = savedReview(NOW.minusHours(1), NOW);
+    Review written = savedReview(NOW.minusHours(100), null);
+
+    // 리뷰가 있으면 주문 상태 · 기한보다 먼저
+    assertThat(status(target(NOW.minusHours(1), true, false), deleted)).isEqualTo(SellerOrderReviewStatus.DELETED);
+    assertThat(status(target(NOW.minusHours(100), true, false), written)).isEqualTo(SellerOrderReviewStatus.WRITTEN);
+    // 확정 시각 없음: 전부 취소 완료면 확정 상품 없음, 그 밖(취소 처리 중 포함)은 확정 전
+    assertThat(status(target(null, false, true), null)).isEqualTo(SellerOrderReviewStatus.NO_CONFIRMED_ITEM);
+    assertThat(status(target(null, false, false), null)).isEqualTo(SellerOrderReviewStatus.NOT_CONFIRMED);
+    // 전부 반품은 기한이 지났어도 확정 상품 없음
+    assertThat(status(target(NOW.minusHours(100), false, false), null)).isEqualTo(SellerOrderReviewStatus.NO_CONFIRMED_ITEM);
+    // 정확히 72시간째부터 기간 지남, 그 전은 작성 가능
+    assertThat(status(target(NOW.minus(Review.WRITE_PERIOD), true, false), null)).isEqualTo(SellerOrderReviewStatus.EXPIRED);
+    assertThat(status(target(NOW.minus(Review.WRITE_PERIOD).plusNanos(400), true, false), null))
+      .isEqualTo(SellerOrderReviewStatus.WRITABLE);
+  }
+
+  @Test
+  @DisplayName("주문별 리뷰 상태: 마감이 같으면 sellerOrderId가 작은 판매자 주문이 다음 판매자, 작성 가능이 없으면 null")
+  void nextWritableTieBreakAndNull() {
+    when(orderQuery.findOrderReviewTargets(10L, 1L)).thenReturn(List.of(
+      new OrderReviewTarget(50L, 21L, NOW.minusHours(1), true, false),
+      new OrderReviewTarget(40L, 20L, NOW.minusHours(1), true, false)));
+    when(orderQuery.findOrderReviewTargets(10L, 2L)).thenReturn(List.of(
+      new OrderReviewTarget(60L, 20L, null, false, false)));
+    when(reviewRepository.findBySellerOrderIdIn(any())).thenReturn(List.of());
+    when(orderQuery.getConfirmedProductNames(any())).thenReturn(Map.of());
+    when(memberQuery.getNicknames(any())).thenReturn(Map.of());
+
+    OrderReviewStatusResponse.Summary summary = reviewReadService.orderReviewStatus(10L, 1L, NOW).summary();
+    assertThat(summary.writableCount()).isEqualTo(2);
+    assertThat(summary.nextWritable().sellerOrderId()).isEqualTo(40L);
+
+    assertThat(reviewReadService.orderReviewStatus(10L, 2L, NOW).summary().nextWritable()).isNull();
+  }
+
+  @Test
+  @DisplayName("주문별 리뷰 상태: 판매자 주문이 없으면(없는 주문 · 남의 주문) 404이고 다른 조회를 하지 않는다")
+  void orderReviewStatusNotFound() {
+    when(orderQuery.findOrderReviewTargets(10L, 1L)).thenReturn(List.of());
+
+    assertThatThrownBy(() -> reviewReadService.orderReviewStatus(10L, 1L, NOW))
+      .isInstanceOfSatisfying(BusinessException.class,
+        e -> assertThat(e.getErrorCode()).isEqualTo(ReviewErrorCode.REVIEW_ORDER_NOT_FOUND));
+    verify(reviewRepository, never()).findBySellerOrderIdIn(any());
+  }
+
+  private static SellerOrderReviewStatus status(OrderReviewTarget target, Review review) {
+    return ReviewReadService.reviewStatus(target, review, NOW);
+  }
+
+  private static OrderReviewTarget target(LocalDateTime confirmedAt, boolean hasConfirmedItem, boolean allItemsCancelled) {
+    return new OrderReviewTarget(1L, SELLER_ID, confirmedAt, hasConfirmedItem, allItemsCancelled);
+  }
+
+  private static Review savedReview(LocalDateTime createdAt, LocalDateTime deletedAt) {
+    Review review = review(1L, 1L, 10L);
+    ReflectionTestUtils.setField(review, "createdAt", createdAt);
+    ReflectionTestUtils.setField(review, "deletedAt", deletedAt);
+    return review;
   }
 
   private static ReviewableSellerOrder candidate(long sellerOrderId, LocalDateTime confirmedAt) {

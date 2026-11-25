@@ -33,4 +33,8 @@ public interface OrderQuery {
     // 작성 기간 판단과 리뷰 유무는 review가 한다 (confirmedAfter는 후보를 넓게 줄이는 기준이라 경계 주문이 섞일 수 있다)
     List<ReviewableSellerOrder> findReviewableSellerOrders(Long buyerId, LocalDateTime confirmedAfter);
 
+    // 주문 상세의 판매자별 리뷰 상태용 판매자 주문 (#644). 구매자 본인의 주문만 판매자 주문 id 순으로,
+    // 없는 주문과 남의 주문은 빈 목록
+    List<OrderReviewTarget> findOrderReviewTargets(Long buyerId, Long orderId);
+
 }
