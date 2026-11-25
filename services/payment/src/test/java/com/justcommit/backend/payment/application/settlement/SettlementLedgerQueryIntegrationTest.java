@@ -16,6 +16,9 @@ import com.justcommit.backend.payment.domain.WalletType;
 import com.justcommit.backend.payment.infrastructure.repository.WalletRepository;
 import com.justcommit.backend.payment.infrastructure.repository.WalletTransactionRepository;
 import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.util.ArrayList;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +30,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -69,6 +73,36 @@ class SettlementLedgerQueryIntegrationTest {
     void cleanUp() {
         walletTransactionRepository.deleteAllInBatch();
         jdbcTemplate.update("delete from wallet where wallet_type = 'MEMBER'");
+    }
+
+    @Test
+    @DisplayName("정산 원장 조회 조건(ref_id, ref_type)에 맞는 인덱스가 있고, 조회가 그 인덱스를 쓸 수 있다 (V6)")
+    void ledgerQueryCanUseRefIndex() {
+        String indexDef = jdbcTemplate.queryForObject(
+                "select indexdef from pg_indexes where indexname = 'idx_wallet_transaction_ref_id_ref_type'",
+                String.class);
+        assertThat(indexDef).contains("wallet_transaction").contains("(ref_id, ref_type)");
+
+        // 테스트 테이블은 작아 그대로 두면 전체 읽기를 고르므로, 같은 연결에서 전체 읽기만 꺼 인덱스로 풀리는지 본다
+        List<String> plan = jdbcTemplate.execute((ConnectionCallback<List<String>>) connection -> {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("set enable_seqscan = off");
+                List<String> lines = new ArrayList<>();
+                try (ResultSet rs = statement.executeQuery("""
+                        explain select t.ref_id, t.ref_type, t.amount from wallet_transaction t
+                         where t.ref_type in ('SETTLEMENT', 'SETTLEMENT_FEE', 'SETTLEMENT_COLLECTION', 'SELLER_BURDEN')
+                           and t.ref_id in (1, 2, 3)
+                        """)) {
+                    while (rs.next()) {
+                        lines.add(rs.getString(1));
+                    }
+                } finally {
+                    statement.execute("reset enable_seqscan");
+                }
+                return lines;
+            }
+        });
+        assertThat(String.join("\n", plan)).contains("idx_wallet_transaction_ref_id_ref_type");
     }
 
     @Test

@@ -24,7 +24,8 @@ public interface WalletTransactionRepository extends JpaRepository<WalletTransac
 
     // 정산 원장 조회 (settlement 대사용). 지갑까지 조인해 쿼리 한 번으로 가져온다.
     // wallet_id 조건을 일부러 넣지 않는다: 판매자 · HOLDING · REVENUE가 아닌 예상 밖 지갑에 기록된 행도
-    // 대사가 찾아내야 하기 때문이다 (그래서 uk_wallet_transaction_ref(wallet_id, ...) 인덱스는 쓰이지 않는다)
+    // 대사가 찾아내야 하기 때문이다. 그래서 uk_wallet_transaction_ref(wallet_id, ...) 대신
+    // idx_wallet_transaction_ref_id_ref_type(ref_id, ref_type, V6)로 조회한다
     @Query("""
             select new com.justcommit.backend.payment.application.settlement.SettlementLedgerRow(
                 t.refId, w.id, w.walletType, w.memberId, t.refType, t.status, t.amount, t.refOccurredTime)
