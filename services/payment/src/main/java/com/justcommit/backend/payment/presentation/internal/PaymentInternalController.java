@@ -7,10 +7,14 @@ import com.justcommit.backend.common.exception.CommonErrorCode;
 import com.justcommit.backend.common.response.ApiResponse;
 import com.justcommit.backend.payment.application.PaymentResult;
 import com.justcommit.backend.payment.application.PaymentService;
+import com.justcommit.backend.payment.application.settlement.SettlementLedgerQueryService;
 import com.justcommit.backend.payment.application.withdrawal.WithdrawalCheckService;
 import com.justcommit.backend.payment.presentation.internal.dto.PaymentRequest;
+import com.justcommit.backend.payment.presentation.internal.dto.SettlementLedgerRequest;
+import com.justcommit.backend.payment.presentation.internal.dto.SettlementLedgerResponse;
 import com.justcommit.backend.payment.presentation.internal.dto.SettlementPayoutRequest;
 import com.justcommit.backend.payment.presentation.internal.dto.WithdrawalCheckResponse;
+import jakarta.validation.Valid;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +34,7 @@ public class PaymentInternalController {
 
     private final PaymentService paymentService;
     private final WithdrawalCheckService withdrawalCheckService;
+    private final SettlementLedgerQueryService settlementLedgerQueryService;
 
     // member가 탈퇴 전에 잔액 · 진행 중 충전 · 인출 · 미수금을 확인. 지갑이 없는 회원도 200 (차단 없음)
     @GetMapping("/payments/members/{memberId}/withdrawalCheck")
@@ -75,6 +80,14 @@ public class PaymentInternalController {
                 request.settlementId(), request.sellerId(), request.sellerOrderId(),
                 request.payoutAmount(), request.fee(), request.shippingFee(), request.sellerBurdenAmount());
         return ApiResponse.ok("정산금을 지급했습니다.");
+    }
+
+    // settlement 대사용 정산 원장 조회 (읽기 전용이라 Idempotency-Key 없음). settlementIds 1~100개, 아니면 400
+    @PostMapping("/settlementPayouts/ledgers")
+    public ApiResponse<SettlementLedgerResponse> findSettlementLedgers(
+            @Valid @RequestBody SettlementLedgerRequest request) {
+        return ApiResponse.ok("정산 원장을 조회했습니다.", SettlementLedgerResponse.from(
+                settlementLedgerQueryService.findLedgers(request.settlementIds())));
     }
 
     private static void requireSameKey(Long idempotencyKey, Long businessId, String name) {

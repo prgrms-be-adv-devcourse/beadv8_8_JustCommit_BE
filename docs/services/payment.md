@@ -1,7 +1,7 @@
 # payment 서비스
 
 > 언제 읽나: payment 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-26 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -19,7 +19,7 @@
 | 테이블 | 설명 |
 |---|---|
 | `WALLET` | 지갑 (`wallet_type`: `MEMBER` / `HOLDING` / `REVENUE`, `balance` 잔액, `receivable` 미수금) |
-| `WALLET_TRANSACTION` | 거래 내역 (거래 유형 + 대상 ID UK). `balance_after`(처리 후 잔액), `receivable_after`(처리 후 미수금, 어느 거래로 미수금이 바뀌었는지 추적) |
+| `WALLET_TRANSACTION` | 거래 내역 (거래 유형 + 대상 ID UK). `balance_after`(처리 후 잔액), `receivable_after`(처리 후 미수금, 어느 거래로 미수금이 바뀌었는지 추적). 정산 원장 조회용 인덱스 `idx_wallet_transaction_ref_id_ref_type (ref_id, ref_type)` (Flyway V6) |
 | `CHARGE` | 충전 (`PENDING`, `APPROVED`, `REVIEW_REQUIRED` 등). 복구 스케줄러용 `attempt_count`(조회 실패 횟수), `next_attempt_at`(다음 조회 시각) |
 | `CASH_OUT` | 인출 (계좌 암호화 저장) |
 | `MEMBER_REPLICA` | 회원 복제본 |
@@ -37,6 +37,7 @@
 | `POST /internal/v1/refunds/orderItems/{orderItemId}` | market | orderItemId |
 | `POST /internal/v1/refunds/shippingFees/{sellerOrderId}` | market | sellerOrderId |
 | `POST /internal/v1/settlementPayouts` | settlement | settlementId |
+| `POST /internal/v1/settlementPayouts/ledgers` | settlement | – |
 | `GET /internal/v1/payments/members/{memberId}/withdrawalCheck` | member | – |
 
 상세 → [내부 API 목록](../reference/internal-apis.md)
