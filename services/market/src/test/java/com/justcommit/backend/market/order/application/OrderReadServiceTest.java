@@ -383,6 +383,70 @@ class OrderReadServiceTest {
                 .isInstanceOf(BusinessException.class);
     }
 
+    @Test
+    @DisplayName("리뷰 대상 정보: 판매자 주문 · 주문 값을 옮기고, 전부 구매 확정이면 확정 주문상품이 있다 (#582)")
+    void reviewInfoMapsSellerOrderWhenAllItemsConfirmed() {
+        LocalDateTime confirmedAt = LocalDateTime.of(2026, 11, 24, 10, 0);
+        SellerOrder sellerOrder = sellerOrderWith(order(10L), OrderItemStatus.CONFIRMED, OrderItemStatus.CONFIRMED);
+        ReflectionTestUtils.setField(sellerOrder, "confirmedAt", confirmedAt);
+        when(sellerOrderRepository.findById(7L)).thenReturn(Optional.of(sellerOrder));
+
+        assertThat(orderReadService.findSellerOrderReviewInfo(7L)).hasValueSatisfying(info -> {
+            assertThat(info.sellerOrderId()).isEqualTo(7L);
+            assertThat(info.orderId()).isEqualTo(9L);
+            assertThat(info.buyerId()).isEqualTo(10L);
+            assertThat(info.sellerId()).isEqualTo(20L);
+            assertThat(info.confirmedAt()).isEqualTo(confirmedAt);
+            assertThat(info.hasConfirmedItem()).isTrue();
+        });
+    }
+
+    @Test
+    @DisplayName("리뷰 대상 정보: 일부만 구매 확정(나머지 취소)이어도 확정 주문상품이 있다 (#582)")
+    void reviewInfoHasConfirmedItemWhenPartiallyConfirmed() {
+        SellerOrder sellerOrder = sellerOrderWith(order(10L), OrderItemStatus.CONFIRMED, OrderItemStatus.CANCELLED);
+        ReflectionTestUtils.setField(sellerOrder, "confirmedAt", LocalDateTime.of(2026, 11, 24, 10, 0));
+        when(sellerOrderRepository.findById(7L)).thenReturn(Optional.of(sellerOrder));
+
+        assertThat(orderReadService.findSellerOrderReviewInfo(7L))
+                .hasValueSatisfying(info -> assertThat(info.hasConfirmedItem()).isTrue());
+    }
+
+    @Test
+    @DisplayName("리뷰 대상 정보: 전부 반품이면 구매 확정 시각은 있어도 확정 주문상품이 없다 (#582)")
+    void reviewInfoHasNoConfirmedItemWhenAllReturned() {
+        SellerOrder sellerOrder = sellerOrderWith(order(10L), OrderItemStatus.RETURNED, OrderItemStatus.RETURNED);
+        ReflectionTestUtils.setField(sellerOrder, "confirmedAt", LocalDateTime.of(2026, 11, 24, 10, 0));
+        when(sellerOrderRepository.findById(7L)).thenReturn(Optional.of(sellerOrder));
+
+        assertThat(orderReadService.findSellerOrderReviewInfo(7L)).hasValueSatisfying(info -> {
+            assertThat(info.confirmedAt()).isNotNull();
+            assertThat(info.hasConfirmedItem()).isFalse();
+        });
+    }
+
+    @Test
+    @DisplayName("리뷰 대상 정보: 구매 확정 전이어도 조회는 되고, 구매 확정 시각은 비어 있다 (#582)")
+    void reviewInfoReturnsValueBeforeConfirmation() {
+        when(sellerOrderRepository.findById(7L))
+                .thenReturn(Optional.of(sellerOrderWith(order(10L), OrderItemStatus.NORMAL)));
+
+        assertThat(orderReadService.findSellerOrderReviewInfo(7L)).hasValueSatisfying(info -> {
+            assertThat(info.sellerOrderId()).isEqualTo(7L);
+            assertThat(info.buyerId()).isEqualTo(10L);
+            assertThat(info.confirmedAt()).isNull();
+            assertThat(info.hasConfirmedItem()).isFalse();
+        });
+    }
+
+    @Test
+    @DisplayName("리뷰 대상 정보: 없는 판매자 주문이면 빈 값이다 (#582)")
+    void reviewInfoIsEmptyWhenSellerOrderDoesNotExist() {
+        when(sellerOrderRepository.findById(7L)).thenReturn(Optional.empty());
+
+        assertThat(orderReadService.findSellerOrderReviewInfo(7L)).isEmpty();
+    }
+
     private static Orders order(Long buyerId) {
         Orders order = new Orders("ORD-test", buyerId, "구매자", "010", "12345", "서울시", null, 1);
         ReflectionTestUtils.setField(order, "id", 9L);

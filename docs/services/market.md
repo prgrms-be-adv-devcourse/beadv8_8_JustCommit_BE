@@ -1,7 +1,7 @@
 # market 서비스
 
 > 언제 읽나: market 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-22 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-24 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -33,8 +33,8 @@ market 서비스가 소유하는 테이블입니다 (market DB).
 | `RETURN_REQUEST` | 반품 신청 (주문상품당 1건 `order_item_id` UK, 반품 사유 `reason`, 직접 작성 내용 `reason_detail`, 상태 `REQUESTED`, `APPROVED`, `REJECTED`, `COMPLETED`, 결정한 쪽 `decided_by`, 반품 배송비 `return_shipping_fee`, 반품 배송 `shipment_id`, Flyway V10) |
 | `SHIPPING_FEE_TABLE` | 배송비 요금표 (택배사가 준 요금표 전체를 버전마다 한 행, 버전 `version` UK, 기본 `base_fee`, 제주 할증 `jeju_surcharge`, 도서산간 할증 `remote_surcharge`, 우편번호 구간 `jeju_zipcodes` · `remote_zipcodes`(jsonb), 택배사 변경 시각 `courier_updated_at`, Flyway V11) |
 | `SHEDLOCK` | ShedLock 잠금 (한 번만 할 스케줄러 작업을 파드 한 곳에서만, 지금은 요금표 버전 대사, Flyway V12) |
-| `REVIEW` | 리뷰 (`seller_order_id` UK, 소프트 삭제) |
-| `REVIEW_TAG` | 리뷰 태그 5종 집계 |
+| `REVIEW` | 리뷰 (판매자 주문당 1건 `seller_order_id` UK · 외래 키 없음, 작성 때 복사한 `order_id` · `buyer_id` · `seller_id`, 별점 `rating` numeric(2,1), 삭제 시각 `deleted_at`(소프트 삭제, 행이 남아 다시 쓸 수 없음), Flyway V13) |
+| `REVIEW_TAG` | 리뷰 태그 (`review_id` + `tag` 복합 PK, `review_id` 외래 키, Flyway V13) |
 | `MEMBER_REPLICA` | 회원 복제본 (닉네임 · 권한 · 판매자 여부 · 탈퇴 표시 · 마지막 이벤트 시각) + 판매자 배송지 목록 암호문 그대로 · 마지막 주소 이벤트 시각 (Flyway V4). 주소가 먼저 오면 회원 칸이 빈 행이 생김 |
 | `OUTBOX_EVENT` | 발행 대기 이벤트 (`common-messaging-outbox`, Flyway V3) |
 
@@ -42,7 +42,7 @@ market 서비스가 소유하는 테이블입니다 (market DB).
 
 market 서비스가 제공하는 외부 API입니다 (경로 앞 `/api/v1` 생략).
 
-`cart` · `cart/items` · `cart/items/{productId}` · `cart/recommendations` · `orders/shippingFees` · `orders/cart` · `orders/{id}/pay` · `orders/{id}/cancel` · `orders/items/{id}/cancel` · `orders/items/{id}/confirm` · `orders` · `orders/{id}` · `orders/seller` · `orders/seller/{id}` · `orders/seller/{id}/accept` · `orders/seller/{id}/reject` · `orders/seller/{sellerOrderId}/shipment` · `orders/{orderId}/sellerOrders/{sellerOrderId}/shipment` · `orders/seller/{sellerOrderId}/items/{orderItemId}/returnShipment` · `orders/{orderId}/items/{orderItemId}/returnShipment` · `orders/items/{id}/return` · `orders/items/{id}/return/approve` · `orders/items/{id}/return/reject` · `webhooks/courier` + ⬜ 리뷰 → [외부 API 목록](../reference/external-apis.md)
+`cart` · `cart/items` · `cart/items/{productId}` · `cart/recommendations` · `orders/shippingFees` · `orders/cart` · `orders/{id}/pay` · `orders/{id}/cancel` · `orders/items/{id}/cancel` · `orders/items/{id}/confirm` · `orders` · `orders/{id}` · `orders/seller` · `orders/seller/{id}` · `orders/seller/{id}/accept` · `orders/seller/{id}/reject` · `orders/seller/{sellerOrderId}/shipment` · `orders/{orderId}/sellerOrders/{sellerOrderId}/shipment` · `orders/seller/{sellerOrderId}/items/{orderItemId}/returnShipment` · `orders/{orderId}/items/{orderItemId}/returnShipment` · `orders/items/{id}/return` · `orders/items/{id}/return/approve` · `orders/items/{id}/return/reject` · `webhooks/courier` · `reviews` + ⬜ 리뷰 삭제 · 목록 → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 
@@ -111,7 +111,7 @@ market 서비스의 업무 규칙입니다. 노션 「정책 정리」 6 · 7 ·
 | 취소 | 구매자는 판매자 수락 전에는 언제든 즉시 취소. 수락 뒤 `READY` · `BOOKED`는 `CANCEL_PENDING` 기록 → 택배 취소 큐가 택배사에 보내고 택배사가 누른 시각의 기사 거리로 판정 (2km 안이면 취소 불가, 잠금 직후 30초 유예), `CANCEL_LOCKED` 이후는 취소 불가 → [취소 · 환불](../flows/cancel-refund.md) |
 | 구매 확정 | 배송 완료 후 주문상품별 확정, 배송 완료(`DELIVERED`) 시각부터 72시간 뒤 자동 구매 확정. 판매자 주문이 끝나면 정산 이벤트 |
 | 반품 | 배송 완료(`DELIVERED`) 시각부터 72시간 안에 반품 신청, 판매자 귀책만. 반품 신청 시각부터 48시간 무응답이면 자동 승인, 거절이면 그 주문상품을 바로 구매 확정. 구매 · 판매 상세는 주문상품마다 반품 단계 시각을 보여 줌(새 칼럼 없이 반품 신청 · 반품 배송에서 읽음, 필드 → [외부 API](../reference/external-apis.md)) → [취소 · 환불](../flows/cancel-refund.md#반품-환불) |
-| 리뷰 | 판매자 평가, 판매자 주문 1건당 1번, 구매 확정(`SellerOrder.confirmedAt`) 시각부터 3일 안. 별점 0.5~5.0 · 글 10~300자 필수 · 태그 5종 · 사진 없음. 수정 불가, 리뷰 작성 시각부터 3일 안 삭제 가능(소프트 삭제, 다시 쓰기 불가). 판매자 상점에 평균 별점 · 수 · 태그 집계 |
+| 리뷰 | 판매자 평가, 판매자 주문 1건당 1번, 그 판매자 주문의 구매자만. 구매 확정 시각(`SellerOrder.confirmedAt`)이 있고 구매 확정된 주문상품(`CONFIRMED`)이 1개 이상이어야 씀 (`confirmedAt`은 판매자 주문 종료 판정이 기록해 전부 반품돼도 채워지므로, 전부 반품이면 쓸 수 없음). `confirmedAt`부터 3일(72시간) 안, 정확히 72시간째부터 쓸 수 없음. 별점 0.5~5.0(0.5 단위) · 글 앞뒤 공백을 빼고 10~300자 필수(뺀 값을 저장) · 태그 5종 0개 이상(이름 문자열만, 같은 태그 중복 불가) · 사진 없음. 동시에 써도 `seller_order_id` 유니크로 1건만. 수정 불가, 리뷰 작성 시각부터 3일 안 삭제 가능(소프트 삭제, 다시 쓰기 불가). 판매자 상점에 평균 별점 · 수 · 태그 집계 |
 | 택배 웹훅 | `POST /api/v1/webhooks/courier`, Gateway 경유 공개 경로(타임아웃 5초), `X-Api-Key`. 모르는 주문번호 · 상태는 로그만. 택배사는 실패하면 1분 → 5분 → 30분 → 2시간 → 6시간(최대 5회) 재전송, 4xx는 다시 보내지 않음(키 불일치 401은 바로 포기). 예약 취소가 끝나면 `CANCELLED` 웹훅, 요금표를 바꾸면 요금표 변경 웹훅(`status` `SHIPPING_FEES_CHANGED`, 주문번호 · 송장번호 없이 요금표 전체, 같거나 낮은 버전도 200). 배송 상태 웹훅에 주문번호 · 송장번호가 없거나 요금표가 빠지면 400 |
 | 모의 택배사 (404-express) | 택배 예약 → 수거 → 배송 중 → 배송 완료 자동 진행 (기본 180 · 120 · 120초, 시연 때 `.env`로 줄임, 배포하면 기본값으로 돌아가 수동 설정). 같은 서버 내부망, 포트 외부 미개방 |
 | 하지 않는 것 | 판매자 취소 기능 없음 (수락 · 거절로 대신, grilling 11/4 팀 결정) · 반품 사진 안 받음 (grilling 11/4 Q4) · 판매자 반품 검수 없음 · 단순 변심 반품 불가 · 거절 사유 안 받음 · 수락 마감 전 재알림 없음 · 크기별 배송비 없음 · 날씨 · 계절 배송 제한 없음 · 신고 · 제재 · 쿠폰 · 경매 · 가격 제안 · 찜(인기순) 없음 · 확장 화면은 판매자 상점(리뷰 · 판매 상품)만 |

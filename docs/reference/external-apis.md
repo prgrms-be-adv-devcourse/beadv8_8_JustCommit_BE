@@ -1,7 +1,7 @@
 # 외부 API 목록
 
 > 언제 읽나: 외부 API의 경로 · 담당 서비스를 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-22 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-24 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
 
 ## 서비스별 목록
 
@@ -175,6 +175,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | POST | `orders/seller/{id}/reject` | 판매자 거절 (`orderItemIds` 필수, 사유 없음): 고른 주문상품은 환불, 나머지는 수락. 이 판매자 주문에 없는 상품은 400 `INVALID_REJECT_ITEMS`, 고른 상품이 수락 대기가 아니면 409 `SELLER_ORDER_NOT_ACCEPTABLE` | SELLER |
 | POST | `orders/items/{id}/return/approve` | 판매자 반품 승인 (본문 없음, 성공 200 본문 없음): 그 주문상품만 담은 반품 배송(`READY`)을 만들고 반품 배송비를 남김. 응답 전 반품 신청이 아니면(이미 승인, 거절, 자동 승인 포함) 409 `RETURN_NOT_DECIDABLE`, 남의 판매자 주문의 주문상품은 404 | SELLER |
 | POST | `orders/items/{id}/return/reject` | 판매자 반품 거절 (본문 없음, 성공 200 본문 없음): 그 주문상품을 바로 구매 확정. 409, 404는 승인과 같음 | SELLER |
+| POST | `reviews` | 리뷰 작성: 본문 `sellerOrderId`(필수) · `rating`(필수, 0.5 ~ 5.0 · 0.5 단위) · `content`(필수, 앞뒤 공백을 빼고 10 ~ 300자, 뺀 값을 저장) · `tags`(선택, `AS_DESCRIBED` · `DETAILED_DESCRIPTION` · `CAREFUL_PACKING` · `HEALTHY_ARRIVAL` · `GOOD_PRICE` 이름 문자열만, 생략 · null은 빈 목록). 성공 201 `data.reviewId`. 별점 · 글 길이 · 필수 값 누락 · 태그 안 null · 같은 태그 중복 400 `INVALID_FIELD_ERROR`, 없는 태그 이름 · 숫자 태그(순번) 400 `BAD_REQUEST_DATA`, 없는 판매자 주문과 남의 판매자 주문은 같은 404 `REVIEW_SELLER_ORDER_NOT_FOUND`, 구매 확정 전 409 `REVIEW_NOT_CONFIRMED`, 구매 확정된 주문상품 없음(전부 반품) 409 `REVIEW_NO_CONFIRMED_ITEM`, 이미 씀(삭제한 리뷰 포함, 동시 요청은 `seller_order_id` 유니크로 1건만) 409 `REVIEW_ALREADY_WRITTEN`, 작성 기한 지남 409 `REVIEW_PERIOD_EXPIRED` | 로그인 |
 | POST | `webhooks/courier` | 택배사 웹훅 (`X-Api-Key`): 배송 상태(`courierOrderNo` · `trackingNo` 필수)와 요금표 변경(`status` `SHIPPING_FEES_CHANGED`, `version` · `updatedAt` · `baseFee` · `jejuSurcharge` · `remoteSurcharge` · `jejuZipcodes` · `remoteZipcodes`) 두 가지. 본문 원본은 404-express `docs/design.md` 「웹훅」 | 공개 |
 
 ### ai
@@ -227,7 +228,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 
 | 서비스 | 기능 | 설명 |
 |---|---|---|
-| market | 리뷰 작성 · 삭제 · 판매자 리뷰 목록 (태그 집계) | 노션 6절 |
+| market | 리뷰 삭제 · 판매자 리뷰 목록 (태그 집계) | 노션 6절 |
 | notification | `GET notifications?read=` (커서 페이지네이션) | 삭제 API 없음 |
 
 ## 경로 개선안

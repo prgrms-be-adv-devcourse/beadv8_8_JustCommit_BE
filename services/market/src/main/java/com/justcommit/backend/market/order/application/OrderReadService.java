@@ -9,6 +9,7 @@ import com.justcommit.backend.market.OrderItemStatus;
 import com.justcommit.backend.market.OrderStatus;
 import com.justcommit.backend.market.OrdersItemResult;
 import com.justcommit.backend.market.SellerOrderResult;
+import com.justcommit.backend.market.SellerOrderReviewInfo;
 import com.justcommit.backend.market.ShipmentQuery;
 import com.justcommit.backend.market.ShipmentResult;
 import com.justcommit.backend.market.order.domain.OrderErrorCode;
@@ -46,6 +47,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -235,6 +237,18 @@ public class OrderReadService implements OrderQuery {
     public List<Long> getRecentConfirmedProductIds(Long buyerId, LocalDateTime since, int limit) {
         return ordersItemRepository.findRecentProductIdsByBuyer(buyerId, OrderItemStatus.CONFIRMED, since,
                 PageRequest.of(0, limit));
+    }
+
+    // 주문 · 주문상품은 지연 로딩이라 이 트랜잭션(클래스의 readOnly) 안에서 읽고 record로 바꿔 돌려준다
+    @Override
+    public Optional<SellerOrderReviewInfo> findSellerOrderReviewInfo(Long sellerOrderId) {
+        return sellerOrderRepository.findById(sellerOrderId).map(sellerOrder -> {
+            Orders order = sellerOrder.getOrder();
+            boolean hasConfirmedItem = sellerOrder.getItems().stream()
+                    .anyMatch(item -> item.getStatus() == OrderItemStatus.CONFIRMED);
+            return new SellerOrderReviewInfo(sellerOrder.getId(), order.getId(), order.getBuyerId(),
+                    sellerOrder.getSellerId(), sellerOrder.getConfirmedAt(), hasConfirmedItem);
+        });
     }
 
     @Override
