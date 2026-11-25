@@ -21,6 +21,22 @@ public interface MemberWithdrawalRecordRepository extends JpaRepository<MemberWi
                                @Param("phoneHash") String phoneHash,
                                @Param("since") Instant since);
 
+  // since 이후에 탈퇴한 기록 중 이메일 해시가 같은 것이 있는지 (가입 앞 단계 안내, #611)
+  @Query("""
+      select count(r) > 0 from MemberWithdrawalRecord r
+       where r.withdrawnAt > :since
+         and r.emailHash = :emailHash
+      """)
+  boolean existsEmailWithdrawnSince(@Param("emailHash") String emailHash, @Param("since") Instant since);
+
+  // since 이후에 탈퇴한 기록 중 휴대폰 해시가 같은 것이 있는지 (가입 앞 단계 안내, #611)
+  @Query("""
+      select count(r) > 0 from MemberWithdrawalRecord r
+       where r.withdrawnAt > :since
+         and r.phoneHash = :phoneHash
+      """)
+  boolean existsPhoneWithdrawnSince(@Param("phoneHash") String phoneHash, @Param("since") Instant since);
+
   // before 이전(같은 시각 포함)에 탈퇴한 기록을 한 번에 삭제하고 지운 건수를 돌려준다 (탈퇴 기록 정리, #407)
   // 재가입 제한(withdrawnAt > since)과 경계가 맞물려, 제한이 끝난 기록만 지운다
   @Modifying

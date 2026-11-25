@@ -32,4 +32,23 @@ public class RejoinRestriction {
       throw new BusinessException(MemberErrorCode.REJOIN_RESTRICTED);
     }
   }
+
+  // 가입 앞 단계 안내 (#611): 가입 인증번호 발송 · 카카오 신규 가입 판정에서 이메일만 본다.
+  // 화면 안내용이라 최종 판정은 위 check가 가입 트랜잭션 안에서 다시 한다 (앞 단계를 건너뛴 요청 · 탈퇴와 동시 가입)
+  public void checkEmail(String email) {
+    if (recordRepository.existsEmailWithdrawnSince(memberHmac.emailHash(email), since())) {
+      throw new BusinessException(MemberErrorCode.REJOIN_RESTRICTED_EMAIL);
+    }
+  }
+
+  // 가입 앞 단계 안내 (#611): 휴대폰 중복 확인에서 휴대폰만 본다. 최종 판정은 check
+  public void checkPhone(String phone) {
+    if (recordRepository.existsPhoneWithdrawnSince(memberHmac.phoneHash(phone), since())) {
+      throw new BusinessException(MemberErrorCode.REJOIN_RESTRICTED_PHONE);
+    }
+  }
+
+  private Instant since() {
+    return databaseClock.now().minus(PERIOD);
+  }
 }

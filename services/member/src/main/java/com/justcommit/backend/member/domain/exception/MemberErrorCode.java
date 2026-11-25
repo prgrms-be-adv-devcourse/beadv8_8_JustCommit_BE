@@ -42,6 +42,9 @@ public enum MemberErrorCode implements ErrorCode {
   DUPLICATE_PHONE(HttpStatus.CONFLICT, "이미 가입된 휴대폰 번호입니다."),
   DUPLICATE_ACCOUNT(HttpStatus.CONFLICT, "이미 등록된 계좌입니다."), // 가입 · 계좌 변경 공통 (#413)
   REJOIN_RESTRICTED(HttpStatus.CONFLICT, "탈퇴 후 30일 동안은 같은 이메일 · 휴대폰으로 다시 가입할 수 없습니다."), // 로컬 · 소셜 가입 (#407)
+  // 가입 앞 단계 안내 (#611): 1단계(가입 인증번호 발송 · 카카오 신규 가입)는 이메일, 2단계(휴대폰 중복 확인)는 휴대폰
+  REJOIN_RESTRICTED_EMAIL(HttpStatus.CONFLICT, "탈퇴 후 30일 동안은 같은 이메일로 다시 가입할 수 없습니다."),
+  REJOIN_RESTRICTED_PHONE(HttpStatus.CONFLICT, "탈퇴 후 30일 동안은 같은 휴대폰 번호로 다시 가입할 수 없습니다."),
 
   // 로그인
   LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 올바르지 않습니다."),
