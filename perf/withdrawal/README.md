@@ -210,7 +210,7 @@ curl -s -o /dev/null -w '%{http_code} %{time_total}\n' -H "Authorization: Bearer
 | `MEMBER_BUSY` | `BEGIN; SELECT id FROM member WHERE id = <회원> FOR UPDATE;` 를 연 채 POST, 응답 뒤 `ROLLBACK` |
 | 폐기 기록 실패 | 아래 Redis ACL. member만 `SPRING_DATA_REDIS_USERNAME=h531member` · `REDIS_PASSWORD=<계정 비밀번호>`로 띄움 (Gateway · 다른 서비스는 기본 계정) |
 | Gateway 504 | `BEGIN; LOCK TABLE member_withdrawal_record IN SHARE ROW EXCLUSIVE MODE;` 를 연 채 POST, 504 뒤 `ROLLBACK` |
-| 모의 카카오 | `wiremock/wiremock:3.13.1` 컨테이너 `h531-kakao`(`127.0.0.1:18090`) · `axllent/mailpit:v1.24.1` 컨테이너 `h531-mailpit`(SMTP `127.0.0.1:11025`). member `SPRING_APPLICATION_JSON`: `member.kakao.api-base-url` = `http://localhost:18090`, `spring.mail.host` · `port` = `localhost` · `11025`, `mail.smtp.auth` · `mail.smtp.starttls.enable` · `mail.smtp.starttls.required` = `false` |
+| 모의 카카오 | `wiremock/wiremock:3.13.1` 컨테이너 `h531-kakao`(`127.0.0.1:18090`) · `axllent/mailpit:v1.24.1` 컨테이너 `h531-mailpit`(SMTP `127.0.0.1:11025`). member `SPRING_APPLICATION_JSON` = `{"member":{"kakao":{"api-base-url":"http://localhost:18090"}},"spring":{"mail":{"host":"localhost","port":11025,"properties":{"mail.smtp.auth":"false","mail.smtp.starttls.enable":"false","mail.smtp.starttls.required":"false"}}}}`. 메일 세 값은 `spring.mail.properties.mail.smtp.auth` · `spring.mail.properties.mail.smtp.starttls.enable` · `spring.mail.properties.mail.smtp.starttls.required`로 적용된다 (member `application.yml`의 기본값은 모두 `true`) |
 
 Redis ACL (`redis-cli`로 `h531-redis`에 실행):
 
