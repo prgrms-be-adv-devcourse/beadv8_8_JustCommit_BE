@@ -178,5 +178,6 @@ S-P01(충전 취소)은 충전 취소를 하지 않기로 해서 지웠습니다
 | S-R05 | 탈퇴한 작성자의 리뷰 → 판매자 리뷰 목록에서 닉네임 「탈퇴한 회원」 | 규칙 | 통합 | PR |  | 검증 (11/24, #582 ~ #585 PR 머지 전 로컬): `ReviewReadServiceIntegrationTest` |
 | S-R06 | 작성 가능 목록 → 본인 · 확정 상품 있음 · 72시간 안 · 리뷰 없음(삭제 포함)만, 목록의 주문은 같은 기준 시각에 작성 API를 통과 | 규칙 | 통합 | PR |  | 검증 (11/24, #582 ~ #585 PR 머지 전 로컬): `ReviewReadServiceIntegrationTest` |
 | S-R07 | 같은 리뷰를 동시에 삭제 → 한 요청만 200, 나머지 404 `REVIEW_NOT_FOUND`, 먼저 기록한 `deleted_at` 유지 | 경합 | 통합 | PR |  | 검증 (11/24, #582 ~ #585 PR 머지 전 로컬): `ReviewServiceIntegrationTest` |
+| S-R08 | 판매자 여러 곳 주문의 판매자별 리뷰 상태 → 등록하면 작성 완료 · 남은 판매자와 다음 마감 갱신, 삭제하면 삭제함(내용 없음) · 다시 작성 불가, 작성 가능 판정이 작성 API · 작성 가능 목록과 같음 | 규칙 | 통합 | PR |  | 검증 (11/24, #582 ~ #585 · #644 PR 머지 전 로컬): `ReviewReadServiceIntegrationTest`, `ReviewControllerIntegrationTest` |
 
 ⬜ ai(추천 fallback) 시나리오는 Sprint 2에 추가합니다.
