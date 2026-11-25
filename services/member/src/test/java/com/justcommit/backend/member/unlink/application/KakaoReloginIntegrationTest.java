@@ -1,6 +1,7 @@
 package com.justcommit.backend.member.unlink.application;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
+import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.security.JwtVerifier;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import com.justcommit.backend.common.testcontainers.SharedRedis;
@@ -10,6 +11,7 @@ import com.justcommit.backend.member.auth.application.SocialLoginService;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Provider;
+import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReceipt;
@@ -42,6 +44,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
@@ -151,8 +154,8 @@ class KakaoReloginIntegrationTest {
   }
 
   @Test
-  @DisplayName("[S-B11 재현 · #546] 웹훅 폐기와 같은 초에 재연결해 받은 Access는 iat = 끊은 시각이라 Gateway 규칙(iat <= 끊은 시각)상 거절 대상 — 현재 동작 기록")
-  void sameSecondReconnectAccessIsRejectable() {
+  @DisplayName("[S-B11 · #546] 웹훅 폐기와 같은 초에 재연결하면 다음 초까지 기다린 뒤 발급해, 새 Access의 iat가 끊은 시각보다 뒤다 (Gateway 규칙상 거절 대상 아님)")
+  void sameSecondReconnectIssuesAfterCutoff() {
     Member member = kakaoMember("9300000004");
     receiptRepository.save(KakaoUnlinkReceipt.received("9300000004", "UNLINK_FROM_APPS", Instant.now().minusSeconds(60)));
     KAKAO.stubFor(get(urlPathEqualTo("/v2/user/me")).willReturn(aResponse().withStatus(400)
@@ -163,17 +166,43 @@ class KakaoReloginIntegrationTest {
     // Gateway TokenRevocationChecker와 같은 방식으로 값을 읽음
     long cutoff = Long.parseLong(redisTemplate.opsForValue().get("auth:revoked-member:" + member.getId()));
 
-    // 시각에 따라 들쭉날쭉하지 않도록, 재연결 Access의 발급 시각을 끊은 시각과 같은 초(0.5초 뒤)로 고정
-    doReturn(Instant.ofEpochSecond(cutoff).plusMillis(500)).when(databaseClock).now();
+    // 첫 시각은 끊은 시각과 같은 초(0.5초 뒤), 그 뒤로는 다음 초로 고정 (실제 시각에 따라 결과가 달라지지 않게)
+    doReturn(Instant.ofEpochSecond(cutoff).plusMillis(500), Instant.ofEpochSecond(cutoff + 1))
+        .when(databaseClock).now();
     SocialLoginResult result = socialLoginService.login(new SocialLoginCommand(Provider.KAKAO, "9300000004", "d@kakao.com"));
 
-    // 재연결 자체는 성공 (ACTIVE 복구 · 토큰 발급)
+    // 재연결 성공 (ACTIVE 복구 · 토큰 발급)
     assertThat(memberRepository.findById(member.getId()).orElseThrow().getStatus()).isEqualTo(MemberStatus.ACTIVE);
     String accessToken = ((SocialLoginResult.ExistingMember) result).loginResult().accessToken();
-    // 그러나 iat가 끊은 시각과 같은 초라 Gateway는 이 Access를 거절한다 (#546에서 해결하면 이 기대를 뒤집는다)
-    long iat = jwtVerifier.verifyAccessToken(accessToken).issuedAt();
-    assertThat(iat).isEqualTo(cutoff);
-    assertThat(iat).isLessThanOrEqualTo(cutoff);
+    // 다음 초에 발급됐으므로 Gateway 규칙(iat <= 끊은 시각)에 걸리지 않는다
+    assertThat(jwtVerifier.verifyAccessToken(accessToken).issuedAt()).isGreaterThan(cutoff);
+  }
+
+  @Test
+  @DisplayName("[S-B11 · #546] 재연결이 발급 시각을 기다리다 MEMBER_BUSY로 끝나면 회원은 INACTIVE 그대로이고 연결 해제 기록도 바뀌지 않는다")
+  void reconnectMemberBusy_keepsInactiveAndReceipt() {
+    Member member = kakaoMember("9300000005");
+    receiptRepository.save(KakaoUnlinkReceipt.received("9300000005", "UNLINK_FROM_APPS", Instant.now().minusSeconds(60)));
+    KAKAO.stubFor(get(urlPathEqualTo("/v2/user/me")).willReturn(aResponse().withStatus(400)
+        .withHeader("Content-Type", "application/json")
+        .withBody("{\"msg\":\"NotRegisteredUserException\",\"code\":-101}")));
+    // 실제 웹훅 처리로 INACTIVE + SOCIAL_UNLINKED 폐기
+    KakaoUnlinkProcessor.Claim claim = processor.claimNext().orElseThrow();
+    processor.process(claim);
+    long cutoff = Long.parseLong(redisTemplate.opsForValue().get("auth:revoked-member:" + member.getId()));
+    String receiptStatus = status(claim.id());
+
+    // 시각이 계속 끊은 시각과 같은 초 → 두 번 시도한 뒤 MEMBER_BUSY
+    doReturn(Instant.ofEpochSecond(cutoff).plusMillis(500)).when(databaseClock).now();
+
+    assertThatThrownBy(() -> socialLoginService.login(new SocialLoginCommand(Provider.KAKAO, "9300000005", "e@kakao.com")))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(MemberErrorCode.MEMBER_BUSY);
+
+    // 발급하지 못한 시도에서는 복구 · 무효화가 남지 않는다
+    assertThat(memberRepository.findById(member.getId()).orElseThrow().getStatus()).isEqualTo(MemberStatus.INACTIVE);
+    assertThat(status(claim.id())).isEqualTo(receiptStatus);
   }
 
   @Test

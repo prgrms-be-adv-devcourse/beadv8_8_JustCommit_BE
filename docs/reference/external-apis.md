@@ -15,9 +15,9 @@
 | POST | `auth/email/verify` | 인증번호 확인 (재설정 목적이면 재설정 토큰 응답) | 공개 |
 | POST | `auth/passwordResets` | 비밀번호 재설정 → [응답 규칙](#비밀번호-재설정--가입-계정-안내) | 공개 |
 | POST | `auth/accountReminders` | 가입 계정 안내 (아이디 찾기) → [응답 규칙](#비밀번호-재설정--가입-계정-안내) | 공개 |
-| POST | `auth/login` | 로그인 | 공개 |
+| POST | `auth/login` | 로그인 (회원 잠금 대기 초과 · 토큰 폐기 직후 발급 시각 조건을 2회 시도 안에 충족하지 못함은 409 `MEMBER_BUSY` → [인증 규칙](../conventions/auth.md#토큰-폐기)) | 공개 |
 | POST | `auth/logout` | 로그아웃 | 공개(Refresh 쿠키 · 선택 `Authorization`) |
-| POST | `auth/reissue` | 토큰 재발급 | 공개(Refresh 쿠키) |
+| POST | `auth/reissue` | 토큰 재발급 (409 `MEMBER_BUSY`는 로그인과 같음. 이때 Refresh는 소비되지 않아 같은 쿠키로 다시 요청할 수 있음) | 공개(Refresh 쿠키) |
 | POST | `users` | 회원가입 (30일 안에 탈퇴한 이메일 · 휴대폰이면 409 `REJOIN_RESTRICTED`) | 공개 |
 | POST | `users/social` | 소셜 가입 완료 (30일 안에 탈퇴한 이메일 · 휴대폰이면 409 `REJOIN_RESTRICTED`) | 공개 |
 | GET | `users/nicknameAvailability?nickname=` | 닉네임 중복 확인 | 공개 |
@@ -39,7 +39,7 @@
 | POST | `sellers` | 판매자 등록 (`reviewConsentAgreed`=true · `reviewConsentVersion` 필수. 누락 · 미동의 400, 현재 버전이 아니면 409 `REVIEW_CONSENT_VERSION_MISMATCH`) | 로그인 |
 | GET | `sellers/{sellerId}` | 판매자 공개 정보 (닉네임 · 소개글 · 등록일, 숫자 id만) | 공개 |
 | PATCH | `sellers/me/intro` | 소개글 수정 (최대 500자, 빈 문자열은 삭제) | 로그인 (판매자만) |
-| GET | `/oauth2/authorization/kakao` · `/login/oauth2/code/kakao` | 카카오 로그인 (Spring Security 처리, `/api/v1` 아님) | 공개 |
+| GET | `/oauth2/authorization/kakao` · `/login/oauth2/code/kakao` | 카카오 로그인 (Spring Security 처리, `/api/v1` 아님). 카카오 인증 뒤 로그인 처리에서 난 오류는 HTTP 오류 응답이 아니라 프론트 `/oauth/callback?error={오류 코드}`로 리다이렉트. 회원 잠금 대기 초과 · 발급 시각 조건 미충족은 `error=MEMBER_BUSY` → [인증 규칙](../conventions/auth.md#토큰-폐기) | 공개 |
 | GET · POST | `webhooks/kakao/unlink` | 카카오 연결 해제 웹훅 (`Authorization: KakaoAK {어드민 키}`) → [카카오 연결 해제 웹훅](#카카오-연결-해제-웹훅) | 공개 |
 
 #### 이메일 인증 목적

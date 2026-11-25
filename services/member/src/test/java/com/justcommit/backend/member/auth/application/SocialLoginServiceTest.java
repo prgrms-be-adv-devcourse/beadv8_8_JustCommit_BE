@@ -8,7 +8,6 @@ import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
-import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -22,6 +21,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -49,7 +49,7 @@ class SocialLoginServiceTest {
   private RefreshTokenIssuer refreshTokenIssuer;
 
   @Mock
-  private DatabaseClock databaseClock;
+  private AccessIssueTimeGuard accessIssueTimeGuard;
 
   @Mock
   private KakaoUnlinkReceiptRepository unlinkReceiptRepository;
@@ -63,6 +63,9 @@ class SocialLoginServiceTest {
   void setUp() {
     ReflectionTestUtils.setField(socialLoginService, "accessTokenExpiration", Duration.ofMinutes(30));
     ReflectionTestUtils.setField(socialLoginService, "signupTokenExpiration", Duration.ofMinutes(10));
+    // 가드는 넘겨받은 로그인 처리를 그대로 한 번 실행 (트랜잭션 · 대기는 AccessIssueTimeGuardIntegrationTest에서 확인)
+    given(accessIssueTimeGuard.runWithRetry(any()))
+        .willAnswer(invocation -> invocation.<Supplier<?>>getArgument(0).get());
   }
 
   // 테스트용 회원 (계좌 값은 createLocal이 요구해서 넣은 가짜 값)
@@ -78,7 +81,7 @@ class SocialLoginServiceTest {
   void existingMember() {
     given(memberLocker.lockByProvider(Provider.KAKAO, "123"))
             .willReturn(Optional.of(member(4L)));
-    given(databaseClock.now()).willReturn(NOW);
+    given(accessIssueTimeGuard.issuableNow(4L)).willReturn(NOW);
     given(jwtProvider.createAccessToken(4L, "MEMBER", NOW)).willReturn("access-token");
     given(refreshTokenIssuer.issue(4L, 0)).willReturn("refresh-token");
 
@@ -110,8 +113,27 @@ class SocialLoginServiceTest {
             .extracting("errorCode")
             .isEqualTo(MemberErrorCode.SOCIAL_LOGIN_FAILED);
     verify(jwtProvider, never()).createAccessToken(anyLong(), anyString(), any());
-    verify(databaseClock, never()).now();
+    verify(accessIssueTimeGuard, never()).issuableNow(anyLong());
     verify(jwtProvider, never()).createSignupToken(anyString(), anyString(), anyString());
+    verify(refreshTokenIssuer, never()).issue(anyLong(), anyInt());
+  }
+
+  @Test
+  @DisplayName("발급 시각 확인이 중단되면 연결 해제 기록 무효화 · ACTIVE 복구 · 토큰 발급을 하지 않음 (#546)")
+  void issueTimeCheckComesBeforeStateChanges() {
+    Member member = member(4L);
+    ReflectionTestUtils.setField(member, "status", MemberStatus.INACTIVE);
+    given(memberLocker.lockByProvider(Provider.KAKAO, "123"))
+            .willReturn(Optional.of(member));
+    given(accessIssueTimeGuard.issuableNow(4L)).willThrow(new IllegalStateException("아직 발급할 수 없음"));
+
+    assertThatThrownBy(() -> socialLoginService.login(
+            new SocialLoginCommand(Provider.KAKAO, "123", "user@kakao.com")))
+            .isInstanceOf(IllegalStateException.class);
+
+    verify(unlinkReceiptRepository, never()).invalidatePending(anyString(), any());
+    assertThat(member.getStatus()).isEqualTo(MemberStatus.INACTIVE);
+    verify(jwtProvider, never()).createAccessToken(anyLong(), anyString(), any());
     verify(refreshTokenIssuer, never()).issue(anyLong(), anyInt());
   }
 
