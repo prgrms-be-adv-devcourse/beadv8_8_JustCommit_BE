@@ -8,12 +8,14 @@ import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReceipt;
 import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
 import com.justcommit.backend.member.withdrawal.application.RejoinRestriction;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -32,6 +34,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -104,6 +107,61 @@ class SocialLoginServiceTest {
     verify(jwtProvider, never()).createSignupToken(anyString(), anyString(), anyString());
     // 기존 회원은 재가입 판정을 하지 않음 (#611은 신규 판정에만)
     verify(rejoinRestriction, never()).checkEmail(anyString());
+    // ACTIVE 회원의 평소 로그인은 탈퇴 보류 안내 대상이 아니고 처리 기록을 찾거나 잠그지 않음 (#616)
+    assertThat(((SocialLoginResult.ExistingMember) result).withdrawalHeldRestored()).isFalse();
+    verify(unlinkReceiptRepository, never()).findWithdrawalHandlerForUpdate(anyLong(), anyInt());
+  }
+
+  @Test
+  @DisplayName("탈퇴가 보류됐던 INACTIVE 회원이 다시 로그인하면 복구 표시, 무효화하기 전에 처리 기록을 잠그고 확인 (#616)")
+  void withdrawalHeldMemberRestored() {
+    Member member = inactiveMember(4L, 1);
+    given(memberLocker.lockByProvider(Provider.KAKAO, "123")).willReturn(Optional.of(member));
+    given(accessIssueTimeGuard.issuableNow(4L)).willReturn(NOW);
+    given(unlinkReceiptRepository.findWithdrawalHandlerForUpdate(4L, 1))
+        .willReturn(Optional.of(heldReceipt(4L, 1)));
+
+    SocialLoginResult result = socialLoginService.login(
+            new SocialLoginCommand(Provider.KAKAO, "123", "user@kakao.com"));
+
+    assertThat(((SocialLoginResult.ExistingMember) result).withdrawalHeldRestored()).isTrue();
+    assertThat(member.getStatus()).isEqualTo(MemberStatus.ACTIVE);
+    InOrder order = inOrder(unlinkReceiptRepository);
+    order.verify(unlinkReceiptRepository).findWithdrawalHandlerForUpdate(4L, 1);
+    order.verify(unlinkReceiptRepository).invalidatePending(anyString(), any());
+  }
+
+  @Test
+  @DisplayName("처리 기록이 없는 INACTIVE 회원(관리자 해제 등)은 복구만 하고 표시하지 않음 (#616)")
+  void inactiveWithoutHeldRecordNotMarked() {
+    Member member = inactiveMember(4L, 1);
+    given(memberLocker.lockByProvider(Provider.KAKAO, "123")).willReturn(Optional.of(member));
+    given(accessIssueTimeGuard.issuableNow(4L)).willReturn(NOW);
+    given(unlinkReceiptRepository.findWithdrawalHandlerForUpdate(4L, 1))
+        .willReturn(Optional.empty());
+
+    SocialLoginResult result = socialLoginService.login(
+            new SocialLoginCommand(Provider.KAKAO, "123", "user@kakao.com"));
+
+    assertThat(((SocialLoginResult.ExistingMember) result).withdrawalHeldRestored()).isFalse();
+    assertThat(member.getStatus()).isEqualTo(MemberStatus.ACTIVE);
+    verify(unlinkReceiptRepository).invalidatePending(anyString(), any());
+  }
+
+  private static Member inactiveMember(Long id, int tokenVersion) {
+    Member member = member(id);
+    ReflectionTestUtils.setField(member, "status", MemberStatus.INACTIVE);
+    ReflectionTestUtils.setField(member, "tokenVersion", tokenVersion);
+    return member;
+  }
+
+  // 자동 탈퇴 판단에서 BLOCKED로 정해져 안내 메일 대기 중인 처리 기록
+  private static KakaoUnlinkReceipt heldReceipt(Long memberId, int unlinkVersion) {
+    KakaoUnlinkReceipt receipt = KakaoUnlinkReceipt.received("123", "UNLINK_FROM_APPS", NOW);
+    receipt.markInactivated(memberId, unlinkVersion, NOW);
+    receipt.markHandlesWithdrawal();
+    receipt.markNoticePending(NOW);
+    return receipt;
   }
 
   @Test

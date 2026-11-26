@@ -8,6 +8,7 @@ import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
+import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReceipt;
 import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
 import com.justcommit.backend.member.withdrawal.application.RejoinRestriction;
 import lombok.RequiredArgsConstructor;
@@ -63,13 +64,16 @@ public class SocialLoginService {
       // - 이전 미처리 연결 해제 기록은 항상(ACTIVE여도) 무효. 작업자가 끊김을 확인한 직후 다시 로그인한 경우,
       //   옛 조회 결과로 방금 돌아온 회원을 INACTIVE로 바꾸지 않게 한다 (대기 중인 안내 메일도 취소)
       // - INACTIVE면 ACTIVE로 복구 (관리자 해제로 INACTIVE가 된 회원 포함, 이용 정지로 취급하지 않음)
+      // - 탈퇴가 보류됐던 복구인지는 무효화가 단계를 지우기 전에 확인한다 (#616)
+      boolean withdrawalHeldRestored = false;
       if (command.provider() == Provider.KAKAO) {
+        withdrawalHeldRestored = member.getStatus() == MemberStatus.INACTIVE && wasWithdrawalHeld(member);
         unlinkReceiptRepository.invalidatePending(command.providerId(), LocalDateTime.now());
       }
       if (member.getStatus() == MemberStatus.INACTIVE) {
         member.restoreActive();
       }
-      return new SocialLoginResult.ExistingMember(issueTokens(member, issuedAt));
+      return new SocialLoginResult.ExistingMember(issueTokens(member, issuedAt), withdrawalHeldRestored);
     }
 
     // 신규: 같은 이메일로 가입한 회원이 있으면 소셜 가입 차단
@@ -84,6 +88,19 @@ public class SocialLoginService {
     String signupToken = jwtProvider.createSignupToken(
             command.provider().name(), command.providerId(), email);
     return new SocialLoginResult.NewMember(signupToken, signupTokenExpiration.toSeconds());
+  }
+
+  // 지금 연결 해제 상태(INACTIVE로 바꿀 때 저장한 인증 버전 = 지금 회원의 인증 버전)의 자동 탈퇴 처리 기록이
+  // 탈퇴 보류로 정해졌는지 (#616). 처리기(KakaoUnlinkProcessor)와 같은 기준으로 같은 연결 해제 상태를 찾는다.
+  // 관리자 해제 · 자동 탈퇴 대상이 아닌 사유는 처리 기록이 없고, 판정 전이면 보류 단계가 아니라서 false
+  // 기록을 잠그고 읽는다 (회원 잠금 다음, 처리기와 같은 회원 → 기록 순서): 읽은 뒤 무효화하기 전에 처리기가
+  // BLOCKED를 저장하면 안내 없이 보류가 무효화되므로, 처리기의 결과 반영은 이 로그인이 끝날 때까지 기다리게 한다.
+  // 처리기가 먼저 잠갔으면 그 반영이 끝난 뒤의 상태를 읽는다. 이미 시작된 안내 메일 발송은 잠금 밖이라 그대로
+  private boolean wasWithdrawalHeld(Member member) {
+    return unlinkReceiptRepository
+        .findWithdrawalHandlerForUpdate(member.getId(), member.getTokenVersion())
+        .map(KakaoUnlinkReceipt::isWithdrawalHeld)
+        .orElse(false);
   }
 
   // LoginService와 같은 방식으로 Access·Refresh 발급 (기존 회원: 잠금 · 상태 · 발급 시각 확인 뒤 호출됨)

@@ -32,6 +32,17 @@ public interface KakaoUnlinkReceiptRepository extends JpaRepository<KakaoUnlinkR
   Optional<KakaoUnlinkReceipt> findByMemberIdAndUnlinkVersionAndHandlesWithdrawalTrue(Long memberId,
                                                                                      Integer unlinkVersion);
 
+  // 카카오 재로그인의 탈퇴 보류 판정 (#616): 같은 회원 · 같은 연결 해제 상태의 자동 탈퇴 처리 기록을 잠그고 읽는다.
+  // 호출한 쪽이 회원 잠금을 잡은 트랜잭션에서 부른다 (회원 → 기록 순서). 판정 뒤 무효화할 때까지 처리기가
+  // 이 기록에 결과(BLOCKED → NOTICE_PENDING 등)를 반영하지 못하게 해, 판정과 무효화가 같은 상태를 보게 한다
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("""
+      select r from KakaoUnlinkReceipt r
+       where r.memberId = :memberId and r.unlinkVersion = :unlinkVersion and r.handlesWithdrawal = true
+      """)
+  Optional<KakaoUnlinkReceipt> findWithdrawalHandlerForUpdate(@Param("memberId") Long memberId,
+                                                              @Param("unlinkVersion") Integer unlinkVersion);
+
   // 카카오 재로그인 (#422): 이 회원번호의 미처리 기록(회원 연결 전 기록 포함)을 무효로 한다.
   // 호출한 쪽이 회원 잠금을 잡은 트랜잭션에서 부른다 (회원 → 기록 순서). 처리 중인 작업자는 단계 확인에서 멈춘다
   @Modifying

@@ -4,7 +4,8 @@ package com.justcommit.backend.member.auth.application;
 public sealed interface SocialLoginResult {
 
   // 기존 회원: 일반 로그인과 같은 결과(Access는 Body, Refresh는 쿠키)
-  record ExistingMember(LoginResult loginResult) implements SocialLoginResult {
+  // withdrawalHeldRestored: 카카오 연결 해제 뒤 탈퇴가 보류됐던 회원이 이번 로그인으로 복구됨 (#616, 프론트가 팝업으로 한 번 안내)
+  record ExistingMember(LoginResult loginResult, boolean withdrawalHeldRestored) implements SocialLoginResult {
 
   }
 
