@@ -351,7 +351,7 @@ groups:
     labels:
       team: replant
     isPaused: false
-  - uid: replant-settlement-reconciliation-mismatch
+  - uid: replant-settlement-recon-mismatch
     title: 정산 대사 불일치
     condition: C
     data:
@@ -385,7 +385,7 @@ groups:
     labels:
       team: replant
     isPaused: false
-  - uid: replant-settlement-reconciliation-failed
+  - uid: replant-settlement-recon-failed
     title: 정산 대사 실행 실패
     condition: C
     data:
@@ -419,7 +419,7 @@ groups:
     labels:
       team: replant
     isPaused: false
-  - uid: replant-settlement-reconciliation-not-run
+  - uid: replant-settlement-recon-not-run
     title: 정산 대사 미실행
     condition: C
     data:
