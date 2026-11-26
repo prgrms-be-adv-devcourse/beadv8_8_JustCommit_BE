@@ -1,7 +1,7 @@
 # settlement 서비스
 
 > 언제 읽나: settlement 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-20 · 관련: Miro 5, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-25 · 관련: Miro 5, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -9,7 +9,8 @@
 |---|---|
 | 정산 생성 | 판매자 주문이 끝나면(모든 상품이 구매 확정 또는 반품 완료) 판매자 주문 단위로 1번. 정산금 = 판매액 - 수수료 - 판매자 부담금 |
 | 정산 지급 | 10초 큐가 `PENDING` 정산을 건별로 payment에 지급 · 회수 → [구매 확정 → 정산](../flows/confirm-settlement.md) |
-| 조회 · 리포트 | 판매자 정산 내역, 수수료 · 배송비 · 정산금 리포트, 대사 |
+| 정산 대사 | 매일 정산과 payment 정산 원장을 비교해 대사 불일치를 기록 → [구매 확정 → 정산](../flows/confirm-settlement.md#정산-대사) |
+| 조회 · 리포트 | 판매자 정산 내역, 수수료 · 배송비 · 정산금 리포트 |
 
 ## 소유 테이블
 
@@ -18,6 +19,9 @@
 | `SETTLEMENT` | 정산 (`sellerOrderId` UK, `PENDING` / `COMPLETED` / `FAILED`, 음수 가능, `shipping_fee` 배송비: 옛 토픽 `market.purchase-confirmed.v1`로 만든 예전 정산은 null) |
 | `MEMBER_REPLICA` | 회원 복제본 |
 | `OUTBOX_EVENT` | 발행 대기 이벤트 (`common-messaging-outbox`, Flyway V5) |
+| `SETTLEMENT_RECONCILIATION_MISMATCH` | 대사 불일치 (미해결 행에만 유니크, Flyway V6) |
+| `SETTLEMENT_RECONCILIATION_RUN` | 정산 대사 실행 이력 (Flyway V7) |
+| `SHEDLOCK` | 정산 대사 잠금 (Flyway V8) |
 
 ## 외부 API
 
@@ -37,6 +41,7 @@
 | 대상 | 용도 | 멱등 키 |
 |---|---|---|
 | payment | 정산금 지급 (`POST /internal/v1/settlementPayouts`) | settlementId |
+| payment | 정산 대사용 정산 원장 조회 (`POST /internal/v1/settlementPayouts/ledgers`) | – (조회) |
 
 ## 발행 이벤트
 
@@ -56,7 +61,7 @@
 
 ## 스케줄러
 
-정산 지급 큐(10초, 끝까지) · Outbox 재전송 → [스케줄러 표](../reference/schedulers.md)
+정산 지급 큐(10초, 끝까지), 정산 대사(매일 09:40), Outbox 재전송 → [스케줄러 표](../reference/schedulers.md)
 
 ## 정책
 
@@ -70,7 +75,7 @@
 | 지급 | 건별, `settlementId` 멱등. 0 이상이면 판매자 잔액으로, 음수면 판매자 잔액에서 회수하고 못 받은 금액은 미수금 |
 | 돈의 이동 | 정산금 → 판매자 지갑, 수수료 · 배송비 · 판매자 부담금 → `REVENUE` |
 | 탈퇴 | 판매자로서 완료되지 않은 정산(`PENDING`, `FAILED`)이 있으면 불가 (0원 정산, 음수 정산 포함: 음수 정산은 회수 전이라 막음). 정산 기록이 없으면 차단 없음. 미수금은 payment가 확인 |
-| 대사 | 구매 확정된 판매자 주문 ↔ 정산 기록, 완료 정산 ↔ 판매자 지갑 입금 |
+| 대사 | 정산 ↔ payment 정산 원장(판매자 지갑 입금 포함) → [정산 대사](../flows/confirm-settlement.md#정산-대사). 구매 확정된 판매자 주문 ↔ 정산 기록은 ⬜ 미정 |
 
 ## 테스트 시나리오
 

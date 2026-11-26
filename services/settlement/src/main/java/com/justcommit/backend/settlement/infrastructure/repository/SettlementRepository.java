@@ -1,5 +1,6 @@
 package com.justcommit.backend.settlement.infrastructure.repository;
 
+import com.justcommit.backend.settlement.application.reconciliation.ReconciliationTarget;
 import com.justcommit.backend.settlement.domain.Settlement;
 import com.justcommit.backend.settlement.domain.SettlementStatus;
 import jakarta.persistence.LockModeType;
@@ -10,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 
@@ -44,4 +46,33 @@ public interface SettlementRepository extends JpaRepository<Settlement, Long> {
 
     // 지급 지연 감시: 가장 오래된 미지급 정산
     Optional<Settlement> findFirstByStatusInOrderByCreatedAtAsc(Collection<SettlementStatus> statuses);
+
+    // 정산 대사 대상: PENDING, FAILED는 모두, COMPLETED는 completed_at이 completedSince 이후인 것
+    default List<ReconciliationTarget> findReconciliationTargets(LocalDateTime completedSince) {
+        return findReconciliationTargets(
+                EnumSet.of(SettlementStatus.PENDING, SettlementStatus.FAILED), SettlementStatus.COMPLETED, completedSince);
+    }
+
+    @Query("""
+            SELECT new com.justcommit.backend.settlement.application.reconciliation.ReconciliationTarget(
+                       s.id, s.sellerId, s.status, s.fee, s.sellerBurdenAmount, s.payoutAmount)
+              FROM Settlement s
+             WHERE s.status IN :unfinished
+                OR (s.status = :completed AND s.completedAt >= :completedSince)
+             ORDER BY s.id
+            """)
+    List<ReconciliationTarget> findReconciliationTargets(@Param("unfinished") Collection<SettlementStatus> unfinished,
+                                                         @Param("completed") SettlementStatus completed,
+                                                         @Param("completedSince") LocalDateTime completedSince);
+
+    // 정산 대사가 UNREFLECTED_STATUS를 기록하기 직전에 아직 PENDING, FAILED인 정산만 다시 읽는다.
+    // FOR SHARE로 잡아 기록하는 트랜잭션 동안 정산 지급이 상태를 바꾸지 못하게 한다
+    // (지급 확보는 FOR UPDATE SKIP LOCKED라 이 행을 건너뛰고, 결과 반영은 커밋까지 잠깐 기다린다)
+    @Query(value = """
+            SELECT id
+              FROM settlement
+             WHERE id IN (:ids) AND status IN ('PENDING', 'FAILED')
+               FOR SHARE
+            """, nativeQuery = true)
+    List<Long> lockUnfinishedIds(@Param("ids") Collection<Long> ids);
 }
