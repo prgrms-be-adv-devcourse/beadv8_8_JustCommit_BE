@@ -198,19 +198,71 @@ member만 설정을 바꾸는 측정(모의 카카오 · Redis ACL)은 market �
 
 ```bash
 # 회차마다: 측정 DB에 새 회원 INSERT → 로그인 → GET users/me/withdrawal → (장애 주입) → POST users/me/withdrawal
-curl -s -o /dev/null -w '%{http_code} %{time_total}\n' -H "Authorization: Bearer $ACCESS" -H 'Content-Type: application/json' \
-  --data-binary @withdraw.json http://127.0.0.1:18080/api/v1/users/me/withdrawal
+# 응답 본문만 회차별 파일로 저장 (-D · -v를 쓰지 않아 헤더 · 쿠키 · 요청은 남지 않음). 출력은 HTTP 상태와 time_total
+mkdir -p results/withdrawal && chmod 700 results/withdrawal
+RUN=01
+curl -s -o "results/withdrawal/post-$RUN.json" -w '%{http_code} %{time_total}\n' -H "Authorization: Bearer $ACCESS" \
+  -H 'Content-Type: application/json' --data-binary @withdraw.json http://127.0.0.1:18080/api/v1/users/me/withdrawal
+
+# 저장한 본문에서 오류 코드와 revocationCompleted 확인 (성공이면 code는 -, 실패면 revocationCompleted는 -)
+python3 -c 'import json,sys; b=json.load(open(sys.argv[1])); print(b["status"], b.get("code") or "-", (b.get("data") or {}).get("revocationCompleted", "-"))' \
+  "results/withdrawal/post-$RUN.json"
+# 예: 200 - True · 200 - False · 503 WITHDRAWAL_CHECK_UNAVAILABLE - · 504 GATEWAY_TIMEOUT -
 ```
+
+- 요청 본문 `withdraw.json`(`{ "password": … }`)은 결과 폴더 밖에 권한 600으로 두고 회차가 끝나면 지운다
+- `$ACCESS`는 셸 변수로만 쓰고 파일 · 결과 CSV에 적지 않는다. 응답 본문에는 토큰이 없다 (성공 응답의 Refresh 쿠키 만료는 헤더라 저장되지 않음)
 
 ### 장애 주입
 
 | 장애 | 주입 |
 |---|---|
-| 탈퇴 확인 한 곳 (스크립트 없음) | `wiremock/wiremock:3.13.1` 컨테이너 `h531-wiremock`을 `127.0.0.1:18089`에 띄우고 모든 요청을 실제 settlement(18085)로 프록시. member만 `SETTLEMENT_SERVICE_URL=http://localhost:18089`. POST 직전에만 `GET /internal/v1/settlements/members/{id}/withdrawalCheck`에 우선순위 1 매핑(503 또는 `fixedDelayMilliseconds` 5000 · 2000)을 넣고 POST 직후 삭제. 연결 거부는 `docker stop h531-wiremock` |
+| 탈퇴 확인 한 곳 (스크립트 없음) | 아래 「settlement WireMock 매핑」. member만 `SETTLEMENT_SERVICE_URL=http://localhost:18089`. 연결 거부는 `docker stop h531-wiremock` |
 | `MEMBER_BUSY` | `BEGIN; SELECT id FROM member WHERE id = <회원> FOR UPDATE;` 를 연 채 POST, 응답 뒤 `ROLLBACK` |
 | 폐기 기록 실패 | 아래 Redis ACL. member만 `SPRING_DATA_REDIS_USERNAME=h531member` · `REDIS_PASSWORD=<계정 비밀번호>`로 띄움 (Gateway · 다른 서비스는 기본 계정) |
 | Gateway 504 | `BEGIN; LOCK TABLE member_withdrawal_record IN SHARE ROW EXCLUSIVE MODE;` 를 연 채 POST, 504 뒤 `ROLLBACK` |
 | 모의 카카오 | `wiremock/wiremock:3.13.1` 컨테이너 `h531-kakao`(`127.0.0.1:18090`) · `axllent/mailpit:v1.24.1` 컨테이너 `h531-mailpit`(SMTP `127.0.0.1:11025`). member `SPRING_APPLICATION_JSON` = `{"member":{"kakao":{"api-base-url":"http://localhost:18090"}},"spring":{"mail":{"host":"localhost","port":11025,"properties":{"mail.smtp.auth":"false","mail.smtp.starttls.enable":"false","mail.smtp.starttls.required":"false"}}}}`. 메일 세 값은 `spring.mail.properties.mail.smtp.auth` · `spring.mail.properties.mail.smtp.starttls.enable` · `spring.mail.properties.mail.smtp.starttls.required`로 적용된다 (member `application.yml`의 기본값은 모두 `true`) |
+
+settlement WireMock 매핑 (측정 때 스크립트가 남지 않아 원본 기록의 설명과 WireMock 매핑 형식으로 다시 쓴 예시):
+
+| 매핑 | 우선순위 | 응답 | 쓰는 때 |
+|---|---|---|---|
+| 기본 프록시 | 10 | 모든 요청을 실제 settlement로 전달 | 항상 |
+| 지연 (`fixedDelayMilliseconds` 5000 · 2000) | 1 | `withdrawalCheck`만 실제 settlement로 전달하되 지연 뒤 응답 | 지연 회차의 POST 직전 추가, 직후 삭제 |
+| 503 | 1 | `withdrawalCheck`만 실제 settlement로 보내지 않고 503 | 503 회차의 POST 직전 추가, 직후 삭제 |
+
+```bash
+# WireMock (컨테이너 안에서 호스트의 settlement 18085를 host.docker.internal로 부름)
+docker run -d --name h531-wiremock --add-host=host.docker.internal:host-gateway -p 127.0.0.1:18089:8080 \
+  wiremock/wiremock:3.13.1 --disable-banner
+
+# 기본 프록시 (한 번)
+curl -s -X POST http://localhost:18089/__admin/mappings -H 'Content-Type: application/json' --data-binary '{
+  "id": "00000000-0000-0000-0000-00000000c000",
+  "priority": 10,
+  "request": { "method": "ANY", "urlPattern": ".*" },
+  "response": { "proxyBaseUrl": "http://host.docker.internal:18085" }
+}'
+
+# 지연: 실제 settlement로 전달 + 지연을 같은 매핑에 (5초 회차는 5000, 2초 회차는 2000)
+curl -s -X POST http://localhost:18089/__admin/mappings -H 'Content-Type: application/json' --data-binary '{
+  "id": "00000000-0000-0000-0000-00000000c001",
+  "priority": 1,
+  "request": { "method": "GET", "urlPathPattern": "/internal/v1/settlements/members/[0-9]+/withdrawalCheck" },
+  "response": { "proxyBaseUrl": "http://host.docker.internal:18085", "fixedDelayMilliseconds": 5000 }
+}'
+
+# 503: 전달하지 않고 바로 503
+curl -s -X POST http://localhost:18089/__admin/mappings -H 'Content-Type: application/json' --data-binary '{
+  "id": "00000000-0000-0000-0000-00000000c002",
+  "priority": 1,
+  "request": { "method": "GET", "urlPathPattern": "/internal/v1/settlements/members/[0-9]+/withdrawalCheck" },
+  "response": { "status": 503 }
+}'
+
+# POST 직후 회차 매핑 삭제 (기본 프록시는 남김)
+curl -s -X DELETE http://localhost:18089/__admin/mappings/00000000-0000-0000-0000-00000000c001   # 503 회차는 ...c002
+```
 
 Redis ACL (`redis-cli`로 `h531-redis`에 실행):
 
