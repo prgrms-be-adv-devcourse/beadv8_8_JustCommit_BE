@@ -112,6 +112,7 @@
 | S-F12 | 10분 넘게 남은 `READY` · `CANCEL_PENDING` 수가 `replant_shipment_stuck` 지표로 보임 | 관측 | 통합 | PR |  |  |
 | S-F13 | 택배 예약 400 · 409 `IDEMPOTENCY_KEY_REUSED` → `REVIEW_REQUIRED`, 다시 부르지 않음, 지표에 바로 보임. 5xx · 시간 초과 · 401 · 404 → `READY` 재시도 | 장애 | 통합 | PR |  |  |
 | S-F14 | 예약 중 구매자 취소로 409 `ORDER_ALREADY_CANCELLED` → `CANCEL_PENDING` 유지, 택배 취소 큐가 `CANCELLED`. `READY`인데 이 응답이면 `REVIEW_REQUIRED` | 경계 | 통합 | PR |  |  |
+| S-F15 | 택배 예약 첫 시도 시간 초과(택배사는 저장) → 판매자 배송지 변경 → 재시도에 첫 본문이 그대로 가서 409 없이 `BOOKED`, 저장 본문은 암호문 · 예약 뒤 비움 | 장애 | 통합 | PR |  |  |
 
 ## G. 구매 확정 · 정산
 
