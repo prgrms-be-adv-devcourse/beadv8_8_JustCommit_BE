@@ -81,15 +81,30 @@ public class CourierClient {
             return response.data();
         } catch (RestClientResponseException e) {
             int status = e.getStatusCode().value();
-            boolean retryable = e.getStatusCode().is5xxServerError() || status == 408 || status == 429;
-
+            String code = errorCode(e);
+            // 400 · 409는 같은 상태 번호라도 오류 코드로 처리가 갈린다 (#671). 메시지는 배송 last_error에 그대로 남는다
             throw new CourierBookingException(
                     "택배 예약 실패: courierOrderNo = " + courierOrderNo + ", " +
-                    "status = " + status, e, retryable);
+                    "status = " + status + ", code = " + code, e, CourierBookingFailure.of(status, code));
         } catch (ResourceAccessException e) {
             throw new CourierBookingException(
                     "택배 예약 실패: courierOrderNo = " + courierOrderNo + ", " +
-                    "택배사 응답 없음 (시간 초과 또는 연결 실패)", e, true);
+                    "택배사 응답 없음 (시간 초과 또는 연결 실패)", e, CourierBookingFailure.TEMPORARY);
+        } catch (RestClientException e) {
+            // 헤더는 왔는데 본문을 읽다 시간이 초과되면 ResourceAccessException이 아니라 이 예외로 온다 (본문 읽기 실패)
+            throw new CourierBookingException(
+                    "택배 예약 실패: courierOrderNo = " + courierOrderNo + ", " +
+                    "택배사 응답을 읽지 못함", e, CourierBookingFailure.TEMPORARY);
+        }
+    }
+
+    // 택배사 오류 응답의 code (예: IDEMPOTENCY_KEY_REUSED). 본문이 없거나 형식이 다르면 null
+    private static String errorCode(RestClientResponseException e) {
+        try {
+            CourierApiResponse<?> body = e.getResponseBodyAs(CourierApiResponse.class);
+            return body == null ? null : body.code();
+        } catch (RuntimeException parseFailure) {
+            return null;
         }
     }
 

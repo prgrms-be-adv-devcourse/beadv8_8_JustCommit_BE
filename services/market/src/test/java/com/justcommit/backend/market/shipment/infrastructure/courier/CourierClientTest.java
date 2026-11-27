@@ -5,6 +5,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -65,20 +67,56 @@ class CourierClientTest {
                 .withHeader("Idempotency-Key", equalTo(COURIER_ORDER_NO)));
     }
 
-    @Test
-    @DisplayName("택배사가 500으로 응답하면 다시 시도할 수 있는 예약 실패로 알린다")
-    void bookServerErrorIsRetryable() {
+    // #671: 404-express 예약 응답(src/http/errors.ts)별 실패 종류
+    @ParameterizedTest(name = "{0} {1} → {2}")
+    @CsvSource({
+            "500, INTERNAL_ERROR, TEMPORARY",
+            "503, '', TEMPORARY",
+            "408, '', TEMPORARY",
+            "429, '', TEMPORARY",
+            "401, UNAUTHORIZED, CONFIG_ERROR",
+            "404, RESOURCE_NOT_FOUND, CONFIG_ERROR",
+            "400, INVALID_FIELD_ERROR, PERMANENT",
+            "400, INVALID_IDEMPOTENCY_KEY, PERMANENT",
+            "409, IDEMPOTENCY_KEY_REUSED, PERMANENT",
+            "409, ORDER_ALREADY_CANCELLED, ALREADY_CANCELLED"
+    })
+    @DisplayName("택배사 예약 오류 응답을 상태 번호와 오류 코드로 실패 종류에 나눈다")
+    void bookFailureClassified(int status, String code, CourierBookingFailure expected) {
         wireMock.stubFor(post(urlEqualTo(BOOKING_PATH))
                 .willReturn(aResponse()
-                        .withStatus(500)
+                        .withStatus(status)
                         .withHeader("Content-Type", "application/json")
-                        .withBody("""
-                                {"status":500,"code":"INTERNAL_ERROR","message":"서버 내부 오류가 발생했습니다."}
-                                """)));
+                        .withBody("{\"status\":" + status + ",\"code\":\"" + code + "\",\"message\":\"\"}")));
 
         assertThatThrownBy(() -> courierClient.book(COURIER_ORDER_NO, request()))
-                .isInstanceOf(CourierBookingException.class)
-                .satisfies(e -> assertThat(((CourierBookingException) e).isRetryable()).isTrue());
+                .isInstanceOfSatisfying(CourierBookingException.class, e -> {
+                    assertThat(e.getFailure()).isEqualTo(expected);
+                    assertThat(e.isRetryable()).isEqualTo(expected.isRetryable());
+                    assertThat(e.getMessage()).contains("status = " + status);
+                });
+    }
+
+    @Test
+    @DisplayName("오류 본문이 JSON이 아니어도 상태 번호로 나눈다 (409인데 코드를 모르면 확인 필요 쪽)")
+    void bookFailureWithoutJsonBody() {
+        wireMock.stubFor(post(urlEqualTo(BOOKING_PATH))
+                .willReturn(aResponse().withStatus(409).withBody("conflict")));
+
+        assertThatThrownBy(() -> courierClient.book(COURIER_ORDER_NO, request()))
+                .isInstanceOfSatisfying(CourierBookingException.class,
+                        e -> assertThat(e.getFailure()).isEqualTo(CourierBookingFailure.PERMANENT));
+    }
+
+    @Test
+    @DisplayName("택배사 응답이 5초를 넘으면(본문 읽기 중 시간 초과 포함) 다시 시도할 수 있는 실패로 알린다")
+    void bookTimeoutIsTemporary() {
+        wireMock.stubFor(post(urlEqualTo(BOOKING_PATH))
+                .willReturn(aResponse().withStatus(201).withFixedDelay(6_000)));
+
+        assertThatThrownBy(() -> courierClient.book(COURIER_ORDER_NO, request()))
+                .isInstanceOfSatisfying(CourierBookingException.class,
+                        e -> assertThat(e.getFailure()).isEqualTo(CourierBookingFailure.TEMPORARY));
     }
 
     @Test

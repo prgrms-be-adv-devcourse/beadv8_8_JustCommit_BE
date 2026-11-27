@@ -1,7 +1,7 @@
 # 테스트 시나리오
 
 > 언제 읽나: 시나리오 ID로 내용을 찾거나 결과를 기록할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-25 · 관련: [노션 「테스트 시나리오」 4절](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-27 · 관련: [노션 「테스트 시나리오」 4절](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
 
 시나리오마다 어느 서비스의 테스트인지, 무엇을 대신 세우는지(WireMock · 테스트 Kafka · Clock 등), 무엇을 확인하는지는 노션 「테스트 시나리오」 4절 표에 있습니다. 이 문서는 ID · 문장 · 결과 기록용입니다.
 
@@ -110,6 +110,8 @@
 | S-F10 | 택배 취소 큐: 택배사 취소됨 → `CANCELLED` + 결과 행, 409(누른 시각 2km 안) → `CANCEL_LOCKED` + 결과 행, 반송 → 결과 행 반송 표시 | 규칙 | 통합 | PR |  |  |
 | S-F11 | 택배 취소 응답 없음 → `CANCEL_PENDING` 유지 · `last_error`, 10초 → 30초 → 1분 뒤 같은 누른 시각으로 다시 보냄 | 장애 | 통합 | PR |  |  |
 | S-F12 | 10분 넘게 남은 `READY` · `CANCEL_PENDING` 수가 `replant_shipment_stuck` 지표로 보임 | 관측 | 통합 | PR |  |  |
+| S-F13 | 택배 예약 400 · 409 `IDEMPOTENCY_KEY_REUSED` → `REVIEW_REQUIRED`, 다시 부르지 않음, 지표에 바로 보임. 5xx · 시간 초과 · 401 · 404 → `READY` 재시도 | 장애 | 통합 | PR |  |  |
+| S-F14 | 예약 중 구매자 취소로 409 `ORDER_ALREADY_CANCELLED` → `CANCEL_PENDING` 유지, 택배 취소 큐가 `CANCELLED`. `READY`인데 이 응답이면 `REVIEW_REQUIRED` | 경계 | 통합 | PR |  |  |
 
 ## G. 구매 확정 · 정산
 

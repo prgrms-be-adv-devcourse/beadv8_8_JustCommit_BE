@@ -15,6 +15,8 @@ import java.time.LocalDateTime;
 // Prometheus가 수집할 때마다 DB에서 센다. Grafana가 1 이상이면 Slack으로 상태 기준 한 번 알린다.
 //   replant_shipment_stuck{status="READY"}          만든 지 10분 넘게 택배 예약이 안 된 배송 수
 //   replant_shipment_stuck{status="CANCEL_PENDING"} 취소를 누른 지 10분 넘게 택배사 결과를 못 받은 배송 수
+//   replant_shipment_stuck{status="REVIEW_REQUIRED"} 택배사가 예약을 거절해 확인 필요로 멈춘 배송 수 (#671).
+//     큐가 더 시도하지 않아 기다려도 줄지 않으므로 10분을 기다리지 않고 바로 센다
 @Slf4j
 @Component
 public class StuckShipmentMetrics {
@@ -33,6 +35,10 @@ public class StuckShipmentMetrics {
                 .description("취소를 누른 지 10분 넘게 택배사 결과를 못 받은 배송 수")
                 .tag("status", ShipmentStatus.CANCEL_PENDING.name())
                 .register(registry);
+        Gauge.builder(NAME, this, StuckShipmentMetrics::reviewRequired)
+                .description("택배사가 예약을 거절해 확인 필요로 멈춘 배송 수")
+                .tag("status", ShipmentStatus.REVIEW_REQUIRED.name())
+                .register(registry);
     }
 
     double stuckReady() {
@@ -43,6 +49,10 @@ public class StuckShipmentMetrics {
     double stuckCancelPending() {
         return count(() -> shipmentRepository.countByStatusAndCancelRequestedAtBefore(
                 ShipmentStatus.CANCEL_PENDING, LocalDateTime.now().minus(STUCK_AFTER)));
+    }
+
+    double reviewRequired() {
+        return count(() -> shipmentRepository.countByStatus(ShipmentStatus.REVIEW_REQUIRED));
     }
 
     // DB를 못 읽으면 0이 아니라 "값 없음"(NaN)으로 둬서 알림이 거짓으로 꺼지지 않게 한다

@@ -99,8 +99,37 @@ public class ShipmentService {
             // 택배사 예약은 됐는데, 그사이 다른 쪽이 배송을 먼저 바꿨다
             recoverBookingConflict(shipment.getId(), response, orderInfo);
         } catch (RuntimeException e) {
+            if (e instanceof CourierBookingException booking && !booking.isRetryable()) {
+                stopBooking(shipment.getId(), booking);
+                return;
+            }
             logBookingFailure(shipment, e);
             recordAttemptFailure(shipment.getId(), ShipmentStatus.READY, describe(e));
+        }
+    }
+
+    // 택배사가 다시 보내도 같은 결과로 거절했다 (#671). 최신 행이 아직 READY면 확인 필요로 멈춘다.
+    // - 400 · 멱등 키 409: 요청 내용 · 설정을 사람이 고쳐야 한다
+    // - 409 ORDER_ALREADY_CANCELLED: 보통은 예약을 보내는 사이 구매자가 취소해 배송이 이미 CANCEL_PENDING이다
+    //   → 그대로 두면 택배 취소 큐가 택배사에서 「취소됨」을 받아 CANCELLED로 맞춘다 (결과 행 · 환불 흐름 포함).
+    //   READY인데 이 응답이면 market은 취소한 적이 없는데 택배사에만 취소가 있는 것 → 배송만 CANCELLED로 바꾸면
+    //   주문 취소 · 환불이 따라오지 않으므로 확인 필요로 멈춘다
+    private void stopBooking(Long shipmentId, CourierBookingException e) {
+        String reason = e.getFailure() + " " + describe(e);
+        try {
+            new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                    shipmentRepository.findById(shipmentId).ifPresent(latest -> {
+                        if (latest.getStatus() == ShipmentStatus.READY) {
+                            latest.markReviewRequired(reason);
+                            log.error("택배사가 예약을 거절해 확인 필요로 멈춤: shipmentId={}, courierOrderNo={}, failure={}",
+                                    shipmentId, latest.getCourierOrderNo(), e.getFailure(), e);
+                        } else {
+                            log.info("예약 거절 응답, 그사이 배송이 바뀌어 그대로 둠: shipmentId={}, status={}, failure={}",
+                                    shipmentId, latest.getStatus(), e.getFailure());
+                        }
+                    }));
+        } catch (ObjectOptimisticLockingFailureException again) {
+            log.info("확인 필요 기록 중 배송이 바뀜: shipmentId={}", shipmentId);
         }
     }
 
@@ -130,10 +159,14 @@ public class ShipmentService {
         if (e instanceof SellerAddressUnavailableException) {
             // 이벤트 지연 · 탈퇴 등 원인은 단정하지 않는다. READY로 남아 같은 courierOrderNo로 다시 시도한다
             log.warn("판매자 배송지를 사용할 수 없어 예약을 보류합니다: shipmentId={}", shipment.getId());
-        } else if (e instanceof CourierBookingException booking && booking.isRetryable()) {
+        } else if (e instanceof CourierBookingException booking
+                && booking.getFailure() == CourierBookingFailure.CONFIG_ERROR) {
+            // 401(API 키) · 404(경로 · 주소): 우리 설정 문제라 모든 예약이 같이 막힌다. 고치면 다음 시도에 성공하므로 재시도한다
+            log.error("택배사 설정 확인 필요(API 키 · 주소), 나중에 다시 시도: shipmentId={}", shipment.getId(), e);
+        } else if (e instanceof CourierBookingException) {
             log.warn("택배 예약 실패, 나중에 다시 시도: shipmentId={}", shipment.getId(), e);
         } else {
-            // 택배사가 거절(4xx)했거나 판매자 주소 조회 실패 등. 끝까지 재시도하되 사람이 확인하도록 남긴다
+            // 주문 정보 조회 실패 등 택배사 밖의 오류. 끝까지 재시도하되 사람이 확인하도록 남긴다
             log.error("택배 예약 실패, 확인 필요: shipmentId={}", shipment.getId(), e);
         }
     }

@@ -116,6 +116,18 @@ public class Shipment extends BaseTimeEntity {
         this.lastError = truncate(reason);
     }
 
+    // 택배사가 다시 보내도 같은 결과로 거절했다 (#671: 400 · 멱등 키 409 등). 확인 필요로 멈춰 예약 큐가 더 집지 않게 한다.
+    // 사람이 원인을 고친 뒤 READY로 되돌린다 (docs/infra/shipment-review-runbook.md).
+    public void markReviewRequired(String reason) {
+        if (this.status != ShipmentStatus.READY) {
+            throw new IllegalStateException("READY 상태의 배송만 확인 필요로 바꿀 수 있습니다. 현재 상태: " + this.status);
+        }
+        this.status = ShipmentStatus.REVIEW_REQUIRED;
+        this.attemptCount++;
+        this.nextAttemptAt = null;
+        this.lastError = truncate(reason);
+    }
+
     // n번째 실패 뒤 기다릴 시간
     static Duration retryDelay(int failedCount) {
         int index = Math.min(failedCount, QUEUE_RETRY_DELAYS.size()) - 1;
@@ -123,12 +135,13 @@ public class Shipment extends BaseTimeEntity {
     }
 
     // 구매자 취소를 기록한다 (택배사는 부르지 않음, 택배 취소 큐가 보냄). 이미 취소 중이거나 취소됐으면 false (중복 요청).
-    // 기사 2km 안(CANCEL_LOCKED) · 수거 이후는 취소할 수 없다.
+    // 기사 2km 안(CANCEL_LOCKED) · 수거 이후는 취소할 수 없다. 확인 필요(예약이 거절돼 멈춤)는 READY처럼 받는다 (#671).
     public boolean requestCancel(LocalDateTime requestedAt) {
         if (this.status == ShipmentStatus.CANCEL_PENDING || this.status == ShipmentStatus.CANCELLED) {
             return false;
         }
-        if (this.status != ShipmentStatus.READY && this.status != ShipmentStatus.BOOKED) {
+        if (this.status != ShipmentStatus.READY && this.status != ShipmentStatus.REVIEW_REQUIRED
+                && this.status != ShipmentStatus.BOOKED) {
             throw new IllegalStateException("택배 예약 전후에만 취소할 수 있습니다. 현재 상태: " + this.status);
         }
         this.status = ShipmentStatus.CANCEL_PENDING;

@@ -51,7 +51,7 @@
 | DLT 유입 | `*.DLT` 토픽에 1건이라도 (kafka-exporter offset 증가) | 즉시 |
 | 디스크 | 80% 이상 | 5분 |
 | 메모리 | 앱 서버: 컨테이너 · 파드 한도의 90% 이상, 데이터 서버: 서버 메모리 90% 이상 | 5분 |
-| 배송 예약 · 취소 지연 | `replant_shipment_stuck{status="READY"}`(만든 지 10분 넘게 택배 예약 안 됨) 또는 `{status="CANCEL_PENDING"}`(취소를 누른 지 10분 넘게 택배사 결과 없음) 1 이상. market이 수집 때마다 DB에서 셈, 원인은 배송 `last_error` | 상태 기준 1번, 반복 1시간 |
+| 배송 예약 · 취소 지연 | `replant_shipment_stuck{status="READY"}`(만든 지 10분 넘게 택배 예약 안 됨), `{status="CANCEL_PENDING"}`(취소를 누른 지 10분 넘게 택배사 결과 없음) 또는 `{status="REVIEW_REQUIRED"}`(택배사가 예약을 거절해 확인 필요, 바로 셈 → [처리 순서](shipment-review-runbook.md)) 1 이상. market이 수집 때마다 DB에서 셈, 원인은 배송 `last_error` | 상태 기준 1번, 반복 1시간 |
 | 정산 지급 지연 | 10분 넘게 미지급(`PENDING`, `FAILED`)인 정산 1건 이상 (`max(settlement_payouts_delayed) > 0`) | 상태 기준 1번, 반복 1시간 |
 | 정산 대사 불일치 | 미해결 대사 불일치 1건 이상 (`max(settlement_reconciliation_mismatches) > 0`). settlement가 수집 때마다 DB에서 셈, DB를 못 읽으면 NaN → [해결 처리](../flows/confirm-settlement.md#정산-대사) | 상태 기준 1번, 반복 1시간 |
 | 정산 대사 실행 실패 | 1시간 안에 `FAILED`(모든 배치 실패 또는 예외로 중단) 또는 `PARTIAL`(일부 배치를 payment 조회 실패로 건너뜀) 실행이 1번 이상 (`sum(increase(settlement_reconciliation_runs_total{result=~"failed\|partial"}[1h])) > 0`). 원인은 `settlement_reconciliation_run`과 settlement 로그 | 즉시 |
