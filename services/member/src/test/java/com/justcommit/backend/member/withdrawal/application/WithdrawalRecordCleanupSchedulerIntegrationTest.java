@@ -1,24 +1,15 @@
 package com.justcommit.backend.member.withdrawal.application;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import com.justcommit.backend.member.withdrawal.domain.MemberWithdrawalRecord;
 import com.justcommit.backend.member.withdrawal.infrastructure.repository.MemberWithdrawalRecordRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -27,20 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * - 테스트 프로필은 스케줄러를 끄므로(빈 없음) 스케줄러를 직접 만들어 호출한다
  * - 이 클래스에는 @Transactional이 없어, 벌크 DELETE 뒤의 조회는 DB에서 다시 읽은 값이다
  */
-@SpringBootTest
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class WithdrawalRecordCleanupSchedulerIntegrationTest {
-
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
+class WithdrawalRecordCleanupSchedulerIntegrationTest extends MemberIntegrationTest {
 
   @Autowired
   private MemberWithdrawalRecordRepository recordRepository;
@@ -80,15 +58,5 @@ class WithdrawalRecordCleanupSchedulerIntegrationTest {
 
   private Long save(Instant withdrawnAt) {
     return recordRepository.save(MemberWithdrawalRecord.create("a".repeat(64), "b".repeat(64), withdrawnAt)).getId();
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

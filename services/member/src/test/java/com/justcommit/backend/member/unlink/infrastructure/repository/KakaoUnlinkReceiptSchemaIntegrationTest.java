@@ -1,7 +1,6 @@
 package com.justcommit.backend.member.unlink.infrastructure.repository;
 
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReceipt;
@@ -10,18 +9,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,21 +24,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * - 컨텍스트가 뜨면 V10 적용과 Hibernate validate는 통과한 것
  * - 제약 위반은 엔티티를 거치지 않고 SQL로 직접 넣어 DB가 막는지 본다
  */
-@SpringBootTest
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class KakaoUnlinkReceiptSchemaIntegrationTest {
+class KakaoUnlinkReceiptSchemaIntegrationTest extends MemberIntegrationTest {
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
 
   @Autowired
   private KakaoUnlinkReceiptRepository receiptRepository;
@@ -152,15 +131,5 @@ class KakaoUnlinkReceiptSchemaIntegrationTest {
     return memberRepository.save(Member.createLocal(
         "unlinkschema" + n + "@test.com", "encoded-password", "해제" + n, String.format("019%08d", 50_000_000 + n),
         "004", "v1:test-account", null, "홍길동")).getId();
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }
