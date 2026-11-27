@@ -1,5 +1,6 @@
 package com.justcommit.backend.market.shipment.application;
 
+import com.justcommit.backend.market.shipment.infrastructure.courier.TestBookingRequestCodecConfig;
 import com.justcommit.backend.common.messaging.EventEnvelopeMapper;
 import com.justcommit.backend.common.messaging.outbox.OutboxAutoConfiguration;
 import com.justcommit.backend.common.messaging.outbox.OutboxRelay;
@@ -56,7 +57,7 @@ import static org.mockito.Mockito.when;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ShipmentService.class, ShipmentWebhookService.class,
+@Import({JpaAuditingConfig.class, TestBookingRequestCodecConfig.class, ShipmentService.class, ShipmentWebhookService.class,
         ShipmentStatusChangedEventPublisher.class, EventEnvelopeMapper.class})
 @ImportAutoConfiguration(OutboxAutoConfiguration.class)
 @TestPropertySource(properties = "outbox.scheduler.enabled=false")

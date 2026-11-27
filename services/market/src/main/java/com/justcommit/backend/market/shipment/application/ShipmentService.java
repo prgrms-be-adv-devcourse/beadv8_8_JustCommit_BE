@@ -41,6 +41,7 @@ public class ShipmentService {
     private final PlatformTransactionManager transactionManager;
     private final ShipmentStatusChangedEventPublisher statusChangedEventPublisher;
     private final OrderQuery orderQuery;
+    private final CourierBookingRequestCodec bookingRequestCodec;
 
     // 판매자 수락 트랜잭션 안에서 호출된다 (#284, ADR 0013). 수락, 일부 거절 뒤 수락된 주문상품만 담는다.
     // 배송 행(READY + courierOrderNo + 상품 요약)만 만들어 수락과 함께 커밋하고 끝낸다. 택배사는 부르지 않는다.
@@ -83,17 +84,30 @@ public class ShipmentService {
     }
 
     // 큐가 집은 배송을 택배사에 예약한다. 실패하면 READY로 두고 다음 시도 시각을 미룬다 (포기하지 않음).
-    private void bookClaimed(Shipment shipment) {
+    private void bookClaimed(Shipment claimed) {
+        Shipment shipment = claimed;
         OrderShippingInfo orderInfo = null;
         CourierBookingResponse response = null;
         try {
             orderInfo = orderQuery.getShippingInfo(shipment.getSellerOrderId());
-            response = courierClient.book(shipment.getCourierOrderNo(), bookingRequest(shipment, orderInfo));
+            CourierBookingRequest request;
+            if (shipment.getBookingRequest() != null) {
+                // 재시도: 처음 보낸 본문 그대로 (#672). 그사이 판매자 배송지가 바뀌어도 같은 멱등 키에 같은 본문
+                request = bookingRequestCodec.decode(shipment.getBookingRequest());
+            } else {
+                request = bookingRequest(shipment, orderInfo);
+                shipment = pinBookingRequest(shipment, request);
+                if (shipment == null) {
+                    return; // 저장하는 사이 배송이 바뀜(취소 등) → 택배사를 부르지 않는다
+                }
+            }
+            response = courierClient.book(shipment.getCourierOrderNo(), request);
             shipment.book(response.trackingNo(), response.bookedAt().atZoneSameInstant(SEOUL).toLocalDateTime());
             OrderShippingInfo info = orderInfo;
+            Shipment booked = shipment;
             new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-                shipmentRepository.save(shipment);
-                statusChangedEventPublisher.publishAfterCommit(shipment, info, shipment.getBookedAt());
+                shipmentRepository.save(booked);
+                statusChangedEventPublisher.publishAfterCommit(booked, info, booked.getBookedAt());
             });
         } catch (ObjectOptimisticLockingFailureException e) {
             // 택배사 예약은 됐는데, 그사이 다른 쪽이 배송을 먼저 바꿨다
@@ -130,6 +144,22 @@ public class ShipmentService {
                     }));
         } catch (ObjectOptimisticLockingFailureException again) {
             log.info("확인 필요 기록 중 배송이 바뀜: shipmentId={}", shipmentId);
+        }
+    }
+
+    // 첫 시도 직전에 보낼 본문을 암호화해 저장하고 커밋한다 (#672). 택배사를 부르기 전에 커밋해야
+    // 응답을 못 받고(시간 초과) 끝나도 다음 시도가 같은 본문을 보낸다. 저장한 최신 행(새 version)을 돌려준다.
+    // 그사이 배송이 바뀌었으면(취소 등) null — 택배사를 부르지 않는다.
+    private Shipment pinBookingRequest(Shipment shipment, CourierBookingRequest request) {
+        String encoded = bookingRequestCodec.encode(request);
+        try {
+            return new TransactionTemplate(transactionManager).execute(status -> {
+                shipment.pinBookingRequest(encoded);
+                return shipmentRepository.saveAndFlush(shipment);
+            });
+        } catch (ObjectOptimisticLockingFailureException e) {
+            log.info("예약 본문 저장 중 배송이 바뀌어 예약하지 않음: shipmentId={}", shipment.getId());
+            return null;
         }
     }
 
