@@ -1,9 +1,8 @@
 package com.justcommit.backend.member.account.presentation;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.common.security.TokenHash;
 import com.justcommit.backend.member.auth.domain.EmailPurpose;
-import com.justcommit.backend.member.auth.infrastructure.mail.VerificationMailSender;
-import com.justcommit.backend.member.config.MailExecutorConfig;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.infrastructure.crypto.MemberHmac;
@@ -15,31 +14,17 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
-import org.springframework.core.task.SyncTaskExecutor;
-import org.springframework.core.task.TaskExecutor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.convention.TestBean;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.sql.Timestamp;
-import java.util.Base64;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -56,13 +41,9 @@ import static org.mockito.BDDMockito.then;
  * - 공개 인증 경로(/auth/email/send · verify)는 계좌 변경 목적을 계속 거절한다
  * - 계좌 변경(PATCH): 토큰이 남는 실패(형식 · 중복)와 소모되는 경우(성공 · 같은 계좌)를 나눠 확인한다
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
 @ExtendWith(OutputCaptureExtension.class)
-class AccountChangeIntegrationTest {
+class AccountChangeIntegrationTest extends MemberIntegrationTest {
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
   private static final String PASSWORD = "plant1234";
   private static final String VERIFICATIONS = "/api/v1/users/me/account/verifications";
@@ -73,14 +54,6 @@ class AccountChangeIntegrationTest {
   private static final Pattern ACCESS_TOKEN = Pattern.compile("\"accessToken\":\"([^\"]+)\"");
   private static final Pattern CHANGE_TOKEN = Pattern.compile("\"accountChangeToken\":\"([^\"]+)\"");
 
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
-
   @Value("${local.server.port}")
   private int port;
 
@@ -90,18 +63,6 @@ class AccountChangeIntegrationTest {
   @Autowired JdbcTemplate jdbcTemplate;
   @Autowired MemberHmac memberHmac;
   @Autowired AccountCipher accountCipher;
-
-  @MockitoBean
-  VerificationMailSender verificationMailSender;
-
-  // 업무 흐름 검증이 목적이라 메일 작업을 요청 스레드에서 바로 실행한다 (응답 직후 메일 발송자 호출을 바로 검증)
-  // 비동기 동작은 별도 통합 테스트에서 실제 실행기로 검증 (#421)
-  @TestBean(name = MailExecutorConfig.MAIL_TASK_EXECUTOR)
-  TaskExecutor mailTaskExecutor;
-
-  static TaskExecutor mailTaskExecutor() {
-    return new SyncTaskExecutor();
-  }
 
   private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -344,15 +305,5 @@ class AccountChangeIntegrationTest {
     int n = SEQ.incrementAndGet();
     return memberRepository.save(Member.createLocal("account" + n + "@test.com", passwordEncoder.encode(PASSWORD),
         "계좌" + n, String.format("019%08d", n), "004", "v1:test-account", null, "홍길동"));
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }
