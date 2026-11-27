@@ -53,6 +53,7 @@
 ## 비밀값 관리
 
 - 비밀값 원본은 서버 `~/secrets/`에 두고, 레포에는 `.env.example`(이름 · 설명)만 둡니다.
+- 운영 env 파일 · K3s Secret은 `deploy/scripts/make-env.sh`로만 만듭니다. 새 키는 이 스크립트에 넣고(외부 값이면 서버 `~/secrets/external.env`에 값을 먼저 채움) develop에 머지하면 CD가 레포 최신 스크립트를 `--no-create`로 실행해 바뀐 서비스만 재시작합니다 → [서버 배치 · 배포](../infra/deploy.md) 「CI/CD」. CD는 공유 키 · JWT 키를 새로 만들지 않으므로, 처음 한 번은 서버에서 옵션 없이 실행합니다.
 - 새 환경변수가 기본값 없이(`${X}`) 또는 빈 기본값(`${X:}`)으로 서비스 `application*.yml`에 들어가면 `deploy/scripts/make-env.sh`의 그 서비스 env에도 추가합니다. PR CI 「운영 env 누락 검사」(`scripts/check_env_vars.py`)가 make-env.sh를 가짜 값으로 실행해 빠진 변수 이름을 출력하며 실패시킵니다 (#666). 운영에서 일부러 넣지 않는 변수는 `deploy/scripts/env-check-ignore.txt`에 「서비스 변수  # 이유」로 적습니다.
 - DB 계정 · 암호화 키(계좌 암호화 · HMAC · 결제 키)는 한 번 정하면 바꾸지 않습니다.
 - 주소 이벤트 전송 키(`MEMBER_ADDRESS_EVENT_KEY`)와 택배 예약 본문 키(`MARKET_BOOKING_REQUEST_KEY`)는 키 버전을 지원해 유출 시 바꿀 수 있습니다. 택배 예약 본문은 예약 · 취소로 큐를 떠나면 지워져 오래 남지 않습니다. 바꿀 때는 [키 교체 절차](../conventions/events.md#민감-필드-암호화)를 따릅니다.

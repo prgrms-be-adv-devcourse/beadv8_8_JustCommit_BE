@@ -18,16 +18,10 @@ import tools.jackson.databind.json.JsonMapper;
 public class CourierBookingRequestCodec {
 
     private final EventFieldCipher bookingRequestCipher;
-    private final BookingRequestCipherProperties properties;
-    // 전환 기간: #672 배포 ~ #688 배포 사이에 판매자 배송지 키(k1)로 저장된 값을 읽는다.
-    // booking_request는 예약 · 취소로 큐를 떠나면 비워지므로, 이 키 버전의 행이 0건이 되면 지운다.
-    private final EventFieldCipher legacyAddressEventCipher;
     private final JsonMapper jsonMapper = JsonMapper.builder().build();
 
-    public CourierBookingRequestCodec(BookingRequestCipherProperties properties, EventFieldCipher addressEventCipher) {
-        this.properties = properties;
+    public CourierBookingRequestCodec(BookingRequestCipherProperties properties) {
         this.bookingRequestCipher = new EventFieldCipher(properties.currentKey(), properties.keys());
-        this.legacyAddressEventCipher = addressEventCipher;
     }
 
     public String encode(CourierBookingRequest request) {
@@ -36,20 +30,10 @@ public class CourierBookingRequestCodec {
 
     public CourierBookingRequest decode(String encoded) {
         try {
-            return jsonMapper.readValue(cipherFor(encoded).decrypt(encoded), CourierBookingRequest.class);
+            return jsonMapper.readValue(bookingRequestCipher.decrypt(encoded), CourierBookingRequest.class);
         } catch (EventFieldCipherException | JacksonException e) {
             // 원인 예외에 원문 일부가 들어갈 수 있어 붙이지 않는다
             throw new IllegalStateException("저장한 택배 예약 본문을 읽지 못함: " + e.getClass().getSimpleName());
         }
-    }
-
-    // 암호문 접두사 "v1.{키 버전}:"의 키 버전이 market 전용 키에 있으면 그 키로, 아니면 옛 판매자 배송지 키로 푼다
-    private EventFieldCipher cipherFor(String encoded) {
-        int dot = encoded.indexOf('.');
-        int colon = encoded.indexOf(':');
-        if (dot >= 0 && colon > dot && properties.keys().containsKey(encoded.substring(dot + 1, colon))) {
-            return bookingRequestCipher;
-        }
-        return legacyAddressEventCipher;
     }
 }

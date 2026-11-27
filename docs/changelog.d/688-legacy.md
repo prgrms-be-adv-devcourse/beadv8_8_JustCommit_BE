@@ -1,0 +1,1 @@
+- 2026-11-27 · services/market.md · 운영에 판매자 배송지 키(`k1`)로 저장된 `booking_request`가 0건이라 전환 기간 읽기를 지움, 택배 예약 본문은 market 전용 키로만 읽음 (#688)

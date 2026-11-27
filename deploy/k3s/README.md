@@ -26,7 +26,7 @@
 
 ```bash
 kubectl apply -f namespace.yaml
-bash ~/make-env.sh   # deploy/scripts/make-env.sh — ~/secrets/*.env 작성 + gateway · market · ai Secret 갱신
+bash ../scripts/make-env.sh   # 레포 최신본(deploy/scripts). ~/secrets/*.env 작성 + gateway · market · ai Secret 갱신 (처음만 옵션 없이 — 키를 만듦)
 kubectl -n replant create secret docker-registry ghcr-pull --docker-server=ghcr.io --docker-username=<GitHub ID> --docker-password=<토큰>
 kubectl apply -f endpoints.yaml -f gateway.yaml -f market.yaml -f ai.yaml
 kubectl -n replant get pods
@@ -53,5 +53,5 @@ bash deploy/k3s/apply.sh deploy/k3s/*.yaml              # 전부 (ConfigMap · N
 | 배포 진행 보기 | `kubectl -n replant rollout status deploy/market` |
 | ai 개수 · CPU 보기 | `kubectl -n replant get hpa ai` |
 | 되돌리기 | `kubectl -n replant rollout undo deploy/market` |
-| Secret 값 바꾼 뒤 반영 | `bash ~/make-env.sh` 뒤 `kubectl -n replant rollout restart deploy/market` (이미지 그대로) |
+| Secret 값 바꾼 뒤 반영 | CD가 배포마다 `make-env.sh --no-create`를 돌리고 바뀐 서비스만 `rollout restart` (#665). `make-env.sh`를 바꿨으면 develop 머지, 서버 `external.env` 값만 바꿨으면 Actions에서 CD를 `services: none`으로 수동 실행 |
 | 매니페스트 다시 적용 | `bash deploy/k3s/apply.sh deploy/k3s/market.yaml` (이미지 그대로) |
