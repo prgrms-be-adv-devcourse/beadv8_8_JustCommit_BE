@@ -8,7 +8,7 @@
 # 순서: member_db 회원 → (회원 번호 그대로) market · product · payment 회원 복제본 → payment 지갑 → product 상품 → market 지난 주문
 # 회원 복제본은 원래 Kafka 이벤트로 채워지지만, 2천 명 가입 이벤트를 흘리는 대신 SQL로 같은 행을 넣는다.
 # 비밀번호는 ~/.replant-perf/password (레포 밖)를 bcrypt로 바꿔 해시만 넘긴다.
-# 되돌리기: 측정 뒤 시연 도구 `npm run demo -- restore base`가 이 데이터를 전부 덮어쓴다.
+# 되돌리기: seed 전에 시연 도구 `npm run demo -- save <이름>`, 측정 뒤 `restore <이름>` (restore base는 그 뒤 생긴 실제 데이터까지 지움, #661)
 set -euo pipefail
 
 DATA=${DATA_HOST:-replant-data}
@@ -35,7 +35,7 @@ sql=$(cat <<'SQL'
 BEGIN;
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM member WHERE email LIKE 'perf-%@perf.test') THEN
-    RAISE EXCEPTION '이미 테스트 회원이 있음: restore base 뒤 다시 실행';
+    RAISE EXCEPTION '이미 테스트 회원이 있음: 측정 전 스냅샷으로 restore 뒤 다시 실행';
   END IF;
 END $$;
 INSERT INTO member (email, password, nickname, phone, role, provider, status, created_at, updated_at, token_version)
