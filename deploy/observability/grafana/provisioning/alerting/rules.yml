@@ -313,7 +313,7 @@ groups:
     noDataState: OK
     execErrState: Error
     annotations:
-      summary: '{{ $labels.status }} 상태로 10분 넘게 멈춘 배송 {{ $values.A.Value }}건 (READY = 택배 예약 안 됨, CANCEL_PENDING = 택배사 취소 결과 없음) — 배송 last_error · 404-express 상태 확인'
+      summary: '{{ $labels.status }} 상태로 멈춘 배송 {{ $values.A.Value }}건 (READY = 10분 넘게 택배 예약 안 됨, CANCEL_PENDING = 10분 넘게 택배사 취소 결과 없음, REVIEW_REQUIRED = 택배사가 예약을 거절해 확인 필요) — 배송 last_error · 404-express 상태 확인, 확인 필요는 docs/infra/shipment-review-runbook.md'
     labels:
       team: replant
     isPaused: false

@@ -78,12 +78,25 @@ class StuckShipmentMetricsTest {
     }
 
     @Test
+    @DisplayName("#671 확인 필요 배송은 10분을 기다리지 않고 바로 센다")
+    void countsReviewRequiredImmediately() {
+        Shipment review = saved(1L);
+        saved(2L);
+        review.markReviewRequired("PERMANENT 400");
+        shipmentRepository.save(review);
+
+        assertThat(gauge("REVIEW_REQUIRED")).isEqualTo(1.0);
+        assertThat(gauge("READY")).isZero(); // 방금 만든 READY는 아직 세지 않음
+    }
+
+    @Test
     @DisplayName("오래 남은 배송이 없으면 0")
     void zeroWhenNothingStuck() {
         saved(1L);
 
         assertThat(gauge("READY")).isZero();
         assertThat(gauge("CANCEL_PENDING")).isZero();
+        assertThat(gauge("REVIEW_REQUIRED")).isZero();
     }
 
     private double gauge(String status) {

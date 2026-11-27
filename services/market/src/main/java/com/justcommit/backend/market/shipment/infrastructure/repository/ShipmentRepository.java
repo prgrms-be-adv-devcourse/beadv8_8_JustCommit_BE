@@ -24,6 +24,9 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
     // 오래 남은 배송 지표: 만든 지 기준 시각이 지났는데 아직 예약 안 된(READY) 배송 수
     long countByStatusAndCreatedAtBefore(ShipmentStatus status, LocalDateTime createdBefore);
 
+    // 확인 필요 배송 지표 (#671): 택배사가 예약을 거절해 멈춘 배송 수
+    long countByStatus(ShipmentStatus status);
+
     // 오래 남은 배송 지표: 취소를 누른 지 기준 시각이 지났는데 아직 택배사 결과를 못 받은(CANCEL_PENDING) 배송 수
     long countByStatusAndCancelRequestedAtBefore(ShipmentStatus status, LocalDateTime requestedBefore);
 
