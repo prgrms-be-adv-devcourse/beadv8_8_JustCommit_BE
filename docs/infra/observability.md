@@ -13,7 +13,7 @@
 | Loki | 로그 | 14일 |
 | Tempo | 분산 추적 (샘플링 100%) | 3일 |
 | Prometheus | 지표 | 7일 |
-| Grafana | 화면 · 알림. 팀원마다 개인 계정(Viewer), 익명 · 가입 차단, 로그인 시도는 Nginx가 IP마다 분당 10회로 제한 | – |
+| Grafana | 화면 · 알림. 팀원마다 개인 계정(Viewer, 운영진이 Administration → Users and access → Users → New user로 만들고 첫 로그인 뒤 비밀번호를 바꿈), 익명 · 가입 차단, 로그인 시도는 Nginx가 IP마다 분당 10회로 제한 | – |
 
 지표를 스스로 내보내지 못하는 서버 · DB에는 옆에 exporter를 붙여 Prometheus가 읽게 합니다.
 
