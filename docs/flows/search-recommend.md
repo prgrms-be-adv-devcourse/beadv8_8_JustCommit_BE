@@ -1,7 +1,7 @@
 # 검색 · 추천
 
 > 언제 읽나: OpenSearch 색인, 임베딩, 추천 코드를 고칠 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-21 · 관련: Miro 17, 노션 기획안 「AI 추천 기능 설명」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-27 · 관련: Miro 17, 노션 기획안 「AI 추천 기능 설명」
 
 ## 검색 색인
 
@@ -24,12 +24,16 @@
 | 색인 이벤트 | `product.events.v1`의 `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged`. `ProductApproved` · `ProductRejected`는 알림용이라 건너뜀(상태는 함께 나가는 `ProductStatusChanged`로 반영) |
 | 쓰기 순서 | 외부 버전(`version_type=external`, 버전 = 상품 `version`): 저장된 버전보다 클 때만 반영, 같거나 작으면(409) 건너뜀. 전체 색인과 이벤트 색인이 겹쳐도 옛 값이 새 값을 덮지 않음. 쓰기는 `require_alias`라 alias가 없으면 실패(매핑 없는 `products` 인덱스가 자동으로 생기지 않게) |
 | 색인 실패 | 공통 소비 설정대로 1 · 2 · 4초 재시도 후 `product.events.v1.DLT`. 상품 저장은 Outbox까지라 OpenSearch가 죽어도 등록 · 수정 API는 성공하고 색인만 늦어짐. 어긋난 문서는 전체 색인으로 맞춤 |
-| 전체 색인 | 관리자 API `POST admin/products/searchIndex`: 상품을 id 순서로 500개씩 읽어 bulk로 씀. 처음 띄울 때 · 인덱스를 다시 만들 때 · DLT로 빠진 색인을 맞출 때. 상품 DB를 비우고 다시 시작하면(상품 id · 버전이 처음부터) 남은 문서의 버전이 더 커서 건너뛰므로 인덱스(`products_v*`)도 지운 뒤 앱을 다시 띄움 |
+| 전체 색인 | 관리자 API `POST admin/products/searchIndex`: 상품을 id 순서로 500개씩 읽어 bulk로 씀. 요청 스레드에서 끝까지 실행하고 결과를 응답하며 작업 기록(`REINDEX_ALL`)도 남김. 처음 띄울 때 · 인덱스를 다시 만들 때 · DLT로 빠진 색인을 맞출 때. 상품 DB를 비우고 다시 시작하면(상품 id · 버전이 처음부터) 남은 문서의 버전이 더 커서 건너뛰므로 인덱스(`products_v*`)도 지운 뒤 앱을 다시 띄움 |
 | 검색 API | `GET products`: `keyword`가 있으면 OpenSearch로 상품 id · 전체 개수만 받고 화면 값은 DB에서 다시 읽음(응답 형식이 DB 조회와 같고, 색인 지연 중 숨김 · 상태가 바뀐 상품은 한 번 더 거름). `keyword`가 없거나 `sellerId`가 있으면 DB 조회(원본이라 색인 지연이 없고 개수가 정확, 관련도가 필요 없음) |
 | 판매자 상점 | `sellerId`(그 판매자 상품만) · `status`(노출 상태 중 하나 이상, 하나라도 밖이면 400). 판매 중 칸은 `status=ACTIVE&status=PAYMENT_PENDING`(결제 대기도 함께, 웹 시안 ShopB). 상점 안 검색창이 없어(웹 시안) 키워드가 있어도 DB 조회, 문서에 판매자는 색인하지 않음. 판매 완료 개수는 `sellerId` + `status=SOLD_OUT`의 전체 개수 |
 | 페이지 | 기본 20, 최대 50 |
 | OpenSearch 장애 | 연결 실패는 1번 더 보내고, 읽기 시간 초과 · OpenSearch 오류 응답(인덱스 없음 등) · 동시 검색 상한(20) 초과는 다시 보내지 않고 경고 로그 후 DB LIKE 검색(제목 · 품종명 포함, 최신순)으로 대신 (관련도 · 오타 · 한국어 분석 없음). 응답 없이 멈춘 OpenSearch를 기다리는 요청은 상한까지만이라 다른 API는 영향받지 않음. 값은 [resilience](../conventions/resilience.md) (#574) |
-| 매핑 변경 | 관리자 API `POST admin/products/searchIndex/rebuilds`(무중단 재색인): `products_v{n+1}`을 alias 없이 만듦 → DB 전체를 채움(실패하면 새 인덱스를 지우고 멈춤, alias 그대로) → refresh → alias를 한 요청으로 옮김 → 그사이 옛 인덱스로 간 변경을 맞추는 전체 색인(같은 버전은 건너뜀) → 옛 인덱스 삭제(따라잡기 색인에 실패한 건이 있으면 옛 인덱스를 남김, `previousDeleted=false`: 전체 색인을 다시 실행해 맞춘 뒤 직접 지움). 그동안 검색 · 이벤트 색인은 옛 인덱스로 계속 됨. 전체 색인 · 재색인은 한 서버 안에서 한 번에 하나만(진행 중이면 409 `SEARCH_INDEXING_IN_PROGRESS`). 서버가 여럿이면 재색인끼리는 같은 새 인덱스 이름이 충돌해 뒤에 온 요청이 실패하지만, 다른 서버의 전체 색인과 겹치는 것은 막지 못하므로 재색인 중에는 전체 색인을 부르지 않음. 동기 실행이라 DB 전체를 두 번 읽음(상품이 많아지면 비동기 · 변경분만 반영 검토). 매핑을 바꾼 배포 뒤 한 번 부름(그 전에는 새 필드가 옛 인덱스에 없어 그 필드로는 안 찾힐 뿐 검색은 됨, 예: `.word` 오타 허용) |
+| 매핑 변경 | 관리자 API `POST admin/products/searchIndex/rebuilds`(무중단 재색인, #563부터 비동기): 작업 행(`QUEUED`)만 남기고 바로 `202` + 작업 ID. 별도 실행자(스레드 1개)가 `products_v{n+1}`을 alias 없이 만듦 → DB 전체를 채움(`FILLING`, 실패하면 새 인덱스를 지우고 멈춤, alias 그대로) → refresh · alias를 한 요청으로 옮김(`SWITCHING_ALIAS`) → 그사이 옛 인덱스로 간 변경을 맞추는 전체 색인(`CATCHING_UP`, 같은 버전은 건너뜀) → 옛 인덱스 삭제(`CLEANING_UP` → `COMPLETED`). 따라잡기 색인에 실패한 건이 있으면 옛 인덱스를 남김(`previousDeleted=false`: 전체 색인을 다시 실행해 맞춘 뒤 직접 지움). 그동안 검색 · 이벤트 색인은 옛 인덱스로 계속 됨. 매핑을 바꾼 배포 뒤 한 번 부름(그 전에는 새 필드가 옛 인덱스에 없어 그 필드로는 안 찾힐 뿐 검색은 됨, 예: `.word` 오타 허용) |
+| 색인 작업 기록 | 전체 색인 · 재색인마다 `SEARCH_INDEX_JOB` 한 행: 단계(`QUEUED` · `FILLING` · `SWITCHING_ALIAS` · `CATCHING_UP` · `CLEANING_UP` · `COMPLETED` · `FAILED`) · 실패한 단계 · 처리 수(채우기 · 따라잡기 따로) · 시작할 때 상품 수 · 시작/끝 시각 · 실패 이유 · 실행 서버. `GET admin/products/searchIndex/jobs/{jobId}`로 조회하고 서버를 다시 띄워도 남음. 끝나는 곳(완료 · 실패 · 죽은 작업 실패 처리)은 `SearchIndexJobTracker` 한 곳이고 서버 안 이벤트 `SearchIndexJobFinishedEvent`를 냄(#638 Slack 알림이 구독할 자리, Kafka로는 안 나감) |
+| 색인 작업 잠금 | 전체 색인 · 재색인은 모든 서버를 통틀어 한 번에 하나만. 끝나지 않은(`finished_at` 없음) 작업 행은 하나만 둘 수 있는 부분 유니크 인덱스(`uk_search_index_job_running`)라 두 번째 등록은 유니크 위반 → 409 `SEARCH_INDEXING_IN_PROGRESS`. Postgres advisory lock은 세션 잠금이라 작업 내내 DB 연결 하나를 잡아야 하고(색인은 OpenSearch를 기다리는 동안 연결을 잡지 않음) 진행 상태를 따로 저장해야 해서 쓰지 않음. 이벤트 한 건 색인(`sync`)은 잠그지 않음(외부 버전으로 순서가 맞음) |
+| 멈춘 작업 정리 | 실행 서버는 배치(500개)마다 하트비트(`heartbeat_at`)를 갱신. 2분(`custom.search.index-job.stale-after`) 넘게 끊기면 서버가 죽은 것으로 보고 다음 요청 · 정리 스케줄러가 `FAILED`로 바꿔 잠금을 풂. 새 인덱스를 채우던 재색인이면 alias가 아직 옮겨지지 않은 새 인덱스도 지움(다음 재색인이 같은 이름을 쓰게), alias를 옮긴 뒤면 인덱스는 그대로 두고 실패 이유에 옛 인덱스 정리를 안내. 실패 처리된 뒤 늦게 깨어난 실행은 다음 배치 기록에서 멈추고 새 인덱스를 지우지 않음(같은 이름을 다음 재색인이 쓰고 있을 수 있음). 배포로 서버를 내리면 실행 중이던 재색인은 이렇게 2분 뒤 실패로 정리됨 → [스케줄러](../reference/schedulers.md) |
+| 변경분만 따라잡기 (검토, 구현 안 함) | 따라잡기는 지금 DB 전체를 한 번 더 읽음(같은 버전은 OpenSearch가 건너뛰어 쓰기는 적지만 읽기는 상품 수만큼). 바꾸는 안: 채우기를 시작한 시각에서 여유(1분, 긴 트랜잭션의 커밋 지연)를 뺀 뒤 `outbox_event`에 쌓인 `product.events.v1`의 `aggregate_id`(상품 ID, 삭제는 `ProductStatusChanged`로 함께 들어옴)만 다시 읽어 색인. 색인 리스너가 받는 이벤트와 같은 원본이라 빠지는 변경이 없고, Outbox는 발행 7일 뒤 지워지므로 재색인 시간 안에서는 남아 있음. 남은 확인: 상품을 바꾸는 일괄 UPDATE(예약 · 판매 완료 · 판매자 탈퇴)가 모두 같은 트랜잭션에서 Outbox 이벤트를 남기는지, Outbox 테이블이 common 모듈 소유라 product가 직접 조회해도 되는지. 지금 상품 수(10만 개에서 따라잡기 수 초)에서는 비동기 실행으로 요청 타임아웃이 없어져 필요해질 때 진행 |
 | 범위 밖 | 사진 검색 · 초성 검색 · 자동완성, 0건 검색어 기록. 상품 목록 검색(OpenSearch)은 키워드 검색이고, 문장으로 찾는 의미 검색은 아래 「의미 검색」(챗봇) |
 
 → [ADR 0005](../decisions/0005-opensearch-pgvector-external-embedding.md)

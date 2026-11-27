@@ -12,6 +12,12 @@ import com.justcommit.backend.product.product.presentation.dto.ProductSearchRequ
 import com.justcommit.backend.product.product.presentation.dto.ProductSearchResponse;
 import com.justcommit.backend.product.search.application.ProductIndexService;
 import com.justcommit.backend.product.search.application.ProductIndexService.RebuildResult;
+import com.justcommit.backend.product.search.application.SearchIndexJobService;
+import com.justcommit.backend.product.search.application.SearchIndexJobStatus;
+import com.justcommit.backend.product.search.application.SearchIndexJobTracker;
+import com.justcommit.backend.product.search.domain.SearchIndexJobPhase;
+import com.justcommit.backend.product.search.infrastructure.SearchIndexJobConfig;
+import com.justcommit.backend.product.search.infrastructure.SearchIndexJobRepository;
 import com.justcommit.backend.product.search.application.ProductKeywordSearch;
 import com.justcommit.backend.product.search.application.ProductSearchMetrics;
 import com.justcommit.backend.product.search.application.ProductSearchMetrics.Stage;
@@ -81,7 +87,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaAuditingConfig.class, ClockConfig.class, ProductIndexService.class, OpenSearchProductIndex.class,
-        ProductIndexAdmin.class,
+        ProductIndexAdmin.class, SearchIndexJobService.class, SearchIndexJobTracker.class, SearchIndexJobConfig.class,
         OpenSearchProductSearch.class, ProductSearchService.class, ProductSearchMetrics.class,
         ProductSearchIntegrationTest.Config.class})
 @Testcontainers(disabledWithoutDocker = true)
@@ -147,6 +153,8 @@ class ProductSearchIntegrationTest {
     @Autowired OpenSearchClient client;
     @Autowired ProductSearchService searchService;
     @Autowired ProductIndexService indexService;
+    @Autowired SearchIndexJobService jobService;
+    @Autowired SearchIndexJobRepository jobRepository;
     @Autowired ProductRepository productRepository;
     @Autowired SpeciesRepository speciesRepository;
     @Autowired JdbcTemplate jdbc;
@@ -155,6 +163,7 @@ class ProductSearchIntegrationTest {
 
     @AfterEach
     void cleanUp() {
+        jobRepository.deleteAllInBatch();
         jdbc.update("delete from product_image");
         productRepository.deleteAllInBatch();
     }
@@ -434,6 +443,35 @@ class ProductSearchIntegrationTest {
         // 재색인 뒤에도 이벤트 · 전체 색인 쓰기와 검색이 그대로 (alias로 읽고 씀)
         assertThat(ids(search("몬스테라 재색인"))).containsExactly(target.getId());
         assertThat(indexService.rebuild().currentIndex()).isEqualTo("products_v3");
+    }
+
+    @Test
+    @DisplayName("[#563 완료 기준 1] 재색인 요청은 바로 QUEUED로 응답하고, 별도 실행자에서 COMPLETED까지 가며 진행 상태를 조회할 수 있음")
+    void asyncRebuildWithStatus() throws Exception {
+        Product target = save(MONSTERA_ID, SELLER_ID, "몬스테라 비동기 재색인", "설명", ProductStatus.ACTIVE);
+        save(SANSEVIERIA_ID, SELLER_ID, "산세베리아", "설명", ProductStatus.DELETED);
+        index();
+
+        SearchIndexJobStatus accepted = jobService.requestRebuild();
+        assertThat(accepted.phase()).isIn(SearchIndexJobPhase.QUEUED, SearchIndexJobPhase.FILLING);
+
+        SearchIndexJobStatus done = accepted;
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (!done.phase().isFinished() && System.nanoTime() < deadline) {
+            Thread.sleep(100);
+            done = jobService.status(accepted.jobId());
+        }
+        assertThat(done.phase()).isEqualTo(SearchIndexJobPhase.COMPLETED);
+        assertThat(done.previousIndex()).isEqualTo(INDEX_V1);
+        assertThat(done.nextIndex()).isEqualTo(INDEX_V2);
+        assertThat(done.totalCount()).isEqualTo(2);
+        assertThat(done.processed()).isEqualTo(2);
+        assertThat(done.failed()).isZero();
+        assertThat(done.caughtUp().skipped()).isEqualTo(2);
+        assertThat(done.previousDeleted()).isTrue();
+        assertThat(client.indices().getAlias(request -> request.name(ProductIndexInitializer.ALIAS)).result())
+                .containsOnlyKeys(INDEX_V2);
+        assertThat(ids(search("몬스테라 비동기"))).containsExactly(target.getId());
     }
 
     private Product save(Long speciesId, Long sellerId, String title, String description, ProductStatus status) {
