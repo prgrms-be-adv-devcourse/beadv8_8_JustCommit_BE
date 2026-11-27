@@ -152,6 +152,7 @@ write() { cat > "$S/$1.env"; chmod 600 "$S/$1.env"; echo "  작성: $1.env"; }
   common_db ai
   echo "INTERNAL_API_KEY=$(sh_ INTERNAL_API_KEY)"
   opt OPENAI_API_KEY
+  opt ANTHROPIC_API_KEY   # 챗봇 답변 (#297). 없으면 고정 문장 + 상품 카드
 } | write ai
 
 # 4) K3s Secret 갱신 (있으면 덮어씀). 값이 바뀌었으면 rollout restart가 필요하다
