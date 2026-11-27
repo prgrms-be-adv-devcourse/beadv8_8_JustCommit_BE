@@ -58,4 +58,15 @@ public interface ReturnRequestRepository extends JpaRepository<ReturnRequest, Lo
             """)
     BigDecimal sumReturnShippingFee(@Param("sellerOrderId") Long sellerOrderId,
                                     @Param("status") ReturnRequestStatus status);
+
+    // 판매자 주문 여러 개의 반품 배송비 합을 한 번에 (#657, N+1 없음). 해당 상태의 반품이 없는 판매자 주문은 결과에 없다
+    @Query("""
+            select new com.justcommit.backend.market.order.infrastructure.ReturnShippingFeeSum(
+                r.sellerOrderId, sum(r.returnShippingFee))
+            from ReturnRequest r
+            where r.sellerOrderId in :sellerOrderIds and r.status = :status
+            group by r.sellerOrderId
+            """)
+    List<ReturnShippingFeeSum> sumReturnShippingFeeBySellerOrderIds(
+            @Param("sellerOrderIds") Collection<Long> sellerOrderIds, @Param("status") ReturnRequestStatus status);
 }
