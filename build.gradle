@@ -6,3 +6,15 @@ plugins {
 group = 'com.justcommit.backend'
 version = '0.0.1-SNAPSHOT'
 description = 'JustCommit backend'
+
+// 테스트 JVM 빠른 시작 (#664)
+// - 테스트 시간의 절반 넘게가 스프링 컨텍스트 기동(클래스 로딩 · 빈 생성)이라, 오래 도는 코드를 최적화하는 C2 컴파일러보다
+//   가볍고 빨리 끝나는 C1 컴파일러만 쓰는 편이 CPU를 덜 쓴다. 4코어 CI 러너에서 모듈 테스트가 동시에 돌 때 특히 효과가 있다
+// - 끄고 재 보려면 ./gradlew test -PtestJvmQuickStart=false
+subprojects {
+    tasks.withType(Test).configureEach {
+        if (providers.gradleProperty('testJvmQuickStart').getOrElse('true').toBoolean()) {
+            jvmArgs '-XX:TieredStopAtLevel=1'
+        }
+    }
+}
