@@ -4,12 +4,15 @@ import lombok.Getter;
 
 @Getter
 public class CourierBookingException extends RuntimeException {
-    private final boolean retryable;
+    // 실패 종류 (#671). 예약 큐가 다시 시도할지 · 확인 필요로 멈출지 정한다
+    private final CourierBookingFailure failure;
 
-    public CourierBookingException(String message, Throwable cause, boolean retryable) {
-        // ① 부모(RuntimeException)에 메시지와 원래 예외를 넘기기
-        // ② retryable 저장
+    public CourierBookingException(String message, Throwable cause, CourierBookingFailure failure) {
         super(message, cause);
-        this.retryable = retryable;
+        this.failure = failure;
+    }
+
+    public boolean isRetryable() {
+        return failure.isRetryable();
     }
 }

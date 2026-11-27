@@ -8,6 +8,7 @@ import com.justcommit.backend.market.config.JpaAuditingConfig;
 import com.justcommit.backend.market.shipment.domain.Shipment;
 import com.justcommit.backend.market.shipment.domain.ShipmentStatus;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingException;
+import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingFailure;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingRequest;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingResponse;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierClient;
@@ -113,7 +114,7 @@ class ShipmentBookingQueueIntegrationTest {
     void failureWaitsBeforeRetry() {
         Shipment saved = readyShipment(7L);
         when(courierClient.book(anyString(), any(CourierBookingRequest.class)))
-                .thenThrow(new CourierBookingException("타임아웃", new RuntimeException(), true));
+                .thenThrow(new CourierBookingException("타임아웃", new RuntimeException(), CourierBookingFailure.TEMPORARY));
         LocalDateTime before = LocalDateTime.now();
 
         shipmentService.bookReadyShipments();
@@ -131,7 +132,7 @@ class ShipmentBookingQueueIntegrationTest {
     void retriesWhenDueAndBacksOff() {
         Shipment saved = readyShipment(7L);
         when(courierClient.book(anyString(), any(CourierBookingRequest.class)))
-                .thenThrow(new CourierBookingException("타임아웃", new RuntimeException(), true));
+                .thenThrow(new CourierBookingException("타임아웃", new RuntimeException(), CourierBookingFailure.TEMPORARY));
         shipmentService.bookReadyShipments();
         makeDue(saved.getId());
         LocalDateTime before = LocalDateTime.now();
@@ -188,7 +189,7 @@ class ShipmentBookingQueueIntegrationTest {
         Shipment failing = readyShipment(7L);
         Shipment ok = readyShipment(8L);
         when(courierClient.book(eq(failing.getCourierOrderNo()), any()))
-                .thenThrow(new CourierBookingException("400", new RuntimeException(), false));
+                .thenThrow(new CourierBookingException("400", new RuntimeException(), CourierBookingFailure.PERMANENT));
         when(courierClient.book(eq(ok.getCourierOrderNo()), any())).thenAnswer(inv -> booked(inv.getArgument(0)));
 
         shipmentService.bookReadyShipments();
