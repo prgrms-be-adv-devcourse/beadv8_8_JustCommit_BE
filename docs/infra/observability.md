@@ -68,7 +68,7 @@ Claude Code에 Grafana 공식 MCP 서버(`grafana/mcp-grafana`)를 붙여 Loki �
 
 | 항목 | 내용 |
 |---|---|
-| 연결 설정 | 레포 `.mcp.json` (서버 이름 `grafana`, `grafana/mcp-grafana:2.3.0`, Docker stdio). `GRAFANA_URL` 기본값 `https://replant.kro.kr/grafana` (SSH 터널을 쓰면 `http://host.docker.internal:3000`) |
+| 연결 설정 | 레포 `.mcp.json` (서버 이름 `grafana`, `grafana/mcp-grafana:2.3.0`, Docker stdio). `GRAFANA_URL` 기본값 `https://replant.kro.kr/grafana` (SSH 터널을 쓰면 `http://host.docker.internal:3000/grafana`, 브라우저는 `http://127.0.0.1:3000/grafana/`) |
 | 요약 스킬 | `/grafana-summary <서비스> <시간 범위>` → `.claude/skills/grafana-summary/SKILL.md` |
 | 서비스 계정 | 운영 Grafana `claude-mcp`, 역할 Editor. Viewer는 대시보드에 편집 권한을 따로 줘도 주석을 못 써서(2026-11-27 12.0.0에서 확인) Editor로 둠. 아래 「허용 도구」 제한은 Claude Code(MCP) 경로에서만 막는 것이고, 토큰 자체는 Grafana API로 대시보드 · 알림 규칙을 바꿀 수 있음 → 토큰은 사람마다 따로 발급하고, 유출이 의심되거나 그만 쓰면 그 토큰을 바로 지움 |
 | 허용 도구 | `--enabled-tools search,prometheus,loki,annotations` → 조회와 주석 만들기 · 수정 · 삭제. 주석 도구는 AI 요약이 아닌 다른 주석도 고칠 수 있어, 스킬은 수정 · 삭제를 사용자가 그 주석을 지목해 요청할 때만 씀. 대시보드 · 데이터 소스 · 알림 규칙 · 사일런스를 바꾸는 도구는 목록에 없음 |
@@ -78,7 +78,7 @@ Claude Code에 Grafana 공식 MCP 서버(`grafana/mcp-grafana`)를 붙여 Loki �
 | 순서 | 연결하기 |
 |---|---|
 | 1 | 운영진에게 `claude-mcp` 토큰을 받아 내 PC 환경변수 `GRAFANA_SERVICE_ACCOUNT_TOKEN`에 둔다 (레포 · 채팅에 올리지 않음) |
-| 2 | 레포 폴더에서 Claude Code를 실행하고 프로젝트 MCP 서버 `grafana` 사용을 허용한다 (Docker 필요). SSH 터널로 붙을 때는 `GRAFANA_URL=http://host.docker.internal:3000`을 함께 두고, 리눅스 Docker(Docker Desktop이 아닌 것)는 터널을 `ssh -L 172.17.0.1:3000:127.0.0.1:3000 replant-data`처럼 Docker 브리지 주소에 연다 |
+| 2 | 레포 폴더에서 Claude Code를 실행하고 프로젝트 MCP 서버 `grafana` 사용을 허용한다 (Docker 필요). SSH 터널로 붙을 때는 `GRAFANA_URL=http://host.docker.internal:3000/grafana`를 함께 두고, 리눅스 Docker(Docker Desktop이 아닌 것)는 터널을 `ssh -L 172.17.0.1:3000:127.0.0.1:3000 replant-data`처럼 Docker 브리지 주소에 연다 |
 | 3 | `/grafana-summary market 최근 1시간` → 초안 확인 → 주석 생성 → 「AI 요약」 패널에서 확인 |
 
 ## 부하 테스트
