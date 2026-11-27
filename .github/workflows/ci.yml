@@ -81,6 +81,7 @@ jobs:
 
       - name: Set up Gradle
         if: steps.pick.outputs.tasks != ''
+        # 캐시는 develop 머지 때 gradle-cache.yml이 저장하고, PR은 읽기만 한다 (#664)
         uses: gradle/actions/setup-gradle@v4
 
       # 컴파일 + 테스트. --continue: 한 모듈이 실패해도 나머지 모듈 결과까지 본다
