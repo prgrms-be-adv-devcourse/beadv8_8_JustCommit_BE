@@ -168,6 +168,7 @@ perf/data/msa/check-concurrent.sh <FIRST_ID>          # concurrent.js 뒤
 - 둘러보기 80 p95가 144 → 701ms: product p95 자체가 557ms라 Gateway 원인은 아님. 원인 미확인 (seed 직후 DB 상태 추정)
 - 섞어서 10 p95 627ms: 스냅샷 저장으로 서비스가 재시작한 지 약 25분, market p95 3.6초 · 앱 서버 CPU 100% (찬 JVM 영향으로 봄)
 - 데이터: 측정 직전 `save pre661` → 측정 → `restore pre661`. 측정 전과 회원 · 상품 · 주문 수가 같음을 확인
+- 조건 차이: 이번 측정 때 데이터 서버 Tempo가 메모리 한도 256MB에서 OOMKilled로 계속 재시작 중이었다(재시작 9천 회 넘음, 추적 저장 안 됨). #628은 Tempo가 데이터 서버 CPU 67~72%를 쓰던 때라, 데이터 서버 CPU · 낮은 단계 p95는 그대로 비교하지 않는다
 
 ## 검색 · 챗봇 단계별 운영 측정 (#634)
 
