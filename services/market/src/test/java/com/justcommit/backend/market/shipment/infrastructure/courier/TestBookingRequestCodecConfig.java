@@ -1,6 +1,5 @@
 package com.justcommit.backend.market.shipment.infrastructure.courier;
 
-import com.justcommit.backend.common.messaging.crypto.EventFieldCipher;
 import com.justcommit.backend.market.config.BookingRequestCipherConfig.BookingRequestCipherProperties;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -14,11 +13,6 @@ import java.util.Map;
 @TestConfiguration
 @Import(CourierBookingRequestCodec.class)
 public class TestBookingRequestCodecConfig {
-
-    @Bean
-    EventFieldCipher addressEventCipher() {
-        return new EventFieldCipher("k1", Map.of("k1", newKey()));
-    }
 
     @Bean
     BookingRequestCipherProperties bookingRequestCipherProperties() {
