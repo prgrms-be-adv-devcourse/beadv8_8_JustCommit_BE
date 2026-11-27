@@ -13,6 +13,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.justcommit.backend.ai.search.application.QueryEmbedder.QueryEmbeddingException;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -29,7 +30,38 @@ class OpenAiQueryEmbedderTest {
             .build();
 
     private OpenAiQueryEmbedder embedder(Duration timeout) {
-        return new OpenAiQueryEmbedder("test-key", OPENAI.baseUrl() + "/v1", "text-embedding-3-small", 1536, timeout);
+        return new OpenAiQueryEmbedder("test-key", OPENAI.baseUrl() + "/v1", "text-embedding-3-small", 1536, timeout,
+                newCache());
+    }
+
+    private static QueryEmbeddingCache newCache() {
+        return new QueryEmbeddingCache(100, Duration.ofHours(24), new SimpleMeterRegistry());
+    }
+
+    @Test
+    @DisplayName("같은 질문(공백만 다름)을 다시 보내면 OpenAI를 부르지 않고 같은 벡터를 돌려준다 (#636)")
+    void secondSameQueryUsesCache() {
+        OPENAI.stubFor(post(urlPathEqualTo("/v1/embeddings")).willReturn(okJson(embeddingResponse())));
+        OpenAiQueryEmbedder embedder = embedder(Duration.ofSeconds(3));
+
+        float[] first = embedder.embed("  햇빛   적은 방 ");
+        float[] second = embedder.embed("햇빛 적은 방");
+
+        assertThat(second).containsExactly(first);
+        OPENAI.verify(1, postRequestedFor(urlPathEqualTo("/v1/embeddings"))
+                .withRequestBody(matchingJsonPath("$.input[0]", equalTo("햇빛 적은 방"))));
+    }
+
+    @Test
+    @DisplayName("실패한 질문은 저장하지 않아 다음 요청에서 OpenAI를 다시 부른다 (#636)")
+    void failureIsNotCached() {
+        OPENAI.stubFor(post(urlPathEqualTo("/v1/embeddings")).willReturn(aResponse().withStatus(500)));
+        OpenAiQueryEmbedder embedder = embedder(Duration.ofSeconds(3));
+        assertThatThrownBy(() -> embedder.embed("햇빛 적은 방")).isInstanceOf(QueryEmbeddingException.class);
+
+        OPENAI.stubFor(post(urlPathEqualTo("/v1/embeddings")).willReturn(okJson(embeddingResponse())));
+        assertThat(embedder.embed("햇빛 적은 방")).hasSize(1536);
+        OPENAI.verify(2, postRequestedFor(urlPathEqualTo("/v1/embeddings")));
     }
 
     @Test
@@ -78,7 +110,8 @@ class OpenAiQueryEmbedderTest {
     @DisplayName("키가 없어도 만들어지고(앱 시작은 그대로) 검색할 때만 실패한다")
     void failsOnlyOnSearchWithoutApiKey() {
         OpenAiQueryEmbedder noKey =
-                new OpenAiQueryEmbedder("", OPENAI.baseUrl() + "/v1", "text-embedding-3-small", 1536, Duration.ofSeconds(3));
+                new OpenAiQueryEmbedder("", OPENAI.baseUrl() + "/v1", "text-embedding-3-small", 1536, Duration.ofSeconds(3),
+                        newCache());
 
         assertThatThrownBy(() -> noKey.embed("햇빛 적은 방")).isInstanceOf(QueryEmbeddingException.class);
         OPENAI.verify(0, postRequestedFor(urlPathEqualTo("/v1/embeddings")));

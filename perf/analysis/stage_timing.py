@@ -7,7 +7,7 @@
 지표 (서비스가 내보냄, docs/infra/observability.md):
   product_search_stage_seconds   상품 키워드 검색  total · opensearch · opensearch_took · db · fallback
   ai_species_search_stage_seconds 품종 의미 검색   total · embedding · vector_search · product_lookup
-  ai_chatbot_stage_seconds        챗봇 메시지      total · history · embedding · product_search · species_search · answer · save
+  ai_chatbot_stage_seconds        챗봇 메시지      total · history · embedding · product_search · species_search · search · answer · save
 같은 구간의 HTTP 응답 시간(서비스 http.server.requests, Gateway)도 함께 뽑아 단계 합과 비교한다.
 
 사용 (SSH 터널 localhost:19090 → 운영 Prometheus, perf/README.md 「MSA 운영 측정」):
@@ -42,12 +42,13 @@ TARGETS = {
         'title': '챗봇 POST /api/v1/chatbot/messages',
         'metric': 'ai_chatbot_stage_seconds',
         'service': 'ai',
-        'stages': ['total', 'history', 'embedding', 'product_search', 'species_search', 'answer', 'save'],
+        'stages': ['total', 'history', 'embedding', 'product_search', 'species_search', 'search', 'answer', 'save'],
         'uri': '/api/v1/chatbot/messages',
     },
 }
 # opensearch_took은 opensearch 안에 들어 있는 값이라 「가장 느린 단계」 비교에서 뺀다
-NOT_A_STEP = {'total', 'opensearch_took'}
+# search(#636): 챗봇 상품 · 품종 검색을 동시에 한 전체라 두 검색 단계와 겹친다
+NOT_A_STEP = {'total', 'opensearch_took', 'search'}
 
 
 def query(base, promql, at):
@@ -115,6 +116,16 @@ def report(base, name, t, end, window):
             'http_p50': http_p50, 'http_p95': http_p95, 'slowest': slowest}
 
 
+def embedding_cache(base, at, window):
+    """질문 임베딩 캐시 적중 · 미적중 (#636). 품종 의미 검색 · 챗봇이 같이 쓰므로 둘을 나누지 않는다"""
+    counts = {r['metric'].get('result'): float(r['value'][1]) for r in
+              query(base, f'sum by (result) (increase(ai_query_embedding_cache_total[{window}]))', at)}
+    hit, miss = counts.get('hit', 0), counts.get('miss', 0)
+    rate = f'{hit / (hit + miss):.0%}' if hit + miss else '-'
+    print(f'\n질문 임베딩 캐시 (품종 의미 검색 + 챗봇): 적중 {hit:.0f} · 미적중 {miss:.0f} · 적중률 {rate}')
+    return {'hit': hit, 'miss': miss}
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--start', required=True, help='측정 시작 (ISO 8601, 시간대 포함)')
@@ -134,6 +145,8 @@ def main():
     results = {}
     for name in a.only or list(TARGETS):
         results[name] = report(a.prometheus, name, TARGETS[name], end.timestamp(), window)
+    if {'species', 'chatbot'} & set(a.only or TARGETS):
+        results['embedding_cache'] = embedding_cache(a.prometheus, end.timestamp(), window)
     if a.json:
         with open(a.json, 'w', encoding='utf-8') as f:
             json.dump({'start': a.start, 'end': a.end, 'results': results}, f, ensure_ascii=False, indent=2)

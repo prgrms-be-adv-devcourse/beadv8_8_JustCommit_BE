@@ -168,7 +168,7 @@ class ChatbotIntegrationTest {
     @DisplayName("[#634] 단계별 Timer: 새 대화는 기록 읽기 없이 임베딩 · 상품 · 품종 검색 · 답변 생성 · 저장 · 전체, 이어 묻기는 기록 읽기도")
     void recordsStageTimers() throws Exception {
         List<String> everyTurn = List.of(ChatbotService.STAGE_EMBEDDING, ChatbotService.STAGE_PRODUCT_SEARCH,
-                ChatbotService.STAGE_SPECIES_SEARCH, ChatbotService.STAGE_ANSWER, ChatbotService.STAGE_SAVE,
+                ChatbotService.STAGE_SPECIES_SEARCH, ChatbotService.STAGE_SEARCH, ChatbotService.STAGE_ANSWER, ChatbotService.STAGE_SAVE,
                 ChatbotService.STAGE_TOTAL);
         Map<String, Long> before = counts();
 
@@ -213,7 +213,8 @@ class ChatbotIntegrationTest {
     private Map<String, Long> counts() {
         Map<String, Long> counts = new HashMap<>();
         for (String stage : List.of(ChatbotService.STAGE_HISTORY, ChatbotService.STAGE_EMBEDDING,
-                ChatbotService.STAGE_PRODUCT_SEARCH, ChatbotService.STAGE_SPECIES_SEARCH, ChatbotService.STAGE_ANSWER,
+                ChatbotService.STAGE_PRODUCT_SEARCH, ChatbotService.STAGE_SPECIES_SEARCH, ChatbotService.STAGE_SEARCH,
+                ChatbotService.STAGE_ANSWER,
                 ChatbotService.STAGE_SAVE, ChatbotService.STAGE_TOTAL)) {
             counts.put(stage, count(stage));
         }
