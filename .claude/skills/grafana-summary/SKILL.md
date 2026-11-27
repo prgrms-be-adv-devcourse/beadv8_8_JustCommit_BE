@@ -24,7 +24,7 @@ description: 운영 Grafana의 로그(Loki) · 지표(Prometheus)를 조회해 �
    - p95: `histogram_quantile(0.95, sum by (le, service) (rate(http_server_requests_seconds_bucket{job="spring"}[5m])))`
    - DB 커넥션 대기: `hikaricp_connections_pending{job="spring"}`
 3. 아래 형식으로 초안을 만들어 사용자에게 먼저 보여 준다.
-4. 사용자가 좋다고 하면 `create_annotation`으로 남긴다: `dashboardUID` `replant-msa`, `time` 범위 시작(ms), `timeEnd` 범위 끝(ms), `tags` `["ai-summary", "service:<서비스>"]`.
+4. 사용자가 좋다고 하면 `create_annotation`으로 남긴다: `dashboardUID` `replant-msa`, `time` 범위 시작(ms), `timeEnd` 범위 끝(ms), `tags` `["ai-summary", "service:<서비스>"]` (전체면 `service:all`).
 5. 남긴 뒤 「AI 요약」 패널에서 확인하라고 알린다.
 
 ## 요약 형식 (주석 본문, 600자 이내, 시각은 한국 시간)
