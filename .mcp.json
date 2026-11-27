@@ -12,7 +12,7 @@
         "--enabled-tools", "search,prometheus,loki,annotations"
       ],
       "env": {
-        "GRAFANA_URL": "${GRAFANA_URL:-http://host.docker.internal:3000}",
+        "GRAFANA_URL": "${GRAFANA_URL:-https://replant.kro.kr/grafana}",
         "GRAFANA_SERVICE_ACCOUNT_TOKEN": "${GRAFANA_SERVICE_ACCOUNT_TOKEN:-}"
       }
     }
