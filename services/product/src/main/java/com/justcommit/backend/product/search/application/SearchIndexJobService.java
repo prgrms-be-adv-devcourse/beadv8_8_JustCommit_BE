@@ -31,8 +31,10 @@ import org.springframework.stereotype.Service;
  *   <li>잠금: 작업 행을 INSERT할 때 「끝나지 않은 작업은 하나만」 유니크 인덱스(V15)가 걸려, 다른 서버에서 동시에 요청해도
  *       하나만 등록되고 나머지는 409 SEARCH_INDEXING_IN_PROGRESS. 잠금을 쥔 동안 DB 연결을 잡고 있지 않는다
  *       (Postgres advisory lock은 세션 잠금이라 작업 내내 연결 하나를 잡아야 해서 쓰지 않음).</li>
- *   <li>죽은 작업: 실행 중인 서버는 배치마다 하트비트를 갱신한다. staleAfter 동안 갱신이 없으면 서버가 죽은 것으로 보고
- *       다음 요청 · 정리 스케줄러가 실패 처리해 잠금을 푼다 ({@link #failStaleJobs}).</li>
+ *   <li>죽은 작업: 실행 중인 서버는 배치마다 · 단계가 바뀔 때마다 하트비트를 갱신한다. staleAfter 동안 갱신이 없으면 서버가 죽은 것으로 보고
+ *       다음 요청 · 정리 스케줄러가 실패 처리해 잠금을 푼다 ({@link #failStaleJobs}). 하트비트 사이에는 DB 조회 한 번과
+ *       OpenSearch 호출 한 번(bulk · refresh · alias 이동 · 삭제, 모두 읽기 타임아웃 2초)만 있어 기본 2분이면 살아 있는 작업을 잘못 실패 처리하지 않는다.
+ *       읽기 타임아웃을 크게 늘리면 staleAfter도 그보다 넉넉히 늘린다.</li>
  *   <li>전체 색인은 지금처럼 요청 스레드에서 실행하고 결과를 응답하며, 재색인은 등록만 하고 별도 실행자에서 돈다.</li>
  * </ul>
  */

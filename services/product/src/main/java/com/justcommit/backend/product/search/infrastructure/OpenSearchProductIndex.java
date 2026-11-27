@@ -150,8 +150,9 @@ public class OpenSearchProductIndex implements ProductSearchIndex {
 
     @Override
     public String createNextIndex(String current) {
-        String next = ProductIndexAdmin.nextIndexName(current);
+        String next;
         try {
+            next = ProductIndexAdmin.nextIndexName(current, indexAdmin.existingIndices());
             indexAdmin.create(next, false);
         } catch (IOException e) {
             throw new UncheckedIOException(e);

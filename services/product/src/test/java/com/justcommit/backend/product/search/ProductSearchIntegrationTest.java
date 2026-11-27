@@ -474,6 +474,24 @@ class ProductSearchIntegrationTest {
         assertThat(ids(search("몬스테라 비동기"))).containsExactly(target.getId());
     }
 
+    @Test
+    @DisplayName("[#563] 실패한 재색인이 남긴 인덱스(products_v2)가 있으면 그 이름을 다시 쓰지 않고 products_v3을 만듦")
+    void rebuildSkipsLeftoverIndexName() throws Exception {
+        Product target = save(MONSTERA_ID, SELLER_ID, "몬스테라 남은 인덱스", "설명", ProductStatus.ACTIVE);
+        index();
+        // 늦게 깨어난 실행의 bulk가 지워진 새 인덱스를 매핑 없이 다시 만든 상황
+        client.indices().create(request -> request.index(INDEX_V2));
+
+        RebuildResult result = indexService.rebuild();
+
+        assertThat(result.currentIndex()).isEqualTo("products_v3");
+        assertThat(client.indices().getAlias(request -> request.name(ProductIndexInitializer.ALIAS)).result())
+                .containsOnlyKeys("products_v3");
+        // 남은 인덱스는 그대로 (직접 지움)
+        assertThat(client.indices().exists(request -> request.index(INDEX_V2)).value()).isTrue();
+        assertThat(ids(search("몬스테라 남은"))).containsExactly(target.getId());
+    }
+
     private Product save(Long speciesId, Long sellerId, String title, String description, ProductStatus status) {
         return save(speciesId, sellerId, title, description, status, "25000");
     }
