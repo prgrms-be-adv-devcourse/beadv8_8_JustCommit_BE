@@ -130,25 +130,26 @@ public interface SellerOrderRepository extends JpaRepository<SellerOrder, Long> 
                                                    @Param("confirmed") OrderItemStatus confirmed,
                                                    @Param("cancelled") OrderItemStatus cancelled);
 
-    // 정산 대상 조회 (#657): confirmedAt이 [from, to) 안인 판매자 주문, sellerOrderId 오름차순으로 cursor 다음부터 limit개.
+    // 정산 대상 조회 (#657): confirmedAt이 [from, to) 안인 판매자 주문, (confirmedAt, id) 오름차순으로
+    // 커서 (cursorAt, cursorId) 다음부터 limit개.
     // confirmedAt은 SellerOrderCompletion이 정산 이벤트를 발행할 때만 기록하므로 모두 취소된 판매자 주문은 빠진다.
-    // id를 먼저 고른다: 기간, 커서, 정렬, limit을 idx_seller_order_confirmed_at_id (confirmed_at, id)만으로 처리하고
-    // 힙은 고른 limit개만 읽는다. 행을 바로 읽으면 페이지마다 기간 안 모든 행을 힙에서 읽고 정렬한다 (V14 주석)
+    // 정렬과 커서가 idx_seller_order_confirmed_at_id (confirmed_at, id) 순서와 같아 인덱스를 커서 위치부터 limit개만 읽는다.
+    // 행 비교 (a, b) > (x, y)는 PostgreSQL에서 그대로 인덱스 조건이 된다 (V14 주석)
     @Query("""
             select new com.justcommit.backend.market.order.infrastructure.SettlementTargetRow(
                 s.id, s.sellerId, s.settlementBaseAmount, s.shippingFee, s.confirmedAt,
                 case when exists (select 1 from OrdersItem i where i.sellerOrder = s and i.status = :confirmed)
                     then true else false end)
             from SellerOrder s
-            where s.id in (select t.id from SellerOrder t
-                            where t.confirmedAt >= :from and t.confirmedAt < :to and t.id > :cursor
-                            order by t.id
-                            limit :limit)
-            order by s.id
+            where s.confirmedAt >= :from and s.confirmedAt < :to
+              and (s.confirmedAt, s.id) > (:cursorAt, :cursorId)
+            order by s.confirmedAt, s.id
+            limit :limit
             """)
     List<SettlementTargetRow> findSettlementTargets(@Param("from") LocalDateTime from,
                                                     @Param("to") LocalDateTime to,
-                                                    @Param("cursor") long cursor,
+                                                    @Param("cursorAt") LocalDateTime cursorAt,
+                                                    @Param("cursorId") long cursorId,
                                                     @Param("confirmed") OrderItemStatus confirmed,
                                                     @Param("limit") int limit);
 }

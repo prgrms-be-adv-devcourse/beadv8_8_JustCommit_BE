@@ -9,8 +9,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 // 정산 대상 조회 응답 (#657). 금액은 정산 이벤트(PurchaseConfirmed, SellerOrderReturned)에 넣은 값과 같다.
-// nextCursor: 다음 요청의 cursor, 마지막 페이지면 null
-public record SettlementTargetResponse(List<Item> items, Long nextCursor) {
+// items는 (confirmedAt, sellerOrderId) 오름차순. nextCursor: 다음 요청의 cursor 문자열("{confirmedAt}_{sellerOrderId}"), 마지막 페이지면 null
+public record SettlementTargetResponse(List<Item> items, String nextCursor) {
 
     // type: PURCHASE_CONFIRMED(구매 확정 1개 이상) 또는 RETURNED(전부 반품). RETURNED는 saleAmount, shippingFee가 0
     public record Item(
@@ -31,6 +31,7 @@ public record SettlementTargetResponse(List<Item> items, Long nextCursor) {
     }
 
     public static SettlementTargetResponse from(SettlementTargetPage page) {
-        return new SettlementTargetResponse(page.items().stream().map(Item::from).toList(), page.nextCursor());
+        return new SettlementTargetResponse(page.items().stream().map(Item::from).toList(),
+                page.nextCursor() == null ? null : page.nextCursor().encode());
     }
 }

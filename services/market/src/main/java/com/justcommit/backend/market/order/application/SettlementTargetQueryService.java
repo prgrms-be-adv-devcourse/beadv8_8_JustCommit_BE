@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 // 정산 대상 판매자 주문 조회 (#657): settlement의 Market ↔ Settlement 대사가 쓴다.
-// 정산 이벤트를 발행한(confirmedAt이 있는) 판매자 주문을 confirmedAt [from, to)로, sellerOrderId 오름차순 커서로 읽는다.
+// 정산 이벤트를 발행한(confirmedAt이 있는) 판매자 주문을 confirmedAt [from, to)로, (confirmedAt, sellerOrderId) 오름차순 커서로 읽는다.
 // 종류와 금액은 SellerOrderCompletion이 이벤트에 넣는 계산(SellerOrderSettlementAmounts)을 그대로 쓴다.
 // 한 페이지에 쿼리 2번: 판매자 주문 페이지, 그 페이지의 반품 배송비 합
 @Service
@@ -29,10 +29,11 @@ public class SettlementTargetQueryService {
     private final ReturnRequestRepository returnRequestRepository;
 
     @Transactional(readOnly = true)
-    public SettlementTargetPage find(LocalDateTime from, LocalDateTime to, Long cursor, int size) {
+    public SettlementTargetPage find(LocalDateTime from, LocalDateTime to, SettlementTargetCursor cursor, int size) {
+        SettlementTargetCursor after = cursor == null ? SettlementTargetCursor.first(from) : cursor;
         // 다음 페이지가 있는지 알려고 하나 더 읽는다
         List<SettlementTargetRow> rows = sellerOrderRepository.findSettlementTargets(
-                from, to, cursor == null ? 0L : cursor, OrderItemStatus.CONFIRMED, size + 1);
+                from, to, after.confirmedAt(), after.sellerOrderId(), OrderItemStatus.CONFIRMED, size + 1);
         boolean hasNext = rows.size() > size;
         List<SettlementTargetRow> page = hasNext ? rows.subList(0, size) : rows;
         if (page.isEmpty()) {
@@ -49,7 +50,9 @@ public class SettlementTargetQueryService {
                         SellerOrderSettlementAmounts.of(row.hasConfirmed(), row.settlementBaseAmount(), row.shippingFee(),
                                 returnShippingFees.get(row.sellerOrderId()))))
                 .toList();
-        Long nextCursor = hasNext ? page.getLast().sellerOrderId() : null;
+        SettlementTargetRow last = page.getLast();
+        SettlementTargetCursor nextCursor = hasNext
+                ? new SettlementTargetCursor(last.confirmedAt(), last.sellerOrderId()) : null;
         return new SettlementTargetPage(targets, nextCursor);
     }
 
@@ -57,7 +60,7 @@ public class SettlementTargetQueryService {
                                    SellerOrderSettlementAmounts amounts) {
     }
 
-    // nextCursor: 다음 페이지 요청의 cursor. 마지막 페이지면 null
-    public record SettlementTargetPage(List<SettlementTarget> items, Long nextCursor) {
+    // nextCursor: 다음 페이지 요청의 cursor (이 페이지 마지막 행). 마지막 페이지면 null
+    public record SettlementTargetPage(List<SettlementTarget> items, SettlementTargetCursor nextCursor) {
     }
 }

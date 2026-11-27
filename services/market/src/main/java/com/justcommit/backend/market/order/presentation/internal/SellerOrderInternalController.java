@@ -3,6 +3,7 @@ package com.justcommit.backend.market.order.presentation.internal;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.exception.CommonErrorCode;
 import com.justcommit.backend.common.response.ApiResponse;
+import com.justcommit.backend.market.order.application.SettlementTargetCursor;
 import com.justcommit.backend.market.order.application.SettlementTargetQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -24,12 +25,13 @@ public class SellerOrderInternalController {
     private final SettlementTargetQueryService settlementTargetQueryService;
 
     // settlement 대사용 정산 대상 판매자 주문 조회 (#657, 읽기 전용). confirmedAt이 from 이상 to 미만,
-    // cursor(마지막 sellerOrderId) 다음부터 sellerOrderId 오름차순. size는 1~100(생략하면 100), from > to는 400
+    // cursor(앞 페이지의 nextCursor) 다음부터 (confirmedAt, sellerOrderId) 오름차순. size는 1~100(생략하면 100),
+    // from > to나 형식이 틀린 cursor는 400
     @GetMapping("/settlementTargets")
     public ApiResponse<SettlementTargetResponse> settlementTargets(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
-            @RequestParam(required = false) Long cursor,
+            @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "" + MAX_SIZE) int size) {
         if (size < 1 || size > MAX_SIZE) {
             throw new BusinessException(CommonErrorCode.INVALID_FIELD_ERROR, "size: 1 이상 100 이하여야 합니다.");
@@ -37,10 +39,18 @@ public class SellerOrderInternalController {
         if (from.isAfter(to)) {
             throw new BusinessException(CommonErrorCode.INVALID_FIELD_ERROR, "from: to보다 늦을 수 없습니다.");
         }
-        if (cursor != null && cursor < 1) {
-            throw new BusinessException(CommonErrorCode.INVALID_FIELD_ERROR, "cursor: 1 이상이어야 합니다.");
-        }
         return ApiResponse.ok("정산 대상 판매자 주문을 조회했습니다.", SettlementTargetResponse.from(
-                settlementTargetQueryService.find(from, to, cursor, size)));
+                settlementTargetQueryService.find(from, to, parseCursor(cursor), size)));
+    }
+
+    private static SettlementTargetCursor parseCursor(String cursor) {
+        if (cursor == null) {
+            return null;
+        }
+        try {
+            return SettlementTargetCursor.parse(cursor);
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(CommonErrorCode.INVALID_FIELD_ERROR, "cursor: 앞 페이지의 nextCursor 값이어야 합니다.");
+        }
     }
 }
