@@ -254,6 +254,35 @@ class ShipmentTest {
     }
 
     @Test
+    @DisplayName("#671 택배사가 거절하면 READY → 확인 필요로 멈추고 큐가 집지 않게 다음 시도 시각을 비운다. 화면에는 READY로 보인다")
+    void markReviewRequired() {
+        Shipment shipment = newShipment();
+        shipment.recordAttemptFailure(LocalDateTime.of(2026, 11, 17, 10, 0), "TIMEOUT");
+
+        shipment.markReviewRequired("PERMANENT 400 INVALID_FIELD_ERROR");
+
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.REVIEW_REQUIRED);
+        assertThat(shipment.getNextAttemptAt()).isNull();
+        assertThat(shipment.getAttemptCount()).isEqualTo(2);
+        assertThat(shipment.getLastError()).isEqualTo("PERMANENT 400 INVALID_FIELD_ERROR");
+        assertThat(shipment.getStatus().publicName()).isEqualTo("READY");
+        assertThatThrownBy(() -> bookedShipment().markReviewRequired("x")).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("#671 확인 필요 배송도 구매자가 취소하면 CANCEL_PENDING이 되어 취소 큐로 넘어간다")
+    void requestCancelFromReviewRequired() {
+        Shipment shipment = newShipment();
+        shipment.markReviewRequired("PERMANENT 400");
+        LocalDateTime requestedAt = LocalDateTime.of(2026, 11, 17, 10, 0);
+
+        assertThat(shipment.requestCancel(requestedAt)).isTrue();
+
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.CANCEL_PENDING);
+        assertThat(shipment.getLastError()).isNull();
+    }
+
+    @Test
     @DisplayName("[S-E04] 이미 취소 중이거나 취소된 배송에 다시 취소를 누르면 false이고 처음 누른 시각을 유지한다")
     void requestCancelTwiceIsIgnored() {
         Shipment shipment = bookedShipment();

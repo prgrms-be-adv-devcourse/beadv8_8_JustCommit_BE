@@ -12,6 +12,7 @@ import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBook
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingRequest;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierBookingResponse;
 import com.justcommit.backend.market.shipment.infrastructure.courier.CourierClient;
+import com.justcommit.backend.market.shipment.infrastructure.courier.CourierOrderCancelResponse;
 import com.justcommit.backend.market.shipment.infrastructure.kafka.ShipmentStatusChangedEventPublisher;
 import com.justcommit.backend.market.shipment.infrastructure.repository.ShipmentRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -40,6 +41,7 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -61,7 +63,7 @@ import static org.mockito.Mockito.when;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ShipmentService.class})
+@Import({JpaAuditingConfig.class, ShipmentService.class, ShipmentCancelQueueService.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED) // 큐가 직접 트랜잭션을 열고 닫는다
 class ShipmentBookingQueueIntegrationTest {
@@ -77,6 +79,7 @@ class ShipmentBookingQueueIntegrationTest {
     @MockitoBean OrderQuery orderQuery;
 
     @Autowired ShipmentService shipmentService;
+    @Autowired ShipmentCancelQueueService cancelQueueService;
     @Autowired ShipmentRepository shipmentRepository;
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired PlatformTransactionManager transactionManager;
@@ -91,6 +94,7 @@ class ShipmentBookingQueueIntegrationTest {
 
     @AfterEach
     void cleanUp() {
+        jdbcTemplate.update("delete from shipment_cancel_result");
         shipmentRepository.deleteAll();
     }
 
@@ -194,8 +198,95 @@ class ShipmentBookingQueueIntegrationTest {
 
         shipmentService.bookReadyShipments();
 
-        assertThat(shipmentRepository.findById(failing.getId()).orElseThrow().getStatus()).isEqualTo(ShipmentStatus.READY);
+        assertThat(shipmentRepository.findById(failing.getId()).orElseThrow().getStatus()).isEqualTo(ShipmentStatus.REVIEW_REQUIRED);
         assertThat(shipmentRepository.findById(ok.getId()).orElseThrow().getStatus()).isEqualTo(ShipmentStatus.BOOKED);
+    }
+
+    @Test
+    @DisplayName("#671 택배사가 400 · 멱등 키 409로 거절하면 확인 필요로 멈추고, 시각이 지나도 다시 부르지 않는다")
+    void permanentFailureStopsRetry() {
+        Shipment saved = readyShipment(7L);
+        when(courierClient.book(anyString(), any(CourierBookingRequest.class)))
+                .thenThrow(new CourierBookingException("status = 400, code = INVALID_FIELD_ERROR", new RuntimeException(),
+                        CourierBookingFailure.PERMANENT));
+
+        shipmentService.bookReadyShipments();
+        jdbcTemplate.update("update shipment set next_attempt_at = now() - interval '1 hour' where id = ?", saved.getId());
+        shipmentService.bookReadyShipments();
+
+        verify(courierClient, times(1)).book(anyString(), any());
+        Shipment shipment = shipmentRepository.findById(saved.getId()).orElseThrow();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.REVIEW_REQUIRED);
+        assertThat(shipment.getLastError()).startsWith("PERMANENT").contains("INVALID_FIELD_ERROR");
+        verify(statusChangedEventPublisher, never()).publishAfterCommit(any(), any(), any()); // 알림 이벤트 없음
+    }
+
+    @Test
+    @DisplayName("#671 사람이 고쳐 READY로 되돌리면(운영 절차 SQL) 큐가 다시 예약한다")
+    void reviewRequiredBackToReadyIsBookedAgain() {
+        Shipment saved = readyShipment(7L);
+        when(courierClient.book(anyString(), any(CourierBookingRequest.class)))
+                .thenThrow(new CourierBookingException("400", new RuntimeException(), CourierBookingFailure.PERMANENT))
+                .thenAnswer(inv -> booked(inv.getArgument(0)));
+        shipmentService.bookReadyShipments();
+
+        int updated = jdbcTemplate.update("""
+                update shipment set status = 'READY', next_attempt_at = null, attempt_count = 0, last_error = null,
+                                    version = version + 1
+                where id = ? and status = 'REVIEW_REQUIRED'
+                """, saved.getId());
+        shipmentService.bookReadyShipments();
+
+        assertThat(updated).isEqualTo(1);
+        assertThat(shipmentRepository.findById(saved.getId()).orElseThrow().getStatus()).isEqualTo(ShipmentStatus.BOOKED);
+    }
+
+    @Test
+    @DisplayName("#671 API 키 · 주소 설정 문제(401 · 404)는 영구 실패로 보지 않고 READY로 다시 시도한다")
+    void configErrorKeepsRetrying() {
+        Shipment saved = readyShipment(7L);
+        when(courierClient.book(anyString(), any(CourierBookingRequest.class)))
+                .thenThrow(new CourierBookingException("401", new RuntimeException(), CourierBookingFailure.CONFIG_ERROR));
+
+        shipmentService.bookReadyShipments();
+
+        Shipment shipment = shipmentRepository.findById(saved.getId()).orElseThrow();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.READY);
+        assertThat(shipment.getNextAttemptAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("#671 market은 취소한 적이 없는데(READY) 택배사가 ORDER_ALREADY_CANCELLED면 배송만 취소하지 않고 확인 필요로 멈춘다")
+    void alreadyCancelledWhileReadyNeedsReview() {
+        Shipment saved = readyShipment(7L);
+        when(courierClient.book(anyString(), any(CourierBookingRequest.class)))
+                .thenThrow(new CourierBookingException("409", new RuntimeException(), CourierBookingFailure.ALREADY_CANCELLED));
+
+        shipmentService.bookReadyShipments();
+
+        Shipment shipment = shipmentRepository.findById(saved.getId()).orElseThrow();
+        assertThat(shipment.getStatus()).isEqualTo(ShipmentStatus.REVIEW_REQUIRED);
+        assertThat(shipment.getLastError()).startsWith("ALREADY_CANCELLED");
+    }
+
+    @Test
+    @DisplayName("#671 예약을 보내는 사이 구매자가 취소해 ORDER_ALREADY_CANCELLED가 오면 CANCEL_PENDING을 그대로 두고, 취소 큐가 CANCELLED로 맞춘다")
+    void alreadyCancelledDuringBookingIsSettledByCancelQueue() {
+        Shipment saved = readyShipment(7L);
+        when(courierClient.book(anyString(), any(CourierBookingRequest.class))).thenAnswer(inv -> {
+            shipmentService.cancelShipment(7L); // 택배사를 기다리는 동안 구매자 취소가 커밋됨
+            throw new CourierBookingException("409", new RuntimeException(), CourierBookingFailure.ALREADY_CANCELLED);
+        });
+        when(courierClient.cancelByCourierOrderNo(eq(saved.getCourierOrderNo()), any()))
+                .thenReturn(Optional.of(new CourierOrderCancelResponse(saved.getCourierOrderNo(), null, "CANCELLED", false)));
+
+        shipmentService.bookReadyShipments();
+        Shipment afterBooking = shipmentRepository.findById(saved.getId()).orElseThrow();
+        cancelQueueService.cancelPendingShipments();
+
+        assertThat(afterBooking.getStatus()).isEqualTo(ShipmentStatus.CANCEL_PENDING);
+        assertThat(afterBooking.getLastError()).isNull(); // 예약 실패로 기록하지 않음
+        assertThat(shipmentRepository.findById(saved.getId()).orElseThrow().getStatus()).isEqualTo(ShipmentStatus.CANCELLED);
     }
 
     @Test
