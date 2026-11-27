@@ -2,6 +2,7 @@ package com.justcommit.backend.market.order.presentation.internal;
 
 import com.justcommit.backend.common.exception.GlobalExceptionHandler;
 import com.justcommit.backend.common.security.internal.InternalKeyFilter;
+import com.justcommit.backend.market.order.application.SettlementTargetCursor;
 import com.justcommit.backend.market.order.application.SettlementTargetQueryService;
 import com.justcommit.backend.market.order.application.SettlementTargetQueryService.SettlementTarget;
 import com.justcommit.backend.market.order.application.SettlementTargetQueryService.SettlementTargetPage;
@@ -61,18 +62,20 @@ class SellerOrderInternalControllerTest {
     }
 
     @Test
-    @DisplayName("종류, 금액, confirmedAt, nextCursor로 응답한다")
+    @DisplayName("종류, 금액, confirmedAt, nextCursor로 응답한다. cursor 문자열은 (confirmedAt, sellerOrderId)로 넘긴다")
     void response() throws Exception {
         LocalDateTime confirmedAt = LocalDateTime.of(2026, 11, 25, 10, 30);
-        given(queryService.find(LocalDateTime.parse(FROM), LocalDateTime.parse(TO), 5L, 2))
+        SettlementTargetCursor cursor = new SettlementTargetCursor(LocalDateTime.of(2026, 11, 25, 9, 0, 0, 123_456_000), 5L);
+        given(queryService.find(LocalDateTime.parse(FROM), LocalDateTime.parse(TO), cursor, 2))
                 .willReturn(new SettlementTargetPage(List.of(
                         new SettlementTarget(6L, 20L, confirmedAt, SellerOrderSettlementAmounts.of(true,
                                 new BigDecimal("10000"), new BigDecimal("3000"), new BigDecimal("6000"))),
                         new SettlementTarget(8L, 21L, confirmedAt, SellerOrderSettlementAmounts.of(false,
-                                BigDecimal.ZERO, new BigDecimal("3000"), new BigDecimal("3000")))), 8L));
+                                BigDecimal.ZERO, new BigDecimal("3000"), new BigDecimal("3000")))),
+                        new SettlementTargetCursor(confirmedAt, 8L)));
 
         mockMvc.perform(get(URL).header(InternalKeyFilter.HEADER, INTERNAL_KEY)
-                        .param("from", FROM).param("to", TO).param("cursor", "5").param("size", "2"))
+                        .param("from", FROM).param("to", TO).param("cursor", "2026-11-25T09:00:00.123456_5").param("size", "2"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].sellerOrderId").value(6))
                 .andExpect(jsonPath("$.data.items[0].sellerId").value(20))
@@ -85,7 +88,7 @@ class SellerOrderInternalControllerTest {
                 .andExpect(jsonPath("$.data.items[1].saleAmount").value(0))
                 .andExpect(jsonPath("$.data.items[1].shippingFee").value(0))
                 .andExpect(jsonPath("$.data.items[1].sellerBurdenAmount").value(6000))
-                .andExpect(jsonPath("$.data.nextCursor").value(8));
+                .andExpect(jsonPath("$.data.nextCursor").value("2026-11-25T10:30:00_8"));
     }
 
     @Test
@@ -124,8 +127,9 @@ class SellerOrderInternalControllerTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"0", "-1"})
-    @DisplayName("cursor가 1보다 작으면 400 INVALID_FIELD_ERROR")
+    @ValueSource(strings = {"", "5", "abc", "_5", "2026-11-25T10:30:00", "2026-11-25T10:30:00_",
+            "2026-13-01T00:00:00_5", "2026-11-25T10:30:00_x", "2026-11-25T10:30:00_0", "2026-11-25T10:30:00_-1"})
+    @DisplayName("cursor가 앞 페이지 nextCursor 형식({confirmedAt}_{sellerOrderId}, id 1 이상)이 아니면 400 INVALID_FIELD_ERROR")
     void invalidCursor(String cursor) throws Exception {
         mockMvc.perform(get(URL).header(InternalKeyFilter.HEADER, INTERNAL_KEY)
                         .param("from", FROM).param("to", TO).param("cursor", cursor))

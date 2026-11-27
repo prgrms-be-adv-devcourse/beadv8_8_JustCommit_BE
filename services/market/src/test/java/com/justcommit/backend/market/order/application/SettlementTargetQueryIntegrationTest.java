@@ -201,18 +201,21 @@ class SettlementTargetQueryIntegrationTest {
     }
 
     @Test
-    @DisplayName("커서로 여러 페이지를 끝까지: sellerOrderId 오름차순, 빠짐과 중복 없이, 마지막 페이지의 nextCursor는 null")
+    @DisplayName("커서로 여러 페이지를 끝까지: (confirmedAt, sellerOrderId) 오름차순, 빠짐과 중복 없이, 마지막 페이지의 nextCursor는 null")
     void cursorPages() {
         List<Long> expected = new ArrayList<>();
-        // confirmedAt 순서와 id 순서가 달라도 id 순으로 나온다
+        List<LocalDateTime> confirmedAts = new ArrayList<>();
+        // 나중에 만든(id가 큰) 판매자 주문일수록 confirmedAt이 이르다: id 순이 아니라 confirmedAt 순으로 나와야 한다
         for (int i = 0; i < 7; i++) {
-            expected.add(completeSellerOrderAt(FROM.plusHours(20 - i)));
+            LocalDateTime confirmedAt = FROM.plusHours(20 - i);
+            expected.addFirst(completeSellerOrderAt(confirmedAt));
+            confirmedAts.addFirst(confirmedAt);
         }
 
         List<Long> actual = new ArrayList<>();
         List<Integer> pageSizes = new ArrayList<>();
-        List<Long> cursors = new ArrayList<>();
-        Long cursor = null;
+        List<SettlementTargetCursor> cursors = new ArrayList<>();
+        SettlementTargetCursor cursor = null;
         do {
             SettlementTargetPage page = service.find(FROM, TO, cursor, 3);
             page.items().forEach(t -> actual.add(t.sellerOrderId()));
@@ -223,8 +226,41 @@ class SettlementTargetQueryIntegrationTest {
 
         assertThat(actual).containsExactlyElementsOf(expected);
         assertThat(pageSizes).containsExactly(3, 3, 1);
-        // nextCursor = 그 페이지의 마지막 sellerOrderId, 마지막 페이지는 null
-        assertThat(cursors).containsExactly(expected.get(2), expected.get(5), null);
+        // nextCursor = 그 페이지 마지막 행의 (confirmedAt, sellerOrderId), 마지막 페이지는 null
+        assertThat(cursors).containsExactly(
+                new SettlementTargetCursor(confirmedAts.get(2), expected.get(2)),
+                new SettlementTargetCursor(confirmedAts.get(5), expected.get(5)),
+                null);
+    }
+
+    @Test
+    @DisplayName("confirmedAt이 같은 판매자 주문이 페이지 경계에 걸려도 sellerOrderId 순으로 이어져 빠짐과 중복이 없다")
+    void sameConfirmedAtAcrossPages() {
+        LocalDateTime same = FROM.plusHours(10).plusNanos(123_456_000);
+        long earlier = completeSellerOrderAt(FROM.plusHours(9));
+        List<Long> ties = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            ties.add(completeSellerOrderAt(same));
+        }
+        long later = completeSellerOrderAt(FROM.plusHours(11));
+        long beforeLater = completeSellerOrderAt(same.minusNanos(1_000));
+
+        List<Long> expected = new ArrayList<>();
+        expected.add(earlier);
+        expected.add(beforeLater);
+        expected.addAll(ties);
+        expected.add(later);
+
+        List<Long> actual = new ArrayList<>();
+        SettlementTargetCursor cursor = null;
+        do {
+            // 문자열로 바꿨다가 다시 읽어 API처럼 커서를 주고받는다 (마이크로초가 그대로 이어져야 한다)
+            SettlementTargetPage page = service.find(FROM, TO, cursor, 2);
+            page.items().forEach(t -> actual.add(t.sellerOrderId()));
+            cursor = page.nextCursor() == null ? null : SettlementTargetCursor.parse(page.nextCursor().encode());
+        } while (cursor != null);
+
+        assertThat(actual).containsExactlyElementsOf(expected);
     }
 
     @Test
