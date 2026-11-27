@@ -1,5 +1,6 @@
 package com.justcommit.backend.member.auth.presentation;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.common.security.TokenHash;
 import com.justcommit.backend.member.auth.application.RefreshTokenIssuer;
 import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
@@ -11,24 +12,14 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 
@@ -38,21 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 로그아웃을 실제 HTTP로 호출해 member의 보안 필터 · 쿠키 · Redis까지 확인한다.
  * 검증 범위는 member 서비스의 보안 필터까지이며, Gateway를 거치는 경우는 아니다.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class LogoutIntegrationTest {
-
-  // 실행마다 새 RSA 키 쌍 (MemberApplicationTests와 같은 방식, 키를 파일에 남기지 않음)
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
+class LogoutIntegrationTest extends MemberIntegrationTest {
 
   @Value("${local.server.port}")
   private int port;
@@ -147,15 +124,5 @@ class LogoutIntegrationTest {
         .expiration(Date.from(past.plusSeconds(60)))
         .signWith(JWT_KEY_PAIR.getPrivate(), Jwts.SIG.RS256)
         .compact();
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

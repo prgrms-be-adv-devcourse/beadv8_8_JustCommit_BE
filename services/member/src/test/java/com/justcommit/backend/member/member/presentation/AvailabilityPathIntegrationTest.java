@@ -1,5 +1,6 @@
 package com.justcommit.backend.member.member.presentation;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.infrastructure.crypto.MemberHmac;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
@@ -12,20 +13,11 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.util.Base64;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -34,20 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 휴대폰 확인의 응답(형식 오류 400 · 가입된 번호 false · 30일 안에 탈퇴한 번호 409, #611)도 HTTP로 확인한다.
  * Gateway 쪽 공개 경로는 gateway의 JwtAuthenticationIntegrationTest에서 확인한다.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class AvailabilityPathIntegrationTest {
-
-  // 실행마다 새 RSA 키 쌍 (MemberApplicationTests와 같은 방식)
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-  }
+class AvailabilityPathIntegrationTest extends MemberIntegrationTest {
 
   @Value("${local.server.port}")
   private int port;
@@ -147,15 +126,5 @@ class AvailabilityPathIntegrationTest {
   private HttpResponse<String> get(String path) throws Exception {
     HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).GET().build();
     return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

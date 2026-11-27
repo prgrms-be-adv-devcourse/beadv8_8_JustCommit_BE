@@ -1,24 +1,16 @@
 package com.justcommit.backend.member.infrastructure.time;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.support.TransactionTemplate;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.util.Base64;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -26,19 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * DatabaseClock을 실제 PostgreSQL로 확인한다 (모의 객체로는 SQL 실행 · 연결 공유를 확인할 수 없음).
  * clock_timestamp()의 동작을 확인할 뿐, DB 시계가 역행하지 않는다는 보장은 아니다.
  */
-@SpringBootTest
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class DatabaseClockIntegrationTest {
-
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-  }
+class DatabaseClockIntegrationTest extends MemberIntegrationTest {
 
   @Autowired
   private DatabaseClock databaseClock;
@@ -94,15 +74,5 @@ class DatabaseClockIntegrationTest {
 
   private Instant transactionStart() {
     return jdbcTemplate.queryForObject("select now()", OffsetDateTime.class).toInstant();
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

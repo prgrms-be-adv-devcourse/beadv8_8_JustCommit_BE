@@ -1,45 +1,31 @@
 package com.justcommit.backend.member.auth.application;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.security.JwtVerifier;
 import com.justcommit.backend.common.security.TokenHash;
 import com.justcommit.backend.member.auth.domain.RevocationReason;
 import com.justcommit.backend.member.auth.domain.RevocationStatus;
 import com.justcommit.backend.member.auth.domain.TokenRevocation;
-import com.justcommit.backend.member.auth.infrastructure.redis.RefreshTokenRedisStore;
-import com.justcommit.backend.member.auth.infrastructure.redis.RevokedMemberRedisStore;
 import com.justcommit.backend.member.auth.infrastructure.repository.TokenRevocationRepository;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
-import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.CannotCreateTransactionException;
-import org.springframework.transaction.support.TransactionTemplate;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -59,26 +45,11 @@ import static org.mockito.Mockito.never;
  * Redis 기록 실패 · 상태 갱신 실패는 실제 빈을 감싼 스파이로 만든다 (테스트마다 원래 동작으로 되돌아감).
  * 상태 갱신은 TokenRevocationRecorder만 executeWithoutResult를 쓰므로, 그것만 실패시키면 폐기 트랜잭션은 그대로다.
  */
-@SpringBootTest
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class TokenRevocationServiceIntegrationTest {
+class TokenRevocationServiceIntegrationTest extends MemberIntegrationTest {
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final Duration RETENTION = Duration.ofMinutes(31);
   private static final Duration TTL = Duration.ofDays(1);
   private static final AtomicInteger SEQ = new AtomicInteger();
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
-
-  @Autowired
-  private TokenRevocationService revocationService;
 
   @Autowired
   private TokenRevocationRecorder revocationRecorder;
@@ -98,23 +69,11 @@ class TokenRevocationServiceIntegrationTest {
   @Autowired
   private MemberRepository memberRepository;
 
-  @MockitoSpyBean
-  private RefreshTokenRedisStore refreshTokenRedisStore;
-
   @Autowired
   private StringRedisTemplate redisTemplate;
 
   @Autowired
   private PasswordEncoder passwordEncoder;
-
-  @MockitoSpyBean
-  private DatabaseClock databaseClock;
-
-  @MockitoSpyBean
-  private RevokedMemberRedisStore revokedMemberRedisStore;
-
-  @MockitoSpyBean
-  private TransactionTemplate transactionTemplate;
 
   @BeforeEach
   void flushRedis() {
@@ -130,7 +89,7 @@ class TokenRevocationServiceIntegrationTest {
     refreshTokenRedisStore.save("old-refresh", member.getId(), 0, TTL);
     refreshTokenRedisStore.save("old-refresh-other-device", member.getId(), 0, TTL);
 
-    RevocationResult result = revocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { });
+    RevocationResult result = tokenRevocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { });
 
     assertThat(result).isEqualTo(RevocationResult.COMPLETED);
     assertThat(memberRepository.findById(member.getId()).orElseThrow().getTokenVersion()).isEqualTo(1);
@@ -153,7 +112,7 @@ class TokenRevocationServiceIntegrationTest {
     Member member = saveMember();
     LoginResult before = loginService.login(new LoginCommand(member.getEmail(), "plant1234"));
 
-    assertThat(revocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { }))
+    assertThat(tokenRevocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { }))
         .isEqualTo(RevocationResult.COMPLETED);
 
     // Gateway TokenRevocationChecker와 같은 방식으로 값을 읽음 (Long.parseLong)
@@ -179,7 +138,7 @@ class TokenRevocationServiceIntegrationTest {
         .when(refreshTokenRedisStore).deleteOlderVersions(anyLong(), anyInt());
 
     // 비밀번호 변경 경로(회원은 ACTIVE로 남음)라 재발급을 막는 것은 상태 검사가 아니라 인증 버전 비교다
-    assertThat(revocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { }))
+    assertThat(tokenRevocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { }))
         .isEqualTo(RevocationResult.COMPLETED);
 
     assertThat(redisTemplate.hasKey("auth:refresh:" + TokenHash.sha256Hex(before.refreshToken()))).isTrue();
@@ -195,7 +154,7 @@ class TokenRevocationServiceIntegrationTest {
     doThrow(new RedisConnectionFailureException("redis down"))
         .when(revokedMemberRedisStore).recordCutoff(anyLong(), any(), any());
 
-    RevocationResult result = revocationService.revoke(member.getId(), RevocationReason.WITHDRAWN, m -> { });
+    RevocationResult result = tokenRevocationService.revoke(member.getId(), RevocationReason.WITHDRAWN, m -> { });
 
     assertThat(result).isEqualTo(RevocationResult.PENDING);
     assertThat(memberRepository.findById(member.getId()).orElseThrow().getTokenVersion()).isEqualTo(1);
@@ -214,7 +173,7 @@ class TokenRevocationServiceIntegrationTest {
     doThrow(new CannotCreateTransactionException("db down"))
         .when(transactionTemplate).executeWithoutResult(any());
 
-    RevocationResult result = revocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { });
+    RevocationResult result = tokenRevocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { });
 
     assertThat(result).isEqualTo(RevocationResult.COMPLETED);
     TokenRevocation revocation = onlyRevocationOf(member.getId());
@@ -238,7 +197,7 @@ class TokenRevocationServiceIntegrationTest {
     doThrow(new CannotCreateTransactionException("db down"))
         .when(transactionTemplate).executeWithoutResult(any());
 
-    RevocationResult result = revocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { });
+    RevocationResult result = tokenRevocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { });
 
     assertThat(result).isEqualTo(RevocationResult.PENDING);
     assertThat(memberRepository.findById(member.getId()).orElseThrow().getTokenVersion()).isEqualTo(1);
@@ -255,7 +214,7 @@ class TokenRevocationServiceIntegrationTest {
   @DisplayName("이미 RECORDED인 작업에 늦게 온 실패 갱신은 0행이고 상태 · 시도 횟수 · 오류를 바꾸지 않는다")
   void lateFailureUpdateDoesNotRevertRecorded() {
     Member member = saveMember();
-    assertThat(revocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { }))
+    assertThat(tokenRevocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { }))
         .isEqualTo(RevocationResult.COMPLETED);
     TokenRevocation recorded = onlyRevocationOf(member.getId());
     assertThat(recorded.getStatus()).isEqualTo(RevocationStatus.RECORDED);
@@ -312,7 +271,7 @@ class TokenRevocationServiceIntegrationTest {
     Member member = saveMember();
     AtomicInteger expected = new AtomicInteger(-1);
 
-    RevocationResult result = revocationService.revoke(member.getId(), RevocationReason.SOCIAL_UNLINKED, m -> {
+    RevocationResult result = tokenRevocationService.revoke(member.getId(), RevocationReason.SOCIAL_UNLINKED, m -> {
       m.markSocialUnlinked();
       expected.set(TokenRevocationService.versionAfterRevocation(m));
     });
@@ -331,7 +290,7 @@ class TokenRevocationServiceIntegrationTest {
   void socialUnlinkRollsBack() {
     Member member = saveMember();
 
-    assertThatThrownBy(() -> revocationService.revoke(member.getId(), RevocationReason.SOCIAL_UNLINKED, m -> {
+    assertThatThrownBy(() -> tokenRevocationService.revoke(member.getId(), RevocationReason.SOCIAL_UNLINKED, m -> {
       m.markSocialUnlinked();
       throw new IllegalStateException("기록 확인 실패");
     })).isInstanceOf(IllegalStateException.class).hasMessage("기록 확인 실패");
@@ -347,7 +306,7 @@ class TokenRevocationServiceIntegrationTest {
   void changeFailureRollsBack() {
     Member member = saveMember();
 
-    assertThatThrownBy(() -> revocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> {
+    assertThatThrownBy(() -> tokenRevocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> {
       throw new IllegalStateException("변경 실패");
     })).isInstanceOf(IllegalStateException.class).hasMessage("변경 실패");
 
@@ -362,7 +321,7 @@ class TokenRevocationServiceIntegrationTest {
     Member member = saveMember();
 
     assertThatThrownBy(() -> transactionTemplate.executeWithoutResult(status ->
-        revocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { })))
+        tokenRevocationService.revoke(member.getId(), RevocationReason.PASSWORD_CHANGED, m -> { })))
         .isInstanceOf(IllegalStateException.class);
 
     assertThat(memberRepository.findById(member.getId()).orElseThrow().getTokenVersion()).isZero();
@@ -372,7 +331,7 @@ class TokenRevocationServiceIntegrationTest {
   @Test
   @DisplayName("없는 회원이면 MEMBER_NOT_FOUND")
   void unknownMember() {
-    assertThatThrownBy(() -> revocationService.revoke(Long.MAX_VALUE, RevocationReason.PASSWORD_CHANGED, m -> { }))
+    assertThatThrownBy(() -> tokenRevocationService.revoke(Long.MAX_VALUE, RevocationReason.PASSWORD_CHANGED, m -> { }))
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode").isEqualTo(MemberErrorCode.MEMBER_NOT_FOUND);
   }
@@ -396,15 +355,5 @@ class TokenRevocationServiceIntegrationTest {
 
   private static String revokedKey(Long memberId) {
     return "auth:revoked-member:" + memberId;
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

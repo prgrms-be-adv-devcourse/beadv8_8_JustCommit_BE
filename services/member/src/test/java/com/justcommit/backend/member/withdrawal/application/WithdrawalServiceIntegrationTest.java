@@ -1,7 +1,8 @@
 package com.justcommit.backend.member.withdrawal.application;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
+import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
-import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.exception.CommonErrorCode;
 import com.justcommit.backend.common.messaging.EventEnvelopeMapper;
@@ -9,7 +10,6 @@ import com.justcommit.backend.common.exception.ErrorCode;
 import com.justcommit.backend.member.address.domain.Address;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.auth.application.RevocationOutcomeUnknownException;
-import com.justcommit.backend.member.auth.application.TokenRevocationService;
 import com.justcommit.backend.member.auth.domain.VerificationBinding;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
@@ -18,7 +18,6 @@ import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.domain.exception.PasswordChangeLockedException;
 import com.justcommit.backend.member.infrastructure.crypto.MemberHmac;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
-import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import com.justcommit.backend.member.member.application.PasswordChangeService;
 import com.justcommit.backend.member.seller.domain.Seller;
 import com.justcommit.backend.member.seller.domain.SellerReviewConsentPolicy;
@@ -30,30 +29,17 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import org.springframework.transaction.support.TransactionTemplate;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.JsonNode;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -71,7 +57,6 @@ import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -87,18 +72,12 @@ import static org.mockito.Mockito.doThrow;
  *   성공 테스트가 실패한다
  * - 원자성: 회원 · 배송지 · 소개글 · 탈퇴 기록 · 폐기 작업 · MemberWithdrawn Outbox가 함께 커밋 · 롤백된다 (#408)
  */
-@SpringBootTest
 @ExtendWith(OutputCaptureExtension.class)
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class WithdrawalServiceIntegrationTest {
+class WithdrawalServiceIntegrationTest extends MemberIntegrationTest {
 
-  @RegisterExtension
-  static final WireMockExtension EXTERNAL = WireMockExtension.newInstance()
-      .options(wireMockConfig().dynamicPort())
-      .build();
+  // 베이스의 공유 WireMock (테스트마다 응답 설정 · 요청 기록 초기화)
+  private static final WireMockServer EXTERNAL = EXTERNAL_API;
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
   private static final String PASSWORD = "plant1234";
   private static final String UNLINK = "/v1/user/unlink";
@@ -111,19 +90,6 @@ class WithdrawalServiceIntegrationTest {
   private static final String BLOCK = """
       {"hasWithdrawalBlocker": true, "blockingReasons": ["ACTIVE_BUYER_ORDER"], "details": {}}""";
 
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-    // 세 내부 서비스와 카카오를 같은 WireMock으로 (경로가 달라 구분됨)
-    registry.add("spring.http.serviceclient.market.base-url", EXTERNAL::baseUrl);
-    registry.add("spring.http.serviceclient.payment.base-url", EXTERNAL::baseUrl);
-    registry.add("spring.http.serviceclient.settlement.base-url", EXTERNAL::baseUrl);
-    registry.add("member.kakao.api-base-url", EXTERNAL::baseUrl);
-  }
-
   @Autowired WithdrawalService withdrawalService;
   @Autowired MemberRepository memberRepository;
   @Autowired AddressRepository addressRepository;
@@ -134,15 +100,10 @@ class WithdrawalServiceIntegrationTest {
   @Autowired MemberHmac memberHmac;
   @Autowired JdbcTemplate jdbcTemplate;
   @Autowired StringRedisTemplate redisTemplate;
-  @Autowired TransactionTemplate transactionTemplate;
   @Autowired PasswordChangeService passwordChangeService;
 
-  // 경합 · 롤백을 만들 때만 동작을 바꾸고, 평소에는 실제 빈 그대로 (테스트마다 원래대로 돌아감)
-  @MockitoSpyBean WithdrawalCheckService withdrawalCheckService;
-  @MockitoSpyBean DatabaseClock databaseClock;
   // Outbox에 저장된 봉투 JSON을 읽어 payload를 확인한다 (운영과 같은 공통 형식)
   private static final EventEnvelopeMapper ENVELOPE_MAPPER = new EventEnvelopeMapper();
-  @MockitoSpyBean TokenRevocationService tokenRevocationService;
 
   @AfterEach
   void cleanUp() {
@@ -666,15 +627,5 @@ class WithdrawalServiceIntegrationTest {
   private static void assertRejected(ThrowingCallable call, ErrorCode code) {
     assertThatThrownBy(call).isInstanceOfSatisfying(BusinessException.class,
         e -> assertThat(e.getErrorCode()).isEqualTo(code));
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

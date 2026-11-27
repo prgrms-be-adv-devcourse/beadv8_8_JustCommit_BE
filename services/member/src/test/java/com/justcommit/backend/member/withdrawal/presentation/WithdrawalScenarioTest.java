@@ -1,6 +1,7 @@
 package com.justcommit.backend.member.withdrawal.presentation;
 
-import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
+import com.justcommit.backend.member.support.MemberIntegrationTest;
+import com.github.tomakehurst.wiremock.WireMockServer;
 import com.justcommit.backend.common.security.JwtVerifier;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
@@ -9,27 +10,16 @@ import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.util.Base64;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -37,7 +27,6 @@ import java.util.regex.Pattern;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -49,17 +38,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * - S-B04: 3곳 병렬 확인 중 하나라도 실패하면 탈퇴를 막는다 (Fail-closed). 병렬 호출 · UNAVAILABLE 판정 자체는
  *   WithdrawalCheckServiceIntegrationTest가 확인한다
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class WithdrawalScenarioTest {
+class WithdrawalScenarioTest extends MemberIntegrationTest {
 
-  @RegisterExtension
-  static final WireMockExtension SERVICES = WireMockExtension.newInstance()
-      .options(wireMockConfig().dynamicPort())
-      .build();
+  // 베이스의 공유 WireMock (테스트마다 응답 설정 · 요청 기록 초기화)
+  private static final WireMockServer SERVICES = EXTERNAL_API;
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
   private static final String PASSWORD = "plant1234";
   private static final String WITHDRAWAL = "/api/v1/users/me/withdrawal";
@@ -69,17 +52,6 @@ class WithdrawalScenarioTest {
       {"hasWithdrawalBlocker": false, "blockingReasons": [], "details": {}}""";
   private static final String BLOCK = """
       {"hasWithdrawalBlocker": true, "blockingReasons": ["ACTIVE_BUYER_ORDER"], "details": {}}""";
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-    registry.add("spring.http.serviceclient.market.base-url", SERVICES::baseUrl);
-    registry.add("spring.http.serviceclient.payment.base-url", SERVICES::baseUrl);
-    registry.add("spring.http.serviceclient.settlement.base-url", SERVICES::baseUrl);
-  }
 
   @Value("${local.server.port}")
   private int port;
@@ -214,15 +186,5 @@ class WithdrawalScenarioTest {
     int n = SEQ.incrementAndGet();
     return memberRepository.save(Member.createLocal("scenario" + n + "@test.com", passwordEncoder.encode(PASSWORD),
         "시나리오" + n, String.format("011%08d", n), "004", "v1:test-account", null, "홍길동"));
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

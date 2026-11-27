@@ -1,8 +1,7 @@
 package com.justcommit.backend.member.unlink.application;
 
-import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
+import com.justcommit.backend.member.support.MemberIntegrationTest;
+import com.github.tomakehurst.wiremock.WireMockServer;
 import com.justcommit.backend.member.auth.application.SocialLoginCommand;
 import com.justcommit.backend.member.auth.application.SocialLoginResult;
 import com.justcommit.backend.member.auth.application.SocialLoginService;
@@ -11,31 +10,17 @@ import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReceipt;
-import com.justcommit.backend.member.unlink.infrastructure.mail.KakaoUnlinkNoticeMailSender;
-import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
-import com.justcommit.backend.member.withdrawal.application.WithdrawalCheckService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -50,7 +35,6 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
@@ -66,48 +50,22 @@ import static org.mockito.Mockito.verify;
  * 실제 처리기(웹훅 기록 → INACTIVE → 3곳 확인 → 안내 메일)로 상태를 만든 뒤 카카오로 다시 로그인해,
  * 탈퇴가 보류로 정해진 연결 해제 상태에서 복구될 때만 안내 표시가 켜지는지 확인한다.
  */
-@SpringBootTest
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class KakaoReloginWithdrawalHeldIntegrationTest {
+class KakaoReloginWithdrawalHeldIntegrationTest extends MemberIntegrationTest {
 
-  @RegisterExtension
-  static final WireMockExtension KAKAO = WireMockExtension.newInstance()
-      .options(wireMockConfig().dynamicPort())
-      .build();
+  // 베이스의 공유 WireMock (테스트마다 응답 설정 · 요청 기록 초기화)
+  private static final WireMockServer KAKAO = EXTERNAL_API;
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
   // 경합 테스트의 대기 한도: 넘으면 실패
   private static final Duration WAIT = Duration.ofSeconds(10);
   private static final String BLOCK = """
       {"hasWithdrawalBlocker": true, "blockingReasons": ["ACTIVE_BUYER_ORDER"], "details": {"activeBuyerOrderCount": 1}}""";
 
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-    registry.add("member.kakao.api-base-url", KAKAO::baseUrl);
-    // 3곳 확인(market · payment · settlement)도 같은 WireMock으로 (경로가 달라 섞이지 않음)
-    registry.add("spring.http.serviceclient.market.base-url", KAKAO::baseUrl);
-    registry.add("spring.http.serviceclient.payment.base-url", KAKAO::baseUrl);
-    registry.add("spring.http.serviceclient.settlement.base-url", KAKAO::baseUrl);
-  }
-
   @Autowired KakaoUnlinkProcessor processor;
-  // 재로그인이 처리 기록을 읽은 "뒤" · 무효화하기 "전"에 다른 일을 끼워 넣기 위해 가로챔. 평소에는 실제 빈 그대로
-  @MockitoSpyBean KakaoUnlinkReceiptRepository receiptRepository;
-  // 3곳 확인 도중(처리 기록 지정 뒤 · BLOCKED 저장 전)에 처리기를 멈추기 위해 가로챔
-  @MockitoSpyBean WithdrawalCheckService withdrawalCheckService;
   @Autowired SocialLoginService socialLoginService;
   @Autowired MemberRepository memberRepository;
   @Autowired JdbcTemplate jdbcTemplate;
   @Autowired StringRedisTemplate redisTemplate;
-
-  // 실제 SMTP 대신 가짜 (보낸 횟수만 확인)
-  @MockitoBean KakaoUnlinkNoticeMailSender noticeMailSender;
 
   private final List<Long> memberIds = new ArrayList<>();
   // 경합 테스트에서 작업 스레드를 멈춰 두는 래치. 테스트가 실패해도 정리 때 모두 풀어 준다
@@ -460,15 +418,5 @@ class KakaoReloginWithdrawalHeldIntegrationTest {
         "004", "v1:test-account", null, "홍길동"));
     memberIds.add(member.getId());
     return member;
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

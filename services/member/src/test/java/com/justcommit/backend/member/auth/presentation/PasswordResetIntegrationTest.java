@@ -1,12 +1,11 @@
 package com.justcommit.backend.member.auth.presentation;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.auth.application.LoginCommand;
 import com.justcommit.backend.member.auth.application.LoginResult;
 import com.justcommit.backend.member.auth.application.LoginService;
 import com.justcommit.backend.member.auth.domain.EmailPurpose;
-import com.justcommit.backend.member.auth.infrastructure.mail.VerificationMailSender;
-import com.justcommit.backend.member.config.MailExecutorConfig;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
@@ -17,28 +16,14 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.core.task.SyncTaskExecutor;
-import org.springframework.core.task.TaskExecutor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.convention.TestBean;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.util.Base64;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -59,25 +44,13 @@ import static org.mockito.Mockito.times;
  * - 준비 데이터는 요청 전에 커밋해야 해서 @Transactional을 붙이지 않는다
  * - 검증 범위는 member 서비스의 보안 필터까지이며, Gateway를 거치는 경우는 아니다
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class PasswordResetIntegrationTest {
+class PasswordResetIntegrationTest extends MemberIntegrationTest {
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final String OLD_PASSWORD = "plant1234";
   private static final String NEW_PASSWORD = "green5678";
   private static final String OTHER_PASSWORD = "third9012";
   private static final AtomicInteger SEQ = new AtomicInteger();
   private static final Pattern RESET_TOKEN = Pattern.compile("\"resetToken\":\"([^\"]+)\"");
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
 
   @Value("${local.server.port}")
   private int port;
@@ -88,19 +61,6 @@ class PasswordResetIntegrationTest {
   @Autowired PasswordEncoder passwordEncoder;
   @Autowired StringRedisTemplate redisTemplate;
   @Autowired JdbcTemplate jdbcTemplate;
-
-  // 실제로 메일을 보내지 않고, 보낼 인증번호를 가로챈다
-  @MockitoBean
-  VerificationMailSender mailSender;
-
-  // 업무 흐름 검증이 목적이라 메일 작업을 요청 스레드에서 바로 실행한다 (응답 직후 메일 발송자 호출을 바로 검증)
-  // 비동기 동작은 별도 통합 테스트에서 실제 실행기로 검증 (#421)
-  @TestBean(name = MailExecutorConfig.MAIL_TASK_EXECUTOR)
-  TaskExecutor mailTaskExecutor;
-
-  static TaskExecutor mailTaskExecutor() {
-    return new SyncTaskExecutor();
-  }
 
   private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -158,7 +118,7 @@ class PasswordResetIntegrationTest {
     HttpResponse<String> send = post("/api/v1/auth/email/send", "{\"email\":\"" + email + "\"}");
     assertThat(send.statusCode()).isEqualTo(200);
     ArgumentCaptor<String> signupCode = ArgumentCaptor.forClass(String.class);
-    then(mailSender).should().send(eq(email), signupCode.capture(), any(), eq(EmailPurpose.SIGNUP));
+    then(verificationMailSender).should().send(eq(email), signupCode.capture(), any(), eq(EmailPurpose.SIGNUP));
 
     HttpResponse<String> response = verify(email, signupCode.getValue(), EmailPurpose.PASSWORD_RESET);
 
@@ -217,9 +177,9 @@ class PasswordResetIntegrationTest {
     assertThat(unknownResponse.statusCode()).isEqualTo(localResponse.statusCode());
     assertThat(unknownResponse.body()).isEqualTo(localResponse.body());
 
-    then(mailSender).should().send(eq(local.getEmail()), anyString(), any(), eq(EmailPurpose.PASSWORD_RESET));
-    then(mailSender).should(never()).send(eq(social.getEmail()), anyString(), any(), any());
-    then(mailSender).should(never()).send(eq(unknownEmail), anyString(), any(), any());
+    then(verificationMailSender).should().send(eq(local.getEmail()), anyString(), any(), eq(EmailPurpose.PASSWORD_RESET));
+    then(verificationMailSender).should(never()).send(eq(social.getEmail()), anyString(), any(), any());
+    then(verificationMailSender).should(never()).send(eq(unknownEmail), anyString(), any(), any());
   }
 
   @Test
@@ -234,7 +194,7 @@ class PasswordResetIntegrationTest {
     HttpResponse<String> sixth = post("/api/v1/auth/email/send", "{\"email\":\"" + email + "\"}");
 
     assertError(sixth, 429, MemberErrorCode.EMAIL_SEND_DAILY_LIMIT);
-    then(mailSender).should(times(5)).send(eq(email), anyString(), any(), eq(EmailPurpose.SIGNUP));
+    then(verificationMailSender).should(times(5)).send(eq(email), anyString(), any(), eq(EmailPurpose.SIGNUP));
   }
 
   @Test
@@ -252,7 +212,7 @@ class PasswordResetIntegrationTest {
 
     assertThat(sixth.statusCode()).isEqualTo(200);
     assertThat(sixth.body()).isEqualTo(first.body());
-    then(mailSender).should(times(5)).send(eq(member.getEmail()), anyString(), any(), eq(EmailPurpose.PASSWORD_RESET));
+    then(verificationMailSender).should(times(5)).send(eq(member.getEmail()), anyString(), any(), eq(EmailPurpose.PASSWORD_RESET));
   }
 
   // ===== 도우미 =====
@@ -261,7 +221,7 @@ class PasswordResetIntegrationTest {
   private String sendResetCode(String email) throws Exception {
     assertThat(sendReset(email).statusCode()).isEqualTo(200);
     ArgumentCaptor<String> code = ArgumentCaptor.forClass(String.class);
-    then(mailSender).should().send(eq(email), code.capture(), any(), eq(EmailPurpose.PASSWORD_RESET));
+    then(verificationMailSender).should().send(eq(email), code.capture(), any(), eq(EmailPurpose.PASSWORD_RESET));
     return code.getValue();
   }
 
@@ -320,15 +280,5 @@ class PasswordResetIntegrationTest {
     int n = SEQ.incrementAndGet();
     return memberRepository.save(Member.createLocal("reset" + n + "@test.com", passwordEncoder.encode(OLD_PASSWORD),
         "재설" + n, String.format("016%08d", n), "004", "v1:test-account", null, "홍길동"));
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

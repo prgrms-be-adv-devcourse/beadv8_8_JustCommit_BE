@@ -1,5 +1,6 @@
 package com.justcommit.backend.member.withdrawal.application;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.address.application.AddressCreateCommand;
 import com.justcommit.backend.member.address.application.AddressService;
@@ -17,18 +18,8 @@ import com.justcommit.backend.member.seller.infrastructure.SellerRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.util.Base64;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,21 +32,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * 카카오 연결 해제(INACTIVE, #422)도 같은 404로 막는다. INACTIVE는 계좌 · 개인정보가 남아 있어, 막지 않으면 조회 · 변경이 그대로 성공한다.
  * (정산 · 환급용 내부 계좌 조회는 INACTIVE에도 응답하므로 여기서 다루지 않음)
  */
-@SpringBootTest
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class WithdrawnMemberAccessIntegrationTest {
+class WithdrawnMemberAccessIntegrationTest extends MemberIntegrationTest {
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
 
   @Autowired
   private MyInfoService myInfoService;
@@ -191,15 +170,5 @@ class WithdrawnMemberAccessIntegrationTest {
          where id = ?
         """, member.getId());
     return member.getId();
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

@@ -1,10 +1,9 @@
 package com.justcommit.backend.member.unlink.application;
 
-import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
+import com.justcommit.backend.member.support.MemberIntegrationTest;
+import com.github.tomakehurst.wiremock.WireMockServer;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.security.JwtVerifier;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
 import com.justcommit.backend.member.auth.application.SocialLoginCommand;
 import com.justcommit.backend.member.auth.application.SocialLoginResult;
 import com.justcommit.backend.member.auth.application.SocialLoginService;
@@ -13,36 +12,22 @@ import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
-import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import com.justcommit.backend.member.unlink.domain.KakaoUnlinkReceipt;
-import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
-import com.justcommit.backend.member.withdrawal.infrastructure.kakao.KakaoAdminClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doAnswer;
@@ -53,37 +38,17 @@ import static org.mockito.Mockito.verify;
  * [S-B11] 카카오 재로그인 (#422). 정상 카카오 로그인은 회원 잠금 안에서
  * 이전 미처리 수신 기록을 항상(ACTIVE여도) 무효로 하고, INACTIVE면 ACTIVE로 복구한 뒤 발급한다.
  */
-@SpringBootTest
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class KakaoReloginIntegrationTest {
+class KakaoReloginIntegrationTest extends MemberIntegrationTest {
 
-  @RegisterExtension
-  static final WireMockExtension KAKAO = WireMockExtension.newInstance()
-      .options(wireMockConfig().dynamicPort())
-      .build();
+  // 베이스의 공유 WireMock (테스트마다 응답 설정 · 요청 기록 초기화)
+  private static final WireMockServer KAKAO = EXTERNAL_API;
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-    registry.add("member.kakao.api-base-url", KAKAO::baseUrl);
-  }
 
   @Autowired SocialLoginService socialLoginService;
   // Gateway와 같은 검증기로 iat(초)를 꺼냄
   @Autowired JwtVerifier jwtVerifier;
-  // 같은 초를 확실하게 만들 때만 발급 시각을 고정하고, 평소에는 실제 DB 시계
-  @MockitoSpyBean DatabaseClock databaseClock;
-  // 카카오 조회 응답을 받은 "직후"에 다른 일을 끼워 넣기 위해 가로챔. 평소에는 실제 빈 그대로
-  @MockitoSpyBean KakaoAdminClient kakaoAdminClient;
   @Autowired KakaoUnlinkProcessor processor;
-  @Autowired KakaoUnlinkReceiptRepository receiptRepository;
   @Autowired MemberRepository memberRepository;
   @Autowired JdbcTemplate jdbcTemplate;
   @Autowired StringRedisTemplate redisTemplate;
@@ -238,15 +203,5 @@ class KakaoReloginIntegrationTest {
         "004", "v1:test-account", null, "홍길동"));
     memberIds.add(member.getId());
     return member;
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

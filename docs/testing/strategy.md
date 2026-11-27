@@ -43,6 +43,7 @@
 |---|---|---|
 | 연결 | `@DynamicPropertySource` 안에서 `SharedPostgres.register(registry)` · `SharedRedis.register(registry)` · `SharedKafka.register(registry)` | 처음 부를 때 컨테이너가 뜨고, 다음 클래스부터는 그대로 씀 |
 | PostgreSQL | `register`가 컨텍스트마다 빈 DB(`test_N`)를 새로 만듦. 스프링 없이 붙을 때는 `SharedPostgres.createDatabase()` | 클래스끼리 데이터 · 스키마(Flyway, `ddl-auto`)가 섞이지 않음 |
+| 컨텍스트 재사용 | 모듈 공통 베이스 클래스(member: `MemberIntegrationTest`)에 `@SpringBootTest` · `@DynamicPropertySource` · mock · spy를 모으고 통합 테스트는 상속만 함. 테스트 클래스 시작 전에 테이블을 비움(`ResetDataBeforeClassListener`, `flyway_schema_history` 제외 truncate + Redis `flushAll`). 설정을 바꿔야 하는 클래스(앱 기동 확인 · 비동기 실행기 · 다른 설정값)만 상속하지 않음 | 설정이 같아야 컨텍스트 · DB를 재사용함. 클래스마다 다르면 컨텍스트 기동 + 빈 DB + Flyway 전체를 매번 새로 함 (#664: member 기동 37 → 8회) |
 | pgvector | 모듈 `test` 태스크에 `systemProperty 'shared.postgres.image', 'pgvector/pgvector:pg17'` | 이미지는 모듈에 하나 |
 | Redis | `@AfterEach`(또는 `@BeforeEach`)에서 `flushAll` | Redis는 하나를 같이 씀 |
 | Kafka | `register`가 컨텍스트마다 컨슈머 그룹 id를 새로 정함. 리스너가 도는 클래스는 `@DirtiesContext`, 메시지는 key로 거름 | 끝난 클래스의 리스너가 다음 클래스 메시지를 가로채지 않게 |
@@ -54,7 +55,7 @@
 | 규칙 | 내용 |
 |---|---|
 | 스텁 위치 | 부르는 서비스 테스트 안 `services/{서비스}/src/test/resources/wiremock/{상대}/`. 공통 모듈로 빼지 않음 (의존성 `org.wiremock:wiremock-standalone` 버전만 `libs.versions.toml`에 한 번) |
-| 주소 바꿔 끼우기 | 테스트 클래스마다 빈 포트로 띄우고 `spring.http.serviceclient.{그룹}.base-url`을 WireMock 주소로 (그룹 이름은 `internal-api.groups`의 이름). 응답 타임아웃은 `read-timeout` 500ms + 지연 1초로 짧게 |
+| 주소 바꿔 끼우기 | 빈 포트로 띄우고 (공통 베이스 클래스가 있는 모듈은 베이스의 WireMock 하나를 같이 쓰고 테스트마다 `resetAll`) `spring.http.serviceclient.{그룹}.base-url`을 WireMock 주소로 (그룹 이름은 `internal-api.groups`의 이름). 응답 타임아웃은 `read-timeout` 500ms + 지연 1초로 짧게 |
 | 계약 원본 | 경로 · 필드 · 에러 code는 [내부 API 목록](../reference/internal-apis.md)과 같게. 계약이 바뀌면 제공 담당이 같은 PR에서 문서와 부르는 쪽 응답 JSON을 함께 고침 |
 
 | 흉내 낼 응답 | WireMock | 기대 예외 · 재시도 횟수 |

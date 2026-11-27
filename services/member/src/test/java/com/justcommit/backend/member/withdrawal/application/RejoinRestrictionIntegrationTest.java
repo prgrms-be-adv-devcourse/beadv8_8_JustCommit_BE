@@ -1,5 +1,6 @@
 package com.justcommit.backend.member.withdrawal.application;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.member.address.infrastructure.AddressRepository;
 import com.justcommit.backend.member.auth.domain.EmailPurpose;
@@ -7,10 +8,8 @@ import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
-import com.justcommit.backend.member.infrastructure.crypto.AccountCipher;
 import com.justcommit.backend.member.infrastructure.crypto.MemberHmac;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
-import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import com.justcommit.backend.member.member.application.SignupCommand;
 import com.justcommit.backend.member.member.application.SignupService;
 import com.justcommit.backend.member.member.application.SocialSignupCommand;
@@ -22,23 +21,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import org.springframework.transaction.support.TransactionTemplate;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -57,21 +44,9 @@ import static org.mockito.Mockito.doAnswer;
  * - S-B08: 탈퇴 커밋 전에는 기존 중복 검사에, 커밋 후에는 재가입 제한에 걸려 우회되지 않음
  * 탈퇴 기록은 탈퇴 API를 만들기 전이라 리포지토리로 직접 넣는다.
  */
-@SpringBootTest
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class RejoinRestrictionIntegrationTest {
+class RejoinRestrictionIntegrationTest extends MemberIntegrationTest {
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
 
   @Autowired private SignupService signupService;
   @Autowired private SocialSignupService socialSignupService;
@@ -81,11 +56,7 @@ class RejoinRestrictionIntegrationTest {
   @Autowired private MemberRepository memberRepository;
   @Autowired private AddressRepository addressRepository;
   @Autowired private MemberHmac memberHmac;
-  @Autowired private DatabaseClock databaseClock;
   @Autowired private JdbcTemplate jdbcTemplate;
-  // 사전 중복 검사를 마친 가입을 INSERT 직전(계좌 암호화)에서 멈추는 데만 쓴다. 평소에는 실제 동작
-  @MockitoSpyBean private AccountCipher accountCipher;
-  @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private StringRedisTemplate redisTemplate;
 
   // Redis는 모듈의 테스트가 함께 쓰므로 테스트마다 비운다 (docs/testing/strategy.md 「통합 테스트 컨테이너 규칙」)
@@ -279,16 +250,6 @@ class RejoinRestrictionIntegrationTest {
       latch.await(10, TimeUnit.SECONDS);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-    }
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
     }
   }
 }

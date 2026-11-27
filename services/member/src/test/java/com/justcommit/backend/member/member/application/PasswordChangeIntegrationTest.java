@@ -1,12 +1,12 @@
 package com.justcommit.backend.member.member.application;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.security.JwtVerifier;
 import com.justcommit.backend.member.auth.application.LoginCommand;
 import com.justcommit.backend.member.auth.application.LoginResult;
 import com.justcommit.backend.member.auth.application.LoginService;
 import com.justcommit.backend.member.auth.application.TokenReissueService;
-import com.justcommit.backend.member.auth.infrastructure.redis.RevokedMemberRedisStore;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
@@ -15,26 +15,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -50,23 +39,11 @@ import static org.mockito.Mockito.doThrow;
  *   (Gateway 쪽 401 처리는 S-A08)
  * - 준비 데이터는 요청 전에 커밋해야 해서 @Transactional을 붙이지 않는다
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class PasswordChangeIntegrationTest {
+class PasswordChangeIntegrationTest extends MemberIntegrationTest {
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final String OLD_PASSWORD = "plant1234";
   private static final String NEW_PASSWORD = "green5678";
   private static final AtomicInteger SEQ = new AtomicInteger();
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
 
   @Value("${local.server.port}")
   private int port;
@@ -79,9 +56,6 @@ class PasswordChangeIntegrationTest {
   @Autowired PasswordEncoder passwordEncoder;
   @Autowired StringRedisTemplate redisTemplate;
   @Autowired JdbcTemplate jdbcTemplate;
-
-  @MockitoSpyBean
-  RevokedMemberRedisStore revokedMemberRedisStore;
 
   private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -245,15 +219,5 @@ class PasswordChangeIntegrationTest {
     int n = SEQ.incrementAndGet();
     return memberRepository.save(Member.createLocal("pw" + n + "@test.com", passwordEncoder.encode(OLD_PASSWORD),
         "비번" + n, String.format("017%08d", n), "004", "v1:test-account", null, "홍길동"));
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

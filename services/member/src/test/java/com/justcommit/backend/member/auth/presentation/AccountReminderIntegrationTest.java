@@ -1,9 +1,7 @@
 package com.justcommit.backend.member.auth.presentation;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.member.auth.domain.EmailPurpose;
-import com.justcommit.backend.member.auth.infrastructure.mail.AccountReminderMailSender;
-import com.justcommit.backend.member.auth.infrastructure.mail.VerificationMailSender;
-import com.justcommit.backend.member.config.MailExecutorConfig;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
@@ -12,29 +10,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.core.task.SyncTaskExecutor;
-import org.springframework.core.task.TaskExecutor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mail.MailSendException;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.convention.TestBean;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -58,21 +42,9 @@ import static org.mockito.Mockito.times;
  * - 검증 범위: member 서비스(보안 필터 포함)까지이며 Gateway는 거치지 않는다 (IP 제한은 Gateway 테스트),
  *   메일 제목 · 본문은 메일 클래스 단위 테스트에서 본다
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class AccountReminderIntegrationTest {
+class AccountReminderIntegrationTest extends MemberIntegrationTest {
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
 
   @Value("${local.server.port}")
   private int port;
@@ -81,21 +53,6 @@ class AccountReminderIntegrationTest {
   @Autowired PasswordEncoder passwordEncoder;
   @Autowired StringRedisTemplate redisTemplate;
   @Autowired JdbcTemplate jdbcTemplate;
-
-  @MockitoBean
-  AccountReminderMailSender reminderMailSender;
-
-  @MockitoBean
-  VerificationMailSender verificationMailSender;
-
-  // 업무 흐름 검증이 목적이라 메일 작업을 요청 스레드에서 바로 실행한다 (응답 직후 메일 발송자 호출을 바로 검증)
-  // 비동기 동작은 별도 통합 테스트에서 실제 실행기로 검증 (#421)
-  @TestBean(name = MailExecutorConfig.MAIL_TASK_EXECUTOR)
-  TaskExecutor mailTaskExecutor;
-
-  static TaskExecutor mailTaskExecutor() {
-    return new SyncTaskExecutor();
-  }
 
   private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -264,15 +221,5 @@ class AccountReminderIntegrationTest {
     jdbcTemplate.update("update member set password = null, provider = ?, provider_id = ? where id = ?",
         provider.name(), provider.name().toLowerCase() + "-" + member.getId(), member.getId());
     return member.getEmail();
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

@@ -1,10 +1,9 @@
 package com.justcommit.backend.member.withdrawal.presentation;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.common.security.TokenHash;
 import com.justcommit.backend.member.auth.domain.EmailPurpose;
 import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
-import com.justcommit.backend.member.auth.infrastructure.mail.VerificationMailSender;
-import com.justcommit.backend.member.config.MailExecutorConfig;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
@@ -14,28 +13,14 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.core.task.SyncTaskExecutor;
-import org.springframework.core.task.TaskExecutor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.convention.TestBean;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -51,24 +36,12 @@ import static org.mockito.BDDMockito.then;
  * 메일은 가짜 발송기로 받아 번호를 꺼내고, 메일 작업은 요청 스레드에서 바로 실행한다 (계좌 변경 테스트와 같은 방식).
  * 탈퇴 토큰의 실제 사용(다른 회원 · 인증 버전 변경 · 재사용 거절)은 최종 탈퇴 테스트에서 확인한다.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class WithdrawalVerificationIntegrationTest {
+class WithdrawalVerificationIntegrationTest extends MemberIntegrationTest {
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
   private static final String VERIFICATIONS = "/api/v1/users/me/withdrawal/verifications";
   private static final String TOKENS = "/api/v1/users/me/withdrawal/tokens";
   private static final Pattern WITHDRAWAL_TOKEN = Pattern.compile("\"withdrawalToken\":\"([^\"]+)\"");
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
 
   @Value("${local.server.port}")
   private int port;
@@ -77,17 +50,6 @@ class WithdrawalVerificationIntegrationTest {
   @Autowired JwtProvider jwtProvider;
   @Autowired StringRedisTemplate redisTemplate;
   @Autowired JdbcTemplate jdbcTemplate;
-
-  @MockitoBean
-  VerificationMailSender verificationMailSender;
-
-  // 업무 흐름 검증이 목적이라 메일 작업을 요청 스레드에서 바로 실행한다 (#421 비동기 동작은 별도 테스트)
-  @TestBean(name = MailExecutorConfig.MAIL_TASK_EXECUTOR)
-  TaskExecutor mailTaskExecutor;
-
-  static TaskExecutor mailTaskExecutor() {
-    return new SyncTaskExecutor();
-  }
 
   private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -274,15 +236,5 @@ class WithdrawalVerificationIntegrationTest {
     int n = SEQ.incrementAndGet();
     return memberRepository.save(Member.createLocal("local" + n + "@test.com", "encoded-password",
         "로컬" + n, String.format("018%08d", n), "004", "v1:test-account", null, "홍길동"));
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

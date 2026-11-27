@@ -1,35 +1,23 @@
 package com.justcommit.backend.member.auth.application;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.member.auth.domain.RevocationReason;
 import com.justcommit.backend.member.auth.domain.RevocationStatus;
 import com.justcommit.backend.member.auth.domain.TokenRevocation;
-import com.justcommit.backend.member.auth.infrastructure.redis.RevokedMemberRedisStore;
 import com.justcommit.backend.member.auth.infrastructure.repository.TokenRevocationRepository;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
-import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -43,24 +31,12 @@ import static org.mockito.Mockito.doThrow;
  * 스케줄러는 테스트 설정에서 꺼 두고 재처리 서비스를 직접 부른다.
  * "임대가 끝남"은 30초를 기다리지 않고 next_attempt_at을 1초 전으로 돌려서 만든다.
  */
-@SpringBootTest
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class TokenRevocationRetryIntegrationTest {
+class TokenRevocationRetryIntegrationTest extends MemberIntegrationTest {
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final Duration RETENTION = Duration.ofMinutes(31);
   // 시각 비교 여유: 앱 · DB 호출 사이 지연을 감안
   private static final Duration SLACK = Duration.ofSeconds(3);
   private static final AtomicInteger SEQ = new AtomicInteger();
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
 
   @Autowired
   private TokenRevocationRetryService retryService;
@@ -75,9 +51,6 @@ class TokenRevocationRetryIntegrationTest {
   private MemberRepository memberRepository;
 
   @Autowired
-  private DatabaseClock databaseClock;
-
-  @Autowired
   private StringRedisTemplate redisTemplate;
 
   @Autowired
@@ -85,9 +58,6 @@ class TokenRevocationRetryIntegrationTest {
 
   @Autowired
   private PasswordEncoder passwordEncoder;
-
-  @MockitoSpyBean
-  private RevokedMemberRedisStore revokedMemberRedisStore;
 
   @BeforeEach
   void cleanUp() {
@@ -225,15 +195,5 @@ class TokenRevocationRetryIntegrationTest {
 
   private static String revokedKey(Long memberId) {
     return "auth:revoked-member:" + memberId;
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

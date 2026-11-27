@@ -1,24 +1,15 @@
 package com.justcommit.backend.member.withdrawal.infrastructure.repository;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import com.justcommit.backend.member.withdrawal.domain.MemberWithdrawalRecord;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -30,21 +21,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * - 이 클래스에는 @Transactional이 없어 리포지토리 호출마다 새 영속성 컨텍스트를 쓴다.
  *   그래서 saveAndFlush 뒤의 findById는 메모리 객체가 아니라 DB에서 다시 읽은 값이다
  */
-@SpringBootTest
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class MemberWithdrawalSchemaIntegrationTest {
+class MemberWithdrawalSchemaIntegrationTest extends MemberIntegrationTest {
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
 
   @Autowired
   private MemberWithdrawalRecordRepository recordRepository;
@@ -104,15 +83,5 @@ class MemberWithdrawalSchemaIntegrationTest {
     assertThat(row.get("role")).isNotNull();
     assertThat(row.get("provider")).isNotNull();
     assertThat(row.get("status")).isNotNull();
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

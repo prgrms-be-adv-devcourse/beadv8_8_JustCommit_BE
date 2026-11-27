@@ -1,7 +1,6 @@
 package com.justcommit.backend.member.unlink.application;
 
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.member.auth.application.SocialLoginCommand;
 import com.justcommit.backend.member.auth.application.SocialLoginService;
 import com.justcommit.backend.member.domain.Member;
@@ -12,23 +11,15 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -46,23 +37,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * (같은 트랜잭션에서 set_config로 기록 id → 파일 그대로 실행)으로 실행한다.
  * 재개 단계별 조건, 조건 불일치 시 전부 롤백, 재로그인과 겹쳐도 재로그인의 무효화가 이기는지 확인한다
  */
-@SpringBootTest
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class KakaoUnlinkOpsScriptIntegrationTest {
+class KakaoUnlinkOpsScriptIntegrationTest extends MemberIntegrationTest {
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
   private static final String RESUME = "ops/kakao-unlink-resume.sql";
   private static final String CLOSE = "ops/kakao-unlink-close.sql";
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
 
   @Autowired JdbcTemplate jdbcTemplate;
   @Autowired TransactionTemplate transactionTemplate;
@@ -250,15 +229,5 @@ class KakaoUnlinkOpsScriptIntegrationTest {
 
   private Map<String, Object> row(Long id) {
     return jdbcTemplate.queryForMap("select * from member_kakao_unlink_receipt where id = ?", id);
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

@@ -1,14 +1,11 @@
 package com.justcommit.backend.member.unlink.presentation;
 
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import com.justcommit.backend.member.unlink.application.KakaoUnlinkReceiver;
-import com.justcommit.backend.member.unlink.infrastructure.repository.KakaoUnlinkReceiptRepository;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,15 +15,8 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.event.KeyValuePair;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.URI;
 import java.net.URLEncoder;
@@ -34,11 +24,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -56,34 +43,17 @@ import static org.mockito.Mockito.doThrow;
  * 키가 틀리면 401(기록 없음), 맞으면 값과 관계없이 200. 저장 실패 · 지연에도 200을 3초 안에 돌려준다.
  * 저장 실패는 운영 알림 지표가 오르고, 검증된 값만 담은 복구 로그가 남는다 (헤더 · 키 · 원문 없음)
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class KakaoUnlinkWebhookIntegrationTest {
+class KakaoUnlinkWebhookIntegrationTest extends MemberIntegrationTest {
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final String PATH = "/api/v1/webhooks/kakao/unlink";
   private static final String AUTHORIZATION = "KakaoAK test-kakao-admin-key";
   private static final String APP_ID = "1234567";
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
 
   @Value("${local.server.port}")
   private int port;
 
   @Autowired JdbcTemplate jdbcTemplate;
-  @Autowired TransactionTemplate transactionTemplate;
 
-  // 저장 실패를 만들 때만 동작을 바꾸고, 평소에는 실제 빈 그대로
-  @MockitoSpyBean KakaoUnlinkReceiptRepository receiptRepository;
-  // DB 장애를 만들 때만 동작을 바꾸고, 평소에는 실제 빈 그대로
-  @MockitoSpyBean DatabaseClock databaseClock;
   @Autowired MeterRegistry meterRegistry;
 
   // 수신 서비스의 로그를 붙잡아 키 · 값을 직접 확인 (출력 형식과 관계없이)
@@ -308,15 +278,5 @@ class KakaoUnlinkWebhookIntegrationTest {
   private Map<String, Object> row(String providerId) {
     return jdbcTemplate.queryForMap(
         "select status, referrer_type, last_error from member_kakao_unlink_receipt where provider_id = ?", providerId);
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }
