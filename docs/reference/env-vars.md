@@ -1,7 +1,7 @@
 # 환경변수
 
 > 언제 읽나: 환경변수 · 비밀값을 추가하거나 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-21 · 관련: Miro A3
+> 상태: ✅ 확정 · 마지막 수정 2026-11-27 · 관련: Miro A3
 
 ## 변수 표
 
@@ -18,6 +18,7 @@
 | `OAUTH2_STATE_SECRET` | member | 카카오 state 서명 |
 | `INTERNAL_API_KEY` | 모든 서비스 (같은 값) | `/internal/**` 확인. 내부 호출 그룹(`internal-api.groups`)이 있는 서비스는 키가 없으면 시작하지 않음 |
 | `MEMBER_ADDRESS_EVENT_KEY` | member · market (같은 값) | 주소 이벤트 전송 키 (판매자 배송지 목록 암호화, `EventFieldCipher` 키 버전 `k1`). `openssl rand -base64 32`로 생성, 서버 설정은 인프라 담당. member · market 적용 완료(#233 · #275), `.env.example` 추가 완료(#233) |
+| `MARKET_BOOKING_REQUEST_KEY` | market | 택배 예약 첫 요청 본문(`shipment.booking_request`) 암호화 키 (`EventFieldCipher` 키 버전 `b1`, #688). 판매자 주소가 들어 있어 암호화하며, member가 풀 수 없게 `MEMBER_ADDRESS_EVENT_KEY`와 나눔. `openssl rand -base64 32`, 운영은 `deploy/scripts/make-env.sh`가 만들어 market에만 넣음. 없으면 market이 시작하지 않음 |
 | `REDIS_HOST` · `REDIS_PORT` · `REDIS_PASSWORD` | member · Gateway | – |
 | `OPENSEARCH_URL` | product | 상품 검색 OpenSearch 주소 (예: `http://{호스트}:9200`, 보안 플러그인을 꺼서 계정 없음). 없으면 로컬 `http://localhost:9200`(`docker-compose.yml`의 `opensearch`). 운영은 `deploy/scripts/make-env.sh`가 데이터 서버 사설 IP의 9200으로 넣음 |
 | `MEMBER_SERVICE_URL` · `PRODUCT_SERVICE_URL` · `MARKET_SERVICE_URL` · `PAYMENT_SERVICE_URL` · `SETTLEMENT_SERVICE_URL` · `NOTIFICATION_SERVICE_URL` · `AI_SERVICE_URL` | Gateway | 라우팅할 서비스 주소. 없으면 로컬 포트(8081 ~ 8086 · ai 8087) |
@@ -54,5 +55,5 @@
 - 비밀값 원본은 서버 `~/secrets/`에 두고, 레포에는 `.env.example`(이름 · 설명)만 둡니다.
 - 새 필수 환경변수는 `.env.example`에도 추가합니다 (배포 때 누락 검사).
 - DB 계정 · 암호화 키(계좌 암호화 · HMAC · 결제 키)는 한 번 정하면 바꾸지 않습니다.
-- 주소 이벤트 전송 키(`MEMBER_ADDRESS_EVENT_KEY`)는 키 버전을 지원해 유출 시 바꿀 수 있습니다. 바꿀 때는 [키 교체 절차](../conventions/events.md#민감-필드-암호화)를 따릅니다.
+- 주소 이벤트 전송 키(`MEMBER_ADDRESS_EVENT_KEY`)와 택배 예약 본문 키(`MARKET_BOOKING_REQUEST_KEY`)는 키 버전을 지원해 유출 시 바꿀 수 있습니다. 택배 예약 본문은 예약 · 취소로 큐를 떠나면 지워져 오래 남지 않습니다. 바꿀 때는 [키 교체 절차](../conventions/events.md#민감-필드-암호화)를 따릅니다.
 - 앱은 AWS 키 없이 EC2 IAM 역할을 씁니다. 키 · `.pem`은 레포 · 채팅 · 문서에 남기지 않습니다 (유출 2OUT).

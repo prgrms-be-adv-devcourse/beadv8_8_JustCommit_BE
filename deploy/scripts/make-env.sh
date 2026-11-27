@@ -47,6 +47,7 @@ add_shared COURIER_API_KEY             "openssl rand -hex 32"
 add_shared BANK_API_KEY                "openssl rand -hex 32"  # 모의 은행 서버 (#389)
 add_shared WEBHOOK_API_KEY             "openssl rand -hex 32"
 add_shared MEMBER_ADDRESS_EVENT_KEY    "openssl rand -base64 32"
+add_shared MARKET_BOOKING_REQUEST_KEY  "openssl rand -base64 32"  # 택배 예약 본문 암호화, market에만 (#688)
 add_shared ACCOUNT_ENCRYPTION_KEY      "openssl rand -base64 32"
 add_shared MEMBER_HMAC_KEY             "openssl rand -base64 32"
 add_shared PAYMENT_KEY_ENCRYPTION_KEY  "openssl rand -base64 32"
@@ -120,6 +121,7 @@ write() { cat > "$S/$1.env"; chmod 600 "$S/$1.env"; echo "  작성: $1.env"; }
   common_db market
   echo "INTERNAL_API_KEY=$(sh_ INTERNAL_API_KEY)"
   echo "MEMBER_ADDRESS_EVENT_KEY=$(sh_ MEMBER_ADDRESS_EVENT_KEY)"
+  echo "MARKET_BOOKING_REQUEST_KEY=$(sh_ MARKET_BOOKING_REQUEST_KEY)"
   echo "COURIER_BASE_URL=http://$APP_IP:3000"
   echo "COURIER_API_KEY=$(sh_ COURIER_API_KEY)"
   echo "WEBHOOK_API_KEY=$(sh_ WEBHOOK_API_KEY)"

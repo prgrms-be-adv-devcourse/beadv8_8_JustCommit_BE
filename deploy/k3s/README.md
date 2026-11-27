@@ -15,7 +15,7 @@
 | Secret | 만드는 원본 | 들어갈 변수 이름 |
 |---|---|---|
 | `gateway-env` | `~/secrets/gateway.env` | `JWT_PUBLIC_KEY` · `REDIS_PASSWORD` · `CORS_ALLOWED_ORIGINS` |
-| `market-env` | `~/secrets/market.env` | `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` · `KAFKA_BOOTSTRAP_SERVERS` · `JWT_PUBLIC_KEY` · `INTERNAL_API_KEY` · `MEMBER_ADDRESS_EVENT_KEY` · `COURIER_BASE_URL` · `COURIER_API_KEY` · `WEBHOOK_API_KEY` |
+| `market-env` | `~/secrets/market.env` | `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` · `KAFKA_BOOTSTRAP_SERVERS` · `JWT_PUBLIC_KEY` · `INTERNAL_API_KEY` · `MEMBER_ADDRESS_EVENT_KEY` · `MARKET_BOOKING_REQUEST_KEY` · `COURIER_BASE_URL` · `COURIER_API_KEY` · `WEBHOOK_API_KEY` |
 | `ai-env` | `~/secrets/ai.env` | `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` · `KAFKA_BOOTSTRAP_SERVERS` · `JWT_PUBLIC_KEY` · `INTERNAL_API_KEY` · `OPENAI_API_KEY` · `ANTHROPIC_API_KEY` |
 | `ghcr-pull` | GHCR `read:packages` 토큰 | – |
 

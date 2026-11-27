@@ -65,3 +65,9 @@ custom:
     api-key: ${COURIER_API_KEY:}
     base-url: ${COURIER_BASE_URL:http://localhost:3000}
     webhook-api-key: ${WEBHOOK_API_KEY:}
+    # 택배 예약 첫 요청 본문(shipment.booking_request) 암호화 키. market 전용 (#688, env-vars.md)
+    booking-request-cipher:
+      current-key: b1
+      keys:
+        # 기본값 없음: 환경변수가 없으면 앱이 시작하지 않는다
+        b1: ${MARKET_BOOKING_REQUEST_KEY}
