@@ -18,6 +18,7 @@ Gateway는 K3s Service 이름으로 market에 보내고 K3s가 살아 있는 파
 - 예외: Gateway는 `MaxRAMPercentage=45` · `MaxDirectMemorySize=64m` (`deploy/k3s/gateway.yaml`). 70%면 힙 360 + 비힙 · Netty 등 약 225MiB가 한도 512Mi를 넘어 과부하 때 OOMKilled (#661)
 - Gateway · market을 2개씩 띄우면 앱 서버 예상 메모리는 **약 7GB / 8GB**입니다. 넘치면 모니터링을 **데이터 서버로** 옮기는 쪽을 봅니다 (앱 서버가 더 빠듯함)
 - 실측 (2026-11-18, 부하 없이 모두 띄운 상태): 앱 서버 **4.4GB / 7.6GB**, 스왑 사용 없음. 부하를 줄 때의 값은 성능 측정 때 다시 잽니다 (⬜)
+- Gateway 부하 실측 (2026-11-27, 둘러보기 160 rps · 섞어서 40): 파드당 최대 **446MiB / 512Mi**, OOMKilled 0. 확보한 메모리는 부하 뒤에도 약 440MiB로 남음 → [재측정 (#661)](../../perf/README.md)
 
 | 무엇 | 메모리 (상한) |
 |---|---|

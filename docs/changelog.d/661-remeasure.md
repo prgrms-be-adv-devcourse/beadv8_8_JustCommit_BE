@@ -1,0 +1,1 @@
+- 2026-11-27 · infra/deploy.md · 「메모리」에 Gateway 부하 실측(둘러보기 160 rps · 섞어서 40에서 파드당 최대 446MiB / 512Mi, OOMKilled 0) 추가 (#661)

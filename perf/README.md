@@ -144,10 +144,30 @@ python -I perf/analysis/stage_report.py --target msa --start <시작 + setup 시
 perf/data/msa/check-concurrent.sh <FIRST_ID>          # concurrent.js 뒤
 ```
 
-- 측정 뒤 시연 데이터로 되돌리기: 시연 도구 `npm run demo -- restore base` (브랜치 `gasic37200/perf-demo-data`의 `perf/demo/`)
+- 측정 뒤 되돌리기: **seed 전에** 시연 도구로 새 스냅샷을 만들고 측정 뒤 그걸로 복원 — `npm run demo -- save <이름>` → 측정 → `npm run demo -- restore <이름>` (브랜치 `gasic37200/perf-demo-data`의 `perf/demo/`). `restore base`는 base 저장 뒤 생긴 실제 회원까지 지운다 (11/22 사고, #661)
 - 무너지는 단계에서 Gateway가 OOMKilled되면 SSH 터널도 끊길 수 있다 → 다음 측정 전에 `curl localhost:18080/actuator/health`
 - 서비스가 재시작한 직후(차가운 JVM)에는 한계가 크게 낮게 나온다 → 1분 데우고 잰다
 - 결과 원본: `k6/results/*-msa-*`, 장애 때 저장한 로그 `k6/results/msa-incidents/`
+
+## Gateway 메모리 조정 뒤 재측정 (#661)
+
+#628에서 OOMKilled가 난 둘러보기 · 섞어서만 같은 스크립트 · 단계 · 3분 유지로 다시 쟀다 (2026-11-27, 운영). 바꾼 것: Gateway 힙 70 → 45% · 다이렉트 메모리 64m, 서비스 연결 풀 상한 100 · 자리 대기 1초(초과 503) → PR #675. 원본 `k6/results/*-661-*`.
+
+| 시나리오 · 단계 | #628 Gateway rps · p95 · 에러 | #661 Gateway rps · p95 · 에러 | #661 데이터 서버 CPU 최대 % |
+|---|---|---|---|
+| 둘러보기 40 | 40.0 · 33ms · 0% | 40.4 · 42ms · 0% | 34 |
+| 둘러보기 80 | 86.2 · 144ms · 0% | 75.5 · 701ms · 0% | 80 |
+| 둘러보기 160 | 에러 79% · **Gateway 2파드 OOMKilled** | 161.1 · 4,197ms · 31% (503) | 96 |
+| 섞어서 10 | 11.7 · 362ms · 0% | 11.3 · 627ms · 0% | 64 |
+| 섞어서 20 | 21.5 · 1,002ms · 0% | 19.7 · 201ms · 0% | 50 |
+| 섞어서 40 | 34.0 · 9,970ms · 89.8% | 42.6 · 3,827ms · 0.75% | 95 |
+
+- Gateway 재시작 0 · OOMKilled 0, 컨테이너 메모리 최대 446MiB (한도 512Mi)
+- 둘러보기 160: product 쪽 연결 풀 100개가 차고 대기 최대 97 → Gateway가 1초 뒤 503 7,626건으로 끊음, 504 0. 붙잡힌 요청이 쌓이지 않아 힙 사용 최대 약 150MiB
+- 한계는 그대로 둘러보기 80 · 섞어서 20~40. 병목은 데이터 서버 CPU와 product DB 연결 대기(160에서 대기 188)
+- 둘러보기 80 p95가 144 → 701ms: product p95 자체가 557ms라 Gateway 원인은 아님. 원인 미확인 (seed 직후 DB 상태 추정)
+- 섞어서 10 p95 627ms: 스냅샷 저장으로 서비스가 재시작한 지 약 25분, market p95 3.6초 · 앱 서버 CPU 100% (찬 JVM 영향으로 봄)
+- 데이터: 측정 직전 `save pre661` → 측정 → `restore pre661`. 측정 전과 회원 · 상품 · 주문 수가 같음을 확인
 
 ## 검색 · 챗봇 단계별 운영 측정 (#634)
 
