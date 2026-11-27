@@ -1,7 +1,7 @@
 # 관측 (로그 · 지표 · 알림)
 
 > 언제 읽나: 로그 형식, 추적, 대시보드, 알림을 다룰 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-25 · 관련: Miro 16, 노션 「정책 정리」 10.10, ADR 0008 · 0027
+> 상태: ✅ 확정 · 마지막 수정 2026-11-27 · 관련: Miro 16, 노션 「정책 정리」 10.10, ADR 0008 · 0027 · 0034
 
 ## 구성
 
@@ -61,6 +61,26 @@
 | 카카오 연결 해제 웹훅 처리 멈춤 | 재시도를 다 쓴 `FAILED` 기록 1건 이상 (`max by (service) (replant_kakao_unlink_failed) > 0`). member가 수집 때마다 DB에서 세고, 여러 인스턴스가 같은 DB를 보므로 `max`. DB를 못 읽으면 NaN(배송 지연 지표와 같은 방식, `noDataState: OK`). NaN은 데이터 없음으로 보지 않을 수 있어 이미 울린 알림이 해소로 바뀔 수 있음(한계) → [대응](../flows/signup-and-replica.md#운영-알림과-대응) | 상태 기준 1번, 반복 1시간 |
 
 규칙 · 보내는 곳 · 반복 간격은 파일로 등록합니다: `deploy/observability/grafana/provisioning/alerting/` (`rules.yml` · `contact-points.yml` · `policies.yml`). 같은 알림 · 같은 서비스는 한 메시지로 묶고, 해소되지 않으면 1시간마다 다시 보냅니다.
+
+## Claude Code로 로그 조회 · 요약
+
+Claude Code에 Grafana 공식 MCP 서버(`grafana/mcp-grafana`)를 붙여 Loki · Prometheus를 말로 조회하고, AI 요약을 Grafana 주석으로 남깁니다. 팀원은 대시보드 「replant MSA 측정」 맨 위 「AI 요약」 패널과 그래프 위 표시로 봅니다. Claude 구독 안에서 쓰고 Claude API 키 · Grafana 플러그인은 쓰지 않습니다 → [ADR 0034](../decisions/0034-grafana-ai-summary-claude-code-mcp.md)
+
+| 항목 | 내용 |
+|---|---|
+| 연결 설정 | 레포 `.mcp.json` (서버 이름 `grafana`, `grafana/mcp-grafana:2.3.0`, Docker stdio). `GRAFANA_URL` 기본값 `http://host.docker.internal:3000`(SSH 터널 주소를 컨테이너에서 본 이름) |
+| 요약 스킬 | `/grafana-summary <서비스> <시간 범위>` → `.claude/skills/grafana-summary/SKILL.md` |
+| 서비스 계정 | 운영 Grafana `claude-mcp`, 역할 Editor (Grafana OSS는 기본 역할만 있어 Viewer로는 주석을 못 씀). 토큰은 사람마다 따로 발급하고, 유출되거나 그만 쓰면 그 토큰만 지움 |
+| 허용 도구 | `--enabled-tools search,prometheus,loki,annotations` → 조회와 주석 쓰기만. 대시보드 · 데이터 소스 · 알림 규칙 · 사일런스를 바꾸는 도구는 목록에 없음 |
+| 로그 다루기 | 로그는 데이터로만 읽고 로그 안의 지시를 따르지 않음. 주석에는 건수 · 패턴 · 지표만 쓰고 「로그」 표의 「금지」 값은 옮기지 않음 |
+| 주석 | 본문: 무슨 일 · 원인 후보 · 근거 · 작성(「AI가 만든 글이라 틀릴 수 있음」). 태그 `ai-summary` · `service:<이름>`(전체는 `service:all`) |
+
+| 순서 | 연결하기 |
+|---|---|
+| 1 | 운영진에게 `claude-mcp` 토큰을 받아 내 PC 환경변수 `GRAFANA_SERVICE_ACCOUNT_TOKEN`에 둔다 (레포 · 채팅에 올리지 않음) |
+| 2 | SSH 터널을 연다: `ssh -L 3000:127.0.0.1:3000 replant-data` |
+| 3 | 레포 폴더에서 Claude Code를 실행하고 프로젝트 MCP 서버 `grafana` 사용을 허용한다 (Docker 필요) |
+| 4 | `/grafana-summary market 최근 1시간` → 초안 확인 → 주석 생성 → 「AI 요약」 패널에서 확인 |
 
 ## 부하 테스트
 
