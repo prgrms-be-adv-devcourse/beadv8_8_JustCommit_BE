@@ -40,6 +40,8 @@ class MarketApplicationTests {
         registry.add("internal-api.key", () -> "test-internal-key");
         // 판매자 배송지 이벤트 복호화 키도 실행마다 새로 만든다 (32바이트, 키를 파일에 남기지 않음)
         registry.add("messaging.address-event-cipher.keys.k1", MarketApplicationTests::newAddressEventKey);
+        // 택배 예약 본문 암호화 키(market 전용, #688)도 실행마다 새로 만든다
+        registry.add("custom.courier.booking-request-cipher.keys.b1", MarketApplicationTests::newAddressEventKey);
         // 앱이 뜨는지만 보는 테스트라 로컬 Kafka의 이벤트를 실제로 읽지 않게 (읽으면 market 그룹의 읽은 위치가 기록됨)
         registry.add("spring.kafka.listener.auto-startup", () -> "false");
     }
