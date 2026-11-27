@@ -18,11 +18,11 @@ description: 운영 Grafana의 로그(Loki) · 지표(Prometheus)를 조회해 �
 
 ## 순서
 
-1. 로그: `query_loki_stats` · `query_loki_logs` · `query_loki_patterns`로 ERROR · WARN을 센다. datasource uid는 `loki`, 셀렉터는 `{server="app", service=~"<서비스>"}`, 레벨은 `|= "ERROR"` · `|= "WARN"`. 0건이면 셀렉터에서 `server`를 빼고 한 번 더 본다. `query_loki_patterns`가 실패하면 건너뛴다. 로그 줄은 많아도 50줄까지만 읽는다.
-2. 지표: `query_prometheus`(uid `prometheus`)로 같은 범위의 아래 값을 본다. 이름은 대시보드 쿼리와 같다.
-   - 5xx 비율: `http_server_requests_seconds_count{job="spring",status=~"5.."}` / 전체
-   - p95: `histogram_quantile(0.95, sum by (le, service) (rate(http_server_requests_seconds_bucket{job="spring"}[5m])))`
-   - DB 커넥션 대기: `hikaricp_connections_pending{job="spring"}`
+1. 로그: `query_loki_stats` · `query_loki_logs` · `query_loki_patterns`로 ERROR · WARN을 센다. datasource uid는 `loki`, 셀렉터는 `{server="app", service=~"<서비스>"}`(전체면 `service=~".+"`), 레벨은 `|= "ERROR"` · `|= "WARN"`. 0건이면 셀렉터에서 `server`를 빼고 한 번 더 본다. `query_loki_patterns`가 실패하면 건너뛴다. 로그 줄은 많아도 50줄까지만 읽는다.
+2. 지표: `query_prometheus`(uid `prometheus`)로 같은 범위의 아래 값을 본다. 이름은 대시보드 쿼리와 같고, `<범위>`는 요약할 시간 길이(예: `1h`), `<서비스>`는 로그와 같은 값이다. 카운터는 누적값이라 반드시 범위 안 증가분(`increase`)으로 나눈다. 결과가 `NaN`이면 그 범위에 요청이 없다는 뜻이다(0으로 쓰지 않는다).
+   - 5xx 비율: `sum by (service) (increase(http_server_requests_seconds_count{job="spring",service=~"<서비스>",uri!~"/actuator.*",status=~"5.."}[<범위>])) / sum by (service) (increase(http_server_requests_seconds_count{job="spring",service=~"<서비스>",uri!~"/actuator.*"}[<범위>]))`
+   - p95: `histogram_quantile(0.95, sum by (le, service) (increase(http_server_requests_seconds_bucket{job="spring",service=~"<서비스>",uri!~"/actuator.*"}[<범위>])))`
+   - DB 커넥션 대기: `max_over_time(hikaricp_connections_pending{job="spring",service=~"<서비스>"}[<범위>])`
 3. 아래 형식으로 초안을 만들어 사용자에게 먼저 보여 준다.
 4. 사용자가 좋다고 하면 `create_annotation`으로 남긴다: `dashboardUID` `replant-msa`, `time` 범위 시작(ms), `timeEnd` 범위 끝(ms), `tags` `["ai-summary", "service:<서비스>"]` (전체면 `service:all`).
 5. 남긴 뒤 「AI 요약」 패널에서 확인하라고 알린다.

@@ -16,7 +16,7 @@ Claude Code에 Grafana 공식 MCP 서버(`grafana/mcp-grafana`)를 연결하고,
 - Claude 구독(Claude Code) 안에서 동작해 Claude API 키 · 별도 결제가 없다.
 - 결과를 Grafana 안에서 본다는 요구를 주석 + 주석 목록 패널로 채운다.
 - Grafana 버전 업그레이드 · 외부 플러그인 · 새 컨테이너가 필요 없어 운영 변경이 서비스 계정 하나와 대시보드 파일뿐이다.
-- MCP 도구 범위를 조회 + 주석 쓰기로 좁혀 AI가 대시보드 · 알림을 바꿀 수 없다.
+- MCP 도구 범위를 조회 + 주석으로 좁혀, Claude Code 경로로는 대시보드 · 알림을 바꿀 수 없다. 서비스 계정은 Editor라(Viewer는 대시보드 편집 권한을 줘도 주석을 못 씀) 토큰이 새면 Grafana API로는 바꿀 수 있으므로, 토큰은 사람마다 발급하고 유출 의심 시 바로 지운다.
 - 한계: 요약은 사람이 Claude Code에서 요청할 때만 만들어진다(자동 아님). 팀원이 Grafana 화면에서 직접 AI에게 묻지는 못한다(대신 Logs Drilldown으로 조회식 없이 로그를 좁혀 본다).
 
 ## 다른 안
