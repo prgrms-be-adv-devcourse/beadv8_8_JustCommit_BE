@@ -1,0 +1,2 @@
+- 2026-11-27 · perf/README.md · 「검색 · 챗봇 단계별 운영 측정」 결과 표 채움: 상품 키워드 검색 p50 11 · p95 33ms(가장 느린 단계 `opensearch` 22ms), 품종 의미 검색 p50 474 · p95 584ms(`embedding` 531ms가 대부분), 챗봇은 `ANTHROPIC_API_KEY` 설정 뒤 측정 (#634)
+- 2026-11-27 · perf/README.md · #634 「다시 재기」를 SSH 터널 대신 공개 Grafana 기준으로: `stage_timing.py --grafana` (토큰은 `GRAFANA_SERVICE_ACCOUNT_TOKEN`) (#634)

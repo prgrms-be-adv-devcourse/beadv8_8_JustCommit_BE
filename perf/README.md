@@ -209,20 +209,36 @@ perf/data/msa/check-concurrent.sh <FIRST_ID>          # concurrent.js 뒤
 
 ### 결과
 
-측정 전. 아래 표를 `analysis/stage_timing.py` 출력으로 채운다 (가장 느린 단계는 스크립트가 표시).
+`analysis/stage_timing.py` 출력 (운영 Prometheus를 Grafana 데이터 소스 프록시로 조회, 2026-11-27). 실패는 두 측정 모두 0건, 상품 검색 LIKE 대체(`fallback`)도 0건.
 
-| 대상 | 측정일 | 건수 | 전체 p50 · p95 | 가장 느린 단계 (p95) |
+| 대상 | 측정 (한국 시간) | 건수 | 전체 p50 · p95 ms | 가장 느린 단계 (p95) |
 |---|---|---|---|---|
-| 상품 키워드 검색 | | | | |
-| 품종 의미 검색 | | | | |
-| 챗봇 | | | | |
+| 상품 키워드 검색 | 2026-11-25 17:31:43 ~ 17:36:43 | 599 | 11 · 33 | `opensearch` 22ms |
+| 품종 의미 검색 | 2026-11-25 17:36:51 ~ 17:42:52 | 53 | 474 · 584 | `embedding` 531ms |
+| 챗봇 | 키 설정 뒤 측정 | | | 운영 ai에 `ANTHROPIC_API_KEY`가 없어 `answer` 단계를 못 잼 |
+
+| 상품 키워드 검색 단계 | p50 ms | p95 ms |
+|---|---|---|
+| `total` | 11 | 33 |
+| `opensearch` | 6 | 22 |
+| `opensearch_took` | 2 | 16 |
+| `db` | 5 | 13 |
+| HTTP product | 15 | 39 |
+
+| 품종 의미 검색 단계 | p50 ms | p95 ms |
+|---|---|---|
+| `total` | 474 | 584 |
+| `embedding` | 413 | 531 |
+| `vector_search` | 12 | 117 |
+| `product_lookup` | 3 | 5 |
+| HTTP ai | 476 | 584 |
+
+- 상품 키워드 검색은 p95 33ms로 느린 단계가 없다. `opensearch` − `opensearch_took`(p50 약 4ms)이 OpenSearch 밖 시간이라 연결 · 직렬화 부담도 작다
+- 품종 의미 검색은 전체의 약 87%(p50 413 / 474ms)가 질문 임베딩(OpenAI 호출)이다 → #636(임베딩 캐시 · 병렬화)은 임베딩부터 줄인다. `vector_search` p95 117ms는 p50 12ms보다 크게 튀어 53건 중 몇 건의 값이라 참고만 한다
 
 ### 다시 재기
 
 ```bash
-# 터널 (MSA 운영 측정과 같음)
-ssh -N -L 19090:10.0.7.79:9090 replant-data          # 운영 Prometheus
-
 cd perf/k6
 # 1) 상품 키워드 검색 (로그인 없음)
 k6 run -e TARGET=product -e RPM=120 -e DURATION=5m --summary-export results/stages-product-$(date +%Y%m%d-%H%M).json search-stages.js
@@ -231,9 +247,12 @@ k6 run -e TARGET=species -e RPM=9 -e DURATION=6m --summary-export results/stages
 # 3) 챗봇 (perf-buyer-1..3 로그인, 비밀번호 ~/.replant-perf/password)
 ./run.sh chatbot.js -e MEMBERS=3
 
-# 측정마다 시작 · 끝 시각으로 단계별 표
-python3 -I ../analysis/stage_timing.py --start <시작> --end <끝> --only product
+# 측정마다 시작 · 끝 시각으로 단계별 표 (공개 Grafana를 거쳐 운영 Prometheus 조회)
+python3 -I ../analysis/stage_timing.py --grafana https://replant.kro.kr/grafana --start <시작> --end <끝> --only product
 ```
+
+- 조회에는 Grafana 서비스 계정 토큰이 환경변수 `GRAFANA_SERVICE_ACCOUNT_TOKEN`에 있어야 한다 → `docs/infra/observability.md` 「Claude Code로 로그 조회 · 요약」. SSH 터널(`ssh -N -L 19090:10.0.7.79:9090 replant-data`)이 있으면 `--grafana` 없이 조회한다
+- `run.sh`는 k6 지표를 터널 주소(`localhost:19090`)로 보내려 한다. 터널이 없으면 그 전송만 실패하고, 단계별 표는 서비스 지표라 그대로 나온다
 
 - 측정 계정(`perf-buyer-N@perf.test`)이 운영에 있어야 챗봇을 잴 수 있다. #628 뒤 시연 데이터로 되돌렸으면 `data/msa/seed.sh`로 다시 넣는다 (회원과 함께 상품 · 주문도 들어가므로 측정 뒤 시연 데이터로 되돌림)
 - 배포 · 재시작 직후는 JVM이 덜 데워져 느리게 나온다 → 1분 데우고 잰다 (MSA 운영 측정과 같음)
