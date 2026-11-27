@@ -53,8 +53,8 @@
 
 ```sql
 update shipment
-set status = 'READY', next_attempt_at = null, attempt_count = 0, last_error = null, version = version + 1
+set status = 'READY', next_attempt_at = null, attempt_count = 0, last_error = null, booking_request = null, version = version + 1
 where id = :shipmentId and status = 'REVIEW_REQUIRED';
 ```
 
-되돌리면 10초 안에 택배 예약 큐가 같은 주문번호로 다시 예약합니다. 처리하면 지표 값이 줄어 알림이 멈춥니다.
+`booking_request`(첫 요청 본문, #672)를 비워야 고친 주소로 본문을 새로 만듭니다. 되돌리면 10초 안에 택배 예약 큐가 같은 주문번호로 다시 예약합니다. 처리하면 지표 값이 줄어 알림이 멈춥니다.

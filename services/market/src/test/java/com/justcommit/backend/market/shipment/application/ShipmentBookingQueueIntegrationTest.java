@@ -1,5 +1,6 @@
 package com.justcommit.backend.market.shipment.application;
 
+import com.justcommit.backend.market.shipment.infrastructure.courier.TestBookingRequestCodecConfig;
 import com.justcommit.backend.market.OrderQuery;
 import com.justcommit.backend.market.OrderShippingInfo;
 import com.justcommit.backend.market.client.member.MemberAddress;
@@ -63,7 +64,7 @@ import static org.mockito.Mockito.when;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, ShipmentService.class, ShipmentCancelQueueService.class})
+@Import({JpaAuditingConfig.class, TestBookingRequestCodecConfig.class, ShipmentService.class, ShipmentCancelQueueService.class})
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED) // 큐가 직접 트랜잭션을 열고 닫는다
 class ShipmentBookingQueueIntegrationTest {
@@ -232,7 +233,7 @@ class ShipmentBookingQueueIntegrationTest {
 
         int updated = jdbcTemplate.update("""
                 update shipment set status = 'READY', next_attempt_at = null, attempt_count = 0, last_error = null,
-                                    version = version + 1
+                                    booking_request = null, version = version + 1
                 where id = ? and status = 'REVIEW_REQUIRED'
                 """, saved.getId());
         shipmentService.bookReadyShipments();

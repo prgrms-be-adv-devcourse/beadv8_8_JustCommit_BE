@@ -64,6 +64,11 @@ public class Shipment extends BaseTimeEntity {
     @Column(length = LAST_ERROR_MAX_LENGTH)
     private String lastError;
 
+    // 택배 예약 첫 요청 본문(암호문, V14 #672). 첫 시도 직전에 저장하고 재시도는 이 값을 그대로 보낸다.
+    // 같은 멱등 키에 다른 본문이 가면 택배사가 409 IDEMPOTENCY_KEY_REUSED로 거절하기 때문. 큐를 떠나면(resetQueue) 비운다.
+    @Column(columnDefinition = "text")
+    private String bookingRequest;
+
     // 구매자가 취소를 누른 시각. 택배사는 이 시각의 기사 거리로 판정한다 (ADR 0026).
     private LocalDateTime cancelRequestedAt;
 
@@ -114,6 +119,16 @@ public class Shipment extends BaseTimeEntity {
         this.attemptCount++;
         this.nextAttemptAt = now.plus(retryDelay(this.attemptCount));
         this.lastError = truncate(reason);
+    }
+
+    // 첫 예약 시도 직전에 보낼 본문을 고정한다 (#672). 이미 있으면 바꾸지 않는다 (재시도는 처음 본문 그대로).
+    public void pinBookingRequest(String encodedRequest) {
+        if (this.status != ShipmentStatus.READY) {
+            throw new IllegalStateException("READY 상태의 배송만 예약 본문을 저장할 수 있습니다. 현재 상태: " + this.status);
+        }
+        if (this.bookingRequest == null) {
+            this.bookingRequest = encodedRequest;
+        }
     }
 
     // 택배사가 다시 보내도 같은 결과로 거절했다 (#671: 400 · 멱등 키 409 등). 확인 필요로 멈춰 예약 큐가 더 집지 않게 한다.
@@ -175,6 +190,7 @@ public class Shipment extends BaseTimeEntity {
         this.nextAttemptAt = null;
         this.attemptCount = 0;
         this.lastError = null;
+        this.bookingRequest = null; // 예약이 끝났거나 취소로 큐를 떠남 → 판매자 주소 사본을 남기지 않는다
     }
 
     private static String truncate(String reason) {

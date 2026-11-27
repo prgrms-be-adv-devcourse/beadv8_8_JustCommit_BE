@@ -270,6 +270,23 @@ class ShipmentTest {
     }
 
     @Test
+    @DisplayName("#672 예약 본문은 처음 한 번만 저장되고, 예약 · 취소로 큐를 떠나면 지운다")
+    void pinBookingRequestOnceAndClearOnLeave() {
+        Shipment booked = newShipment();
+        booked.pinBookingRequest("first");
+        booked.pinBookingRequest("second"); // 재시도에서 다시 불러도 처음 본문 유지
+        assertThat(booked.getBookingRequest()).isEqualTo("first");
+        booked.book("404000000001", LocalDateTime.of(2026, 11, 27, 10, 0));
+        assertThat(booked.getBookingRequest()).isNull();
+
+        Shipment cancelled = newShipment();
+        cancelled.pinBookingRequest("first");
+        cancelled.requestCancel(LocalDateTime.of(2026, 11, 27, 10, 0));
+        assertThat(cancelled.getBookingRequest()).isNull();
+        assertThatThrownBy(() -> cancelled.pinBookingRequest("x")).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
     @DisplayName("#671 확인 필요 배송도 구매자가 취소하면 CANCEL_PENDING이 되어 취소 큐로 넘어간다")
     void requestCancelFromReviewRequired() {
         Shipment shipment = newShipment();

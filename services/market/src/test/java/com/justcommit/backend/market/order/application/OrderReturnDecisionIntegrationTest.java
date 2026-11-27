@@ -1,5 +1,6 @@
 package com.justcommit.backend.market.order.application;
 
+import com.justcommit.backend.market.shipment.infrastructure.courier.TestBookingRequestCodecConfig;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.messaging.EventEnvelopeMapper;
 import com.justcommit.backend.common.messaging.outbox.OutboxAutoConfiguration;
@@ -76,7 +77,7 @@ import static org.mockito.Mockito.doAnswer;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, OrderReturnService.class, SellerOrderCompletion.class, ShipmentService.class,
+@Import({JpaAuditingConfig.class, TestBookingRequestCodecConfig.class, OrderReturnService.class, SellerOrderCompletion.class, ShipmentService.class,
         SellerOrderEventPublisher.class, PurchaseConfirmedEventPublisher.class, EventEnvelopeMapper.class})
 @ImportAutoConfiguration(OutboxAutoConfiguration.class)
 @TestPropertySource(properties = "outbox.scheduler.enabled=false")
