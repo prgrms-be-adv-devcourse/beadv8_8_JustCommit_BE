@@ -21,6 +21,7 @@ import reactor.netty.http.client.PrematureCloseException;
  * 라우팅 중 생긴 에러를 ApiResponse로 바꾼다 (노션 정책 정리 10.8, docs/conventions/resilience.md).
  * <pre>
  * 서비스에 연결 못 함 (꺼짐 · 연결 1초 초과) → 503  요청이 서비스에 안 갔으니 다시 시도해도 안전
+ * 연결 풀 자리 대기 1초 초과               → 503  같은 이유
  * 응답 시간 초과                          → 504  서비스가 처리했을 수도 있음 (결과 불명)
  * 응답 받는 중 끊김 (정상 종료 · 강제 끊김)   → 502  결과 불명
  * 등록 안 된 경로 (/internal/** 포함)       → 404
@@ -34,6 +35,7 @@ import reactor.netty.http.client.PrematureCloseException;
 public class GatewayExceptionHandler implements ErrorWebExceptionHandler {
 
   private static final Logger log = LoggerFactory.getLogger(GatewayExceptionHandler.class);
+  private static final String POOL_ACQUIRE_TIMEOUT = "PoolAcquireTimeoutException";
 
   @Override
   public Mono<Void> handle(ServerWebExchange exchange, Throwable ex) {
@@ -54,6 +56,11 @@ public class GatewayExceptionHandler implements ErrorWebExceptionHandler {
   static GatewayErrorCode classify(Throwable ex) {
     for (Throwable t = ex; t != null; t = t.getCause()) {
       if (t instanceof ConnectException || t instanceof ConnectTimeoutException) {
+        return GatewayErrorCode.SERVICE_UNAVAILABLE;
+      }
+      // 연결 풀 자리 대기 초과 (#661): 요청이 서비스에 가지 않았으니 503. TimeoutException의 하위라 504보다 먼저 거름.
+      // reactor-netty가 reactor-pool을 내부 패키지로 숨겨 둬서 클래스 이름으로 본다
+      if (POOL_ACQUIRE_TIMEOUT.equals(t.getClass().getSimpleName())) {
         return GatewayErrorCode.SERVICE_UNAVAILABLE;
       }
       if (t instanceof TimeoutException) {
