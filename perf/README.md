@@ -209,13 +209,13 @@ perf/data/msa/check-concurrent.sh <FIRST_ID>          # concurrent.js 뒤
 
 ### 결과
 
-`analysis/stage_timing.py` 출력 (운영 Prometheus를 Grafana 데이터 소스 프록시로 조회, 2026-11-27). 실패는 두 측정 모두 0건, 상품 검색 LIKE 대체(`fallback`)도 0건.
+`analysis/stage_timing.py` 출력 (운영 Prometheus를 Grafana 데이터 소스 프록시로 조회, 2026-11-27). 실패는 세 측정 모두 0건, 상품 검색 LIKE 대체(`fallback`)도 0건.
 
 | 대상 | 측정 (한국 시간) | 건수 | 전체 p50 · p95 ms | 가장 느린 단계 (p95) |
 |---|---|---|---|---|
 | 상품 키워드 검색 | 2026-11-25 17:31:43 ~ 17:36:43 | 599 | 11 · 33 | `opensearch` 22ms |
 | 품종 의미 검색 | 2026-11-25 17:36:51 ~ 17:42:52 | 53 | 474 · 584 | `embedding` 531ms |
-| 챗봇 | 키 설정 뒤 측정 | | | 운영 ai에 `ANTHROPIC_API_KEY`가 없어 `answer` 단계를 못 잼 |
+| 챗봇 | 2026-11-27 19:37:39 ~ 19:43:03 | 36 | 1,476 · 4,438 | `answer` 2,219ms |
 
 | 상품 키워드 검색 단계 | p50 ms | p95 ms |
 |---|---|---|
@@ -233,8 +233,21 @@ perf/data/msa/check-concurrent.sh <FIRST_ID>          # concurrent.js 뒤
 | `product_lookup` | 3 | 5 |
 | HTTP ai | 476 | 584 |
 
+| 챗봇 단계 | p50 ms | p95 ms |
+|---|---|---|
+| `total` | 1,476 | 4,438 |
+| `history` (이어 묻기 2건) | 7 | 22 |
+| `embedding` | 163 | 603 |
+| `product_search` | 22 | 54 |
+| `species_search` | 59 | 95 |
+| `answer` | 1,217 | 2,219 |
+| `save` | 7 | 17 |
+| HTTP ai | 1,456 | 2,419 |
+
+- 챗봇은 측정 계정 대신 회원 1명으로 18개 질문을 두 번 보냈다 (`EMAIL=… k6 run -e ROUNDS=2 chatbot.js`). 답변 생성 36건 중 36건. 지표 건수(37 · 38)는 `increase` 외삽이라 보낸 36건보다 조금 많다. k6가 본 응답 p95는 4.16초
 - 상품 키워드 검색은 p95 33ms로 느린 단계가 없다. `opensearch` − `opensearch_took`(p50 약 4ms)이 OpenSearch 밖 시간이라 연결 · 직렬화 부담도 작다
 - 품종 의미 검색은 전체의 약 87%(p50 413 / 474ms)가 질문 임베딩(OpenAI 호출)이다 → #636(임베딩 캐시 · 병렬화)은 임베딩부터 줄인다. `vector_search` p95 117ms는 p50 12ms보다 크게 튀어 53건 중 몇 건의 값이라 참고만 한다
+- 챗봇은 p50 기준 전체의 약 82%(1,217 / 1,476ms)가 답변 생성(Claude)이다 → #635(답변 스트리밍)가 체감 시간을 가장 크게 줄인다. 다음은 질문 임베딩(p95 603ms)으로, 품종 의미 검색과 같은 OpenAI 호출이라 #636이 함께 줄인다. 건수가 36건이라 p95는 참고만 한다
 
 ### 다시 재기
 
