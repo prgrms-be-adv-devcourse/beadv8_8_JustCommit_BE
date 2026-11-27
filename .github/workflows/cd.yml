@@ -3,7 +3,10 @@
 #
 # 1. changes: 바뀐 파일로 서비스 목록을 고른다 (common/ · Dockerfile · Gradle 설정이 바뀌면 전체)
 # 2. build:   서비스마다 루트 Dockerfile(MODULE)로 이미지 → ghcr.io/.../replant-{서비스}:{커밋7자리} + latest
-# 3. deploy:  앱 서버의 self-hosted 러너가 compose 서비스는 pull · up, K3s 서비스는 set image · rollout
+# 3. deploy:  앱 서버의 self-hosted 러너가
+#             ① 레포 최신 deploy/scripts/make-env.sh --no-create 로 ~/secrets/*.env · K3s Secret을 맞추고 (#665)
+#             ② compose 서비스는 pull · up, K3s 서비스는 set image · rollout
+#             ③ 이미지는 그대로인데 환경변수만 바뀐 서비스는 compose force-recreate · K3s rollout restart
 #             레포 변수 CD_DEPLOY가 'true'일 때만 실행 (러너 설치 전에는 이미지만 만든다)
 name: CD
 
@@ -13,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       services:
-        description: "빌드 · 배포할 서비스 (쉼표로 구분, 예: member,market) 또는 all"
+        description: "빌드 · 배포할 서비스 (쉼표로 구분, 예: member,market), all, 또는 none (빌드 없이 환경변수만 맞추기)"
         required: true
         default: all
 
@@ -36,6 +39,7 @@ jobs:
       services: ${{ steps.pick.outputs.services }} # JSON 배열 (build matrix용)
       list: ${{ steps.pick.outputs.list }} # 공백 구분 (deploy 스크립트용)
       tag: ${{ steps.pick.outputs.tag }}
+      env_sync: ${{ steps.pick.outputs.env_sync }} # 'true'면 바뀐 서비스가 없어도 deploy job을 돌려 환경변수를 맞춘다
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,18 +54,28 @@ jobs:
         run: |
           ALL="gateway member product market payment settlement notification ai"
           tag="${GITHUB_SHA::7}"
+          # 배포 job은 실행될 때마다 make-env.sh를 돌린다. 이 값은 「이미지 빌드할 서비스가 없어도 배포 job을 돌릴지」만 정한다
+          env_sync=false
 
           if [ "$EVENT" = "workflow_dispatch" ]; then
-            if [ "$INPUT" = "all" ]; then picked="$ALL"; else picked="$(echo "$INPUT" | tr ',' ' ')"; fi
+            env_sync=true
+            case "$INPUT" in
+              all) picked="$ALL" ;;
+              none) picked="" ;;
+              *) picked="$(echo "$INPUT" | tr ',' ' ')" ;;
+            esac
             for s in $picked; do
               case " $ALL " in *" $s "*) ;; *) echo "::error::모르는 서비스: $s"; exit 1 ;; esac
             done
           elif ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
             # 첫 push · 강제 push로 이전 커밋을 못 찾으면 전체
             picked="$ALL"
+            env_sync=true
           else
             files="$(git diff --name-only "$BEFORE" "$GITHUB_SHA")"
             echo "바뀐 파일:"; echo "$files"
+            # make-env.sh만 바뀌어도 서버 env · K3s Secret을 맞춘다 (#665)
+            if echo "$files" | grep -qx 'deploy/scripts/make-env\.sh'; then env_sync=true; fi
             if echo "$files" | grep -qE '^(common/|gradle/|Dockerfile$|build\.gradle$|settings\.gradle$|gradlew$|\.github/workflows/cd\.yml$)'; then
               picked="$ALL"
             else
@@ -75,11 +89,12 @@ jobs:
 
           list="$(echo $picked | xargs -n1 | awk '!seen[$0]++' | xargs)"
           json="$(printf '%s\n' $list | jq -R . | jq -cs 'map(select(length > 0))')"
-          echo "서비스: ${list:-(없음)} · 태그: $tag"
+          echo "서비스: ${list:-(없음)} · 태그: $tag · 환경변수 맞추기만이라도 실행: $env_sync"
           {
             echo "services=$json"
             echo "list=$list"
             echo "tag=$tag"
+            echo "env_sync=$env_sync"
           } >> "$GITHUB_OUTPUT"
 
   build:
@@ -126,7 +141,13 @@ jobs:
   deploy:
     needs: [changes, build]
     # 빌드가 하나라도 실패하면 배포하지 않는다. 다시 돌리려면 Actions에서 Re-run
-    if: needs.changes.outputs.list != '' && vars.CD_DEPLOY == 'true'
+    # 빌드할 서비스가 없어 build가 건너뛰어져도(skipped) env_sync면 환경변수만 맞추러 돈다
+    if: >-
+      !cancelled()
+      && needs.changes.result == 'success'
+      && (needs.build.result == 'success' || needs.build.result == 'skipped')
+      && vars.CD_DEPLOY == 'true'
+      && (needs.changes.outputs.list != '' || needs.changes.outputs.env_sync == 'true')
     runs-on: [self-hosted, replant-app]
     timeout-minutes: 20
     permissions:
@@ -135,7 +156,50 @@ jobs:
     env:
       SERVICES: ${{ needs.changes.outputs.list }}
       TAG: ${{ needs.changes.outputs.tag }}
+    defaults:
+      run:
+        shell: bash
     steps:
+      - name: 준비
+        run: |
+          # 러너는 서비스로 돌아 ~/.bashrc를 읽지 않는다. KUBECONFIG가 없으면 K3s kubectl이
+          # root 전용 /etc/rancher/k3s/k3s.yaml을 읽으려다 실패하므로 ubuntu용 사본을 지정한다 (#301)
+          echo "KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}" >> "$GITHUB_ENV"
+
+      # 서버의 ~/make-env.sh 복사본이 낡아 키가 빠진 사고(11/21) 뒤로, 실행할 때마다 레포의 스크립트만 받아 쓴다 (#665)
+      - name: make-env.sh 받기 (deploy/scripts만)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: deploy/scripts
+          persist-credentials: false # 서버의 작업 폴더에 토큰을 남기지 않는다
+
+      - name: 환경변수 맞추기 (make-env.sh --no-create)
+        run: |
+          set -euo pipefail
+          S="$HOME/secrets"
+          ALL="gateway member product market payment settlement notification ai"
+          # 서비스가 지금 쓰는 환경변수의 지문. 값은 찍지 않고 해시만 비교한다
+          # compose 서비스는 ~/secrets/{서비스}.env, K3s 서비스는 Secret {서비스}-env 안의 내용
+          fp() {
+            case "$1" in
+              gateway|market|ai) { kubectl -n replant get secret "$1-env" -o jsonpath='{.data}' 2>/dev/null || true; } | sha256sum | cut -c1-16 ;;
+              *) { cat "$S/$1.env" 2>/dev/null || true; } | sha256sum | cut -c1-16 ;;
+            esac
+          }
+          declare -A before
+          for s in $ALL; do before[$s]=$(fp "$s"); done
+
+          # 키를 새로 만들지 않는다: shared.env · jwt/ · 공유 키가 없으면 여기서 실패하고 배포하지 않는다
+          bash deploy/scripts/make-env.sh --no-create
+
+          changed=""
+          for s in $ALL; do
+            [ "${before[$s]}" = "$(fp "$s")" ] || changed="$changed $s"
+          done
+          changed="$(echo $changed)"
+          echo "환경변수가 바뀐 서비스: ${changed:-(없음)}"
+          echo "ENV_CHANGED=$changed" >> "$GITHUB_ENV"
+
       - name: GHCR 로그인 (이 실행 동안만)
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -149,10 +213,9 @@ jobs:
         run: |
           set -u
           COMPOSE="docker compose -f $HOME/replant/docker-compose.app.yml"
-          # 러너는 서비스로 돌아 ~/.bashrc를 읽지 않는다. KUBECONFIG가 없으면 K3s kubectl이
-          # root 전용 /etc/rancher/k3s/k3s.yaml을 읽으려다 실패하므로 ubuntu용 사본을 지정한다 (#301)
-          export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
           failed=""
+          # 목록 안에 있는지: has "a b c" b
+          has() { case " $1 " in *" $2 "*) return 0 ;; esac; return 1; }
 
           # 배포 태그 파일 (#590): compose는 ~/replant/.env 의 {서비스}_TAG를 자동으로 읽는다.
           # 배포에 성공한 서비스만 갱신해, 누가 태그 없이 up -d 해도 마지막으로 배포한 버전이 뜨게 한다
@@ -211,12 +274,25 @@ jobs:
             done
           }
 
-          for s in $SERVICES; do
+          # 대상 = 새 이미지로 바꿀 서비스(SERVICES) + 환경변수만 바뀐 서비스(ENV_CHANGED, 앞 단계). 서비스마다 한 번만 재시작한다
+          ENV_CHANGED="${ENV_CHANGED:-}"
+          targets=""
+          for s in gateway member product market payment settlement notification ai; do
+            if has "$SERVICES" "$s" || has "$ENV_CHANGED" "$s"; then targets="$targets $s"; fi
+          done
+
+          for s in $targets; do
             image="$IMAGE_PREFIX-$s:$TAG"
-            echo "::group::$s → $image"
+            new_image=false; has "$SERVICES" "$s" && new_image=true
+            env_changed=false; has "$ENV_CHANGED" "$s" && env_changed=true
+            if [ "$new_image" = true ]; then
+              echo "::group::$s → $image$([ "$env_changed" = true ] && echo ' (+ 환경변수 바뀜)')"
+            else
+              echo "::group::$s → 환경변수 반영 (이미지 그대로)"
+            fi
             case "$s" in
               gateway|market|ai)
-                # K3s: 파드를 하나씩 새 이미지로 바꾼다 (롤링). 처음 올리기는 deploy/k3s/README.md대로 수동
+                # K3s: 파드를 하나씩 바꾼다 (롤링). 새 파드는 그때의 Secret을 읽는다. 처음 올리기는 deploy/k3s/README.md대로 수동
                 # 진짜로 없을 때(NotFound)만 건너뛰고, 접속 · 권한 오류는 실패로 알린다
                 if ! out=$(kubectl -n replant get deploy "$s" 2>&1); then
                   if echo "$out" | grep -q NotFound; then
@@ -225,8 +301,18 @@ jobs:
                     echo "::error::$s K3s 접속 실패 — $out"
                     failed="$failed $s"
                   fi
-                elif kubectl -n replant set image "deploy/$s" "$s=$image" \
-                  && kubectl -n replant rollout status "deploy/$s" --timeout=5m; then
+                  echo "::endgroup::"; continue
+                fi
+                current=$(kubectl -n replant get deploy "$s" -o jsonpath="{.spec.template.spec.containers[?(@.name==\"$s\")].image}")
+                # 이미지가 바뀌면 set image 한 번으로 롤링(새 Secret도 같이 읽음). 이미지가 같은데 환경변수만 바뀌었으면 rollout restart
+                if [ "$new_image" = true ] && [ "$current" != "$image" ]; then
+                  step="kubectl -n replant set image deploy/$s $s=$image"
+                elif [ "$env_changed" = true ]; then
+                  step="kubectl -n replant rollout restart deploy/$s"
+                else
+                  step="true"   # 같은 이미지 · 같은 환경변수 (Re-run 등): 상태만 확인
+                fi
+                if $step && kubectl -n replant rollout status "deploy/$s" --timeout=5m; then
                   echo "$s 배포 완료"
                 else
                   echo "::error::$s 롤아웃 실패 — 옛 파드가 계속 응답 중. kubectl -n replant rollout undo deploy/$s 로 되돌릴 수 있음"
@@ -235,21 +321,38 @@ jobs:
                 fi
                 ;;
               *)
-                # compose: {SERVICE}_TAG로 이 서비스만 새 이미지로 바꾼다 (Redis 등 다른 컨테이너는 그대로)
+                # compose: 이 서비스만 다시 만든다 (Redis 등 다른 컨테이너는 그대로)
                 var=$(tag_var "$s")
+                recreate=""; [ "$env_changed" = true ] && recreate="--force-recreate"
                 if [ -z "$(cd "$HOME/replant" && $COMPOSE ps -a -q "$s")" ]; then
-                  echo "::warning::compose $s 컨테이너가 아직 없어 이미지만 받아 둠 (처음 올리기는 수동)"
-                  (cd "$HOME/replant" && env "$var=$TAG" $COMPOSE pull "$s") || failed="$failed $s"
-                elif (cd "$HOME/replant" \
-                  && env "$var=$TAG" $COMPOSE pull "$s" \
-                  && env "$var=$TAG" $COMPOSE up -d --no-deps --wait --wait-timeout 180 "$s"); then
-                  # healthy까지 확인된 뒤에만 태그 파일을 바꾼다 (실패하면 옛 태그 그대로)
-                  set_tag "$var" "$TAG"
-                  echo "$s 배포 완료 ($var=$TAG 기록)"
+                  if [ "$new_image" = true ]; then
+                    echo "::warning::compose $s 컨테이너가 아직 없어 이미지만 받아 둠 (처음 올리기는 수동)"
+                    (cd "$HOME/replant" && env "$var=$TAG" $COMPOSE pull "$s") || failed="$failed $s"
+                  else
+                    echo "::warning::compose $s 컨테이너가 아직 없어 건너뜀 (env 파일은 갱신됨, 처음 올리기는 수동)"
+                  fi
+                elif [ "$new_image" = true ]; then
+                  # {SERVICE}_TAG로 새 이미지
+                  if (cd "$HOME/replant" \
+                    && env "$var=$TAG" $COMPOSE pull "$s" \
+                    && env "$var=$TAG" $COMPOSE up -d --no-deps $recreate --wait --wait-timeout 180 "$s"); then
+                    # healthy까지 확인된 뒤에만 태그 파일을 바꾼다 (실패하면 옛 태그 그대로)
+                    set_tag "$var" "$TAG"
+                    echo "$s 배포 완료 ($var=$TAG 기록)"
+                  else
+                    echo "::error::$s 기동 실패 — 아래 상태 · 로그 확인"
+                    compose_diag "$s"
+                    failed="$failed $s"
+                  fi
                 else
-                  echo "::error::$s 기동 실패 — 아래 상태 · 로그 확인"
-                  compose_diag "$s"
-                  failed="$failed $s"
+                  # 환경변수만 바뀜: 태그는 배포 태그 파일(~/replant/.env)의 값 그대로 두고 컨테이너만 다시 만든다
+                  if (cd "$HOME/replant" && $COMPOSE up -d --no-deps --force-recreate --wait --wait-timeout 180 "$s"); then
+                    echo "$s 환경변수 반영 완료 (태그 그대로)"
+                  else
+                    echo "::error::$s 환경변수 반영 뒤 기동 실패 — 아래 상태 · 로그 확인"
+                    compose_diag "$s"
+                    failed="$failed $s"
+                  fi
                 fi
                 ;;
             esac

@@ -38,7 +38,8 @@ Gateway는 K3s Service 이름으로 market에 보내고 K3s가 살아 있는 파
 1. develop 머지
 2. 경로 필터로 바뀐 서비스만 고름 (`common/` · `Dockerfile` · Gradle 설정 · `cd.yml`이 바뀌면 전체). 테스트는 하지 않음 (PR CI에서)
 3. 서비스별 Docker 이미지 빌드 → GHCR push
-4. 앱 서버의 self-hosted 러너가 배포: compose 서비스는 `{서비스}_TAG=<커밋7자리>`로 `docker compose pull` · `up -d`, K3s(Gateway · market · ai)는 `kubectl set image` + `rollout status` — **롤링 배포**라 배포 중에도 끊기지 않음
+4. 앱 서버의 self-hosted 러너가 레포 최신 `deploy/scripts/make-env.sh --no-create`로 `~/secrets/{서비스}.env` · K3s Secret을 맞추고, 환경변수가 바뀐 서비스를 고름 (아래 「환경변수 맞추기」)
+5. 앱 서버의 self-hosted 러너가 배포: compose 서비스는 `{서비스}_TAG=<커밋7자리>`로 `docker compose pull` · `up -d`, K3s(Gateway · market · ai)는 `kubectl set image` + `rollout status` — **롤링 배포**라 배포 중에도 끊기지 않음
 
 배포 단계는 아래 규칙을 따릅니다.
 
@@ -46,6 +47,9 @@ Gateway는 K3s Service 이름으로 market에 보내고 K3s가 살아 있는 파
 |---|---|
 | 서버 접속 | 앱 서버에 설치한 self-hosted 러너(라벨 `replant-app`)가 서버 안에서 실행. SSH 22번을 GitHub에 열지 않고, AWS 키 · SSH 키를 GitHub에 두지 않음 |
 | 켜고 끄기 | 레포 변수 `CD_DEPLOY`가 `true`일 때만 배포. 아니면 이미지만 올림 |
+| 환경변수 맞추기 | 배포 job마다 레포의 `deploy/scripts`만 받아(sparse checkout) `make-env.sh --no-create` 실행. 서버의 `~/make-env.sh` 복사본은 쓰지 않음 (11/21 복사본이 낡아 `ANTHROPIC_API_KEY`가 빠진 사고, #665). `--no-create`라 `shared.env` · `jwt/` · 공유 키가 없으면 새로 만들지 않고 실패 → 배포하지 않음. 선택 키 없음은 Actions 경고(`::warning::`)로만 표시하고 값은 찍지 않음 |
+| 환경변수만 바뀐 서비스 | 실행 전후 해시(compose는 `~/secrets/{서비스}.env`, K3s는 Secret `{서비스}-env` 내용)가 다른 서비스만 재시작. compose는 태그 파일 그대로 `up -d --no-deps --force-recreate`, K3s는 `rollout restart`. 같은 실행에서 새 이미지도 받는 서비스는 한 번만 재시작 (K3s는 `set image`가 새 Secret도 읽음, compose는 `--force-recreate`를 붙임) |
+| 빌드 없이 환경변수만 | `make-env.sh`만 바뀐 push는 이미지 빌드 없이 배포 job만 실행. 서버 `external.env` 값만 바꿨을 때는 Actions에서 CD를 `services: none`으로 수동 실행 |
 | 대상 | 이미 떠 있는 서비스만 새 이미지로 바꿈. 처음 올리기는 수동 (`deploy/k3s/README.md`, `docker-compose.app.yml` 머리말) |
 | 배포 태그 파일 | compose 서비스는 앱 서버 `~/replant/.env`의 `{서비스}_TAG`로 뜸(compose가 같은 폴더 `.env`를 자동으로 읽음). CD가 배포에 성공한 서비스만 갱신하고, 파일에 없으면 지금 떠 있는 컨테이너 태그로 채움. `docker-compose.app.yml`에는 `:latest` 폴백이 없어 태그가 없으면 오류로 멈춤 → 태그 없이 `up -d`해도 마지막 배포 버전이 뜸 (#590) |
 | 수동 다시 적용 | compose는 `docker compose -f docker-compose.app.yml up -d [서비스]`(태그 파일대로). K3s 매니페스트는 `kubectl apply` 직접 금지(이미지가 `:latest`로 되돌아감) → `bash deploy/k3s/apply.sh <파일>`(지금 이미지 유지) |
