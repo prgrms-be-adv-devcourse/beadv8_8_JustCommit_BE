@@ -29,4 +29,6 @@ dependencies {
     testFixturesApi 'org.testcontainers:testcontainers'
     testFixturesApi 'org.testcontainers:testcontainers-postgresql'
     testFixturesCompileOnly 'org.testcontainers:testcontainers-kafka'
+    // 테스트 클래스 사이 데이터 비우기(ResetDataBeforeClassListener). Redis는 쓰는 모듈에만 있으므로 컴파일용으로만
+    testFixturesCompileOnly 'org.springframework.data:spring-data-redis'
 }

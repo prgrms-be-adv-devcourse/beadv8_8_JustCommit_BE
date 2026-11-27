@@ -3,6 +3,7 @@ package com.justcommit.backend.member.support;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.justcommit.backend.common.testcontainers.ResetDataBeforeClassListener;
 import com.justcommit.backend.common.testcontainers.SharedPostgres;
 import com.justcommit.backend.common.testcontainers.SharedRedis;
 import com.justcommit.backend.member.auth.application.TokenRevocationService;

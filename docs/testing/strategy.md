@@ -43,7 +43,7 @@
 |---|---|---|
 | 연결 | `@DynamicPropertySource` 안에서 `SharedPostgres.register(registry)` · `SharedRedis.register(registry)` · `SharedKafka.register(registry)` | 처음 부를 때 컨테이너가 뜨고, 다음 클래스부터는 그대로 씀 |
 | PostgreSQL | `register`가 컨텍스트마다 빈 DB(`test_N`)를 새로 만듦. 스프링 없이 붙을 때는 `SharedPostgres.createDatabase()` | 클래스끼리 데이터 · 스키마(Flyway, `ddl-auto`)가 섞이지 않음 |
-| 컨텍스트 재사용 | 모듈 공통 베이스 클래스(member: `MemberIntegrationTest`)에 `@SpringBootTest` · `@DynamicPropertySource` · mock · spy를 모으고 통합 테스트는 상속만 함. 테스트 클래스 시작 전에 테이블을 비움(`ResetDataBeforeClassListener`, `flyway_schema_history` 제외 truncate + Redis `flushAll`). 설정을 바꿔야 하는 클래스(앱 기동 확인 · 비동기 실행기 · 다른 설정값)만 상속하지 않음 | 설정이 같아야 컨텍스트 · DB를 재사용함. 클래스마다 다르면 컨텍스트 기동 + 빈 DB + Flyway 전체를 매번 새로 함 (#664: member 기동 37 → 8회) |
+| 컨텍스트 재사용 | 모듈 공통 베이스 클래스(member: `MemberIntegrationTest`)에 `@SpringBootTest` · `@DynamicPropertySource` · mock · spy를 모으고 통합 테스트는 상속만 함. 테스트 클래스 시작 전에 DB를 마이그레이션 직후 상태로 되돌림(`common-core` testFixtures `ResetDataBeforeClassListener`: `flyway_schema_history` 제외 truncate → 마이그레이션 기본 데이터 다시 넣기 + Redis `flushAll`). 설정을 바꿔야 하는 클래스(앱 기동 확인 · 비동기 실행기 · 다른 설정값)만 상속하지 않음 | 설정이 같아야 컨텍스트 · DB를 재사용함. 클래스마다 다르면 컨텍스트 기동 + 빈 DB + Flyway 전체를 매번 새로 함 (#664: member 기동 37 → 8회) |
 | pgvector | 모듈 `test` 태스크에 `systemProperty 'shared.postgres.image', 'pgvector/pgvector:pg17'` | 이미지는 모듈에 하나 |
 | Redis | `@AfterEach`(또는 `@BeforeEach`)에서 `flushAll` | Redis는 하나를 같이 씀 |
 | Kafka | `register`가 컨텍스트마다 컨슈머 그룹 id를 새로 정함. 리스너가 도는 클래스는 `@DirtiesContext`, 메시지는 key로 거름 | 끝난 클래스의 리스너가 다음 클래스 메시지를 가로채지 않게 |
