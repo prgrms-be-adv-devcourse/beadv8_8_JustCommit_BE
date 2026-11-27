@@ -7,6 +7,7 @@ import com.justcommit.backend.market.order.domain.Orders;
 import com.justcommit.backend.market.order.domain.OrdersItem;
 import com.justcommit.backend.market.order.domain.ReturnRequestStatus;
 import com.justcommit.backend.market.order.domain.SellerOrder;
+import com.justcommit.backend.market.order.domain.SellerOrderSettlementAmounts;
 import com.justcommit.backend.market.order.infrastructure.ReturnRequestRepository;
 import com.justcommit.backend.market.order.infrastructure.kafka.PurchaseConfirmedEventPublisher;
 import com.justcommit.backend.market.order.infrastructure.kafka.SellerOrderEventPublisher;
@@ -15,7 +16,6 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Objects;
 
 // 판매자 주문 종료 판정 (#383). 주문상품 하나가 끝난 상태(구매 확정, 반품 거절, 취소 완료, 반품 완료 #384)로 바뀐 뒤 부른다.
 // 호출하는 쪽이 주문 → 판매자 주문 잠금을 쥔 트랜잭션 안에서 부른다. 이벤트는 같은 트랜잭션의 Outbox 행이다.
@@ -49,19 +49,21 @@ public class SellerOrderCompletion {
 
         // 반품 완료로 바뀐 뒤 다시 계산하지 않았어도 구매 확정 상품 합이 되도록 여기서 다시 계산한다
         sellerOrder.calculateSettlementBaseAmount();
-        BigDecimal returnShippingFees = Objects.requireNonNullElse(
-                returnRequestRepository.sumReturnShippingFee(sellerOrder.getId(), ReturnRequestStatus.COMPLETED),
-                BigDecimal.ZERO);
+        BigDecimal returnShippingFees =
+                returnRequestRepository.sumReturnShippingFee(sellerOrder.getId(), ReturnRequestStatus.COMPLETED);
         sellerOrder.confirmed();
 
-        if (!confirmed.isEmpty()) {
+        // 금액은 정산 대상 조회 내부 API와 같은 계산을 쓴다 (#657)
+        SellerOrderSettlementAmounts amounts = SellerOrderSettlementAmounts.of(!confirmed.isEmpty(),
+                sellerOrder.getSettlementBaseAmount(), sellerOrder.getShippingFee(), returnShippingFees);
+        if (amounts.type() == SellerOrderSettlementAmounts.Type.PURCHASE_CONFIRMED) {
             purchaseConfirmedEventPublisher.publishAfterCommit(new PurchaseConfirmedEvent(
-                    sellerOrder.getId(), sellerOrder.getSellerId(), sellerOrder.getSettlementBaseAmount(),
-                    sellerOrder.getShippingFee(), returnShippingFees, sellerOrder.getConfirmedAt(), itemSummary(confirmed)));
+                    sellerOrder.getId(), sellerOrder.getSellerId(), amounts.saleAmount(), amounts.shippingFee(),
+                    amounts.sellerBurdenAmount(), sellerOrder.getConfirmedAt(), itemSummary(confirmed)));
             return;
         }
         sellerOrderEventPublisher.publishAfterCommit(new SellerOrderReturnedEvent(
-                sellerOrder.getId(), sellerOrder.getSellerId(), returnShippingFees.add(sellerOrder.getShippingFee()),
+                sellerOrder.getId(), sellerOrder.getSellerId(), amounts.sellerBurdenAmount(),
                 sellerOrder.getConfirmedAt(), itemSummary(returned)));
     }
 
