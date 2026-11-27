@@ -74,7 +74,7 @@
 | 정산 대사 | `SettlementReconciliation` | 대사, 정합성 검사, reconciliation | settlement의 정산과 payment의 정산 원장을 매일 비교해 어긋난 곳을 기록하는 것. 데이터는 고치지 않음 | [구매 확정 → 정산](flows/confirm-settlement.md#정산-대사) |
 | 대사 불일치 | `settlement_reconciliation_mismatch` (`MismatchType`) | 불일치, mismatch | 정산 대사가 찾은 어긋남 한 건. 운영자가 `resolved_at`을 채우기 전까지 미해결로 알림 | [구매 확정 → 정산](flows/confirm-settlement.md#정산-대사) |
 | 결과 불명 | `InternalApiResultUnknownException` | 타임아웃, 알 수 없음 | 응답이 없어 상대가 처리했는지 모르는 상태. 바로 되돌리지 않고 같은 멱등 키로 확인 | [장애 처리](conventions/resilience.md#결과-불명-처리) |
-| 확인 필요 | `REVIEW_REQUIRED` | 수동 처리, 사람 확인 (돈 · 주문) | 자동 복구를 포기하고 사람이 확인해야 하는 상태. 주문(결제 결과 불명)과 주문상품(환불 거절, 환불 결과 불명) 모두 | [스케줄러](reference/schedulers.md) |
+| 확인 필요 | `REVIEW_REQUIRED` | 수동 처리, 사람 확인 (돈 · 주문) | 자동 복구를 포기하고 사람이 확인해야 하는 상태. 주문(결제 결과 불명), 주문상품(환불 거절, 환불 결과 불명), 배송(택배사가 예약을 거절, 화면에는 `READY`로 보임) | [스케줄러](reference/schedulers.md), [배송 확인 필요 처리](infra/shipment-review-runbook.md) |
 
 ## 상품 · 검수
 

@@ -27,6 +27,7 @@ replant(팀 JustCommit)는 직접 키운 식물을 사고파는 C2C 식물 마�
 | 사진 검수 · 검색 · 추천 | `docs/flows/image-review.md`, `docs/flows/search-recommend.md`, `docs/services/ai.md` |
 | 포트 · 환경변수 · Redis 키 · 스케줄러 | `docs/reference/` 해당 문서 |
 | 배포 · 로그 · 알림 · AWS | `docs/infra/` 해당 문서 |
+| 택배 예약 확인 필요 배송 처리 | `docs/infra/shipment-review-runbook.md` |
 | DB · 테이블 추가 · Flyway 마이그레이션 | `docs/infra/database.md`, `docs/services/{서비스}.md` 「소유 테이블」 |
 | 테스트 추가 | `docs/testing/strategy.md`, `docs/testing/scenarios.md` |
 | 용어 뜻 | `docs/glossary.md` |

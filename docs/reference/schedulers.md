@@ -1,7 +1,7 @@
 # 스케줄러
 
 > 언제 읽나: 스케줄러(`@Scheduled`) 작업의 주기 · 역할, 재시도 간격, 중복 실행 방지(SKIP LOCKED · ShedLock)를 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-25 · 관련: Miro F-7, 노션 「정책 정리」 1.4 · 11.5
+> 상태: ✅ 확정 · 마지막 수정 2026-11-27 · 관련: Miro F-7, 노션 「정책 정리」 1.4 · 11.5
 
 ## 작업 표
 
@@ -13,7 +13,7 @@
 | 수락 자동 거절 | market | 10분 | – | SKIP LOCKED | 기한 지난 `ACCEPT_PENDING` 주문상품 자동 거절 → 전액 환불. 한 번 실행할 때 수락 마감이 지난 판매자 주문을 오래된 결제 완료 시각부터 최대 100건 읽고(잠그지 않음), 판매자 주문마다 짧은 트랜잭션에서 주문 행을 SKIP LOCKED로 잡은 뒤 판매자 주문을 잠그고 다시 확인. 환불은 커밋 뒤 트랜잭션 밖, 결과를 모르면 Saga 복구가 이어받음 (기한 → [market 정책](../services/market.md#정책)) |
 | 반품 자동 승인 | market | 10분 | – | SKIP LOCKED | 기한 안에 판매자가 응답하지 않은 반품 신청 자동 승인(`AUTO`) → 반품 배송(`READY`) 생성 (#383). 한 번 실행할 때 반품 응답 마감이 지난 응답 전 반품 신청을 오래된 신청부터 최대 100건 읽고(잠그지 않음), 건마다 짧은 트랜잭션에서 주문 행을 SKIP LOCKED로 잡은 뒤 판매자 주문을 잠그고 다시 확인 (기한 → [market 정책](../services/market.md#정책)) |
 | 자동 구매 확정 | market | 1시간 | – | SKIP LOCKED | 기한 지난 `NORMAL` 주문상품 구매 확정, 반품 신청한 주문상품 제외 (기한 → [market 정책](../services/market.md#정책)) |
-| 택배 예약 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `READY` 배송(반품 포함) 택배 예약. 한 번 실행할 때 최대 20건을 한 건씩 확보(다음 시도 시각을 30초 뒤로 미루는 임대)하고, 택배사 호출은 임대 후 트랜잭션 밖에서 함. 실패하면 다음 시도까지 10초 → 30초 → 1분 고정 (건별 `next_attempt_at` · `attempt_count`, 마지막 실패 원인 `last_error`). 결제 · 수락 흐름은 `READY` 행만 만들고 택배사를 부르지 않음 |
+| 택배 예약 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `READY` 배송(반품 포함) 택배 예약. 한 번 실행할 때 최대 20건을 한 건씩 확보(다음 시도 시각을 30초 뒤로 미루는 임대)하고, 택배사 호출은 임대 후 트랜잭션 밖에서 함. 실패하면 다음 시도까지 10초 → 30초 → 1분 고정 (건별 `next_attempt_at` · `attempt_count`, 마지막 실패 원인 `last_error`). 다시 보내도 같은 거절(400 · 409)이면 재시도를 멈추고 `REVIEW_REQUIRED` → [확인 필요 배송 처리](../infra/shipment-review-runbook.md). 결제 · 수락 흐름은 `READY` 행만 만들고 택배사를 부르지 않음 |
 | 택배 취소 큐 | market | 10초 | 끝까지 | SKIP LOCKED | `CANCEL_PENDING` 배송을 택배 예약 큐와 같은 방식(최대 20건을 한 건씩 확보 · 30초 임대 · 트랜잭션 밖 호출)으로 택배사에 주문번호 + 누른 시각으로 취소 요청. 결과는 배송 상태(`CANCELLED` · `CANCEL_LOCKED`) + `SHIPMENT_CANCEL_RESULT` 행 한 트랜잭션. 실패하면 10초 → 30초 → 1분 고정 (`next_attempt_at` · `attempt_count` · `last_error`) → [ADR 0026](../decisions/0026-courier-cancel-queue-and-distance-judgment.md) |
 | Saga 복구 | market | 1분 | 확인 후 포기 | SKIP LOCKED | 결과 불명 결제(orderId) · 취소 · 환불(orderItemId · sellerOrderId)을 같은 멱등 키로 다시 요청, 5회 안 되면 `REVIEW_REQUIRED`. 결제는 `attempted_at`에서 10초 지난 `PAYMENT_PROCESSING` 주문을 한 번에 최대 50건, 주문마다 선점(`attempt_no`, `attempt_count` +1 커밋) 후 트랜잭션 밖에서 재호출하고, 자기 `attempt_no`일 때만 결과 반영. 이어서 처리 전 택배 취소 결과(`SHIPMENT_CANCEL_RESULT`)를 최대 50건 SKIP LOCKED로 집어 취소됨이면 환불, 취소 불가면 주문상품을 되돌리고 `processed_at` 기록. 이어서 `attempted_at`에서 10초 지난 `CANCEL_PROCESSING` 주문상품을 최대 50건, 주문상품마다 선점(`attempt_count` +1 커밋) 후 트랜잭션 밖에서 환불 재요청. 결과 반영은 「취소 중」일 때만. 다음 「반품 도착 처리」는 반품 신청이 `APPROVED`이고 주문상품이 `RETURN_IN_TRANSIT`인 건을 최대 100건 잠그지 않고 읽어 반품 배송 상태를 한 번에 조회하고, `DELIVERED`인 건만 건마다 주문 → 판매자 주문을 잠근 짧은 트랜잭션에서 `RETURN_PROCESSING`으로 바꿈(payment 안 부름). 마지막 「반품 환불」은 `RETURN_PROCESSING`이고 `attempted_at`이 빈 주문상품을 최대 50건 조건부 UPDATE로 선점해 첫 환불을, `attempted_at`에서 10초 지난 건을 최대 50건 SKIP LOCKED 선점(`attempt_count` +1)해 재요청. 둘 다 트랜잭션 밖에서 부르고, 결과 반영은 「반품 환불 중」일 때만 (같은 실행 안에서 도착 처리된 건이 바로 첫 환불까지 감). 단계마다 실패해도 다음 단계는 돎. 실행이 끝나면 `REVIEW_REQUIRED` 주문 수 지표를 갱신 → [주문 · 결제](../flows/order-payment.md#멈춘-주문-복구) |
 | 요금표 버전 대사 | market | 매일 09:30 (EC2가 켜진 시간, `Asia/Seoul`) | – | ShedLock | 택배사(404-express) `GET /api/v1/shippingFees`의 버전과 지금 요금표(가장 높은 버전)를 비교해 다르면 저장(택배사 버전이 더 낮으면 무시). 택배사 호출 실패 · 404는 로그만 남기고 다음 날 다시. 잠금 이름 `shippingFeeReconcile`, 최소 1분 · 최대 5분 잠금(`SHEDLOCK`, DB 시각) |
@@ -39,7 +39,7 @@
 |---|---|
 | 여러 파드 | market은 파드가 2개라 스케줄러도 두 번 돈다 (Gateway는 스케줄러 없음). DB 행을 처리하는 작업은 `FOR UPDATE SKIP LOCKED`로 나눠 가져가고, 행이 아닌 한 번만 할 일은 ShedLock으로 한 인스턴스만 실행 |
 | 스케줄러 스레드 | market은 `@Scheduled` 스레드 4개(`spring.task.scheduling.pool.size`, 기본 1). 외부를 부르는 작업(수락 자동 거절, Saga 복구, 택배 예약 큐, 택배 취소 큐)이 길어져도 다른 작업이 제 주기에 돎. settlement는 3개: Kafka 장애로 Outbox 재전송(건당 최대 5초 × 100건)이 길어져도 정산 지급 큐가 밀리지 않음. 같은 작업은 앞 실행이 끝나야 다음 실행을 잡고(`fixedDelay`), 서로 다른 작업이 한 파드에서 동시에 도는 것은 파드 2개와 같아 위 SKIP LOCKED나 임대로 막음 |
-| 끝까지 | 멱등이라 계속 보내도 안전 → 포기하지 않음 (택배 예약 · 취소, 정산 지급). 알림은 건마다가 아니라 "오래 남은 건이 있다"는 상태 기준으로 한 번 (예: 10분 넘게 `READY`). 상품 판매 완료 · 예약 해제는 이벤트라 스케줄러 없이 Outbox 재전송 · 소비 재시도 · DLT를 따름 |
+| 끝까지 | 멱등이라 계속 보내도 안전 → 포기하지 않음 (택배 예약 · 취소, 정산 지급). 단 택배 예약은 택배사가 다시 보내도 같은 결과로 거절하면(400 · 409) 멈추고 확인 필요로 둠. 알림은 건마다가 아니라 "오래 남은 건이 있다"는 상태 기준으로 한 번 (예: 10분 넘게 `READY`). 상품 판매 완료 · 예약 해제는 이벤트라 스케줄러 없이 Outbox 재전송 · 소비 재시도 · DLT를 따름 |
 | 보관 기한까지 재시도 | 토큰 폐기 기록을 보관 기한까지 재시도하고, 기한이 지나면 `EXPIRED`로 처리함 |
 | 확인 후 포기 | 정한 횟수 뒤 `REVIEW_REQUIRED` (Saga 복구 5회, 토스 조회 실패 3회) · Outbox는 5회 뒤 `FAILED` + 팀 알림 · 검수 엔진 오류는 3회 뒤 관리자 확인 |
 | – | 매 주기 그때 대상인 행만 처리하고, 재시도 개념이 없음 |
