@@ -20,7 +20,7 @@
 # 포트: Loki · Prometheus · Tempo는 이 서버 사설 IP에만 열고, 보안 그룹이 앱 서버 보안 그룹에서 오는 3100 · 9090 · 4317만 허용한다.
 #   Grafana는 127.0.0.1에만 연다 → 인터넷 · 앱 서버 어디서도 안 보이고 SSH 터널로만 들어간다 (docs/reference/ports.md)
 #
-# 메모리 한도 합 약 1.4GB. 보관: Loki 14일 · Prometheus 7일 · Tempo 3일
+# 메모리 한도 합 약 1.2GB. 보관: Loki 14일 · Prometheus 7일 · Tempo 3일
 name: replant-obs
 
 x-common: &common
@@ -75,7 +75,7 @@ services:
 
   grafana:
     <<: *common
-    image: grafana/grafana:13.3.1
+    image: grafana/grafana:12.0.0
     container_name: replant-grafana
     env_file: ${HOME}/secrets/grafana.env # GF_SECURITY_ADMIN_PASSWORD · SLACK_WEBHOOK_URL
     # SLACK_WEBHOOK_URL이 아직 없으면 알림 설정(contact-points.yml)을 못 읽어 Grafana 전체가 멈춘다.
@@ -85,9 +85,6 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
-      # 쓰지 않는 데이터 소스 플러그인은 끈다 (#668). 켜 두면 플러그인마다 백엔드 프로세스(약 25~40MB)가 따로 떠서 합계 약 300MB를 차지한다
-      # 쓰는 것: loki · prometheus · tempo
-      GF_PLUGINS_DISABLE_PLUGINS: "cloudwatch,elasticsearch,grafana-pyroscope-datasource,grafana-pyroscope-app,mssql,grafana-postgresql-datasource,influxdb,stackdriver,mysql,opentsdb,zipkin,jaeger"
       TZ: Asia/Seoul
     ports:
       - "127.0.0.1:3000:3000"
@@ -95,8 +92,7 @@ services:
       - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/observability/grafana/dashboards:/etc/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
-    # 13.3.1 로컬 실측(안 쓰는 플러그인을 끈 뒤, 대시보드 · 알림 · Logs Drilldown 화면을 연 상태) 실사용 약 240MiB (#668). AI 플러그인 2개 몫까지 384m
-    mem_limit: 384m
+    mem_limit: 192m
     depends_on: [loki, prometheus, tempo]
 
   # 이 서버(데이터 서버)의 CPU · 메모리 · 디스크 · CPU steal. 포트를 열지 않고 Prometheus만 compose 네트워크로 읽는다
