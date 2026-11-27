@@ -1,37 +1,24 @@
 package com.justcommit.backend.member.withdrawal.presentation;
 
-import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
+import com.justcommit.backend.member.support.MemberIntegrationTest;
+import com.github.tomakehurst.wiremock.WireMockServer;
 import com.justcommit.backend.member.auth.application.RevocationOutcomeUnknownException;
-import com.justcommit.backend.member.auth.application.TokenRevocationService;
-import com.justcommit.backend.member.auth.infrastructure.redis.RevokedMemberRedisStore;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.util.Base64;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -39,7 +26,6 @@ import java.util.regex.Pattern;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -51,17 +37,11 @@ import static org.mockito.Mockito.doThrow;
  * (메일 재발송 제한 429 + Retry-After 포함)에서 확인한다. 여기서는 응답 모양 · 쿠키 · 헤더 · 상태 코드만 본다.
  * Gateway를 거치지 않으므로, 탈퇴 뒤 기존 Access의 Gateway 차단(401)은 이 테스트 범위가 아니다 (member는 상태 검사로 404).
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class WithdrawalControllerIntegrationTest {
+class WithdrawalControllerIntegrationTest extends MemberIntegrationTest {
 
-  @RegisterExtension
-  static final WireMockExtension SERVICES = WireMockExtension.newInstance()
-      .options(wireMockConfig().dynamicPort())
-      .build();
+  // 베이스의 공유 WireMock (테스트마다 응답 설정 · 요청 기록 초기화)
+  private static final WireMockServer SERVICES = EXTERNAL_API;
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
   private static final String PASSWORD = "plant1234";
   private static final String WITHDRAWAL = "/api/v1/users/me/withdrawal";
@@ -72,17 +52,6 @@ class WithdrawalControllerIntegrationTest {
   private static final String BLOCK = """
       {"hasWithdrawalBlocker": true, "blockingReasons": ["ACTIVE_BUYER_ORDER"], "details": {"activeBuyerOrderCount": 2}}""";
 
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-    registry.add("spring.http.serviceclient.market.base-url", SERVICES::baseUrl);
-    registry.add("spring.http.serviceclient.payment.base-url", SERVICES::baseUrl);
-    registry.add("spring.http.serviceclient.settlement.base-url", SERVICES::baseUrl);
-  }
-
   @Value("${local.server.port}")
   private int port;
 
@@ -90,10 +59,6 @@ class WithdrawalControllerIntegrationTest {
   @Autowired PasswordEncoder passwordEncoder;
   @Autowired JdbcTemplate jdbcTemplate;
   @Autowired StringRedisTemplate redisTemplate;
-
-  // 폐기 기록 지연(PENDING) · 결과 불명을 만들 때만 동작을 바꾸고, 평소에는 실제 빈 그대로
-  @MockitoSpyBean RevokedMemberRedisStore revokedMemberRedisStore;
-  @MockitoSpyBean TokenRevocationService tokenRevocationService;
 
   private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -291,15 +256,5 @@ class WithdrawalControllerIntegrationTest {
     int n = SEQ.incrementAndGet();
     return memberRepository.save(Member.createLocal("leave" + n + "@test.com", passwordEncoder.encode(PASSWORD),
         "떠남" + n, String.format("012%08d", n), "004", "v1:test-account", null, "홍길동"));
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }
