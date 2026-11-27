@@ -1,4 +1,5 @@
 package com.justcommit.backend;
+// #664 측정용 (머지하지 않음)
 
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.DisplayName;
