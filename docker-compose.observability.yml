@@ -71,7 +71,9 @@ services:
     volumes:
       - ./deploy/observability/tempo.yml:/etc/tempo/tempo.yml:ro
       - tempo-data:/var/tempo
-    mem_limit: 256m
+    environment:
+      GOMEMLIMIT: 300MiB # 한도에 닿기 전에 Go GC가 메모리를 돌려받게 한다 (#679)
+    mem_limit: 384m # 256m이면 부하 측정 블록 컴팩션 중 OOMKilled 반복 (#679)
 
   grafana:
     <<: *common
