@@ -1,0 +1,3 @@
+- 2026-11-27 · perf/README.md · 「검색 · 챗봇 단계별 운영 측정」 결과 표 채움: 상품 키워드 검색 p50 11 · p95 33ms(가장 느린 단계 `opensearch` 22ms), 품종 의미 검색 p50 474 · p95 584ms(`embedding` 531ms가 대부분), 챗봇 p50 1,476 · p95 4,438ms(`answer` 2,219ms가 대부분, 회원 1명 × 18개 × 2회) (#634)
+- 2026-11-27 · perf/README.md · #634 「다시 재기」를 SSH 터널 대신 공개 Grafana 기준으로: `stage_timing.py --grafana` (토큰은 `GRAFANA_SERVICE_ACCOUNT_TOKEN`) (#634)
+- 2026-11-27 · perf/k6/chatbot.js · 측정 계정 없이 회원 1명으로 재는 `EMAIL` · 되풀이 횟수 `ROUNDS` 추가, 로그인 실패 시 HTTP 상태 · 오류 코드 출력 (#634)

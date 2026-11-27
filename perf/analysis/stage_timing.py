@@ -10,14 +10,17 @@
   ai_chatbot_stage_seconds        챗봇 메시지      total · history · embedding · product_search · species_search · answer · save
 같은 구간의 HTTP 응답 시간(서비스 http.server.requests, Gateway)도 함께 뽑아 단계 합과 비교한다.
 
-사용 (SSH 터널 localhost:19090 → 운영 Prometheus, perf/README.md 「MSA 운영 측정」):
-  python3 -I perf/analysis/stage_timing.py --start 2026-11-26T14:00:00+09:00 --end 2026-11-26T14:05:00+09:00 --only product
+사용 (운영 Grafana를 거쳐 Prometheus 조회, 토큰은 환경변수 GRAFANA_SERVICE_ACCOUNT_TOKEN → docs/infra/observability.md):
+  python3 -I perf/analysis/stage_timing.py --grafana https://replant.kro.kr/grafana \
+      --start 2026-11-26T14:00:00+09:00 --end 2026-11-26T14:05:00+09:00 --only product
+  SSH 터널(localhost:19090 → 운영 Prometheus)이 있으면 --grafana 없이 --prometheus로 바로 조회한다
   --only 없이 주면 세 가지 모두. 구간은 k6 시작 · 끝 시각 (Prometheus 수집이 60초라 앞뒤로 1분씩 넉넉히 줘도 된다)
 
 주의: 히스토그램 구간 경계 사이 값은 선형 보간이라 ms 단위 숫자는 근사다. 건수가 20개보다 적으면 p95는 참고만.
 """
 import argparse
 import json
+import os
 import sys
 import urllib.parse
 import urllib.request
@@ -50,9 +53,12 @@ TARGETS = {
 NOT_A_STEP = {'total', 'opensearch_took'}
 
 
+HEADERS = {}
+
+
 def query(base, promql, at):
     url = f'{base}/api/v1/query?' + urllib.parse.urlencode({'query': promql, 'time': at})
-    with urllib.request.urlopen(url, timeout=30) as r:
+    with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=30) as r:
         body = json.load(r)
     if body.get('status') != 'success':
         raise RuntimeError(f'Prometheus 오류: {body}')
@@ -121,8 +127,15 @@ def main():
     p.add_argument('--end', required=True, help='측정 끝 (ISO 8601, 시간대 포함)')
     p.add_argument('--only', choices=sorted(TARGETS), action='append', help='이것만 (여러 번 줄 수 있음)')
     p.add_argument('--prometheus', default='http://localhost:19090')
+    p.add_argument('--grafana', help='Grafana 주소 (예: https://replant.kro.kr/grafana). 주면 데이터 소스 프록시로 조회')
     p.add_argument('--json', help='결과를 JSON으로도 저장할 경로')
     a = p.parse_args()
+    if a.grafana:
+        token = os.environ.get('GRAFANA_SERVICE_ACCOUNT_TOKEN')
+        if not token:
+            sys.exit('환경변수 GRAFANA_SERVICE_ACCOUNT_TOKEN이 없음 (docs/infra/observability.md 「Claude Code로 로그 조회 · 요약」)')
+        HEADERS['Authorization'] = f'Bearer {token}'
+        a.prometheus = a.grafana.rstrip('/') + '/api/datasources/proxy/uid/prometheus'
 
     start, end = datetime.fromisoformat(a.start), datetime.fromisoformat(a.end)
     seconds = int((end - start).total_seconds())
