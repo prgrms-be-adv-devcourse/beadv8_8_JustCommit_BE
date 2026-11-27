@@ -2,7 +2,8 @@
 # 앱 서버 ~/secrets/{서비스}.env 를 만들고 K3s Secret(gateway-env · market-env · ai-env)을 갱신한다.
 # 값은 화면에 출력하지 않는다. 다시 실행해도 된다 (한 번 만든 키는 그대로 둔다).
 #
-#   bash make-env.sh
+#   bash make-env.sh               처음 · 수동: 없는 공유 키 · JWT 키를 새로 만든다
+#   bash make-env.sh --no-create   CD(.github/workflows/cd.yml)용: 키를 새로 만들지 않고, 없으면 멈춘다 (#665)
 #
 # 미리 있어야 하는 파일 (모두 ~/secrets, 권한 600)
 #   redis.env        REDIS_PASSWORD                         (⑤-2에서 만듦)
@@ -25,7 +26,21 @@ EXTERNAL_KEYS="KAKAO_CLIENT_ID KAKAO_CLIENT_SECRET KAKAO_ADMIN_KEY KAKAO_APP_ID 
 # 없어도 앱은 뜬다 (product 검수는 관리자 확인으로, ai 임베딩 호출만 실패). 없으면 줄 자체를 쓰지 않는다
 OPTIONAL_KEYS="OPENAI_API_KEY ANTHROPIC_API_KEY"
 
-die() { echo "❌ $*" >&2; exit 1; }
+NO_CREATE=0
+case "${1:-}" in
+  --no-create) NO_CREATE=1 ;;
+  "") ;;
+  *) echo "사용법: bash make-env.sh [--no-create]" >&2; exit 2 ;;
+esac
+
+# GitHub Actions에서는 ::error:: · ::warning:: 으로 찍어 실행 화면에 눈에 띄게 한다. 값은 절대 넣지 않는다
+if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+  die() { echo "::error::$*" >&2; exit 1; }
+  warn() { echo "::warning::$*"; }
+else
+  die() { echo "❌ $*" >&2; exit 1; }
+  warn() { echo "  ⚠️ $*"; }
+fi
 need_file() { [ -f "$S/$1" ] || die "$S/$1 이 없어요"; }
 # 파일에서 KEY=값 의 값만 읽는다 (source 하지 않음)
 get() { grep -m1 "^$2=" "$S/$1" 2>/dev/null | cut -d= -f2- || true; }
@@ -35,12 +50,15 @@ need_file redis.env
 need_file db-accounts.env
 need_file external.env
 for k in $EXTERNAL_KEYS; do need external.env "$k" >/dev/null; done
-for k in $OPTIONAL_KEYS; do [ -n "$(get external.env "$k")" ] || echo "  ⚠️ $k 없음 (선택 값이라 빼고 진행)"; done
+for k in $OPTIONAL_KEYS; do [ -n "$(get external.env "$k")" ] || warn "$k 없음 (선택 값이라 빼고 진행)"; done
 
-# 1) 공유 키: 없는 것만 새로 만든다
-touch "$S/shared.env"
+# 1) 공유 키: 없는 것만 새로 만든다. --no-create면 만들지 않고 멈춘다 (한 번 정한 키가 CD에서 바뀌면 안 됨)
+if [ "$NO_CREATE" = 1 ]; then need_file shared.env; else touch "$S/shared.env"; fi
 add_shared() {  # 이름 · 만드는 명령
-  if [ -z "$(get shared.env "$1")" ]; then echo "$1=$(eval "$2")" >> "$S/shared.env"; echo "  새로 만듦: $1"; fi
+  if [ -z "$(get shared.env "$1")" ]; then
+    [ "$NO_CREATE" = 0 ] || die "$S/shared.env 에 $1 이 없어요 (--no-create라 만들지 않음 — 서버에서 make-env.sh를 옵션 없이 한 번 실행)"
+    echo "$1=$(eval "$2")" >> "$S/shared.env"; echo "  새로 만듦: $1"
+  fi
 }
 add_shared INTERNAL_API_KEY            "openssl rand -hex 32"
 add_shared COURIER_API_KEY             "openssl rand -hex 32"
@@ -55,6 +73,9 @@ add_shared CASH_OUT_ACCOUNT_ENCRYPTION_KEY "openssl rand -base64 32"  # 인출 �
 add_shared OAUTH2_STATE_SECRET         "openssl rand -base64 32"
 
 # 2) JWT RS256 키 한 쌍: 없을 때만 만든다. env에는 PEM 머리말을 뺀 한 줄 Base64로 넣는다
+if [ "$NO_CREATE" = 1 ]; then
+  [ -f "$S/jwt/private.pem" ] && [ -f "$S/jwt/public.pem" ] || die "$S/jwt/ 키가 없어요 (--no-create라 만들지 않음)"
+fi
 mkdir -p "$S/jwt"
 if [ ! -f "$S/jwt/private.pem" ]; then
   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$S/jwt/private.pem" 2>/dev/null
