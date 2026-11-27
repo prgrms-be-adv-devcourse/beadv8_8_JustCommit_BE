@@ -1,7 +1,7 @@
 # market 서비스
 
 > 언제 읽나: market 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-24 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-26 · 관련: Miro 5 · 13, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -26,7 +26,7 @@ market 서비스가 소유하는 테이블입니다 (market DB).
 |---|---|
 | `CART` | 장바구니 |
 | `ORDERS` | 구매자 주문 |
-| `SELLER_ORDER` | 판매자별 주문 (배송비 · 배송 단위 · `confirmedAt`, 결제 완료 시각 `paid_at`(재결제면 재결제 완료 시각, 수락 마감의 기준, Flyway V9)) |
+| `SELLER_ORDER` | 판매자별 주문 (배송비 · 배송 단위 · `confirmedAt`, 결제 완료 시각 `paid_at`(재결제면 재결제 완료 시각, 수락 마감의 기준, Flyway V9), 정산 대상 조회 인덱스 `idx_seller_order_confirmed_at_id (confirmed_at, id)`(Flyway V14)) |
 | `ORDERS_ITEM` | 주문상품 (`ACCEPT_PENDING` · `NORMAL` · `CANCEL_PROCESSING`, `CANCELLED`, `REVIEW_REQUIRED`, 반품 `RETURN_REQUESTED`, `RETURN_IN_TRANSIT`, `RETURN_PROCESSING`, `RETURNED` 등, 환불 Saga 복구용 `attempt_count`, `attempted_at`, `last_error`, 취소 사유 `cancel_reason`(`BUYER`, `SELLER`, `AUTO`, Flyway V9)) |
 | `SHIPMENT` | 배송 (방향 `direction`: 가는 길 `OUTBOUND` / 반품 `RETURN`, 가는 길만 판매자 주문당 1개(부분 유니크 인덱스, Flyway V10), 택배 예약 · 취소 큐용 `next_attempt_at` · `attempt_count` · `last_error`, 취소 누른 시각 `cancel_requested_at`) |
 | `SHIPMENT_CANCEL_RESULT` | 택배 취소 결과 (배송 · 판매자 주문 · 취소됨 / 취소 불가 · 시각). 택배 취소 큐가 쓰고 주문 Saga 복구가 읽어 환불 · 되돌림 → [ADR 0026](../decisions/0026-courier-cancel-queue-and-distance-judgment.md) |
@@ -51,6 +51,7 @@ market 서비스가 다른 서비스에 제공하는 내부 API입니다.
 | API | 부르는 서비스 | 상태 |
 |---|---|---|
 | `GET /internal/v1/orders/members/{memberId}/withdrawalCheck` | member (탈퇴 확인) | ✅ 확정 |
+| `GET /internal/v1/sellerOrders/settlementTargets` | settlement (Market ↔ Settlement 대사) | ✅ 확정 |
 | `GET /internal/v1/shipments?sellerOrderIds=` | notification (알림 문구용 배송 정보) | 🟨 제안 |
 
 상세 → [내부 API 목록](../reference/internal-apis.md)

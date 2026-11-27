@@ -1,7 +1,7 @@
 # 내부 API 목록
 
 > 언제 읽나: 서비스 간 내부 API의 경로 · 멱등 키를 찾을 때
-> 상태: 🟨 제안 · 마지막 수정 2026-11-25 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
+> 상태: 🟨 제안 · 마지막 수정 2026-11-26 · 관련: Miro 22, API 명세서 (MSA, 개인 노션), 노션 「정책 정리」 1.3 · 3.10
 
 ## 목록
 
@@ -20,6 +20,7 @@
 | payment | `POST /internal/v1/refunds/shippingFees/{sellerOrderId}` | market | 배송비 환불. 같은 키면 `ALREADY_REFUNDED`, 확정 실패는 4xx | sellerOrderId | ✅ |
 | payment | `POST /internal/v1/settlementPayouts` | settlement | 정산 지급 (0 이상: 지급, 음수: 판매자 잔액에서 회수 후 미수금). 요청 `sellerOrderId`, `payoutAmount`, `fee`, `shippingFee`, `sellerBurdenAmount`(배송비와 부담금이 없으면 0). 배송비를 `HOLDING` → `REVENUE`로 옮김(이미 옮겼거나 환불됐으면 건너뜀). 검증 실패는 4xx `INVALID_AMOUNT`, 다시 보내도 실패 | settlementId | ✅ |
 | payment | `POST /internal/v1/settlementPayouts/ledgers` | settlement | 정산 대사용 원장 조회 (읽기 전용, 지갑 잠금 없음). 요청 `settlementIds` 1~100개(비었거나 null이거나 넘치면 400 `INVALID_FIELD_ERROR`, 중복은 하나로). `ref_type`이 `SETTLEMENT`, `SETTLEMENT_FEE`, `SETTLEMENT_COLLECTION`, `SELLER_BURDEN`이고 `ref_id`가 settlementId인 행을 지갑 조건 없이 한 번에 조회(예상 밖 지갑에 기록된 행도 포함). 응답 `data.ledgers`는 settlementId별 행 목록 `[{walletId, walletType, memberId, refType, status, amount, occurredAt}]`(`memberId`는 시스템 지갑이면 null, `status`는 `IN`/`OUT`, `occurredAt`은 `ref_occurred_time`), 행이 없는 정산은 빈 목록 | – | ✅ |
+| market | `GET /internal/v1/sellerOrders/settlementTargets?from=&to=&cursor=&size=` | settlement | Market ↔ Settlement 대사용 정산 대상 판매자 주문 조회 (읽기 전용). 대상: `confirmed_at`(판매자 주문 종료 시각, 정산 이벤트를 발행할 때만 기록)이 `from` 이상 `to` 미만인 판매자 주문. 모두 취소된 판매자 주문은 이벤트도 `confirmed_at`도 없어 나오지 않음. `from`, `to`는 ISO 시각(`2026-11-26T00:00:00`, 필수), `cursor`는 앞 페이지의 마지막 sellerOrderId(생략하면 처음부터), `size`는 1~100(생략하면 100), sellerOrderId 오름차순. `size`가 범위 밖이거나 `from`이 `to`보다 늦거나 `cursor`가 1보다 작으면 400 `INVALID_FIELD_ERROR`. 응답 `data.items[{sellerOrderId, sellerId, type, saleAmount, shippingFee, sellerBurdenAmount, confirmedAt}]`, `data.nextCursor`(마지막 페이지면 null). `type`과 금액은 정산 이벤트와 같은 계산(`SellerOrderSettlementAmounts`): `PURCHASE_CONFIRMED`는 `PurchaseConfirmed`의 판매액, 배송비, 판매자 부담금(완료된 반품 배송비 합), `RETURNED`는 `SellerOrderReturned`와 같이 판매액 0, 배송비 0, 판매자 부담금 = 완료된 반품 배송비 합 + 원래 배송비. 커밋된 행만 보이므로 부르는 쪽은 `to`를 현재 시각보다 여유 있게 잡음 | – | ✅ |
 | settlement | `GET /internal/v1/settlements/seller-orders/{sellerOrderId}` | market | 정산 완료 시각 | – | 🟨 |
 | market | `GET /internal/v1/shipments?sellerOrderIds=` | notification | 알림 문구용 배송 정보 | – | 🟨 |
 | ai | `POST /internal/v1/ai/admin/reindex?target=SPECIES` | 운영자 | 품종 재임베딩: 문서 해시가 바뀐 품종만 임베딩해 `species_vector_store`에 upsert, 프로필에 없는 벡터는 삭제. 응답 `total` · `embedded` · `skipped` · `deleted`. 다시 불러도 결과가 같음 | – | ✅ |
