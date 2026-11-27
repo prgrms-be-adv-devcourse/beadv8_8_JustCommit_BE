@@ -16,6 +16,7 @@ Gateway는 K3s Service 이름으로 market에 보내고 K3s가 살아 있는 파
 
 - 컨테이너마다 `mem_limit` + JVM `MaxRAMPercentage=70`, 두 서버 모두 스왑 2GB
 - 예외: Gateway는 `MaxRAMPercentage=45` · `MaxDirectMemorySize=64m` (`deploy/k3s/gateway.yaml`). 70%면 힙 360 + 비힙 · Netty 등 약 225MiB가 한도 512Mi를 넘어 과부하 때 OOMKilled (#661)
+- 예외: 데이터 서버 Tempo는 한도 384m + `GOMEMLIMIT=300MiB`, 컴팩션 상한 `max_block_bytes` 50MiB · `max_compaction_objects` 30만 (`deploy/observability/tempo.yml`). 256m · 기본 컴팩션이면 부하 측정 뒤 블록을 합치다 OOMKilled를 반복하고, 그동안 Alloy가 보낸 추적이 버려짐 (#679)
 - Gateway · market을 2개씩 띄우면 앱 서버 예상 메모리는 **약 7GB / 8GB**입니다. 넘치면 모니터링을 **데이터 서버로** 옮기는 쪽을 봅니다 (앱 서버가 더 빠듯함)
 - 실측 (2026-11-18, 부하 없이 모두 띄운 상태): 앱 서버 **4.4GB / 7.6GB**, 스왑 사용 없음. 부하를 줄 때의 값은 성능 측정 때 다시 잽니다 (⬜)
 
