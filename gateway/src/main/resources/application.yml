@@ -32,6 +32,14 @@ spring:
           httpclient:
             connect-timeout: 1000
             response-timeout: 10s
+            # 서비스 주소마다 · 파드마다 연결 100개까지, 자리가 없으면 1초 기다리고 503 (#661).
+            # 기본(elastic)은 상한이 없어 서비스가 느려지면 붙잡힌 요청이 힙에 쌓여 파드가 OOMKilled됐다.
+            # SSE 구독도 notification 쪽 자리를 하나씩 차지한다 (파드 2개 → 동시 구독 200)
+            pool:
+              type: fixed
+              max-connections: 100
+              acquire-timeout: 1000
+              metrics: true
           # 외부 경로 → 담당 서비스 (경로 목록: docs/reference/external-apis.md)
           # /internal/** 은 일부러 등록하지 않음 → Gateway에서 404
           # 타임아웃이 다른 좁은 경로(*-confirm 등)는 넓은 경로보다 위에 둠: 위에서부터 처음 맞는 규칙 하나만 씀

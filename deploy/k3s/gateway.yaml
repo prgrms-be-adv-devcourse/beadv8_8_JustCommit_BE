@@ -38,6 +38,12 @@ spec:
                 name: replant-endpoints
             - secretRef:
                 name: gateway-env
+          # 이미지 기본(MaxRAMPercentage=70)을 Gateway만 덮어쓴다 (#661).
+          # 70%면 힙 360 + 비힙 약 125 + Netty · 스레드 등 약 100 = 약 585MiB로 한도 512Mi를 넘어,
+          # 힙이 차면 GC가 치우기 전에 커널이 컨테이너를 죽였다(OOMKilled). 45%면 힙 약 230 → 합 약 455MiB
+          env:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=45 -XX:MaxDirectMemorySize=64m -XX:+ExitOnOutOfMemoryError -Duser.timezone=Asia/Seoul"
           resources:
             requests:
               cpu: 100m
