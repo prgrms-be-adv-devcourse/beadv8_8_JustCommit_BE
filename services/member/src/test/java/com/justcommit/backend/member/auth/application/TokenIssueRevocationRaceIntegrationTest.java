@@ -1,7 +1,7 @@
 package com.justcommit.backend.member.auth.application;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.member.auth.infrastructure.redis.RefreshTokenRedisStore;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Provider;
@@ -13,24 +13,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.transaction.support.TransactionTemplate;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -61,31 +49,12 @@ import static org.mockito.Mockito.doAnswer;
  * - 테스트 클래스에 @Transactional을 붙이지 않는다: 준비 데이터는 먼저 커밋하고, 작업 스레드마다 별도 트랜잭션
  * - 범위 밖: Access 토큰 거절(Gateway · Redis 폐기 기록), 잠금 대기 시간 제한
  */
-@SpringBootTest
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class TokenIssueRevocationRaceIntegrationTest {
-
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
+class TokenIssueRevocationRaceIntegrationTest extends MemberIntegrationTest {
 
   private static final String PASSWORD = "plant1234";
   private static final String NEW_PASSWORD = "newplant1234";
   private static final Duration WAIT = Duration.ofSeconds(10);
   private static final AtomicInteger SEQ = new AtomicInteger();
-
-  @MockitoSpyBean
-  private DatabaseClock databaseClock;
-
-  @MockitoSpyBean
-  private RefreshTokenRedisStore refreshTokenStore;
 
   @Autowired
   private LoginService loginService;
@@ -101,9 +70,6 @@ class TokenIssueRevocationRaceIntegrationTest {
 
   @Autowired
   private PasswordEncoder passwordEncoder;
-
-  @Autowired
-  private TransactionTemplate transactionTemplate;
 
   @Autowired
   private JdbcTemplate jdbcTemplate;
@@ -144,7 +110,7 @@ class TokenIssueRevocationRaceIntegrationTest {
         barrier.await(WAIT.toSeconds(), TimeUnit.SECONDS);
       }
       return owner;
-    }).when(refreshTokenStore).findOwner(anyString());
+    }).when(refreshTokenRedisStore).findOwner(anyString());
   }
 
   @AfterEach
@@ -459,16 +425,6 @@ class TokenIssueRevocationRaceIntegrationTest {
   private void flushRedis() {
     try (var connection = redisTemplate.getRequiredConnectionFactory().getConnection()) {
       connection.serverCommands().flushAll();
-    }
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
     }
   }
 }

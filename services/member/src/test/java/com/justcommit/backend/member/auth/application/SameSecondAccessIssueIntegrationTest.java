@@ -1,39 +1,27 @@
 package com.justcommit.backend.member.auth.application;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.common.exception.BusinessException;
 import com.justcommit.backend.common.security.JwtVerifier;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
 import com.justcommit.backend.member.auth.domain.RevocationReason;
-import com.justcommit.backend.member.auth.infrastructure.redis.RefreshTokenRedisStore;
 import com.justcommit.backend.member.auth.infrastructure.repository.TokenRevocationRepository;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.MemberStatus;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
-import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -60,29 +48,14 @@ import static org.mockito.Mockito.doReturn;
  * 개입(폐기)은 같은 회원 행을 잠그므로, 막히지 않고 끝나면 발급 쪽 잠금이 풀려 있었다는 뜻이다.
  * 테스트 클래스에 @Transactional을 붙이지 않는다.
  */
-@SpringBootTest
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class SameSecondAccessIssueIntegrationTest {
+class SameSecondAccessIssueIntegrationTest extends MemberIntegrationTest {
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final String PASSWORD = "plant1234";
   private static final String REFRESH_TOKEN = "refresh-after-revocation";
   private static final Duration WAIT = Duration.ofSeconds(10);
   // 이 이름으로 시작하는 스레드만 fixIssueThreadClock의 고정 시각을 받는다
   private static final String ISSUE_THREAD_PREFIX = "issue-";
   private static final AtomicInteger SEQ = new AtomicInteger();
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
-
-  @Autowired
-  private TokenRevocationService revocationService;
 
   @Autowired
   private TokenRevocationRepository revocationRepository;
@@ -95,9 +68,6 @@ class SameSecondAccessIssueIntegrationTest {
 
   @Autowired
   private TokenReissueService tokenReissueService;
-
-  @Autowired
-  private RefreshTokenRedisStore refreshTokenRedisStore;
 
   // Gateway와 같은 검증기로 iat(초)를 꺼냄
   @Autowired
@@ -114,10 +84,6 @@ class SameSecondAccessIssueIntegrationTest {
 
   @Autowired
   private StringRedisTemplate redisTemplate;
-
-  // 같은 초를 만들 때만 발급 시각을 고정하고, 그 전(폐기)에는 실제 DB 시계
-  @MockitoSpyBean
-  private DatabaseClock databaseClock;
 
   private final List<Long> memberIds = new ArrayList<>();
   private final List<Thread> issueThreads = new ArrayList<>();
@@ -323,13 +289,13 @@ class SameSecondAccessIssueIntegrationTest {
   // 실제 폐기 처리로 Redis에 끊은 시각(초)을 남기고, Gateway TokenRevocationChecker와 같은 방식으로 읽음
   // (사유는 결과에 영향이 없어 하나로 둔다. 회원 정보는 바꾸지 않고 인증 버전만 올라간다)
   private long revoke(Long memberId) {
-    revocationService.revoke(memberId, RevocationReason.PASSWORD_CHANGED, member -> { });
+    tokenRevocationService.revoke(memberId, RevocationReason.PASSWORD_CHANGED, member -> { });
     return Long.parseLong(redisTemplate.opsForValue().get("auth:revoked-member:" + memberId));
   }
 
   // 탈퇴 흉내: 실제 폐기 처리 안에서 회원 상태만 DELETED로 (TokenIssueRevocationRaceIntegrationTest와 같은 방식)
   private void withdraw(Long memberId) {
-    revocationService.revoke(memberId, RevocationReason.WITHDRAWN,
+    tokenRevocationService.revoke(memberId, RevocationReason.WITHDRAWN,
         member -> ReflectionTestUtils.setField(member, "status", MemberStatus.DELETED));
   }
 
@@ -427,15 +393,5 @@ class SameSecondAccessIssueIntegrationTest {
         "004", "v1:test-account", null, "홍길동"));
     memberIds.add(member.getId());
     return member;
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

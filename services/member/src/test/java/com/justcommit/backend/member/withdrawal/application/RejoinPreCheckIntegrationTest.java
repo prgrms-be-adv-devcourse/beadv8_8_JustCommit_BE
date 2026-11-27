@@ -1,21 +1,18 @@
 package com.justcommit.backend.member.withdrawal.application;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
 import com.justcommit.backend.member.auth.application.EmailVerificationService;
 import com.justcommit.backend.member.auth.application.SocialLoginCommand;
 import com.justcommit.backend.member.auth.application.SocialLoginResult;
 import com.justcommit.backend.member.auth.application.SocialLoginService;
 import com.justcommit.backend.member.auth.domain.EmailPurpose;
 import com.justcommit.backend.member.auth.infrastructure.jwt.JwtProvider;
-import com.justcommit.backend.member.auth.infrastructure.mail.VerificationMailSender;
 import com.justcommit.backend.member.auth.infrastructure.redis.EmailVerificationRedisStore;
 import com.justcommit.backend.member.domain.Provider;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.crypto.MemberHmac;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
-import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import com.justcommit.backend.member.member.application.SignupCommand;
 import com.justcommit.backend.member.member.application.SignupService;
 import com.justcommit.backend.member.member.application.SocialSignupCommand;
@@ -27,20 +24,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,21 +46,9 @@ import static org.mockito.Mockito.timeout;
  * - 정확히 30일 전 탈퇴는 모든 단계 통과, 30일이 안 됐으면 모든 단계 차단 (DB 시각을 고정해 경계를 맞춤)
  * 탈퇴 기록은 RejoinRestrictionIntegrationTest처럼 리포지토리로 직접 넣는다. 메일은 실제로 보내지 않는다
  */
-@SpringBootTest
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class RejoinPreCheckIntegrationTest {
+class RejoinPreCheckIntegrationTest extends MemberIntegrationTest {
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
 
   @Autowired private EmailVerificationService emailVerificationService;
   @Autowired private SignupService signupService;
@@ -85,9 +60,6 @@ class RejoinPreCheckIntegrationTest {
   @Autowired private MemberRepository memberRepository;
   @Autowired private MemberHmac memberHmac;
   @Autowired private StringRedisTemplate redisTemplate;
-  @MockitoBean private VerificationMailSender mailSender;
-  // 경계 테스트에서만 now()를 고정한다. 평소에는 실제 DB 시각
-  @MockitoSpyBean private DatabaseClock databaseClock;
 
   // Redis는 모듈의 테스트가 함께 쓰므로 테스트마다 비운다 (docs/testing/strategy.md 「통합 테스트 컨테이너 규칙」)
   @AfterEach
@@ -107,7 +79,7 @@ class RejoinPreCheckIntegrationTest {
         MemberErrorCode.REJOIN_RESTRICTED_EMAIL);
 
     assertThat(redisTemplate.keys("auth:email:*" + email + "*")).isEmpty();
-    then(mailSender).shouldHaveNoInteractions();
+    then(verificationMailSender).shouldHaveNoInteractions();
   }
 
   @Test
@@ -118,7 +90,7 @@ class RejoinPreCheckIntegrationTest {
     String newEmail = email();
 
     emailVerificationService.sendCode(newEmail, EmailPurpose.SIGNUP);
-    then(mailSender).should(timeout(5000)).send(eq(newEmail), anyString(), any(), eq(EmailPurpose.SIGNUP));
+    then(verificationMailSender).should(timeout(5000)).send(eq(newEmail), anyString(), any(), eq(EmailPurpose.SIGNUP));
 
     assertRejected(() -> signupService.isPhoneAvailable(phone), MemberErrorCode.REJOIN_RESTRICTED_PHONE);
   }
@@ -197,7 +169,7 @@ class RejoinPreCheckIntegrationTest {
     String signupToken = jwtProvider.createSignupToken("KAKAO", kakaoId(), email);
     assertRejected(() -> socialSignupService.signup(signupToken, socialCommand(phone)), MemberErrorCode.REJOIN_RESTRICTED);
     assertThat(memberRepository.existsByEmail(email)).isFalse();
-    then(mailSender).shouldHaveNoInteractions();
+    then(verificationMailSender).shouldHaveNoInteractions();
   }
 
   // 지금 DB 시각을 읽어 그 값으로 고정한다 (판정 · 소셜 가입 발급 시각이 모두 이 값을 씀)
@@ -241,15 +213,5 @@ class RejoinPreCheckIntegrationTest {
   private static void assertRejected(ThrowingCallable call, MemberErrorCode code) {
     assertThatThrownBy(call).isInstanceOfSatisfying(BusinessException.class,
         e -> assertThat(e.getErrorCode()).isEqualTo(code));
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }

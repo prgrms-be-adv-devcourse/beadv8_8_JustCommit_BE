@@ -1,35 +1,23 @@
 package com.justcommit.backend.member.auth.application;
 
+import com.justcommit.backend.member.support.MemberIntegrationTest;
 import com.justcommit.backend.common.exception.BusinessException;
-import com.justcommit.backend.common.testcontainers.SharedPostgres;
-import com.justcommit.backend.common.testcontainers.SharedRedis;
 import com.justcommit.backend.member.auth.domain.RevocationReason;
 import com.justcommit.backend.member.auth.infrastructure.repository.TokenRevocationRepository;
 import com.justcommit.backend.member.domain.Member;
 import com.justcommit.backend.member.domain.exception.MemberErrorCode;
 import com.justcommit.backend.member.infrastructure.lock.MemberLocker;
 import com.justcommit.backend.member.infrastructure.repository.MemberRepository;
-import com.justcommit.backend.member.infrastructure.time.DatabaseClock;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -48,27 +36,12 @@ import static org.mockito.Mockito.doReturn;
  *   롤백됐는지는 커밋된 인증 버전으로 확인한다
  * - 같은 초는 DatabaseClock을 고정해 만든다 (다음 초도 고정: 실제 시각에 따라 결과가 달라지지 않게)
  */
-@SpringBootTest
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
-class AccessIssueTimeGuardIntegrationTest {
+class AccessIssueTimeGuardIntegrationTest extends MemberIntegrationTest {
 
-  private static final KeyPair JWT_KEY_PAIR = newKeyPair();
   private static final AtomicInteger SEQ = new AtomicInteger();
-
-  @DynamicPropertySource
-  static void properties(DynamicPropertyRegistry registry) {
-    SharedPostgres.register(registry);
-    registry.add("jwt.private-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPrivate().getEncoded()));
-    registry.add("jwt.public-key", () -> Base64.getEncoder().encodeToString(JWT_KEY_PAIR.getPublic().getEncoded()));
-    SharedRedis.register(registry);
-  }
 
   @Autowired
   private AccessIssueTimeGuard guard;
-
-  @Autowired
-  private TokenRevocationService revocationService;
 
   @Autowired
   private TokenRevocationRepository revocationRepository;
@@ -83,16 +56,10 @@ class AccessIssueTimeGuardIntegrationTest {
   private PasswordEncoder passwordEncoder;
 
   @Autowired
-  private TransactionTemplate transactionTemplate;
-
-  @Autowired
   private JdbcTemplate jdbcTemplate;
 
   @Autowired
   private StringRedisTemplate redisTemplate;
-
-  @MockitoSpyBean
-  private DatabaseClock databaseClock;
 
   private final List<Long> memberIds = new ArrayList<>();
 
@@ -249,7 +216,7 @@ class AccessIssueTimeGuardIntegrationTest {
 
   // 실제 폐기 처리 → 가장 늦은 폐기 시각(초)
   private long revoke(Long memberId) {
-    revocationService.revoke(memberId, RevocationReason.PASSWORD_CHANGED, member -> { });
+    tokenRevocationService.revoke(memberId, RevocationReason.PASSWORD_CHANGED, member -> { });
     return revocationRepository.findLatestCutoffAt(memberId).orElseThrow().getEpochSecond();
   }
 
@@ -264,15 +231,5 @@ class AccessIssueTimeGuardIntegrationTest {
         "004", "v1:test-account", null, "홍길동"));
     memberIds.add(member.getId());
     return member;
-  }
-
-  private static KeyPair newKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
   }
 }
