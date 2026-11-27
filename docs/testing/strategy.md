@@ -1,14 +1,14 @@
 # 테스트 전략
 
 > 언제 읽나: 테스트를 어디에 어떻게 넣을지 정할 때
-> 상태: 🟨 제안 · 마지막 수정 2026-11-24 · 관련: 노션 기획안 「7. 테스트 시나리오」, [노션 「테스트 시나리오」 3절 WireMock 사용법](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
+> 상태: 🟨 제안 · 마지막 수정 2026-11-27 · 관련: 노션 기획안 「7. 테스트 시나리오」, [노션 「테스트 시나리오」 3절 WireMock 사용법](https://www.notion.so/410f93f59cb0808e85ddcfccfaa34bd6)
 
 ## 단계
 
 | 단계 | 언제 | 무엇을 실행 | 어디서 | 실패하면 |
 |---|---|---|---|---|
 | ① 로컬 | PR 올리기 전 | 바뀐 서비스 테스트 (예: `./gradlew :services:market-service:test`) | 개발자 PC | 고친 뒤 PR |
-| ② PR CI | PR 열 때 · 푸시할 때 | 경로 필터로 바뀐 서비스만 단위 · 통합. `common/`이 바뀌면 전체. 결과는 PR 댓글 1개(모듈별 표 · 실패 목록, 커밋마다 갱신, 빌드 대상이 없으면 없음). 빌드와 별개로 CHANGELOG 스크립트 테스트는 모든 PR에서, CHANGELOG 조각 파일 규칙 확인은 `develop` 대상 PR에서 실행(문서만 바뀐 PR 포함) → [작성 규칙](../changelog.d/README.md#ci가-확인하는-것) | GitHub Actions (필수 체크 `build`) | 머지 불가. 같은 레포 PR이면 Claude 원인 분석 댓글(`ci-failure-ai.yml`, 커밋당 1개) |
+| ② PR CI | PR 열 때 · 푸시할 때 | 경로 필터로 바뀐 서비스만 단위 · 통합. `common/`이 바뀌면 전체. 결과는 PR 댓글 1개(모듈별 표 · 실패 목록, 커밋마다 갱신, 빌드 대상이 없으면 없음). 빌드와 별개로 CHANGELOG 스크립트 테스트는 모든 PR에서, CHANGELOG 조각 파일 규칙 확인은 `develop` 대상 PR에서 실행(문서만 바뀐 PR 포함) → [작성 규칙](../changelog.d/README.md#ci가-확인하는-것) | GitHub Actions (필수 체크 `build`). 속도: Gradle 캐시는 `develop` 머지 때 `gradle-cache.yml`이 저장하고 PR은 읽기만, 모듈 병렬(`gradle.properties` `org.gradle.parallel`), 테스트 JVM `-XX:TieredStopAtLevel=1`(루트 `build.gradle`, `-PtestJvmQuickStart=false`로 끔) | 머지 불가. 같은 레포 PR이면 Claude 원인 분석 댓글(`ci-failure-ai.yml`, 커밋당 1개) |
 | ③ CD | develop 머지 후 | 바뀐 서비스 이미지 → GHCR → 서버 교체 | GitHub Actions → EC2 | 이전 이미지 태그로 되돌림 |
 | ④ 야간 · 수동 E2E | 매일 새벽(schedule) + 필요할 때(workflow_dispatch) | `e2e` 모듈: E2E · 장애 시나리오 (Docker Compose 전체 실행, Toxiproxy 지연). 실측값은 `results.json` Artifact | GitHub Actions | 이슈 등록 |
 | ⑤ 시연 전 체크 | 발표 전 | 수동 시나리오 S-I03 · S-J04 · S-K01 · S-K02 | 운영 서버 · Grafana | 시연 전에 수정 |
