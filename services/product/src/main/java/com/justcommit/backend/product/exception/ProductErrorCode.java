@@ -36,7 +36,8 @@ ProductErrorCode implements ErrorCode {
     APPEAL_NOT_ALLOWED(HttpStatus.CONFLICT, "자동으로 반려된 상품만 이의 신청할 수 있습니다."),
     APPEAL_ALREADY_USED(HttpStatus.CONFLICT, "이 검수 결과에는 이미 이의 신청을 했습니다."),
     INVALID_SEARCH_STATUS(HttpStatus.BAD_REQUEST, "상품 목록은 ACTIVE · PAYMENT_PENDING · SOLD_OUT 상태로만 거를 수 있습니다."),
-    SEARCH_INDEXING_IN_PROGRESS(HttpStatus.CONFLICT, "상품 검색 전체 색인 · 재색인이 이미 진행 중입니다. 끝난 뒤 다시 요청해 주세요.");
+    SEARCH_INDEXING_IN_PROGRESS(HttpStatus.CONFLICT, "상품 검색 전체 색인 · 재색인이 이미 진행 중입니다. 끝난 뒤 다시 요청해 주세요."),
+    SEARCH_INDEX_JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "상품 검색 색인 작업을 찾을 수 없습니다.");
 
     private final HttpStatus status;
     private final String message;
