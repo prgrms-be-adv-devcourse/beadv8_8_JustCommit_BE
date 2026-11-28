@@ -2,7 +2,7 @@
 
 > 언제 읽나: 외부 호출이나 서비스 간 호출의 실패 처리를 정할 때
 
-> 상태: ✅ 확정 · 마지막 수정 2026-11-27 · 관련: Miro 14, 노션 기획안 「장애 처리」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-29 · 관련: Miro 14, 노션 기획안 「장애 처리」
 
 ## 공통값
 
@@ -39,7 +39,8 @@
 | ai → OpenAI 임베딩 (품종 의미 검색 · 🟨 챗봇 질문) | 3초(연결 포함 전체, `custom.species-search.timeout`) | 없음 (Spring AI 기본 3회를 끔) | 품종 의미 검색 503 `SEMANTIC_SEARCH_UNAVAILABLE`, 챗봇 503 `CHATBOT_UNAVAILABLE`. 검색용 모델(`QueryEmbedder`)을 따로 만들어 추천 · 재임베딩과 설정을 나눔 |
 | 🟨 ai → OpenAI 임베딩 (상품 문서, 상품 이벤트) | Spring AI 기본 (따로 설정 안 함) | Spring AI 기본 3회 | 1 · 2 · 4초 Kafka 재시도 후 DLT. 스냅샷은 저장됨, `target=PRODUCT` 재임베딩으로 맞춤 |
 | ai → OpenAI 임베딩 (재임베딩 운영 API) | ⬜ 미정 (따로 설정 안 함) | ⬜ 미정 | ⬜ 미정 |
-| 🟨 ai → Claude Haiku (챗봇 답변) | 10초 | 없음 | 200 고정 문장 + 상품 카드 (`answerGenerated=false`). 최악 임베딩 3초 + Haiku 10초로 Gateway 20초 안 |
+| 🟨 ai 챗봇 품종 검색 (DB, 상품 검색과 동시에) | 2초(검색 시작부터, `custom.chatbot.species-search-timeout`, #636) | 없음 | 품종 검색 실패와 같은 응답(예외 그대로). 상품 검색이 실패하면 품종 검색을 기다리지 않고 상품 검색 오류로 바로 응답. 넘긴 쿼리는 DB에서 끝까지 돔 |
+| 🟨 ai → Claude Haiku (챗봇 답변) | 10초 | 없음 | 200 고정 문장 + 상품 카드 (`answerGenerated=false`). 최악 임베딩 3초 + 품종 검색 2초 + Haiku 10초로 Gateway 20초 안 |
 | payment → 토스페이먼츠 | 3초 / 60초 | 없음 | 결과 불명 → `PENDING` 유지, 결제 조회로 `APPROVED`, `FAILED`, `REVIEW_REQUIRED` 중 하나로 확정 → [스케줄러 표](../reference/schedulers.md) |
 | market → 모의 택배사 | 3초 / 5초 | 10초 큐 + 건별 백오프 10초 → 30초 → 1분 고정, **포기 없음** | 배송 `READY` · `CANCEL_PENDING` 유지. 서킷 없음 |
 | market → 모의 택배사 (배송 조회) | 1초 / 2초 | 없음 | 남은 거리 · 지점 · 세부 단계만 null, 응답은 200 (DB 트랜잭션 밖에서 호출). 서킷 없음 |

@@ -76,7 +76,7 @@ class ChatbotIntegrationTest {
         @Bean
         @Primary
         QueryEmbedder keywordQueryEmbedder(KeywordEmbeddingModel model) {
-            return query -> {
+            return (query, scope) -> {
                 if (model.failing.get()) {
                     throw new QueryEmbedder.QueryEmbeddingException("임베딩 API 실패 (테스트)", null);
                 }

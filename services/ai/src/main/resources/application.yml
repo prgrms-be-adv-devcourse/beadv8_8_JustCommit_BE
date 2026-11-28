@@ -50,6 +50,8 @@ custom:
     alternative-top-k: 3
     # 프롬프트에 넣는 최근 메시지 수 (질문 · 답변 5쌍)
     history-size: 10
+    # 상품 검색과 동시에 하는 품종 검색을 기다리는 최대 시간 (#636, 넘으면 품종 검색 실패와 같은 응답)
+    species-search-timeout: 2s
     anthropic:
       api-key: ${ANTHROPIC_API_KEY:}
       timeout: 10s

@@ -73,7 +73,7 @@ public class SpeciesSearchService {
         long start = System.nanoTime();
         float[] vector;
         try {
-            vector = timers.time(STAGE_EMBEDDING, () -> queryEmbedder.embed(query));
+            vector = timers.time(STAGE_EMBEDDING, () -> queryEmbedder.embed(query, QueryEmbedder.SPECIES_SEARCH_SCOPE));
         } catch (QueryEmbeddingException e) {
             // 검색만 실패시킨다. 문장은 로그에 남기지 않음 (사용자 입력)
             log.warn("품종 의미 검색 임베딩 실패: {}", e.getMessage());

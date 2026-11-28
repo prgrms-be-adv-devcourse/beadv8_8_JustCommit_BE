@@ -119,9 +119,9 @@ python3 -I ../analysis/stage_timing.py --grafana https://replant.kro.kr/grafana 
 
 | 항목 | 내용 |
 |---|---|
-| 질문 임베딩 캐시 | 키 = 모델 · 차원 · 정리한 질문(앞뒤 공백 제거, 연속 공백 하나로)의 SHA-256, 값 = 벡터. ai 파드 메모리(Caffeine) 1,000개 · 24시간 (`custom.query-embedding-cache.*`). 품종 의미 검색 · 챗봇이 같이 씀. 챗봇 이어 묻기는 「직전 질문 + 이번 질문」 문장이 키 |
+| 질문 임베딩 캐시 | 키 = 모델 · 차원 · 정리한 질문(앞뒤 공백 제거, 연속 공백 하나로)의 SHA-256, 값 = 벡터. ai 파드 메모리(Caffeine) 1,000개 · 24시간 (`custom.query-embedding-cache.*`). 범위를 나눔: 비로그인 품종 의미 검색은 공용, 챗봇은 회원마다(공개 검색의 응답 시간으로 남의 챗봇 질문을 짐작하지 못하게, #694 리뷰). 챗봇 이어 묻기는 「직전 질문 + 이번 질문」 문장이 키 |
 | 캐시 지표 | `ai_query_embedding_cache_total{result="hit"\|"miss"}`, `ai_query_embedding_cache_size`. `embedding` 단계 Timer는 적중 때도 남아(짧게) 전후 p50 · p95를 그대로 비교한다 |
-| 챗봇 검색 동시 실행 | `product_search` · `species_search`를 가상 스레드 두 개에서 동시에. 두 검색을 묶은 시간은 새 단계 `search` (두 단계와 겹쳐 「가장 느린 단계」 비교에서는 뺌) |
+| 챗봇 검색 동시 실행 | `product_search` · `species_search`를 가상 스레드 두 개에서 동시에. 상품 검색이 실패하면 바로 응답하고, 품종 검색은 2초(`custom.chatbot.species-search-timeout`)까지만 기다림. 두 검색을 묶은 시간은 새 단계 `search` (두 단계와 겹쳐 「가장 느린 단계」 비교에서는 뺌) |
 | pgvector | 바꾸지 않음. 아래 「HNSW 확인」 |
 
 Redis가 아니라 파드 메모리에 둔 이유: ai는 Redis를 쓰지 않고, 공용 Redis는 `maxmemory 256MB` · `noeviction`이라 벡터(약 6KB)가 쌓이면 로그인 토큰 쓰기까지 실패한다 (`docs/reference/redis-keys.md` 「설정」). 파드가 2개로 늘거나 재시작하면 캐시를 따로 · 처음부터 채우지만, 없으면 원래대로 OpenAI를 부를 뿐이다.
@@ -147,12 +147,13 @@ Redis가 아니라 파드 메모리에 둔 이유: ai는 Redis를 쓰지 않고,
 | 품종 의미 검색 | `total` | 474 · 584 | |
 | 품종 의미 검색 | `embedding` | 413 · 531 | |
 | 챗봇 | `embedding` | 163 · 603 | |
-| 챗봇 | `product_search` + `species_search` (개선 전은 차례로) · `search` (개선 뒤) | 22 + 59 · 54 + 95 | |
+| 챗봇 | `search` (개선 뒤만, 두 검색을 묶은 시간) | - | |
 | 챗봇 | `total` | 1,476 · 4,438 | |
 | 질문 임베딩 캐시 | 적중률 | - | |
 
 - 품종 의미 검색 입력은 문장 10개를 분당 9번 6분(54건) 돌리므로, 배포 뒤 첫 바퀴 10건만 미적중이고 나머지는 적중한다. 「같은 질문을 다시 보냈을 때」의 시간이고, 실제 사용자 질문은 겹치는 비율이 이보다 낮다
 - `embedding` Timer는 적중 · 미적중을 나누지 않는다. 미적중은 개선 전과 같은 OpenAI 호출이라, p50은 적중 시간, p95는 미적중이 5%보다 많으면 미적중 시간에 가깝게 나온다. 적중률을 함께 적는다
+- 두 검색의 개선 전후는 `search`로 비교하지 않는다. 개선 전 지표는 단계별 히스토그램이라 요청마다 `product_search` + `species_search`를 더한 p95를 다시 계산할 수 없고, 단계 p95끼리 더한 값(54 + 95)은 느렸던 요청이 단계마다 달라 요청 기준과 다르다 (#694 리뷰). 요청 기준 비교는 요청마다 한 번 재는 챗봇 `total`로 하고, `search`는 개선 뒤 값만 적는다
 - 챗봇 `answer`가 전체의 대부분이라 `total`은 크게 줄지 않는다(#635 답변 스트리밍이 맡음)
 
 ### 다시 재기

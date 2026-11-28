@@ -19,7 +19,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * 질문 임베딩 캐시 (#636). 품종 의미 검색 · 챗봇이 같은 질문을 다시 보내면 OpenAI를 부르지 않고 저장한 벡터를 쓴다.
- * 키: 모델 · 차원 · 정리한 질문(앞뒤 공백 제거, 연속 공백 하나로)의 SHA-256. 챗봇 이어 묻기는 「직전 질문 + 이번 질문」 문장이 그대로 질문이다.
+ * 키: 범위 · 모델 · 차원 · 정리한 질문(앞뒤 공백 제거, 연속 공백 하나로)의 SHA-256. 챗봇 이어 묻기는 「직전 질문 + 이번 질문」 문장이 그대로 질문이다.
+ * 범위는 비로그인 품종 의미 검색(공용)과 챗봇(회원마다)으로 나눈다. 같이 쓰면 공개 검색의 응답 시간(캐시 적중이면 OpenAI 호출이 없어 빠름)으로
+ * 어떤 문장을 최근 누군가 챗봇에 물었는지 짐작할 수 있어서다 (#636 리뷰). 다른 회원끼리는 챗봇 캐시가 적중하지 않는다.
  *
  * <p>저장소는 ai 파드 메모리(Caffeine)다. ai는 Redis를 쓰지 않고, 공용 Redis는 256MB · noeviction이라
  * 벡터(1536차원 ≈ 6KB)가 쌓이면 로그인 토큰 쓰기까지 실패할 수 있어서다 (docs/reference/redis-keys.md 「설정」).
@@ -68,8 +70,8 @@ public class QueryEmbeddingCache {
      * 정리한 문장(normalized)의 벡터. 없으면 loader로 만들어 저장한다. loader 예외는 그대로 던지고 저장하지 않는다.
      * 같은 질문이 동시에 들어오면 loader는 한 번만 부르고, 나머지는 그 결과를 기다린다
      */
-    public float[] get(String model, int dimensions, String normalized, Supplier<float[]> loader) {
-        String key = key(model, dimensions, normalized);
+    public float[] get(String scope, String model, int dimensions, String normalized, Supplier<float[]> loader) {
+        String key = key(scope, model, dimensions, normalized);
         CompletableFuture<float[]> mine = new CompletableFuture<>();
         CompletableFuture<float[]> existing = cache.asMap().putIfAbsent(key, mine);
         if (existing != null) {
@@ -104,10 +106,10 @@ public class QueryEmbeddingCache {
         }
     }
 
-    static String key(String model, int dimensions, String normalized) {
+    static String key(String scope, String model, int dimensions, String normalized) {
         try {
             MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
-            byte[] hash = sha256.digest((model + "\n" + dimensions + "\n" + normalized).getBytes(StandardCharsets.UTF_8));
+            byte[] hash = sha256.digest((scope + "\n" + model + "\n" + dimensions + "\n" + normalized).getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(hash);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 없음", e);

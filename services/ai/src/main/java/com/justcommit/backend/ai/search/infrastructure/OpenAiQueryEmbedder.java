@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
  * 사용자가 기다리는 요청이라 재임베딩용 자동 설정 모델(재시도 3회 · 긴 타임아웃)을 쓰지 않고,
  * 같은 키 · 모델 · 차원으로 타임아웃 3초 · 재시도 없음인 모델을 따로 만든다.
  * EmbeddingModel 빈으로 등록하지 않아 자동 설정 모델(재임베딩 · 벡터 저장소)에는 영향이 없다.
- * 문장은 정리(앞뒤 · 연속 공백)해서 보내고, 같은 문장은 {@link QueryEmbeddingCache}에서 꺼내 OpenAI를 다시 부르지 않는다 (#636).
+ * 문장은 정리(앞뒤 · 연속 공백)해서 보내고, 같은 범위(cacheScope)의 같은 문장은 {@link QueryEmbeddingCache}에서 꺼내 OpenAI를 다시 부르지 않는다 (#636).
  */
 @Slf4j
 @Component
@@ -53,12 +53,12 @@ public class OpenAiQueryEmbedder implements QueryEmbedder {
     }
 
     @Override
-    public float[] embed(String query) {
+    public float[] embed(String query, String cacheScope) {
         if (embeddingModel == null) {
             throw new QueryEmbeddingException("OpenAI 키 없음", null);
         }
         String normalized = QueryEmbeddingCache.normalize(query);
-        return cache.get(model, dimensions, normalized, () -> callOpenAi(normalized));
+        return cache.get(cacheScope, model, dimensions, normalized, () -> callOpenAi(normalized));
     }
 
     private float[] callOpenAi(String query) {

@@ -12,10 +12,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-// 질문 임베딩 캐시 (#636): 키 · 적중 지표 · 실패는 저장하지 않음
+// 질문 임베딩 캐시 (#636): 키(범위 포함) · 적중 지표 · 실패는 저장하지 않음
 class QueryEmbeddingCacheTest {
 
     private static final String MODEL = "text-embedding-3-small";
+    private static final String SCOPE = "species-search";
 
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
     private final QueryEmbeddingCache cache = new QueryEmbeddingCache(100, Duration.ofHours(24), registry);
@@ -35,8 +36,8 @@ class QueryEmbeddingCacheTest {
     @Test
     @DisplayName("같은 모델 · 같은 문장은 두 번째부터 저장한 벡터를 돌려주고 적중 · 미적중을 센다")
     void hitsOnSameQuery() {
-        float[] first = cache.get(MODEL, 1536, "햇빛 적은 방", this::load);
-        float[] second = cache.get(MODEL, 1536, "햇빛 적은 방", this::load);
+        float[] first = cache.get(SCOPE, MODEL, 1536, "햇빛 적은 방", this::load);
+        float[] second = cache.get(SCOPE, MODEL, 1536, "햇빛 적은 방", this::load);
 
         assertThat(second).containsExactly(first);
         assertThat(loads).hasValue(1);
@@ -48,31 +49,43 @@ class QueryEmbeddingCacheTest {
     @Test
     @DisplayName("돌려준 벡터를 바꿔도 저장한 벡터는 그대로다")
     void returnsCopies() {
-        cache.get(MODEL, 1536, "햇빛 적은 방", this::load)[0] = 99f;
+        cache.get(SCOPE, MODEL, 1536, "햇빛 적은 방", this::load)[0] = 99f;
 
-        assertThat(cache.get(MODEL, 1536, "햇빛 적은 방", this::load)).containsExactly(1f, 2f);
+        assertThat(cache.get(SCOPE, MODEL, 1536, "햇빛 적은 방", this::load)).containsExactly(1f, 2f);
     }
 
     @Test
     @DisplayName("문장 · 모델 · 차원 중 하나라도 다르면 다른 키다")
     void differentKeys() {
-        cache.get(MODEL, 1536, "햇빛 적은 방", this::load);
-        cache.get(MODEL, 1536, "햇빛 많은 방", this::load);
-        cache.get("text-embedding-3-large", 1536, "햇빛 적은 방", this::load);
-        cache.get(MODEL, 512, "햇빛 적은 방", this::load);
+        cache.get(SCOPE, MODEL, 1536, "햇빛 적은 방", this::load);
+        cache.get(SCOPE, MODEL, 1536, "햇빛 많은 방", this::load);
+        cache.get(SCOPE, "text-embedding-3-large", 1536, "햇빛 적은 방", this::load);
+        cache.get(SCOPE, MODEL, 512, "햇빛 적은 방", this::load);
 
         assertThat(loads).hasValue(4);
         assertThat(count("hit")).isZero();
     }
 
     @Test
+    @DisplayName("범위가 다르면 같은 문장이어도 다른 키다 (공개 품종 검색 · 회원별 챗봇, #636 리뷰)")
+    void differentScopes() {
+        cache.get("species-search", MODEL, 1536, "햇빛 적은 방", this::load);
+        cache.get("chatbot:1", MODEL, 1536, "햇빛 적은 방", this::load);
+        cache.get("chatbot:2", MODEL, 1536, "햇빛 적은 방", this::load);
+        cache.get("chatbot:1", MODEL, 1536, "햇빛 적은 방", this::load);
+
+        assertThat(loads).hasValue(3);
+        assertThat(count("hit")).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("임베딩이 실패하면 저장하지 않아 다음 요청에서 다시 부른다")
     void doesNotCacheFailure() {
-        assertThatThrownBy(() -> cache.get(MODEL, 1536, "햇빛 적은 방", () -> {
+        assertThatThrownBy(() -> cache.get(SCOPE, MODEL, 1536, "햇빛 적은 방", () -> {
             throw new IllegalStateException("시간 초과");
         })).isInstanceOf(IllegalStateException.class);
 
-        cache.get(MODEL, 1536, "햇빛 적은 방", this::load);
+        cache.get(SCOPE, MODEL, 1536, "햇빛 적은 방", this::load);
         assertThat(loads).hasValue(1);
     }
 
@@ -81,14 +94,14 @@ class QueryEmbeddingCacheTest {
     void loadsOnceForConcurrentSameQuery() throws Exception {
         CountDownLatch loading = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
-        CompletableFuture<float[]> first = CompletableFuture.supplyAsync(() -> cache.get(MODEL, 1536, "햇빛 적은 방", () -> {
+        CompletableFuture<float[]> first = CompletableFuture.supplyAsync(() -> cache.get(SCOPE, MODEL, 1536, "햇빛 적은 방", () -> {
             loading.countDown();
             await(release);
             return load();
         }));
         assertThat(loading.await(2, TimeUnit.SECONDS)).isTrue();
 
-        CompletableFuture<float[]> second = CompletableFuture.supplyAsync(() -> cache.get(MODEL, 1536, "햇빛 적은 방", this::load));
+        CompletableFuture<float[]> second = CompletableFuture.supplyAsync(() -> cache.get(SCOPE, MODEL, 1536, "햇빛 적은 방", this::load));
         Thread.sleep(100);
         assertThat(second).isNotDone();   // 먼저 온 요청의 결과를 기다림
         release.countDown();
@@ -106,19 +119,19 @@ class QueryEmbeddingCacheTest {
         CountDownLatch loading = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         IllegalStateException timeout = new IllegalStateException("시간 초과");
-        CompletableFuture<float[]> first = CompletableFuture.supplyAsync(() -> cache.get(MODEL, 1536, "햇빛 적은 방", () -> {
+        CompletableFuture<float[]> first = CompletableFuture.supplyAsync(() -> cache.get(SCOPE, MODEL, 1536, "햇빛 적은 방", () -> {
             loading.countDown();
             await(release);
             throw timeout;
         }));
         assertThat(loading.await(2, TimeUnit.SECONDS)).isTrue();
-        CompletableFuture<float[]> second = CompletableFuture.supplyAsync(() -> cache.get(MODEL, 1536, "햇빛 적은 방", this::load));
+        CompletableFuture<float[]> second = CompletableFuture.supplyAsync(() -> cache.get(SCOPE, MODEL, 1536, "햇빛 적은 방", this::load));
         Thread.sleep(100);
         release.countDown();
 
         assertThatThrownBy(() -> first.get(2, TimeUnit.SECONDS)).hasCause(timeout);
         assertThatThrownBy(() -> second.get(2, TimeUnit.SECONDS)).hasCause(timeout);
-        assertThat(cache.get(MODEL, 1536, "햇빛 적은 방", this::load)).containsExactly(1f, 2f);
+        assertThat(cache.get(SCOPE, MODEL, 1536, "햇빛 적은 방", this::load)).containsExactly(1f, 2f);
         assertThat(loads).hasValue(1);
     }
 
