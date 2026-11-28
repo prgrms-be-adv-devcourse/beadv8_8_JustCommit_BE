@@ -14,8 +14,15 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
+import org.springframework.core.task.support.ContextPropagatingTaskDecorator;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -28,8 +35,13 @@ import org.springframework.transaction.support.TransactionTemplate;
  * - LLM 실패 · 키 없음: 고정 문장 + 찾은 상품 카드 (answerGenerated=false)
  *
  * 단계별 시간(#634)은 {@code ai.chatbot.stage}: 대화 기록 읽기(이어 묻기만) · 질문 임베딩 · 상품 검색(대안 포함) · 품종 검색 ·
- * 답변 생성(키가 있을 때만) · 저장 · 전체를 {@code outcome}(success · failure)으로 나눠 남긴다. 답변 생성 실패는 고정 문장으로
+ * 두 검색을 동시에 한 전체(#636) · 답변 생성(키가 있을 때만) · 저장 · 전체를 {@code outcome}(success · failure)으로 나눠 남긴다. 답변 생성 실패는 고정 문장으로
  * 응답하므로 전체는 성공, 404 · 403 · 503은 전체도 실패. 구간 범위 5ms ~ 30초 (Gateway 응답 제한 20초를 덮음).
+ *
+ * 상품 검색과 품종 검색은 서로 결과를 쓰지 않으므로 가상 스레드 두 개에서 동시에 한다 (#636). 상품 검색이 실패하면 품종 검색을
+ * 기다리지 않고 바로 그 예외를 던지고(차례로 하던 때와 같은 응답), 품종 검색은 시작부터 species-search-timeout(기본 2초)까지만 기다린다.
+ * 넘으면 품종 검색이 실패했을 때와 같이 응답한다 (DB 쿼리는 뒤에서 끝까지 돈다). 단계 시간은 검색마다 따로 남는다.
+ * 질문 임베딩 캐시는 회원마다 따로 쓴다 ({@link QueryEmbedder#chatbotScope}).
  */
 @Slf4j
 @Service
@@ -43,6 +55,8 @@ public class ChatbotService {
     public static final String STAGE_EMBEDDING = "embedding";
     public static final String STAGE_PRODUCT_SEARCH = "product_search";
     public static final String STAGE_SPECIES_SEARCH = "species_search";
+    // 상품 · 품종 검색을 동시에 한 전체 (두 검색 중 긴 쪽 + 스레드 전환, #636). 다른 단계와 겹치므로 단계 합에 넣지 않는다
+    public static final String STAGE_SEARCH = "search";
     public static final String STAGE_ANSWER = "answer";
     public static final String STAGE_SAVE = "save";
     public static final String STAGE_TOTAL = "total";
@@ -61,6 +75,10 @@ public class ChatbotService {
     private final double speciesMinSimilarity;
     private final int historySize;
     private final StageTimers timers;
+    // 상품 · 품종 검색 동시 실행용 (요청마다 가상 스레드 2개, DB 연결 풀이 실제 동시 수를 막음). 로그 traceId를 넘겨준다
+    private final SimpleAsyncTaskExecutor searchExecutor;
+    // 품종 검색을 기다리는 최대 시간 (검색 시작부터)
+    private final Duration speciesSearchTimeout;
 
     public ChatbotService(
             ConversationRepository conversationRepository,
@@ -76,6 +94,7 @@ public class ChatbotService {
             @Value("${custom.chatbot.product-min-similarity:0.28}") double productMinSimilarity,
             @Value("${custom.species-search.min-similarity:0.35}") double speciesMinSimilarity,
             @Value("${custom.chatbot.history-size:10}") int historySize,
+            @Value("${custom.chatbot.species-search-timeout:2s}") Duration speciesSearchTimeout,
             MeterRegistry meterRegistry) {
         this.conversationRepository = conversationRepository;
         this.searchRepository = searchRepository;
@@ -90,10 +109,14 @@ public class ChatbotService {
         this.productMinSimilarity = productMinSimilarity;
         this.speciesMinSimilarity = speciesMinSimilarity;
         this.historySize = historySize;
+        this.speciesSearchTimeout = speciesSearchTimeout;
         this.timers = new StageTimers(meterRegistry, METRIC, "챗봇 메시지 단계별 시간 (#634)",
-                List.of(STAGE_HISTORY, STAGE_EMBEDDING, STAGE_PRODUCT_SEARCH, STAGE_SPECIES_SEARCH, STAGE_ANSWER,
-                        STAGE_SAVE, STAGE_TOTAL),
+                List.of(STAGE_HISTORY, STAGE_EMBEDDING, STAGE_PRODUCT_SEARCH, STAGE_SPECIES_SEARCH, STAGE_SEARCH,
+                        STAGE_ANSWER, STAGE_SAVE, STAGE_TOTAL),
                 Duration.ofMillis(5), Duration.ofSeconds(30));
+        this.searchExecutor = new SimpleAsyncTaskExecutor("chatbot-search-");
+        this.searchExecutor.setVirtualThreads(true);
+        this.searchExecutor.setTaskDecorator(new ContextPropagatingTaskDecorator());
     }
 
     private record ProductSearch(List<ProductHit> products, List<ProductHit> alternatives) {
@@ -120,15 +143,28 @@ public class ChatbotService {
         }
 
         String searchText = searchText(history, question);
-        float[] queryVector = timers.time(STAGE_EMBEDDING, () -> embed(searchText));
+        float[] queryVector = timers.time(STAGE_EMBEDDING, () -> embed(memberId, searchText));
 
+        long searchStartedAt = System.nanoTime();
         // 대안 상품 검색(맞는 상품이 0개일 때만 한 번 더 부르는 DB 쿼리)도 상품 검색 단계에 넣는다
-        ProductSearch found = timers.time(STAGE_PRODUCT_SEARCH, () -> {
+        CompletableFuture<ProductSearch> productTask = async(() -> timers.time(STAGE_PRODUCT_SEARCH, () -> {
             List<ProductHit> hits = searchRepository.findProducts(queryVector, productTopK, productMinSimilarity);
             return new ProductSearch(hits, alternatives(queryVector, hits));
-        });
-
-        List<SpeciesHit> species = timers.time(STAGE_SPECIES_SEARCH, () -> findSpecies(queryVector));
+        }));
+        CompletableFuture<List<SpeciesHit>> speciesTask =
+                async(() -> timers.time(STAGE_SPECIES_SEARCH, () -> findSpecies(queryVector)))
+                        .orTimeout(speciesSearchTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        // 상품 → 품종 순서로 결과 · 실패를 꺼낸다. 상품 검색이 실패하면 품종 검색을 기다리지 않고 바로 던진다
+        ProductSearch found;
+        List<SpeciesHit> species;
+        try {
+            found = result(productTask);
+            species = result(speciesTask);
+        } catch (RuntimeException | Error e) {
+            timers.recordFailure(STAGE_SEARCH, searchStartedAt);
+            throw e;
+        }
+        timers.record(STAGE_SEARCH, searchStartedAt);
         ChatSearchResult result = new ChatSearchResult(found.products(), species, found.alternatives());
 
         String answer = null;
@@ -163,6 +199,29 @@ public class ChatbotService {
                 id, memberId, (System.nanoTime() - startedAt) / 1_000_000, llmCalls, generated,
                 result.products().size(), result.alternatives().size(), result.species().size());
         return new ChatReply(id, answer, generated, result, cards(result, generated ? answer : null));
+    }
+
+    private <T> CompletableFuture<T> async(Supplier<T> step) {
+        return CompletableFuture.supplyAsync(step, searchExecutor);
+    }
+
+    // 검색 결과 (끝날 때까지 기다림). 실패면 검색 안에서 난 예외를 감싸지 않고 그대로 던진다
+    private <T> T result(CompletableFuture<T> task) {
+        try {
+            return task.join();
+        } catch (CompletionException e) {
+            if (e.getCause() instanceof TimeoutException timeout) {
+                throw new IllegalStateException("챗봇 품종 검색이 " + speciesSearchTimeout.toMillis() + "ms 안에 끝나지 않음",
+                        timeout);
+            }
+            if (e.getCause() instanceof RuntimeException cause) {
+                throw cause;
+            }
+            if (e.getCause() instanceof Error error) {
+                throw error;
+            }
+            throw e;
+        }
     }
 
     /**
@@ -240,9 +299,9 @@ public class ChatbotService {
                 .toList();
     }
 
-    private float[] embed(String question) {
+    private float[] embed(long memberId, String question) {
         try {
-            return queryEmbedder.embed(question);
+            return queryEmbedder.embed(question, QueryEmbedder.chatbotScope(memberId));
         } catch (RuntimeException e) {
             log.warn("챗봇 질문 임베딩 실패: error={}", e.toString());
             throw new BusinessException(ChatbotErrorCode.CHATBOT_UNAVAILABLE);

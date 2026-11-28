@@ -50,6 +50,8 @@ custom:
     alternative-top-k: 3
     # 프롬프트에 넣는 최근 메시지 수 (질문 · 답변 5쌍)
     history-size: 10
+    # 상품 검색과 동시에 하는 품종 검색을 기다리는 최대 시간 (#636, 넘으면 품종 검색 실패와 같은 응답)
+    species-search-timeout: 2s
     anthropic:
       api-key: ${ANTHROPIC_API_KEY:}
       timeout: 10s
@@ -64,6 +66,11 @@ custom:
     timeout: 3s
     # 이보다 유사도가 낮은 품종은 결과에서 뺌 (🟨 로컬 실측값, docs/flows/search-recommend.md)
     min-similarity: ${SPECIES_SEARCH_MIN_SIMILARITY:0.35}
+  # 질문 임베딩 캐시 (#636): 품종 의미 검색 · 챗봇이 같은 질문이면 OpenAI를 다시 부르지 않음. 파드 메모리(Caffeine)
+  # 벡터 1개 ≈ 6KB → 1,000개 ≈ 7MB (ai 파드 메모리 640Mi)
+  query-embedding-cache:
+    max-size: 1000
+    ttl: 24h
 internal-api:
   # 빈 기본값: 환경변수가 없으면 /internal/** 요청을 모두 거부한다 (common-security)
   key: ${INTERNAL_API_KEY:}

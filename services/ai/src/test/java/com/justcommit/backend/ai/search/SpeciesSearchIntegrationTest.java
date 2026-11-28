@@ -71,7 +71,7 @@ class SpeciesSearchIntegrationTest {
         final AtomicInteger calls = new AtomicInteger();
 
         @Override
-        public float[] embed(String query) {
+        public float[] embed(String query, String cacheScope) {
             calls.incrementAndGet();
             if (query.equals(FAIL)) {
                 throw new QueryEmbeddingException("시간 초과", new RuntimeException("timeout"));

@@ -20,7 +20,8 @@ public class SpeciesSearchQueryRepository {
     }
 
     /**
-     * 질의 벡터와 가까운 품종을 유사도 순으로 limit개. ORDER BY 거리 + LIMIT이라 HNSW 인덱스를 탄다.
+     * 질의 벡터와 가까운 품종을 유사도 순으로 limit개. 조인 · 유사도 조건이 ORDER BY 거리 + LIMIT 앞에 있어 HNSW가 아니라
+     * 전체 비교(Seq Scan)로 돈다. 품종 215개라 몇 ms이고 결과도 정확하다 (#636 EXPLAIN, perf/search-chatbot.md 「HNSW 확인」).
      * 품종 이름은 프로필(species_profile)에서 읽고, 프로필이 없는 벡터는 뺀다
      */
     public List<SimilarSpecies> findSimilarSpecies(float[] queryVector, double minSimilarity, int limit) {
