@@ -1,7 +1,7 @@
 # 외부 API 목록
 
 > 언제 읽나: 외부 API의 경로 · 담당 서비스를 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-27 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-29 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
 
 ## 서비스별 목록
 
@@ -150,7 +150,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | GET | `admin/imageReviews?status=MANUAL&page&size` | 관리자 확인 대기 목록, 오래된 순 (사진 · 엔진 결과 · 판매자 품종 · 판매자 닉네임 `sellerNickname`(회원 복제본, 없으면 「알 수 없는 회원」) · 가격 `price` · 검수 요청 시각 `requestedAt` · 관리자 확인 사유 · 기한 `expiresAt` · 12시간 지연 `delayed`) | ADMIN |
 | PATCH | `admin/imageReviews/{id}` | 관리자 처리 `decision`(`APPROVED` · `REJECTED`) · `rejectReason` · `memo`(`OTHER`면 필수 200자, 다른 사유 · 통과면 저장하지 않음). 409 `REVIEW_ALREADY_PROCESSED` · `REVIEW_OUTDATED`, 400 `INVALID_REJECT_REASON` | ADMIN |
 | POST | `admin/products/searchIndex` | 상품 전체 색인: DB의 모든 상품을 OpenSearch에 다시 씀(삭제 상품은 문서 삭제). 응답 `indexed` · `deleted` · `skipped`(같거나 더 새 버전이 이미 있음) · `failed`, 여러 번 실행해도 결과가 같음. 끝날 때까지 기다렸다 응답하고 작업 기록(`REINDEX_ALL`)도 남김. 어느 서버에서든 전체 색인 · 재색인이 진행 중이면 409 `SEARCH_INDEXING_IN_PROGRESS` → [검색 · 추천](../flows/search-recommend.md) | ADMIN |
-| POST | `admin/products/searchIndex/rebuilds` | 상품 검색 무중단 재색인 요청: 작업을 등록하고 바로 `202` + `Location: …/searchIndex/jobs/{jobId}`, 응답은 작업 조회와 같은 모양(`phase=QUEUED`). 재색인은 별도 실행자에서 `products_v{n+1}`을 채운 뒤 alias를 옮기고 옛 인덱스 삭제(그동안 검색은 옛 인덱스로 응답). 어느 서버에서든 전체 색인 · 재색인이 진행 중이면 409 `SEARCH_INDEXING_IN_PROGRESS` → [검색 · 추천](../flows/search-recommend.md) | ADMIN |
+| POST | `admin/products/searchIndex/rebuilds` | 상품 검색 무중단 재색인 요청: 작업을 등록하고 바로 `202` + `Location: …/searchIndex/jobs/{jobId}`, 응답은 작업 조회와 같은 모양(`phase=QUEUED`). 재색인은 별도 실행자에서 `products_v{n+1}_j{작업 ID}`를 채운 뒤 alias를 옮기고 옛 인덱스 삭제(그동안 검색은 옛 인덱스로 응답). 어느 서버에서든 전체 색인 · 재색인이 진행 중이면 409 `SEARCH_INDEXING_IN_PROGRESS` → [검색 · 추천](../flows/search-recommend.md) | ADMIN |
 | GET | `admin/products/searchIndex/jobs/{jobId}` | 색인 작업 진행 상태: `type`(`REINDEX_ALL` · `REBUILD`) · `phase`(`QUEUED` · `FILLING` · `SWITCHING_ALIAS` · `CATCHING_UP` · `CLEANING_UP` · `COMPLETED` · `FAILED`) · `failedPhase` · `failureReason` · `worker` · `previousIndex` · `nextIndex` · `totalCount`(시작할 때 상품 수) · `processed` · `skipped` · `failed`(채우기) · `caughtUp`(따라잡기 `processed` · `skipped` · `failed`, 재색인만) · `previousDeleted` · `requestedAt` · `startedAt` · `heartbeatAt` · `finishedAt`. 없으면 404 `SEARCH_INDEX_JOB_NOT_FOUND` | ADMIN |
 | GET | `admin/products/searchIndex/jobs` | 최근 색인 작업 10개(최신순, 항목은 위와 같음). 409를 받았을 때 진행 중인 작업(`finishedAt` 없음) 찾기 | ADMIN |
 

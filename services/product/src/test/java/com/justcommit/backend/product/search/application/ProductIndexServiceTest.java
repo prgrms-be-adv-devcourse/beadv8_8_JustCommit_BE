@@ -62,7 +62,8 @@ class ProductIndexServiceTest {
         given(productRepository.findByIdGreaterThanOrderByIdAsc(eq(1L), any(Limit.class))).willReturn(List.of());
         given(speciesRepository.findAliasesBySpeciesIds(anyList())).willReturn(List.of());
         given(searchIndex.currentIndex()).willReturn("products_v1");
-        given(searchIndex.createNextIndex("products_v1")).willReturn("products_v2");
+        // 작업 ID와 상관없이 (목 IndexProgress의 jobId()는 0을 돌려줌)
+        given(searchIndex.createNextIndex(eq("products_v1"), any())).willReturn("products_v2");
     }
 
     @Test
@@ -74,7 +75,7 @@ class ProductIndexServiceTest {
         RebuildResult result = service.rebuild();
 
         InOrder order = inOrder(searchIndex);
-        order.verify(searchIndex).createNextIndex("products_v1");
+        order.verify(searchIndex).createNextIndex("products_v1", null);
         order.verify(searchIndex).bulkInto(eq("products_v2"), anyList());
         order.verify(searchIndex).refresh("products_v2");
         order.verify(searchIndex).switchAlias("products_v1", "products_v2");
@@ -123,6 +124,7 @@ class ProductIndexServiceTest {
         order.verify(progress).phase(SearchIndexJobPhase.FILLING, "products_v1", "products_v2");
         order.verify(searchIndex).bulkInto(eq("products_v2"), anyList());
         order.verify(progress).batch(1, 0, 0);
+        order.verify(searchIndex).refresh("products_v2");
         order.verify(progress).phase(SearchIndexJobPhase.SWITCHING_ALIAS, "products_v1", "products_v2");
         order.verify(searchIndex).switchAlias("products_v1", "products_v2");
         order.verify(progress).phase(SearchIndexJobPhase.CATCHING_UP, "products_v1", "products_v2");
@@ -142,6 +144,36 @@ class ProductIndexServiceTest {
 
         verify(searchIndex, never()).deleteIndex(anyString());
         verify(searchIndex, never()).switchAlias(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("[#563] alias를 옮기기 직전 확인에서 작업이 이미 실패 처리됐으면 alias를 옮기지 않고 인덱스도 지우지 않음")
+    void abandonedBeforeSwitchDoesNotMoveAlias() {
+        given(searchIndex.bulkInto(eq("products_v2"), anyList())).willReturn(new BulkResult(1, 0, 0));
+        IndexProgress progress = mock(IndexProgress.class);
+        doThrow(new SearchIndexJobAbandonedException(1L)).when(progress)
+                .phase(SearchIndexJobPhase.SWITCHING_ALIAS, "products_v1", "products_v2");
+
+        assertThatThrownBy(() -> service.rebuild(progress)).isInstanceOf(SearchIndexJobAbandonedException.class);
+
+        verify(searchIndex).refresh("products_v2");
+        verify(searchIndex, never()).switchAlias(anyString(), anyString());
+        verify(searchIndex, never()).deleteIndex(anyString());
+    }
+
+    @Test
+    @DisplayName("[#563] 작업으로 실행하면 새 인덱스 이름에 쓸 작업 ID를 넘김")
+    void passesJobIdForNewIndexName() {
+        given(searchIndex.createNextIndex("products_v1", 12L)).willReturn("products_v2_j12");
+        given(searchIndex.bulkInto(eq("products_v2_j12"), anyList())).willReturn(new BulkResult(1, 0, 0));
+        given(searchIndex.bulk(anyList())).willReturn(new BulkResult(0, 1, 0));
+        IndexProgress progress = mock(IndexProgress.class);
+        given(progress.jobId()).willReturn(12L);
+
+        RebuildResult result = service.rebuild(progress);
+
+        assertThat(result.currentIndex()).isEqualTo("products_v2_j12");
+        verify(searchIndex).switchAlias("products_v1", "products_v2_j12");
     }
 
     @Test

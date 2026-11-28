@@ -25,7 +25,7 @@ public interface ProductSearchIndex {
 
     // 지금 매핑으로 다음 번호의 인덱스를 alias 없이 만들고 이름을 돌려줌 (products_v1 → products_v2).
     // 실패한 재색인이 남긴 인덱스가 있으면 그보다 큰 번호 (이름을 다시 쓰지 않음, #563)
-    String createNextIndex(String current);
+    String createNextIndex(String current, Long jobId);
 
     // alias가 아닌 특정 인덱스에 bulk (재색인 중 새 인덱스를 채울 때)
     BulkResult bulkInto(String index, List<Write> writes);

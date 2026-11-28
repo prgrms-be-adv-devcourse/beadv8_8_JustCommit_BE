@@ -463,14 +463,16 @@ class ProductSearchIntegrationTest {
         }
         assertThat(done.phase()).isEqualTo(SearchIndexJobPhase.COMPLETED);
         assertThat(done.previousIndex()).isEqualTo(INDEX_V1);
-        assertThat(done.nextIndex()).isEqualTo(INDEX_V2);
+        // 작업으로 실행한 재색인은 새 인덱스 이름에 작업 ID가 붙음
+        String nextIndex = INDEX_V2 + "_j" + accepted.jobId();
+        assertThat(done.nextIndex()).isEqualTo(nextIndex);
         assertThat(done.totalCount()).isEqualTo(2);
         assertThat(done.processed()).isEqualTo(2);
         assertThat(done.failed()).isZero();
         assertThat(done.caughtUp().skipped()).isEqualTo(2);
         assertThat(done.previousDeleted()).isTrue();
         assertThat(client.indices().getAlias(request -> request.name(ProductIndexInitializer.ALIAS)).result())
-                .containsOnlyKeys(INDEX_V2);
+                .containsOnlyKeys(nextIndex);
         assertThat(ids(search("몬스테라 비동기"))).containsExactly(target.getId());
     }
 

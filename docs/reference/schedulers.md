@@ -1,7 +1,7 @@
 # 스케줄러
 
 > 언제 읽나: 스케줄러(`@Scheduled`) 작업의 주기 · 역할, 재시도 간격, 중복 실행 방지(SKIP LOCKED · ShedLock)를 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-27 · 관련: Miro F-7, 노션 「정책 정리」 1.4 · 11.5
+> 상태: ✅ 확정 · 마지막 수정 2026-11-29 · 관련: Miro F-7, 노션 「정책 정리」 1.4 · 11.5
 
 ## 작업 표
 
@@ -22,7 +22,7 @@
 | 관리자 확인 지연 | product | 10분 | – | SKIP LOCKED | 관리자 확인으로 간 지 24시간 지난 건을 `REVIEW_EXPIRED`로 자동 반려(한 번에 최대 50건, 그사이 수정 · 삭제된 상품은 건너뜀). 엔진 오류 재처리 시간은 세지 않음 |
 | 관리자 확인 지연 알림 | product | 한국 시간 09~21시 매 정각 (`custom.review.delay-alert.cron`, 기본 `0 0 9-21 * * *`, `Asia/Seoul`) | – | SKIP LOCKED | 관리자 확인으로 간 지 12시간은 지났고 24시간은 아직 안 지났으며 아직 알리지 않은(`delay_notified_at` 없음) 건을 묶어 `ImageReviewDelayed` 1개를 Outbox로 발행하고 같은 트랜잭션에서 알림 시각을 채움 (0건이면 보내지 않음, 같은 건은 한 번만). 24시간이 지나 자동 반려를 기다리는 건은 빼서 반려 스케줄러와 실행 순서에 기대지 않음. 밤에는 관리자 알림을 보내지 않고 밤사이 늦어진 건은 09시에 묶어 보냄 (알림 구간 12~24시간과 밤 공백 21~09시가 모두 12시간이라 빠지는 건 없음, 자동 반려는 밤에도 10분마다). 켜고 끄기는 「관리자 확인 지연」과 같은 `custom.review.deadline.enabled` (#509) |
 | 상품 검색 인덱스 준비 | product | 1분 (준비되면 멈춤) | – | – | 앱이 뜰 때 OpenSearch가 꺼져 있어 alias `products` · 인덱스 `products_v1`을 만들지 못했으면 다시 시도. 파드 여러 개가 동시에 만들어도 한쪽만 성공하고 나머지는 이미 있음으로 넘어감 → [검색 · 추천](../flows/search-recommend.md) |
-| 멈춘 색인 작업 정리 | product | 1분 (`custom.search.index-job.stale-check.interval`) | – | 조건부 UPDATE | 하트비트가 2분(`custom.search.index-job.stale-after`) 넘게 끊긴 끝나지 않은 `SEARCH_INDEX_JOB`(실행 서버가 죽은 전체 색인 · 재색인)을 `FAILED`로 바꿔 잠금을 풀고, 새 인덱스를 채우던 재색인이면 alias가 옮겨지지 않은 새 인덱스를 지움. 여러 서버가 동시에 돌아도 실패 처리는 하트비트 조건이 걸린 UPDATE에 성공한 한 곳만 함. 새 요청도 등록 전에 같은 정리를 함. 끄려면 `custom.search.index-job.stale-check.enabled=false` (#563) → [검색 · 추천](../flows/search-recommend.md) |
+| 멈춘 색인 작업 정리 | product | 1분 (`custom.search.index-job.stale-check.interval`) | – | 조건부 UPDATE | 하트비트가 2분(`custom.search.index-job.stale-after`) 넘게 끊긴 끝나지 않은 `SEARCH_INDEX_JOB`(실행 서버가 죽은 전체 색인 · 재색인)을 `FAILED`로 바꿔 잠금을 풀고, 새 인덱스를 채우던(`FILLING`) 재색인이면 새 인덱스를 지움(`SWITCHING_ALIAS`부터는 alias를 옮겼을 수 있어 지우지 않음). 여러 서버가 동시에 돌아도 실패 처리는 하트비트 조건이 걸린 UPDATE에 성공한 한 곳만 함. 새 요청도 등록 전에 같은 정리를 함. 끄려면 `custom.search.index-job.stale-check.enabled=false` (#563) → [검색 · 추천](../flows/search-recommend.md) |
 | 토스 대사 | payment | 하루 1번 (⬜ 실행 시각) | – | ShedLock | 토스 거래와 내부 충전 기록 대조, 잔액을 늘리는 보정(토스 승인 · 내부 미승인)은 자동. ⬜ 잔액을 줄여야 하는 불일치 처리 |
 | 정산 지급 큐 | settlement | 10초 | 끝까지 | SKIP LOCKED | 지급 대상(`PENDING`, `FAILED`이면서 `next_attempt_at`이 지난) 정산을 건별로 payment에 지급 (`settlementId` 멱등). 기본 10초 간격으로 실행하며, 한 번 실행할 때 최대 50건을 한 건씩 확보(다음 시도 시각을 30초 뒤로 미루는 임대)해 처리. payment 호출은 임대 후 트랜잭션 밖에서 실행. 성공하면 `COMPLETED` + `completed_at`, 실패(연결 실패, 응답 타임아웃, 4xx, 5xx 모두)하면 `FAILED` + `attempt_count` 증가, 다음 시도까지 10초 → 30초 → 1분 고정. 늦게 온 실패는 임대가 그대로일 때만 반영. 10분 넘게 미지급인 정산이 있으면 ERROR 로그 + 지표 `settlement_payouts_delayed`(→ [관측](../infra/observability.md#알림-규칙) 「정산 지급 지연」) |
 | 정산 대사 | settlement | 매일 09:40 (EC2가 켜진 시간, `Asia/Seoul`) | – | ShedLock | 정산(`PENDING`, `FAILED` 전부, `completed_at`이 최근 7일 안인 `COMPLETED`)과 payment 정산 원장을 100개씩 비교해 불일치를 `settlement_reconciliation_mismatch`에 기록. payment 호출은 트랜잭션 밖, 조회가 실패하거나 응답 키가 요청과 다른 배치는 건너뜀(일부면 `PARTIAL`, 모두면 `FAILED`). `UNREFLECTED_STATUS` 유예 10분. 실행 결과는 `settlement_reconciliation_run`. 잠금 이름 `settlementReconcile`, 최소 1분, 최대 30분(`SHEDLOCK`, DB 시각). 설정 `custom.settlement.reconciliation.*`(`enabled`, `cron`, `lookback`, `unreflected-grace`, `batch-size`) → [구매 확정 → 정산](../flows/confirm-settlement.md#정산-대사) |

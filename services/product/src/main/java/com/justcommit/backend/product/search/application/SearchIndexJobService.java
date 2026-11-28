@@ -111,7 +111,7 @@ public class SearchIndexJobService {
 
     /**
      * 하트비트가 staleAfter보다 오래 끊긴 작업을 실패 처리한다 (서버가 죽어 멈춘 작업의 잠금 풀기).
-     * 새 인덱스를 채우던 재색인이면 alias가 아직 옮겨지지 않은 새 인덱스를 지워, 다음 재색인이 같은 이름으로 다시 만들 수 있게 한다.
+     * 새 인덱스를 채우던(FILLING) 재색인이면 쓰지 않을 새 인덱스를 지운다. alias를 옮기는 단계부터는 지우지 않는다 ({@link #discardAbandonedIndex}).
      * 다음 요청과 정리 스케줄러가 부르고, 여러 서버가 동시에 불러도 실패 처리는 한 곳만 한다.
      */
     public void failStaleJobs() {
@@ -135,8 +135,15 @@ public class SearchIndexJobService {
     }
 
     private void runRebuild(Long jobId) {
-        if (!tracker.start(jobId, worker, productRepository.count())) {
-            log.warn("상품 검색 재색인 작업 {}가 시작 전에 끝난 것으로 기록돼 실행하지 않음", jobId);
+        // 시작 단계(상품 수 세기 · 시작 기록)의 DB 오류도 실패로 남김. 안 그러면 QUEUED로 남아 정리 작업 전까지 다음 색인이 막힘
+        try {
+            if (!tracker.start(jobId, worker, productRepository.count())) {
+                log.warn("상품 검색 재색인 작업 {}가 시작 전에 끝난 것으로 기록돼 실행하지 않음", jobId);
+                return;
+            }
+        } catch (RuntimeException e) {
+            log.error("상품 검색 무중단 재색인 시작 실패: jobId={}", jobId, e);
+            tracker.fail(jobId, "시작하지 못함: " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
             return;
         }
         JobProgress progress = tracker.progress(jobId, SearchIndexJobPhase.FILLING);
@@ -151,11 +158,11 @@ public class SearchIndexJobService {
         }
     }
 
-    // 채우던 중 멈춘 재색인의 새 인덱스 지우기. alias가 이미 옮겨졌으면 지우지 않음
+    // 채우던 중 멈춘 재색인의 새 인덱스 지우기. FILLING일 때만: 실행이 깨어나도 SWITCHING_ALIAS로 넘어가는 확인에서 멈춰 alias를 옮기지 않음.
+    // SWITCHING_ALIAS부터는 실행이 깨어나 alias를 옮길 수 있어 지우지 않는다 (지우면 alias가 가리키는 인덱스가 사라짐)
     private void discardAbandonedIndex(SearchIndexJob job) {
-        boolean beforeSwitch = job.getPhase() == SearchIndexJobPhase.FILLING
-                || job.getPhase() == SearchIndexJobPhase.SWITCHING_ALIAS;
-        if (job.getType() != SearchIndexJobType.REBUILD || job.getNextIndex() == null || !beforeSwitch) {
+        if (job.getType() != SearchIndexJobType.REBUILD || job.getNextIndex() == null
+                || job.getPhase() != SearchIndexJobPhase.FILLING) {
             return;
         }
         try {
@@ -174,8 +181,12 @@ public class SearchIndexJobService {
         return message + afterSwitchNote(progress.phase(), progress.previousIndex(), progress.nextIndex());
     }
 
-    // alias를 옮긴 뒤 실패했으면 옛 인덱스가 남아 있을 수 있음을 알림
+    // alias를 옮기는 중 · 옮긴 뒤 실패했으면 남아 있을 수 있는 인덱스를 알림
     private static String afterSwitchNote(SearchIndexJobPhase phase, String previous, String next) {
+        if (phase == SearchIndexJobPhase.SWITCHING_ALIAS) {
+            return " (alias를 옮기기 직전이라 새 인덱스 " + next + "를 지우지 않음. alias가 가리키는 쪽을 확인한 뒤 "
+                    + previous + " · " + next + " 중 안 쓰는 인덱스를 직접 지움)";
+        }
         if (phase == SearchIndexJobPhase.CATCHING_UP || phase == SearchIndexJobPhase.CLEANING_UP) {
             return " (alias는 이미 " + next + "로 옮김. 전체 색인을 다시 실행해 맞춘 뒤 옛 인덱스 " + previous
                     + "가 남아 있으면 직접 지움)";

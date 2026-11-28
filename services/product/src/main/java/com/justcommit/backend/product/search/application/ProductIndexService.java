@@ -80,7 +80,7 @@ public class ProductIndexService {
      * 무중단 재색인 (#487): 매핑 · 분석기를 바꿨거나 별칭 · 학명 데이터가 바뀌었을 때 검색을 멈추지 않고 인덱스를 새로 만든다.
      *
      * <ol>
-     *   <li>지금 매핑으로 다음 번호의 인덱스(products_v{n+1})를 alias 없이 만든다. 그동안 검색 · 이벤트 색인은 옛 인덱스로 계속 간다.</li>
+     *   <li>지금 매핑으로 다음 번호의 인덱스(products_v{n+1}, 작업으로 실행하면 products_v{n+1}_j{작업 ID})를 alias 없이 만든다. 그동안 검색 · 이벤트 색인은 옛 인덱스로 계속 간다.</li>
      *   <li>DB 전체를 새 인덱스에 채운다. 실패한 건이 있으면 새 인덱스를 지우고 멈춘다 (alias는 그대로라 검색에 영향 없음).</li>
      *   <li>새 인덱스를 refresh해 채운 문서가 모두 검색되게 한 뒤, alias를 한 요청으로 새 인덱스로 옮긴다
      *       (refresh 전에 옮기면 최대 1초 동안 일부만 검색됨).</li>
@@ -92,7 +92,7 @@ public class ProductIndexService {
      */
     public RebuildResult rebuild(IndexProgress progress) {
         String previous = searchIndex.currentIndex();
-        String next = searchIndex.createNextIndex(previous);
+        String next = searchIndex.createNextIndex(previous, progress.jobId());
         log.info("상품 검색 무중단 재색인 시작: {} → {}", previous, next);
 
         ReindexResult filled;
@@ -103,8 +103,10 @@ public class ProductIndexService {
                 throw new IllegalStateException("새 인덱스 " + next + "를 채우다 " + filled.failed()
                         + "건이 실패해 재색인을 멈춤 (alias는 " + previous + " 그대로, 로그 확인 후 다시 실행)");
             }
-            progress.phase(SearchIndexJobPhase.SWITCHING_ALIAS, previous, next);
             searchIndex.refresh(next);
+            // alias를 옮기기 바로 앞에서 작업이 아직 살아 있는지 확인 (실패 처리됐으면 여기서 멈춰 옮기지 않음).
+            // 이 단계부터는 정리 작업이 새 인덱스를 지우지 않아, 이 확인 뒤에 실패 처리돼도 방금 옮긴 인덱스가 지워지지 않는다
+            progress.phase(SearchIndexJobPhase.SWITCHING_ALIAS, previous, next);
         } catch (SearchIndexJobAbandonedException e) {
             // 죽은 작업으로 실패 처리됨: 새 인덱스는 실패 처리한 쪽이 지운다. 그 뒤 다음 재색인이 같은 이름으로 이미 만들었을 수 있어 여기서 지우지 않음
             throw e;

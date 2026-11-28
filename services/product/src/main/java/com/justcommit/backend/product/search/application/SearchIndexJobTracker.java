@@ -108,6 +108,11 @@ public class SearchIndexJobTracker {
             fence(updated);
         }
 
+        @Override
+        public Long jobId() {
+            return jobId;
+        }
+
         public SearchIndexJobPhase phase() {
             return phase;
         }

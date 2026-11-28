@@ -26,4 +26,9 @@ public interface IndexProgress {
 
     // bulk 배치 하나를 보낸 뒤: 보낸 수(색인 + 삭제) · 그중 건너뜀 · 실패
     void batch(int processed, int skipped, int failed);
+
+    // 작업 ID (재색인 새 인덱스 이름에 붙임). 작업 기록 없이 실행하면 null
+    default Long jobId() {
+        return null;
+    }
 }

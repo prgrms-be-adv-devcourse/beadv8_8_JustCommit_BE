@@ -305,6 +305,44 @@ class SearchIndexJobServiceTest {
     }
 
     @Test
+    @DisplayName("[#563] alias를 옮기기 직전(SWITCHING_ALIAS)에 멈춘 작업은 실패 처리만 하고 새 인덱스를 지우지 않음 (깨어나 alias를 옮겼을 수 있음)")
+    void staleJobWhileSwitchingKeepsNewIndex() {
+        SearchIndexJobService serverA = service("A", task -> { });
+        Long staleId = serverA.requestRebuild().jobId();
+        tracker.start(staleId, "A", 100);
+        tracker.progress(staleId, SearchIndexJobPhase.FILLING).phase(SearchIndexJobPhase.SWITCHING_ALIAS,
+                "products_v1", "products_v2");
+        given(searchIndex.currentIndex()).willReturn("products_v1");
+        clock.advance(STALE_AFTER.plusSeconds(1));
+
+        serverA.failStaleJobs();
+
+        SearchIndexJobStatus stale = serverA.status(staleId);
+        assertThat(stale.phase()).isEqualTo(SearchIndexJobPhase.FAILED);
+        assertThat(stale.failedPhase()).isEqualTo(SearchIndexJobPhase.SWITCHING_ALIAS);
+        assertThat(stale.failureReason()).contains("products_v2를 지우지 않음");
+        verify(searchIndex, never()).deleteIndex(any());
+    }
+
+    @Test
+    @DisplayName("[#563] 시작 단계(상품 수 세기)에서 DB 오류가 나면 QUEUED로 남기지 않고 FAILED로 기록해 바로 다시 요청할 수 있음")
+    void startFailureIsRecorded() {
+        ProductRepository failingProducts = mock(ProductRepository.class);
+        given(failingProducts.count()).willThrow(new IllegalStateException("DB 연결 실패"));
+        SearchIndexJobService service = new SearchIndexJobService(repository, tracker, indexService, failingProducts,
+                searchIndex, new SyncTaskExecutor(), clock, STALE_AFTER, "A");
+
+        Long jobId = service.requestRebuild().jobId();
+
+        SearchIndexJobStatus failed = service.status(jobId);
+        assertThat(failed.phase()).isEqualTo(SearchIndexJobPhase.FAILED);
+        assertThat(failed.failedPhase()).isEqualTo(SearchIndexJobPhase.QUEUED);
+        assertThat(failed.failureReason()).contains("DB 연결 실패");
+        verify(indexService, never()).rebuild(any());
+        assertThat(service.requestRebuild().jobId()).isNotEqualTo(jobId);
+    }
+
+    @Test
     @DisplayName("[#563] 실패 처리된 뒤 늦게 깨어난 실행은 다음 배치 기록에서 멈추고 결과를 덮지 않음")
     void abandonedRunCannotOverwrite() {
         SearchIndexJobService serverA = service("A", task -> { });
