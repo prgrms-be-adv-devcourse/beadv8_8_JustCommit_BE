@@ -4,7 +4,7 @@
 //   k6 run -e TARGET=product -e RPM=120 -e DURATION=5m --out experimental-prometheus-rw search-stages.js
 //   k6 run -e TARGET=species -e RPM=9 -e DURATION=6m --out experimental-prometheus-rw search-stages.js
 // 품종 의미 검색은 Gateway가 IP당 1분 10회로 제한한다 → 공개 주소로는 RPM 9 이하 (넘으면 429가 섞임)
-// 단계별 표: python3 -I perf/analysis/stage_timing.py --start <시작> --end <끝> (perf/README.md 「검색 · 챗봇 단계별 운영 측정」)
+// 단계별 표: python3 -I perf/analysis/stage_timing.py --start <시작> --end <끝> (perf/search-chatbot.md 「검색 · 챗봇 단계별 운영 측정」)
 import { check } from 'k6';
 import { get, pick } from './lib/common.js';
 import { PRODUCT_KEYWORDS, SPECIES_QUERIES } from './lib/search-stages-data.js';
