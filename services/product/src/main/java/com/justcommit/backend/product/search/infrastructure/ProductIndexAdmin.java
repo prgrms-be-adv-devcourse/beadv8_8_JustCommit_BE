@@ -5,8 +5,10 @@ import jakarta.json.stream.JsonParser;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
@@ -30,7 +32,7 @@ public class ProductIndexAdmin {
     public static final String ALIAS = "products";
     static final String FIRST_INDEX = "products_v1";
     private static final String DEFINITION = "opensearch/products.json";
-    private static final Pattern INDEX_NAME = Pattern.compile("^" + ALIAS + "_v(\\d+)$");
+    private static final Pattern INDEX_NAME = Pattern.compile("^" + ALIAS + "_v(\\d+)(?:_j\\d+)?$");
 
     private final OpenSearchClient client;
 
@@ -51,7 +53,27 @@ public class ProductIndexAdmin {
 
     // products_v3 → products_v4. 규칙에 맞지 않는 이름이면 v2부터
     public static String nextIndexName(String current) {
-        return ALIAS + "_v" + (Math.max(numberOf(current), 1) + 1);
+        return nextIndexName(current, List.of());
+    }
+
+    // 지금 있는 products_v* 중 가장 큰 번호 + 1 (#563)
+    public static String nextIndexName(String current, Collection<String> existing) {
+        return nextIndexName(current, existing, null);
+    }
+
+    // 가장 큰 번호 + 1에 작업 ID를 붙임 (products_v3_j12, #563). 멈춘 재색인의 인덱스를 정리해 번호가 다시 비어도
+    // 이름은 작업마다 달라서, 실패 처리된 뒤 늦게 깨어난 실행이 보낸 쓰기가 새 재색인의 인덱스에 섞이지 않는다
+    public static String nextIndexName(String current, Collection<String> existing, Long jobId) {
+        int max = Math.max(numberOf(current), 1);
+        for (String index : existing) {
+            max = Math.max(max, numberOf(index));
+        }
+        return ALIAS + "_v" + (max + 1) + (jobId == null ? "" : "_j" + jobId);
+    }
+
+    // 지금 있는 products_v* 인덱스 이름 (alias 여부와 상관없이)
+    public Set<String> existingIndices() throws IOException {
+        return client.indices().get(request -> request.index(ALIAS + "_v*").allowNoIndices(true)).result().keySet();
     }
 
     private static int numberOf(String index) {
