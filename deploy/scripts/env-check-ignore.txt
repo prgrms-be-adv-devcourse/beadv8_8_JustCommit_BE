@@ -1,0 +1,7 @@
+# 운영 env 누락 검사(scripts/check_env_vars.py, #666)의 예외 목록
+# make-env.sh가 일부러 넣지 않는 변수만 적는다. 한 줄에 「서비스 변수  # 이유」
+# 이유 없이 추가하지 않는다. 필요 없어진 줄은 검사가 ⚠️로 알려 준다
+
+product S3_ACCESS_KEY   # 로컬 RustFS 전용. 운영은 EC2 IAM 역할로 S3에 접근 (docs/reference/env-vars.md)
+product S3_SECRET_KEY   # 로컬 RustFS 전용. 운영은 EC2 IAM 역할
+product S3_ENDPOINT     # 로컬 RustFS 주소. 운영은 비워서 AWS S3 기본 주소를 씀

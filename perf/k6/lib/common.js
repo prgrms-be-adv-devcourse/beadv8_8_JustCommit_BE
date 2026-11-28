@@ -1,6 +1,7 @@
 // 부하 측정 공통 (#351) — 로그인 · 요청 헤더 · 무작위 고르기
 import http from 'k6/http';
 import { check, fail } from 'k6';
+import { textSummary } from 'https://jslib.k6.io/k6-summary/0.1.0/index.js';
 
 export const BASE_URL = __ENV.BASE_URL || 'https://replant.kro.kr';
 export const BUYERS = Number(__ENV.BUYERS || 2000); // perf/data/seed.sql의 buyers
@@ -62,6 +63,11 @@ export function login(email) {
       })
     : post('/api/v1/auth/login', { email, password: PASSWORD }, null, 'POST /auth/login');
   const ok = check(res, { '로그인 200': (r) => r.status === 200 });
+  if (!ok) {
+    let code = '';
+    try { code = res.json('code') || res.json('error.code') || ''; } catch (e) { code = '(JSON 아님)'; }
+    console.warn(`로그인 실패: HTTP ${res.status} ${code}`);
+  }
   return ok ? res.json('data.accessToken') : null;
 }
 
@@ -71,4 +77,11 @@ export function buyerEmail(n) {
 
 export function sellerEmail(n) {
   return `perf-seller-${n}@perf.test`;
+}
+
+// setup()이 돌려준 값(로그인 토큰)이 --summary-export 결과 파일에 들어가지 않게 뺀다 (#634).
+// 스크립트에서 `export { handleSummary } from './lib/common.js'`로 쓴다
+export function handleSummary(data) {
+  delete data.setup_data;
+  return { stdout: textSummary(data, { indent: ' ', enableColors: true }) };
 }
