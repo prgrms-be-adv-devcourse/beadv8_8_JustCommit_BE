@@ -284,6 +284,29 @@ class ProductSpecificationsTest {
     }
 
     @Test
+    @DisplayName("관리자 강제 숨김 상품도 판매자 숨김 탭(hidden=true) 목록 · 건수에 들어가고 hidden=false에서는 빠짐 (#623)")
+    void sellerConditionWithAdminHidden() {
+        Product adminHidden = entityManager.find(Product.class, active.getId());
+        adminHidden.hideByAdmin("사진이 실제 상품과 다릅니다", LocalDateTime.now(clock));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(idsOf(productRepository.findAll(
+                ProductSpecifications.sellerCondition(SELLER_ID, null, true), LATEST)))
+                .containsExactly(active.getId(), hidden.getId());
+        assertThat(idsOf(productRepository.findAll(
+                ProductSpecifications.sellerCondition(SELLER_ID, null, false), LATEST)))
+                .containsExactly(soldOut.getId());
+
+        Map<ProductStatus, Long> hiddenCounts = productRepository.countByStatus(SELLER_ID, true).stream()
+                .collect(Collectors.toMap(ProductRepository.StatusCount::getStatus, ProductRepository.StatusCount::getCount));
+        assertThat(hiddenCounts).containsEntry(ProductStatus.ACTIVE, 2L).doesNotContainKey(ProductStatus.SOLD_OUT);
+        Map<ProductStatus, Long> visibleCounts = productRepository.countByStatus(SELLER_ID, false).stream()
+                .collect(Collectors.toMap(ProductRepository.StatusCount::getStatus, ProductRepository.StatusCount::getCount));
+        assertThat(visibleCounts).containsExactly(Map.entry(ProductStatus.SOLD_OUT, 1L));
+    }
+
+    @Test
     @DisplayName("상태별 개수는 삭제·남의 상품을 빼고, 숨김 필터별로 목록 totalElements와 일치")
     void countByStatusMatchesList() {
         for (Boolean hidden : Arrays.asList(null, true, false)) {

@@ -196,12 +196,14 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     long countBySellerIdAndCreatedAtGreaterThanEqual(Long sellerId, LocalDateTime from);
 
     // 판매자의 상품 상태별로 count ( 삭제 제외, hidden=null 로 들어오면 숨김 여부로 필터링 하지 않음)
+    // 숨김은 sellerCondition 과 같이 판매자 숨김 또는 관리자 강제 숨김
     @Query("""
             SELECT p.status AS status, COUNT(p) AS count
             FROM Product p
             WHERE p.sellerId = :sellerId
               AND p.status <> com.justcommit.backend.product.ProductStatus.DELETED
-              AND (:hidden IS NULL OR p.hidden = :hidden)
+              AND (:hidden IS NULL
+                   OR (CASE WHEN p.hidden = true OR p.adminHidden = true THEN true ELSE false END) = :hidden)
             GROUP BY p.status
             """)
     List<StatusCount> countByStatus(@Param("sellerId") Long sellerId, @Param("hidden") Boolean hidden);

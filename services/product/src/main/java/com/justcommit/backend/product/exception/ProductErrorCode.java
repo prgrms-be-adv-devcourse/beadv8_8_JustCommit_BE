@@ -15,7 +15,7 @@ ProductErrorCode implements ErrorCode {
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND, "상품을 찾을 수 없습니다."),
     PRODUCT_HIDDEN(HttpStatus.FORBIDDEN, "판매자가 비공개 처리한 상품입니다."),
     PRODUCT_ADMIN_HIDDEN(HttpStatus.FORBIDDEN, "운영 정책에 따라 관리자가 숨긴 상품입니다."),
-    INVALID_ADMIN_HIDE_REASON(HttpStatus.BAD_REQUEST, "숨김 사유를 200자 이하로 입력해 주세요."),
+    INVALID_ADMIN_HIDE_REASON(HttpStatus.BAD_REQUEST, "숨김 사유를 1~200자로 입력해 주세요."),
     NOT_SELLER(HttpStatus.FORBIDDEN, "판매자만 상품을 등록할 수 있습니다."),
     NOT_PRODUCT_OWNER(HttpStatus.FORBIDDEN, "본인이 등록한 상품만 변경할 수 있습니다."),
     PRODUCT_NOT_HIDEABLE(HttpStatus.CONFLICT,  "삭제된 상품은 숨기거나 숨김을 해제할 수 없습니다."),

@@ -100,7 +100,7 @@ public final class ProductSpecifications {
         return Specification.allOf(specs);
     }
 
-    // 삭제 제외. 숨김은 hidden 값으로 필터 (null 은 전체)
+    // 삭제 제외. 숨김은 구매자에게 안 보이는지(판매자 숨김 또는 관리자 강제 숨김)로 필터 (null 은 전체)
     public static Specification<Product> sellerCondition(Long sellerId, ProductStatus status, Boolean hidden){
         List<Specification<Product>> specs = new ArrayList<>();
 
@@ -112,9 +112,12 @@ public final class ProductSpecifications {
             specs.add((root, query, cb) -> cb.equal(root.get("status"), status));
         }
 
-        // hidden 이 null 이 아닌 경우 필터 추가
+        // hidden 이 null 이 아닌 경우 필터 추가: true 는 둘 중 하나라도 숨김, false 는 둘 다 아님
         if(hidden != null){
-            specs.add((root, query, cb) -> cb.equal(root.get("hidden"), hidden));
+            specs.add((root, query, cb) -> {
+                var hiddenFromBuyers = cb.or(cb.isTrue(root.get("hidden")), cb.isTrue(root.get("adminHidden")));
+                return hidden ? hiddenFromBuyers : cb.not(hiddenFromBuyers);
+            });
         }
 
         return Specification.allOf(specs);
