@@ -33,6 +33,7 @@ public final class ProductSpecifications {
         // 항상 적용: 검색 노출 상태만, 숨김 제외
         specs.add((root, query, cb) -> root.get("status").in(SEARCHABLE_STATUSES));
         specs.add((root, query, cb) -> cb.isFalse(root.get("hidden")));
+        specs.add((root, query, cb) -> cb.isFalse(root.get("adminHidden")));
         // 제목 또는 품종명에 키워드가 포함된 상품
         if (StringUtils.hasText(keyword)) {
             String pattern = "%" + keyword.trim() + "%";
@@ -78,7 +79,28 @@ public final class ProductSpecifications {
         return Specification.allOf(specs);
     }
 
-    // 삭제 제외. 숨김은 hidden 값으로 필터 (null 은 전체)
+    // 관리자 상품 목록 (#623): 삭제 제외, 숨긴 상품(판매자 · 관리자)도 포함
+    public static Specification<Product> adminCondition(String keyword, Long sellerId, ProductStatus status,
+                                                        Boolean adminHidden) {
+        List<Specification<Product>> specs = new ArrayList<>();
+        specs.add((root, query, cb) -> cb.notEqual(root.get("status"), ProductStatus.DELETED));
+        if (StringUtils.hasText(keyword)) {
+            String pattern = "%" + keyword.trim() + "%";
+            specs.add((root, query, cb) -> cb.like(root.get("title"), pattern));
+        }
+        if (sellerId != null) {
+            specs.add((root, query, cb) -> cb.equal(root.get("sellerId"), sellerId));
+        }
+        if (status != null) {
+            specs.add((root, query, cb) -> cb.equal(root.get("status"), status));
+        }
+        if (adminHidden != null) {
+            specs.add((root, query, cb) -> cb.equal(root.get("adminHidden"), adminHidden));
+        }
+        return Specification.allOf(specs);
+    }
+
+    // 삭제 제외. 숨김은 구매자에게 안 보이는지(판매자 숨김 또는 관리자 강제 숨김)로 필터 (null 은 전체)
     public static Specification<Product> sellerCondition(Long sellerId, ProductStatus status, Boolean hidden){
         List<Specification<Product>> specs = new ArrayList<>();
 
@@ -90,9 +112,12 @@ public final class ProductSpecifications {
             specs.add((root, query, cb) -> cb.equal(root.get("status"), status));
         }
 
-        // hidden 이 null 이 아닌 경우 필터 추가
+        // hidden 이 null 이 아닌 경우 필터 추가: true 는 둘 중 하나라도 숨김, false 는 둘 다 아님
         if(hidden != null){
-            specs.add((root, query, cb) -> cb.equal(root.get("hidden"), hidden));
+            specs.add((root, query, cb) -> {
+                var hiddenFromBuyers = cb.or(cb.isTrue(root.get("hidden")), cb.isTrue(root.get("adminHidden")));
+                return hidden ? hiddenFromBuyers : cb.not(hiddenFromBuyers);
+            });
         }
 
         return Specification.allOf(specs);

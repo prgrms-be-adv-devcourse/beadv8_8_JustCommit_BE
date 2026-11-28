@@ -284,6 +284,29 @@ class ProductSpecificationsTest {
     }
 
     @Test
+    @DisplayName("관리자 강제 숨김 상품도 판매자 숨김 탭(hidden=true) 목록 · 건수에 들어가고 hidden=false에서는 빠짐 (#623)")
+    void sellerConditionWithAdminHidden() {
+        Product adminHidden = entityManager.find(Product.class, active.getId());
+        adminHidden.hideByAdmin("사진이 실제 상품과 다릅니다", LocalDateTime.now(clock));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(idsOf(productRepository.findAll(
+                ProductSpecifications.sellerCondition(SELLER_ID, null, true), LATEST)))
+                .containsExactly(active.getId(), hidden.getId());
+        assertThat(idsOf(productRepository.findAll(
+                ProductSpecifications.sellerCondition(SELLER_ID, null, false), LATEST)))
+                .containsExactly(soldOut.getId());
+
+        Map<ProductStatus, Long> hiddenCounts = productRepository.countByStatus(SELLER_ID, true).stream()
+                .collect(Collectors.toMap(ProductRepository.StatusCount::getStatus, ProductRepository.StatusCount::getCount));
+        assertThat(hiddenCounts).containsEntry(ProductStatus.ACTIVE, 2L).doesNotContainKey(ProductStatus.SOLD_OUT);
+        Map<ProductStatus, Long> visibleCounts = productRepository.countByStatus(SELLER_ID, false).stream()
+                .collect(Collectors.toMap(ProductRepository.StatusCount::getStatus, ProductRepository.StatusCount::getCount));
+        assertThat(visibleCounts).containsExactly(Map.entry(ProductStatus.SOLD_OUT, 1L));
+    }
+
+    @Test
     @DisplayName("상태별 개수는 삭제·남의 상품을 빼고, 숨김 필터별로 목록 totalElements와 일치")
     void countByStatusMatchesList() {
         for (Boolean hidden : Arrays.asList(null, true, false)) {
@@ -369,5 +392,49 @@ class ProductSpecificationsTest {
         // setUp의 판매 중 · 숨김 · 판매 완료 · 삭제(1~4분 전) 4건 + 방금 등록한 검수 중 1건. 두 시간 전 상품 · 남의 상품은 제외
         assertThat(productRepository.countBySellerIdAndCreatedAtGreaterThanEqual(SELLER_ID, LocalDateTime.now(clock).minusHours(1)))
                 .isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("관리자가 강제 숨김한 상품은 공개 목록 · 검색에서 빠짐 (#623)")
+    void adminHiddenProductExcludedFromPublicSearch() {
+        Product product = productRepository.findById(active.getId()).orElseThrow();
+        product.hideByAdmin("허위 매물", LocalDateTime.now(clock));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(search(null, null, null, null, null)).doesNotContain(active.getId());
+        assertThat(search("판매 중", null, null, null, null)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("관리자 상품 목록: 숨긴 상품(판매자 · 관리자)도 나오고 삭제 상품은 빠짐, adminHidden으로 거름 (#623)")
+    void adminCondition() {
+        Product product = productRepository.findById(active.getId()).orElseThrow();
+        product.hideByAdmin("허위 매물", LocalDateTime.now(clock));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(idsOf(productRepository.findAll(
+                ProductSpecifications.adminCondition(null, null, null, null), LATEST)))
+                .containsExactlyInAnyOrder(active.getId(), hidden.getId(), soldOut.getId(), others.getId());
+        assertThat(idsOf(productRepository.findAll(
+                ProductSpecifications.adminCondition(null, null, null, true), LATEST)))
+                .containsExactly(active.getId());
+        assertThat(idsOf(productRepository.findAll(
+                ProductSpecifications.adminCondition("남의", OTHER_SELLER_ID, null, false), LATEST)))
+                .containsExactly(others.getId());
+    }
+
+    @Test
+    @DisplayName("상품 이벤트 payload의 hidden은 판매자 숨김 또는 관리자 숨김 (#623)")
+    void eventSourceHiddenIncludesAdminHidden() {
+        Product product = productRepository.findById(active.getId()).orElseThrow();
+        product.hideByAdmin("허위 매물", LocalDateTime.now(clock));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(productRepository.findEventSources(List.of(active.getId(), hidden.getId(), others.getId())))
+                .extracting(source -> source.productId() + ":" + source.hidden())
+                .containsExactly(active.getId() + ":true", hidden.getId() + ":true", others.getId() + ":false");
     }
 }

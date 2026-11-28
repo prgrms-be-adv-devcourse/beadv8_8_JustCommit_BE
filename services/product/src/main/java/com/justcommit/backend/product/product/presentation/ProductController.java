@@ -104,7 +104,7 @@ public class ProductController {
 
 
     @Operation(summary = "내 판매 물품 조회", description = "로그인한 판매자가 등록한 상품을 최신순으로 조회합니다. 삭제된 상품은 제외합니다. "
-            + "status로 상태를, hidden으로 숨김 여부를 거를 수 있습니다 (hidden 생략 시 숨긴 상품 포함 전체).")
+            + "status로 상태를, hidden으로 숨김 여부를 거를 수 있습니다 (숨김은 판매자 숨김 또는 관리자 강제 숨김, hidden 생략 시 숨긴 상품 포함 전체).")
     @GetMapping("/me")
     public ApiResponse<PagingResponse<MyProductResponse>> getMyProducts(
             @AuthenticationPrincipal AuthMember authMember,

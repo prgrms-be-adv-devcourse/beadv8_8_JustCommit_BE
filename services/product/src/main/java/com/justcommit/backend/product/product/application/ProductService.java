@@ -169,7 +169,7 @@ public class ProductService implements ProductQuery, ProductUseCase {
                 inReview ? IN_REVIEW_TITLE : product.getTitle(),
                 product.getPrice(),
                 product.getStatus(),
-                product.isHidden(),
+                product.isHiddenFromBuyers(),
                 inReview ? null : product.getThumbnailUrl(),
                 product.getSpecies().getName(),
                 product.getCreatedAt());

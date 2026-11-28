@@ -1,13 +1,13 @@
 # product 서비스
 
 > 언제 읽나: product 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-27 · 관련: Miro 5 · 13-1 · 17, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-29 · 관련: Miro 5 · 13-1 · 17, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
 | 기능 | 내용 |
 |---|---|
-| 상품 | 등록 · 수정 · 삭제 · 숨김, 상태 6개, 판매자별 등록 제한 |
+| 상품 | 등록 · 수정 · 삭제 · 숨김 · 관리자 강제 숨김, 상태 6개, 판매자별 등록 제한 |
 | 예약 · 판매 완료 · 판매 재개 | 예약은 market의 내부 REST, 판매 완료 · 결제 전 예약 해제 · 판매 재개는 market 이벤트 구독 (거절 · 반품이면 숨김) → [ADR 0016](../decisions/0016-product-sale-events-from-market.md) |
 | 품종 | 농사로 215종, 학명 · 학명 동의어 · 별칭. 판매 금지 품종은 `banned_species`로 따로. 목록에 없는 식물은 「기타」(id 218 고정, V11) — 학명 · 관리 속성 · 카테고리 · 사진이 없고 사진 검수는 항상 관리자 확인, 추천 · 품종 통계에서는 뺌 |
 | 검색 | OpenSearch(alias `products` → `products_v{n}`, 시작 시 `products_v1` 생성, 매핑이 바뀌면 무중단 재색인), 색인 리스너 → [검색 · 추천](../flows/search-recommend.md) |
@@ -33,7 +33,7 @@
 
 ## 외부 API
 
-`products` (목록 · 등록 · 상세 · 수정 · 삭제) · `products/{id}/hidden` · `products/me` · `products/me/counts` · `products/images/uploadUrls` · `products/{id}/imageReviews`(검수 기록 · 기한 초과 재요청) · `products/{id}/appeals`(이의 신청) · `species` · `species/{id}` · `admin/imageReviews` · `admin/products/searchIndex`(전체 색인 · `rebuilds` 무중단 재색인 · `jobs` 작업 진행 상태) → [외부 API 목록](../reference/external-apis.md)
+`products` (목록 · 등록 · 상세 · 수정 · 삭제) · `products/{id}/hidden` · `products/me` · `products/me/counts` · `products/images/uploadUrls` · `products/{id}/imageReviews`(검수 기록 · 기한 초과 재요청) · `products/{id}/appeals`(이의 신청) · `species` · `species/{id}` · `admin/imageReviews` · `admin/products`(관리자 상품 목록) · `admin/products/{id}/hidden`(강제 숨김) · `admin/products/searchIndex`(전체 색인 · `rebuilds` 무중단 재색인 · `jobs` 작업 진행 상태) → [외부 API 목록](../reference/external-apis.md)
 
 ## 제공하는 내부 API
 
@@ -52,7 +52,7 @@
 
 | 토픽 | 이벤트 |
 |---|---|
-| `product.events.v1` | `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged` · `ProductApproved` · `ProductRejected` · `ImageReviewDelayed` |
+| `product.events.v1` | `ProductRegistered` · `ProductUpdated` · `ProductStatusChanged` · `ProductApproved` · `ProductRejected` · `ProductAdminHidden` · `ImageReviewDelayed` |
 | `product.review.v1` | `ProductReviewRequested` |
 
 품종 이벤트(`species.events.v1`)는 발행하지 않습니다 → [ADR 0020](../decisions/0020-species-profile-ai-seed.md)
@@ -93,6 +93,7 @@
 | 주제 | 규칙 |
 |---|---|
 | 숨김 | 상태와 별개. 판매자 본인만 봄, 남이 상세를 열면 403 `PRODUCT_HIDDEN`(삭제 404와 구분), 새 주문 불가, 장바구니에는 "숨긴 상품" |
+| 강제 숨김 | 관리자가 사유(1~200자)와 함께 숨김 (#623). 판매자 숨김(`is_hidden`)과 따로 `is_admin_hidden`에 두어 판매자는 풀 수 없고 관리자는 판매자 숨김을 풀 수 없음. 둘 중 하나라도 켜지면 숨김과 같게 목록 · 검색 · 구매 · 추천에서 빠지고(내부 API `ProductResult` · 이벤트 · 검색 문서의 `hidden`은 둘 중 하나), 남이 상세를 열면 403 `PRODUCT_ADMIN_HIDDEN`(검수 중 · 반려 상품은 강제 숨김이어도 지금처럼 404, 남에게 상품이 있다는 것을 드러내지 않음). 판매자는 내 상품 · 상세에서 `adminHidden` · 사유를 보고, 내 상품 `hidden` 필터 · 상태별 개수(`products/me` · `products/me/counts`)의 숨김도 둘 중 하나로 셈. 숨기면 판매자에게 알림(`ProductAdminHidden`), 해제는 알림 없음. 사유 검증(400)이 먼저이고, 사유를 통과하면 이미 같은 상태는 그대로, 삭제 상품은 409 `PRODUCT_NOT_HIDEABLE`. 결제 대기 상품도 숨길 수 있음(진행 중인 주문은 그대로) |
 | 검수 중 · 반려 노출 | `REVIEW_PENDING` · `REJECTED`는 판매자 본인만 봄(내 상품 목록 · 상세), 남이 상세를 열면 404 `PRODUCT_NOT_FOUND`(검색에도 안 나와 없는 상품처럼), 예약 불가(409 `PRODUCT_NOT_RESERVABLE`). 내부 API(`ProductResult`)는 제목을 「검수 중인 상품」으로 가리고 썸네일을 비움(장바구니에 반려 사진 · 글이 보이지 않게) |
 | 등록 | SELLER만 (403 `NOT_SELLER`). 품종 · 제목 · 설명 · 가격 · 사진 필수. 사진은 본인이 Presigned URL로 올린 JPEG · PNG · WebP, 7.5MB 이하, 1~10장 |
 | 수정 | 본인 · `ACTIVE` · `REJECTED` · `REVIEW_PENDING`만, 전체 교체, 검수 버전 +1. 판매 중 상품의 글만 바뀌면 판매를 이어 가며 글 검사만 (걸리면 `REJECTED`, 관리자 확인이면 `REVIEW_PENDING`), 그 밖에는 처음부터 검수(사진 · 품종이 바뀜, 검수 중 · 반려 상품). 예약과 겹치지 않게 행 잠금 |

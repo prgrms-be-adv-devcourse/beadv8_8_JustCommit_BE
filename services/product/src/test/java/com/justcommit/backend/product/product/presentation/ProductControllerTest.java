@@ -111,7 +111,7 @@ class ProductControllerTest {
     private ProductDetailResponse detailResponse() {
         return new ProductDetailResponse(
                 10L, SELLER_ID, "Seller01","몬스테라 분양합니다", "잘 자란 몬스테라입니다",
-                new BigDecimal("30000"), 50, "중형", "베란다에서 키웠어요", "ACTIVE", false,
+                new BigDecimal("30000"), 50, "중형", "베란다에서 키웠어요", "ACTIVE", false, false, null,
                 new ProductSpeciesResponse(1L, "몬스테라", "FOLIAGE", "MEDIUM", "WHEN_SURFACE_DRY", "EASY"),
                 List.of("https://example.com/a.jpg", "https://example.com/b.jpg"),
                 LocalDateTime.now(), LocalDateTime.now());
@@ -465,7 +465,7 @@ class ProductControllerTest {
     private MyProductResponse myProductResponse(boolean hidden)
     {
         return new MyProductResponse(10L, "몬스테라 분양합니다", new BigDecimal("30000"),
-                "https://example.com/a.jpg", 1L, "몬스테라", "REJECTED", hidden, LocalDateTime.now(),
+                "https://example.com/a.jpg", 1L, "몬스테라", "REJECTED", hidden, false, null, LocalDateTime.now(),
                 "REJECTED", "NOT_PLANT", "식물 사진이 아니에요", "ENGINE");
     }
 

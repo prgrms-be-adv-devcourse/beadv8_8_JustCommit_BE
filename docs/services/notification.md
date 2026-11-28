@@ -1,7 +1,7 @@
 # notification 서비스
 
 > 언제 읽나: notification 서비스 코드를 고치거나, 이 서비스가 무엇을 갖고 누구와 통신하는지 확인할 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-19 · 관련: Miro 5 · 10, 노션 기획안 「MSA 분리 지점」
+> 상태: ✅ 확정 · 마지막 수정 2026-11-21 · 관련: Miro 5 · 10, 노션 기획안 「MSA 분리 지점」
 
 ## 하는 일
 
@@ -44,6 +44,7 @@
 | `settlement.events.v1` | 정산 완료 알림 | `event_key` UK |
 | `product.events.v1` `ProductApproved` | 검수 통과 알림 | `event_key` UK |
 | `product.events.v1` `ProductRejected` | 검수 반려 알림 (사유 포함) | `event_key` UK |
+| `product.events.v1` `ProductAdminHidden` | 관리자 강제 숨김 알림 (사유 포함, #623) | `event_key` UK (`PRODUCT_ADMIN_HIDDEN:{productId}:{hiddenAt}`) |
 | `product.events.v1` `ImageReviewDelayed` | 관리자 검수 지연 알림 (`ADMIN` 역할 알림 1건) | `event_key` UK (`ADMIN_REVIEW_DELAYED:{eventId}`) |
 
 회원 이벤트는 구독하지 않습니다. 그래서 탈퇴한 회원에게 가는 알림도 거르지 않고 저장합니다 (예: 판매자가 탈퇴한 뒤, product가 `MemberWithdrawn`을 받기 전에 검수가 끝나 `ProductApproved` · `ProductRejected`가 오는 경우). 탈퇴한 회원은 알림을 조회할 수 없어 따로 막지 않습니다.
@@ -58,7 +59,7 @@ SSE 하트비트(30초) → [스케줄러 표](../reference/schedulers.md)
 
 | 받는 사람 | 알림 |
 |---|---|
-| 판매자 | "주문이 들어왔어요. 수락해 주세요" · 24시간 무응답 자동 거절 · 택배 예약 · 수거 · 배송 중 · 배송 완료 · 주문 취소 · 반품 신청 · 반품 48시간 자동 승인 · 반품 수거(1번) · 검수 통과 · 검수 반려(사유) |
+| 판매자 | "주문이 들어왔어요. 수락해 주세요" · 24시간 무응답 자동 거절 · 택배 예약 · 수거 · 배송 중 · 배송 완료 · 주문 취소 · 반품 신청 · 반품 48시간 자동 승인 · 반품 수거(1번) · 검수 통과 · 검수 반려(사유) · 관리자 강제 숨김(사유) |
 | 구매자 | 판매자 수락 · 판매자 거절 · 응답이 없어 자동 취소(거절과 구분, 일부 거절은 1건으로 묶음) · 수거 · 배송 중 · 배송 완료 · 자동 구매 확정 · 반품 거절 · 반품 환불 완료 |
 | 관리자 (`ADMIN` 역할 알림) | "검수 확인이 늦어진 상품이 {n}건 있어요. 24시간이 지나면 자동 반려돼요." (관리자 목록을 조회하지 않고 1건, 관리자 누구나 보고 읽음은 함께, 반복 알림 없음) |
 | 보내지 않음 | 본인이 직접 취소한 건, 판매자 마감 전 재알림 |

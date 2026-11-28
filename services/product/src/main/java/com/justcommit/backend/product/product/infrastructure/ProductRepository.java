@@ -32,6 +32,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             WHERE p.id IN :productIds
               AND p.status = com.justcommit.backend.product.ProductStatus.ACTIVE
               AND p.hidden = false
+              AND p.adminHidden = false
             """)
     int reserve(@Param("orderId") Long orderId, @Param("productIds") List<Long> productIds);
 
@@ -156,7 +157,8 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     // 상품 이벤트 payload (ADR 0021 · 0030, 대표 사진은 sortOrder 0): 엔티티가 아니라 DB 값을 바로 읽어, 같은 트랜잭션의 일괄 UPDATE · 엔티티 수정 뒤 새 값이 나옴
     @Query("""
             SELECT new com.justcommit.backend.product.product.event.ProductEventSource(
-                p.id, p.species.id, p.sellerId, p.status, p.hidden, p.version,
+                p.id, p.species.id, p.sellerId, p.status,
+                CASE WHEN p.hidden = true OR p.adminHidden = true THEN true ELSE false END, p.version,
                 p.title, p.price,
                 (SELECT i.s3Url FROM ProductImage i WHERE i.product = p AND i.sortOrder = 0),
                 p.description, p.growNote, p.heightCm, p.potSize)
@@ -194,12 +196,14 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     long countBySellerIdAndCreatedAtGreaterThanEqual(Long sellerId, LocalDateTime from);
 
     // 판매자의 상품 상태별로 count ( 삭제 제외, hidden=null 로 들어오면 숨김 여부로 필터링 하지 않음)
+    // 숨김은 sellerCondition 과 같이 판매자 숨김 또는 관리자 강제 숨김
     @Query("""
             SELECT p.status AS status, COUNT(p) AS count
             FROM Product p
             WHERE p.sellerId = :sellerId
               AND p.status <> com.justcommit.backend.product.ProductStatus.DELETED
-              AND (:hidden IS NULL OR p.hidden = :hidden)
+              AND (:hidden IS NULL
+                   OR (CASE WHEN p.hidden = true OR p.adminHidden = true THEN true ELSE false END) = :hidden)
             GROUP BY p.status
             """)
     List<StatusCount> countByStatus(@Param("sellerId") Long sellerId, @Param("hidden") Boolean hidden);

@@ -59,7 +59,7 @@ public class ProductIndexService {
         searchIndex.save(ProductDocument.of(product, aliasesBySpecies(List.of(product)).getOrDefault(
                 product.getSpecies().getId(), List.of())), product.getVersion());
         log.info("상품 문서 색인: productId={}, status={}, hidden={}, version={}",
-                productId, product.getStatus(), product.isHidden(), product.getVersion());
+                productId, product.getStatus(), product.isHiddenFromBuyers(), product.getVersion());
     }
 
     /**

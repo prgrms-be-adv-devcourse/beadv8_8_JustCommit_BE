@@ -86,6 +86,7 @@
 | 거래 중 | `PAYMENT_PENDING` (상품) | 결제중, 예약됨 | 주문에 예약된 상품. 화면에 「거래 중」으로 표시 | [product 정책](services/product.md#정책) |
 | 판매 완료 | `SOLD_OUT` · `market.order-paid.v1` | 판매완료, 품절 | 결제가 끝난 상품 | [product 정책](services/product.md#정책) |
 | 숨김 | `hidden` | 비공개 | 상태와 별개로, 판매자 본인만 보게 하는 표시 | [product 정책](services/product.md#정책) |
+| 강제 숨김 | `adminHidden` · `PATCH admin/products/{id}/hidden` | 관리자 숨김 | 관리자가 사유와 함께 상품을 구매자에게서 숨기는 것. 판매자 숨김과 따로라 판매자는 풀 수 없음 | [product 정책](services/product.md#정책) |
 | 예약 · 예약 해제 | `products/reservations` · `PRODUCT_RESERVATION` · `market.order-expired.v1` · `market.order-failed.v1` | 상품 잡기, 상품 풀기 | 주문할 때 상품을 그 주문에 묶는 것 · 결제 전에 만료 · 결제 확정 실패로 푸는 것 | [내부 API](reference/internal-apis.md) |
 | 판매 재개 | `releaseItem` (`hidden`) · `market.order-item-cancelled.v1` · `market.order-item-returned.v1` | 해제, 재판매 | 판매 완료 상품을 다시 판매 중으로 돌리는 것 (거절 · 반품이면 숨김) | [product 정책](services/product.md#정책) |
 | 검수 | `REVIEW_PENDING` · `IMAGE_REVIEW` | 심사, 이미지 리뷰 | 등록 · 수정한 상품의 사진 · 글을 자동으로 확인하는 것 | [사진 검수](flows/image-review.md) |

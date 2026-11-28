@@ -13,7 +13,7 @@ public record ProductEventSource(
         Long speciesId,
         Long sellerId,
         ProductStatus status,
-        boolean hidden,
+        boolean hidden,         // 판매자 숨김 또는 관리자 강제 숨김 (#623)
         long productVersion,
         String title,
         BigDecimal price,

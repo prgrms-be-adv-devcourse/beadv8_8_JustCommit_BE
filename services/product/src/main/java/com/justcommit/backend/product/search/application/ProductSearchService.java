@@ -149,7 +149,7 @@ public class ProductSearchService {
             return result.productIds().stream()
                     .map(products::get)
                     .filter(Objects::nonNull)
-                    .filter(product -> !product.isHidden() && statuses.contains(product.getStatus()))
+                    .filter(product -> !product.isHiddenFromBuyers() && statuses.contains(product.getStatus()))
                     .map(ProductSearchResponse::from)
                     .toList();
         }));
