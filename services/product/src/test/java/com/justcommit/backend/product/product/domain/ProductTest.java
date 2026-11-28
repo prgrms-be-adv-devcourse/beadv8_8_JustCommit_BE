@@ -305,6 +305,21 @@ class ProductTest {
         product.checkViewableBy(1L);
     }
 
+    @ParameterizedTest
+    @EnumSource(value = ProductStatus.class, names = {"REVIEW_PENDING", "REJECTED"})
+    @DisplayName("검수 중 · 반려 상품은 강제 숨김이어도 다른 회원에게 404 PRODUCT_NOT_FOUND (#623)")
+    void adminHiddenInReviewProductNotFound(ProductStatus status) {
+        Product product = create(species());
+        ReflectionTestUtils.setField(product, "status", status);
+        product.hideByAdmin("허위 매물", LocalDateTime.of(2026, 11, 21, 15, 0));
+
+        assertThatThrownBy(() -> product.checkViewableBy(99L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND);
+        product.checkViewableBy(1L);
+    }
+
     @Test
     @DisplayName("삭제된 상품은 강제 숨김 · 해제할 수 없음 (PRODUCT_NOT_HIDEABLE)")
     void hideDeletedProductByAdmin() {

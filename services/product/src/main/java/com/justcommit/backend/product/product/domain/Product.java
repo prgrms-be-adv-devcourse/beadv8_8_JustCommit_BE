@@ -237,6 +237,7 @@ public class Product extends BaseTimeEntity {
 
     // 상세 노출 규칙 (memberId: 로그인하지 않았으면 null)
     // 삭제 · 검수 중 · 반려는 판매자 본인 외에는 없는 상품처럼 404, 숨김은 본인 외에는 403
+    // 검수 중 · 반려 상품은 강제 숨김이어도 404 (상품이 있다는 것을 남에게 드러내지 않음, #623)
     public void checkViewableBy(Long memberId) {
         if (status == ProductStatus.DELETED) {
             throw new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND);

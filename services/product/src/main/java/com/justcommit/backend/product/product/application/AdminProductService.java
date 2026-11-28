@@ -61,6 +61,7 @@ public class AdminProductService {
         }
     }
 
+    // 사유 검증이 먼저: 사유가 틀리면 이미 숨긴 상품 · 삭제 상품이어도 400 (200 · 409는 사유를 통과한 요청에만)
     private void hide(Long adminId, Product product, String reason) {
         String trimmed = reason == null ? null : reason.trim();
         if (!StringUtils.hasText(trimmed) || trimmed.length() > MAX_REASON_LENGTH) {

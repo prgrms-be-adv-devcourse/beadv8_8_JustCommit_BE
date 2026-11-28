@@ -1,7 +1,7 @@
 # 외부 API 목록
 
 > 언제 읽나: 외부 API의 경로 · 담당 서비스를 찾을 때
-> 상태: ✅ 확정 · 마지막 수정 2026-11-25 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
+> 상태: ✅ 확정 · 마지막 수정 2026-11-29 · 관련: Miro 20 · 21 · 22, API 명세서(노션)
 
 ## 서비스별 목록
 
@@ -149,7 +149,7 @@ Redis 키의 목적 부분은 소문자 하이픈(`signup` · `password-reset` �
 | GET | `species` · `species/{id}` | 품종 목록 · 상세 (학명 · 별칭). 목록은 품종명 가나다순(한국어 정렬 규칙 `ko-x-icu`), 「기타」는 맨 뒤 | 공개 |
 | GET | `admin/imageReviews?status=MANUAL&page&size` | 관리자 확인 대기 목록, 오래된 순 (사진 · 엔진 결과 · 판매자 품종 · 판매자 닉네임 `sellerNickname`(회원 복제본, 없으면 「알 수 없는 회원」) · 가격 `price` · 검수 요청 시각 `requestedAt` · 관리자 확인 사유 · 기한 `expiresAt` · 12시간 지연 `delayed`) | ADMIN |
 | GET | `admin/products?keyword&sellerId&status&adminHidden&page&size` | 관리자 상품 목록 (#623): 삭제 제외 전체 상품(숨긴 상품 포함), 최신 등록 순, 기본 20 · 최대 50. `keyword`는 제목 포함. 응답 `productId` · `title` · `price` · `thumbnailUrl` · `speciesName` · `status` · `sellerId` · `sellerNickname`(회원 복제본, 없으면 「알 수 없는 회원」) · `hidden`(판매자 숨김) · `adminHidden` · `adminHiddenReason` · `adminHiddenAt` · `createdAt` | ADMIN |
-| PATCH | `admin/products/{id}/hidden` | 강제 숨김 · 해제 (#623): `{hidden, reason}`. 숨김은 `reason` 필수(1~200자, 판매자에게 보임, 아니면 400 `INVALID_ADMIN_HIDE_REASON`), 숨기면 판매자 알림. 판매자 숨김은 건드리지 않음, 이미 같은 상태면 그대로 200, 삭제 상품 409 `PRODUCT_NOT_HIDEABLE`, 없는 상품 404 → [product 정책](../services/product.md#정책) | ADMIN |
+| PATCH | `admin/products/{id}/hidden` | 강제 숨김 · 해제 (#623): `{hidden, reason}`. 숨김은 `reason` 필수(1~200자, 판매자에게 보임, 아니면 400 `INVALID_ADMIN_HIDE_REASON`), 숨기면 판매자 알림. 판매자 숨김은 건드리지 않음. 사유 검증이 먼저라 사유가 틀리면 상품 상태와 상관없이 400이고, 아래는 사유를 통과한 요청에만: 이미 같은 상태면 그대로 200, 삭제 상품 409 `PRODUCT_NOT_HIDEABLE`. 없는 상품 404 → [product 정책](../services/product.md#정책) | ADMIN |
 | PATCH | `admin/imageReviews/{id}` | 관리자 처리 `decision`(`APPROVED` · `REJECTED`) · `rejectReason` · `memo`(`OTHER`면 필수 200자, 다른 사유 · 통과면 저장하지 않음). 409 `REVIEW_ALREADY_PROCESSED` · `REVIEW_OUTDATED`, 400 `INVALID_REJECT_REASON` | ADMIN |
 | POST | `admin/products/searchIndex` | 상품 전체 색인: DB의 모든 상품을 OpenSearch에 다시 씀(삭제 상품은 문서 삭제). 응답 `indexed` · `deleted` · `skipped`(같거나 더 새 버전이 이미 있음) · `failed`, 여러 번 실행해도 결과가 같음. 재색인 중이면 409 `SEARCH_INDEXING_IN_PROGRESS` → [검색 · 추천](../flows/search-recommend.md) | ADMIN |
 | POST | `admin/products/searchIndex/rebuilds` | 상품 검색 무중단 재색인: 지금 매핑으로 `products_v{n+1}`을 채운 뒤 alias를 옮기고 옛 인덱스 삭제(그동안 검색은 옛 인덱스로 응답). 응답 `previousIndex` · `currentIndex` · `filled` · `caughtUp`(전체 색인과 같은 모양) · `previousDeleted`. 채우다 실패하면 새 인덱스를 지우고 500, 따라잡기 색인에 실패한 건이 있으면 옛 인덱스를 남김(`previousDeleted=false`), 전체 색인 · 재색인이 진행 중이면 409 `SEARCH_INDEXING_IN_PROGRESS` → [검색 · 추천](../flows/search-recommend.md) | ADMIN |

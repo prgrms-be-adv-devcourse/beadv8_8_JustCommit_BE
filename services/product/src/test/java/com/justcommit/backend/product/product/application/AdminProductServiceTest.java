@@ -100,6 +100,21 @@ class AdminProductServiceTest {
     }
 
     @Test
+    @DisplayName("사유 검증이 먼저라 삭제 상품 · 이미 강제 숨김한 상품도 사유가 없으면 400 (#623)")
+    void reasonCheckedBeforeStatus() {
+        product.hideByAdmin("허위 매물", LocalDateTime.of(2026, 11, 20, 9, 0));
+        assertThatThrownBy(() -> service.changeHidden(ADMIN_ID, PRODUCT_ID, true, " "))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.INVALID_ADMIN_HIDE_REASON);
+
+        ReflectionTestUtils.setField(product, "status", ProductStatus.DELETED);
+        assertThatThrownBy(() -> service.changeHidden(ADMIN_ID, PRODUCT_ID, true, null))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ProductErrorCode.INVALID_ADMIN_HIDE_REASON);
+        verifyNoInteractions(productEventPublisher);
+    }
+
+    @Test
     @DisplayName("숨김 사유가 200자를 넘으면 400 INVALID_ADMIN_HIDE_REASON")
     void hideWithTooLongReason() {
         assertThatThrownBy(() -> service.changeHidden(ADMIN_ID, PRODUCT_ID, true, "가".repeat(201)))
